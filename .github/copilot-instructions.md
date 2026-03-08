@@ -45,6 +45,6 @@ src/crawl4md/
 
 ## Testing
 
-- Some tests (especially in `test_crawler.py`) involve retry rounds with `_ROUND_COOLDOWN` sleeps (default 30s per round). A single test can legitimately take 60+ seconds.
-- When running tests, **be patient** — do not assume a test is stuck or retry/re-run it just because it takes a while. Wait for the full output before drawing conclusions.
-- If a test is slow due to `_ROUND_COOLDOWN`, the proper fix is to patch it to 0 in the test (e.g. `@patch("crawl4md.crawler._ROUND_COOLDOWN", 0)`) or set `max_retries=0` in the test config — not to re-run the test.
+- Tests use pytest with mocked HTTP calls — never make real network requests in tests.
+- `_ROUND_COOLDOWN` (the 30 s sleep between retry rounds) is globally patched to 0 via an autouse fixture in `conftest.py`. No per-test patching is needed.
+- When running tests in a terminal, **always wait for the command to finish and return its full output** before re-running, retrying, or drawing any conclusions. Do not start a new test run while one is still in progress.

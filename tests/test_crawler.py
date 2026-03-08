@@ -303,7 +303,6 @@ class TestSaveUrlLists:
 class TestRetryRounds:
     """Tests for the multi-round crawl with retries."""
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retries_blocked_pages(self, mock_crawler_cls, tmp_path: Path):
         """Blocked pages in round 1 are retried in round 2."""
@@ -350,7 +349,6 @@ class TestRetryRounds:
         success = [r for r in results if r.success]
         assert len(success) == 2
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_skips_retries_when_all_succeed(self, mock_crawler_cls, tmp_path: Path):
         """No retry rounds when everything succeeds in round 1."""
@@ -379,7 +377,6 @@ class TestRetryRounds:
         assert (crawler.output_dir / "final_success_urls.txt").exists()
         assert not (crawler.output_dir / "final_fail_urls.txt").exists()
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_max_retries_zero_no_retries(self, mock_crawler_cls, tmp_path: Path):
         """max_retries=0 means no retry rounds."""
@@ -534,7 +531,6 @@ class TestRetryRounds:
 class TestFailContentFiles:
     """Tests for fail content file generation (symmetrical with success content)."""
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_fail_content_file_created_for_blocked_page(self, mock_crawler_cls, tmp_path: Path):
         """Blocked pages produce a fail content file with error and raw response."""
@@ -570,7 +566,6 @@ class TestFailContentFiles:
         final_fail = list(crawler.output_dir.glob("final_fail_content_*.txt"))
         assert len(final_fail) >= 1
 
-    @patch("crawl4ml.crawler._ROUND_COOLDOWN", 0) if False else patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_fail_content_includes_error_and_raw_markdown(self, mock_crawler_cls, tmp_path: Path):
         """Fail content contains both the error reason and the raw markdown response."""
@@ -601,7 +596,6 @@ class TestFailContentFiles:
         assert "**Raw response:**" in content
         assert "access denied markdown" in content
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_no_fail_content_when_all_succeed(self, mock_crawler_cls, tmp_path: Path):
         """No fail content files are created when all pages succeed."""
@@ -627,7 +621,6 @@ class TestFailContentFiles:
         fail_files = list(crawler.output_dir.glob("*fail_content*"))
         assert len(fail_files) == 0
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_fail_content_not_created_without_writer(self, mock_crawler_cls, tmp_path: Path):
         """No fail content files when no writer is provided."""
@@ -726,7 +719,6 @@ class TestPrintSummary:
         out = capsys.readouterr().out
         assert "No output folder found" in out
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_fail_content_merged_across_rounds(self, mock_crawler_cls, tmp_path: Path):
         """Fail content from multiple rounds is merged into final fail_content files."""
@@ -759,7 +751,6 @@ class TestPrintSummary:
         final_fail = list(crawler.output_dir.glob("final_fail_content_*.txt"))
         assert len(final_fail) >= 1
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_skips_already_succeeded_url(self, mock_crawler_cls, tmp_path: Path):
         """A retry round should not re-crawl a URL that already succeeded."""
@@ -788,7 +779,6 @@ class TestPrintSummary:
         success_urls = [r.url for r in results if r.success]
         assert success_urls.count(url_a) == 1
 
-    @patch("crawl4md.crawler._ROUND_COOLDOWN", 0)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_final_sorted_files_no_duplicates(self, mock_crawler_cls, tmp_path: Path):
         """Sorted final URL files should contain no duplicate URLs."""

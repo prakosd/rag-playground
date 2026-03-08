@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from crawl4md.config import CrawlResult, ExtractedPage
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _zero_round_cooldown():
+    """Patch _ROUND_COOLDOWN to 0 for the entire test suite.
+
+    The 30 s sleep between retry rounds exists to cool down real WAFs.
+    Tests use mocked HTTP, so the sleep is unnecessary.
+    """
+    with patch("crawl4md.crawler._ROUND_COOLDOWN", 0):
+        yield
 
 SIMPLE_HTML = """
 <!DOCTYPE html>
