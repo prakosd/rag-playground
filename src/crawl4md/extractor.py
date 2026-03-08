@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from urllib.parse import urlparse
 
+import mdformat
 import trafilatura
 from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
@@ -16,6 +18,10 @@ from crawl4md.progress import ProgressReporter
 # Sentinel inserted between repeated items *before* trafilatura extraction.
 # trafilatura strips <hr> but preserves plain text in <p> tags.
 _ITEM_SENTINEL = "CRAWL4MD_ITEM_BREAK"
+
+# Regex that strips Markdown syntax characters but keeps content tokens
+# (words, numbers, currency signs, punctuation used in prose).
+_MD_SYNTAX_RE = re.compile(r"[#*`>|~\[\]\\]")
 
 # If trafilatura captures less than this fraction of the page's visible text,
 # fall back to markdownify to avoid losing significant content.
@@ -104,6 +110,8 @@ class ContentExtractor:
             if header_parts:
                 md = "\n\n".join(header_parts) + "\n\n" + md
 
+        md = self._validate_markdown(md)
+
         return ExtractedPage(
             url=result.url,
             title=title,
@@ -135,6 +143,8 @@ class ContentExtractor:
                 header_parts.append(f"Retail price: {price_display}")
             if header_parts:
                 md = "\n\n".join(header_parts) + "\n\n" + md
+
+        md = self._validate_markdown(md)
 
         return ExtractedPage(
             url=result.url,
@@ -421,6 +431,51 @@ class ContentExtractor:
         )
         parser.feed(html)
         return parser.output.getvalue()
+
+    # ------------------------------------------------------------------
+    # Markdown validation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_content_tokens(text: str) -> Counter:
+        """Extract a multiset of content tokens from Markdown text.
+
+        Strips Markdown syntax characters (``# * ` > | ~ [ ] \\``) and
+        splits on whitespace.  The resulting tokens represent the actual
+        human-readable content: words, numbers, currency signs, commas,
+        periods, etc.
+        """
+        stripped = _MD_SYNTAX_RE.sub(" ", text)
+        return Counter(stripped.split())
+
+    @staticmethod
+    def _validate_markdown(md: str) -> str:
+        """Format *md* with mdformat and return the result.
+
+        A **content-preservation guard** compares the plain-text tokens
+        (words, numbers, punctuation) before and after formatting.  If
+        any content tokens were lost, the original text is returned
+        unchanged so that no information is silently dropped.
+
+        If mdformat raises an exception the original text is also
+        returned unchanged (graceful degradation).
+        """
+        if not md or not md.strip():
+            return md
+        try:
+            formatted = mdformat.text(md, extensions=["gfm"])
+        except Exception:  # noqa: BLE001 — never crash the crawl
+            return md
+
+        # Content-preservation check: every token present in the
+        # original must still be present in the formatted output.
+        original_tokens = ContentExtractor._extract_content_tokens(md)
+        formatted_tokens = ContentExtractor._extract_content_tokens(formatted)
+        lost = original_tokens - formatted_tokens
+        if lost:
+            return md
+
+        return formatted
 
     # ------------------------------------------------------------------
     # Markdown post-processing

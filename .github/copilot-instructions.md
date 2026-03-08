@@ -9,7 +9,7 @@ crawl4md is a Python library for crawling websites and extracting content as Mar
 - **src layout**: All library code under `src/crawl4md/`.
 - **Config models**: Pydantic v2 models in `config.py` — all user-facing parameters are validated here.
 - **SiteCrawler**: Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jupyter compatibility.
-- **ContentExtractor**: Converts crawled HTML to Markdown text using trafilatura (main content) or markdownify (full HTML). Optionally inserts `---` separators between repeated structural items via BeautifulSoup pre-processing (`separate_items`/`item_selector`).
+- **ContentExtractor**: Converts crawled HTML to Markdown text using trafilatura (main content) or markdownify (full HTML). Optionally inserts `---` separators between repeated structural items via BeautifulSoup pre-processing (`separate_items`/`item_selector`). Each page is validated per-page with mdformat (GFM extensions) after all post-processing to ensure structurally correct Markdown. A content-preservation guard compares tokens before/after formatting and falls back to the original text if any content was lost.
 - **FileWriter**: Combines extracted pages into size-limited output files (`.txt` or `.md`, configurable via `PageConfig.output_extension`). Never splits a single page across files.
 - **ProgressReporter**: Real-time progress display for Jupyter and terminal.
 
@@ -31,6 +31,7 @@ crawl4md is a Python library for crawling websites and extracting content as Mar
 | pydantic | Config validation |
 | nest-asyncio | Allows asyncio.run() inside Jupyter's event loop |
 | beautifulsoup4 | HTML DOM parsing for item separation |
+| mdformat | Markdown validation & auto-formatting (with mdformat-gfm for tables/strikethrough) |
 
 ## File Layout
 

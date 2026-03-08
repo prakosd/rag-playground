@@ -1898,3 +1898,101 @@ class TestProductFromDom:
         assert "**Samsung**" in page.markdown
         assert "## Galaxy S26 Ultra 5G" in page.markdown
         assert "~~$2,128.00~~ $1,828.00" in page.markdown
+
+
+class TestValidateMarkdown:
+    """Tests for ContentExtractor._validate_markdown."""
+
+    def test_valid_markdown_passes_through(self):
+        md = "# Hello\n\nSome paragraph with **bold** and *italic*.\n"
+        result = ContentExtractor._validate_markdown(md)
+        assert "Hello" in result
+        assert "bold" in result
+        assert "italic" in result
+
+    def test_empty_string_returns_unchanged(self):
+        assert ContentExtractor._validate_markdown("") == ""
+        assert ContentExtractor._validate_markdown("   ") == "   "
+
+    def test_preserves_words_numbers_punctuation(self):
+        md = "The price is $49.99, discounted from $79.99; save 37%!\n"
+        result = ContentExtractor._validate_markdown(md)
+        for token in ["price", "$49.99,", "$79.99;", "37%!"]:
+            assert token in result
+
+    def test_preserves_table_content(self):
+        md = (
+            "| Product | Price |\n"
+            "| --- | --- |\n"
+            "| Widget A | $19.99 |\n"
+            "| Widget B | $29.99 |\n"
+        )
+        result = ContentExtractor._validate_markdown(md)
+        assert "Widget A" in result
+        assert "$19.99" in result
+        assert "Widget B" in result
+        assert "$29.99" in result
+
+    def test_preserves_strikethrough(self):
+        md = "~~old price~~ new price\n"
+        result = ContentExtractor._validate_markdown(md)
+        assert "old" in result
+        assert "price" in result
+        assert "new" in result
+
+    def test_preserves_links(self):
+        md = "Visit [Example Site](https://example.com) for details.\n"
+        result = ContentExtractor._validate_markdown(md)
+        assert "Example Site" in result
+        assert "https://example.com" in result
+        assert "details" in result
+
+    def test_graceful_degradation_on_exception(self):
+        md = "# Some valid content\n\nWith paragraphs.\n"
+        with patch("crawl4md.extractor.mdformat") as mock_mdf:
+            mock_mdf.text.side_effect = RuntimeError("parse failed")
+            result = ContentExtractor._validate_markdown(md)
+        assert result == md
+
+    def test_content_loss_returns_original(self):
+        md = "# Title\n\nImportant content with $100 price.\n"
+        with patch("crawl4md.extractor.mdformat") as mock_mdf:
+            # Simulate mdformat dropping content
+            mock_mdf.text.return_value = "# Title\n\nImportant content.\n"
+            result = ContentExtractor._validate_markdown(md)
+        # Original should be returned because "$100" and "price." were lost
+        assert result == md
+
+    def test_content_preserved_returns_formatted(self):
+        md = "# Title\n\nSome   content  here.\n"
+        with patch("crawl4md.extractor.mdformat") as mock_mdf:
+            # mdformat normalizes whitespace but keeps all tokens
+            mock_mdf.text.return_value = "# Title\n\nSome content here.\n"
+            result = ContentExtractor._validate_markdown(md)
+        assert result == "# Title\n\nSome content here.\n"
+
+
+class TestExtractContentTokens:
+    """Tests for ContentExtractor._extract_content_tokens."""
+
+    def test_strips_md_syntax(self):
+        md = "# Hello **world** and `code`"
+        tokens = ContentExtractor._extract_content_tokens(md)
+        assert tokens["Hello"] == 1
+        assert tokens["world"] == 1
+        assert tokens["code"] == 1
+        # MD syntax chars should not form standalone tokens
+        assert "#" not in tokens
+
+    def test_preserves_currency_and_numbers(self):
+        md = "Price: $49.99, was $79.99"
+        tokens = ContentExtractor._extract_content_tokens(md)
+        assert tokens["$49.99,"] == 1
+        assert tokens["$79.99"] == 1
+        assert tokens["Price:"] == 1
+
+    def test_counts_duplicates(self):
+        md = "hello hello hello world"
+        tokens = ContentExtractor._extract_content_tokens(md)
+        assert tokens["hello"] == 3
+        assert tokens["world"] == 1

@@ -11,6 +11,7 @@ A Python library for crawling websites and extracting their content as Markdown-
 - **Real-time progress** — progress bar with ETA in both Jupyter and terminal
 - **Configurable filtering** — include/exclude URL paths and HTML tags via regex
 - **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) and inserts separators between them
+- **Markdown validation** — every extracted page is auto-fixed via mdformat (with GFM support) to ensure structurally correct, renderable Markdown; a content-preservation guard prevents any words, numbers, or punctuation from being lost
 
 ## Installation
 
@@ -105,7 +106,7 @@ src/crawl4md/
 ├── __init__.py       # Public API exports
 ├── config.py         # Pydantic v2 config models (CrawlerConfig, PageConfig, CrawlResult, ExtractedPage)
 ├── crawler.py        # SiteCrawler — synchronous wrapper around Crawl4AI
-├── extractor.py      # ContentExtractor — HTML → Markdown via trafilatura or markdownify
+├── extractor.py      # ContentExtractor — HTML → Markdown via trafilatura or markdownify, validated with mdformat
 ├── writer.py         # FileWriter — size-limited output files (batch & incremental modes)
 └── progress.py       # ProgressReporter — real-time progress with ETA
 ```
