@@ -424,6 +424,122 @@ class TestInsertItemSeparators:
         page = extractor._extract_page(result_obj)
         assert _ITEM_SENTINEL not in page.markdown
 
+    MIXED_CLASS_HTML = """
+    <html><body>
+    <div class="product-list">
+      <div class="product-card bg-white"><h3>Galaxy S26 Ultra 5G</h3><p>from $76.16/mth</p><p>15 offers available</p></div>
+      <div class="product-card bg-white"><h3>Galaxy S26+ 5G</h3><p>from $67.83/mth</p><p>13 offers available</p></div>
+      <div class="product-card bg-tint-blue"><p>We got you covered with the new 5G Unlimited+ Discover our new plans!</p><a href="#">Learn more</a></div>
+      <div class="product-card bg-white"><h3>Galaxy S26 5G</h3><p>from $59.91/mth</p><p>13 offers available</p></div>
+      <div class="product-card bg-white"><h3>Magic8 Pro</h3><p>from $44.62/mth</p><p>9 offers available</p></div>
+    </div>
+    </body></html>
+    """
+
+    def test_interstitial_sibling_gets_separator(self):
+        """A differently-classed sibling between matched items gets a separator."""
+        config = PageConfig(separate_items=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = extractor._insert_item_separators(self.MIXED_CLASS_HTML, use_sentinel=True)
+        # 4 bg-white items + 1 interstitial bg-tint-blue = 5 total items → 4 separators
+        assert result.count(_ITEM_SENTINEL) == 4
+
+    def test_interstitial_sibling_not_included_with_explicit_selector(self):
+        """Explicit item_selector should NOT include interstitial siblings."""
+        config = PageConfig(
+            separate_items=True, item_selector="div.bg-white", exclude_tags=[]
+        )
+        extractor = ContentExtractor(config)
+        result = extractor._insert_item_separators(self.MIXED_CLASS_HTML, use_sentinel=True)
+        # Only the 4 bg-white items are selected → 3 separators
+        assert result.count(_ITEM_SENTINEL) == 3
+
+    def test_interstitial_short_text_excluded(self):
+        """Interstitial siblings with very short text (<20 chars) are skipped."""
+        html = """
+        <html><body>
+        <div class="list">
+          <div class="card"><p>Product Alpha with enough descriptive text for detection</p></div>
+          <div class="card"><p>Product Bravo with enough descriptive text for detection</p></div>
+          <div class="spacer"><p>tiny</p></div>
+          <div class="card"><p>Product Charlie with enough descriptive text for detection</p></div>
+          <div class="card"><p>Product Delta with enough descriptive text for detection</p></div>
+        </div>
+        </body></html>
+        """
+        config = PageConfig(separate_items=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = extractor._insert_item_separators(html, use_sentinel=True)
+        # 4 cards matched, spacer too short → 3 separators between 4 items
+        assert result.count(_ITEM_SENTINEL) == 3
+
+    def test_integration_mixed_class_product_names(self):
+        """Full pipeline (markdownify): banner div gets its own separator."""
+        config = PageConfig(
+            separate_items=True, extract_main_content=False,
+            exclude_tags=[], include_only_tags=[],
+        )
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(
+            url="https://example.com", html=self.MIXED_CLASS_HTML, success=True,
+        )
+        page = extractor._extract_page(result_obj)
+        # With interstitial separator, the banner div is isolated:
+        # at least 4 --- separators (5 items) should appear in the output
+        assert page.markdown.count("---") >= 4
+        # Product names should remain present and separate from banner
+        assert "Galaxy S26 Ultra 5G" in page.markdown
+        assert "Galaxy S26 5G" in page.markdown
+        assert "Magic8 Pro" in page.markdown
+
+
+class TestIncludeInterstitialSiblings:
+    """Tests for _include_interstitial_siblings — expanding auto-detected groups."""
+
+    def test_interstitial_included_between_matched(self):
+        from bs4 import BeautifulSoup, Tag
+        html = """
+        <div class="list">
+          <div class="card">Product A with enough text</div>
+          <div class="banner">Banner promo with enough text here</div>
+          <div class="card">Product B with enough text</div>
+          <div class="card">Product C with enough text</div>
+        </div>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        cards = soup.select("div.card")
+        result = ContentExtractor._include_interstitial_siblings(cards)
+        # 3 cards + 1 banner between them = 4 elements
+        assert len(result) == 4
+        # Banner should be in position 1 (between first card and second card)
+        assert "banner" in result[1].get("class", [])
+
+    def test_no_interstitial_when_all_adjacent(self):
+        from bs4 import BeautifulSoup
+        html = """
+        <div class="list">
+          <div class="card">Product A with enough text</div>
+          <div class="card">Product B with enough text</div>
+          <div class="card">Product C with enough text</div>
+        </div>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        cards = soup.select("div.card")
+        result = ContentExtractor._include_interstitial_siblings(cards)
+        assert len(result) == 3
+
+    def test_empty_items_returns_empty(self):
+        result = ContentExtractor._include_interstitial_siblings([])
+        assert result == []
+
+    def test_single_item_returns_unchanged(self):
+        from bs4 import BeautifulSoup
+        html = '<div class="list"><div class="card">One product</div></div>'
+        soup = BeautifulSoup(html, "html.parser")
+        cards = soup.select("div.card")
+        result = ContentExtractor._include_interstitial_siblings(cards)
+        assert len(result) == 1
+
 
 class TestMultiPriceProductListings:
     """Tests for _compact_product_listings handling multi-price products."""
@@ -945,6 +1061,47 @@ class TestReformatSeparatedItems:
         assert "Preorder" in result
         assert "LNY Offers" in result
         assert "New" in result
+
+    def test_banner_text_not_used_as_product_name(self):
+        """Banner text in a section should not become the product name."""
+        text = (
+            "---\n\n"
+            "We got you covered with the new 5G Unlimited+ Discover our new mobile plans!\n\n"
+            "Preorder\n\nGalaxy S26 5G\n\nfrom $59.91/mth\n\n"
+            "or~~$1,738.00~~$1,438.00\n\n13 offers available\n\n"
+            "---\n\n"
+            "Galaxy S26 Ultra 5G\n\nPreorder\n\nfrom $76.16/mth\n\n"
+            "or~~$2,128.00~~$1,828.00\n\n15 offers available\n\n"
+            "---\n\n"
+            "Galaxy S26+ 5G\n\nPreorder\n\nfrom $67.83/mth\n\n"
+            "or~~$1,928.00~~$1,628.00\n\n13 offers available\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        # Product name should be the short actual name, not the banner
+        assert "- **Galaxy S26 5G**" in result
+        assert "- **Galaxy S26 Ultra 5G**" in result
+        # Banner text should NOT appear as a product name
+        assert "- **We got you covered" not in result
+
+    def test_name_prefers_last_short_line(self):
+        """When multiple unclassified lines exist, prefer the last short one."""
+        text = (
+            "---\n\n"
+            "Some long promotional banner text that describes various features and benefits\n\n"
+            "iPhone 17 Pro\n\nfrom $72.87/mth\n\n12 offers available\n\n"
+            "---\n\n"
+            "Another promotional line about amazing deals and great pricing options\n\n"
+            "Find X9 Pro 5G\n\nfrom $46.29/mth\n\n11 offers available\n\n"
+            "---\n\n"
+            "More banner text about new plans\n\n"
+            "Reno15 5G\n\nfrom $25.37/mth\n\n9 offers available\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **iPhone 17 Pro**" in result
+        assert "- **Find X9 Pro 5G**" in result
+        assert "- **Reno15 5G**" in result
 
 
 class TestFormatOutrightPrice:

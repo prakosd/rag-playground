@@ -185,6 +185,7 @@ class ContentExtractor:
             items = soup.select(self.page_config.item_selector)
         else:
             items = self._find_repeated_items(soup)
+            items = self._include_interstitial_siblings(items)
 
         if len(items) < 2:
             return html
@@ -251,6 +252,51 @@ class ContentExtractor:
 
         best = max(groups.values(), key=score)
         return best
+
+    @staticmethod
+    def _include_interstitial_siblings(items: list[Tag]) -> list[Tag]:
+        """Expand *items* to include non-matching siblings between them.
+
+        When auto-detection finds a dominant group of same-signature
+        siblings, differently-classed siblings interspersed among them
+        (e.g. promotional banners) are missed.  This method walks the
+        shared parent's direct children and includes any Tag siblings
+        that sit **between** the first and last matched item and have
+        at least 20 characters of text.
+        """
+        if len(items) < 2:
+            return items
+
+        parent = items[0].parent
+        if parent is None:
+            return items
+
+        # Verify all items share the same parent
+        if not all(item.parent is parent for item in items):
+            return items
+
+        items_set = set(id(item) for item in items)
+        siblings = [child for child in parent.children if isinstance(child, Tag)]
+
+        # Find index range of matched items among siblings
+        matched_indices = [
+            i for i, sib in enumerate(siblings) if id(sib) in items_set
+        ]
+        if not matched_indices:
+            return items
+
+        first_idx, last_idx = matched_indices[0], matched_indices[-1]
+
+        # Collect all siblings between first and last, including interstitials
+        expanded: list[Tag] = []
+        for i in range(first_idx, last_idx + 1):
+            sib = siblings[i]
+            if id(sib) in items_set:
+                expanded.append(sib)
+            elif len(sib.get_text(strip=True)) >= 20:
+                expanded.append(sib)
+
+        return expanded
 
     @staticmethod
     def _fix_markdown_tables(text: str) -> str:
@@ -556,9 +602,15 @@ class ContentExtractor:
         if not monthly and not outright:
             return None
 
-        # Pick the product name: longest unclassified line
+        # Pick the product name: prefer the last short line (product names
+        # are short and sit right before the price; long banner/promo text
+        # appears at the top of the block).
         if unclassified:
-            name = max(unclassified, key=len)
+            short_candidates = [u for u in unclassified if len(u) <= 80]
+            if short_candidates:
+                name = short_candidates[-1]
+            else:
+                name = max(unclassified, key=len)
             unclassified = [u for u in unclassified if u != name]
         else:
             return None
