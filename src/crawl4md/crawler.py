@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 import nest_asyncio
+from bs4 import BeautifulSoup
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
 from crawl4md.config import CrawlerConfig, CrawlResult, ExtractedPage, PageConfig
@@ -362,11 +363,14 @@ class SiteCrawler:
                 # Detect WAF blocks (Incapsula etc. return HTTP 200 with block HTML).
                 # Only flag as blocked when the extracted markdown is short —
                 # pages with substantial content are not mere challenge pages.
+                # We measure content length *after* stripping boilerplate tags
+                # (nav, script, form, style) so that navigation chrome doesn't
+                # inflate the count and mask a failed JS render.
                 raw_markdown = crawl_result.markdown
                 if (
                     crawl_result.success
                     and self._is_blocked(crawl_result.html)
-                    and len(raw_markdown.strip()) < _BLOCK_MAX_CONTENT_LENGTH
+                    and self._content_length_without_chrome(crawl_result.html) < _BLOCK_MAX_CONTENT_LENGTH
                 ):
                     crawl_result.success = False
                     crawl_result.error = "Blocked by WAF"
@@ -378,7 +382,17 @@ class SiteCrawler:
                 # Extract and buffer content incrementally
                 if crawl_result.success and self._extractor and self._writer:
                     page = self._extractor._extract_page(crawl_result)
-                    if page.markdown.strip():
+                    # Post-extraction quality gate: if a block signature is
+                    # present and the *extracted* content is still thin,
+                    # demote to failure so the URL is retried.
+                    if (
+                        self._is_blocked(crawl_result.html)
+                        and len(page.markdown.strip()) < _BLOCK_MAX_CONTENT_LENGTH
+                    ):
+                        crawl_result.success = False
+                        crawl_result.error = "Blocked — page returned only boilerplate"
+                        crawl_result.markdown = raw_markdown
+                    elif page.markdown.strip():
                         self._writer.add(page)
 
                 # Buffer failed-page content for the fail content file
@@ -433,6 +447,21 @@ class SiteCrawler:
             return False
         html_lower = html.lower()
         return any(sig in html_lower for sig in _BLOCK_SIGNATURES)
+
+    @staticmethod
+    def _content_length_without_chrome(html: str) -> int:
+        """Return the visible-text length after stripping boilerplate tags.
+
+        Removes ``<nav>``, ``<script>``, ``<style>``, ``<form>``, ``<header>``,
+        ``<footer>``, and ``<noscript>`` so that navigation chrome does not
+        inflate the content measurement used by WAF detection.
+        """
+        if not html:
+            return 0
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup.find_all(["nav", "script", "style", "form", "header", "footer", "noscript"]):
+            tag.decompose()
+        return len(soup.get_text(separator=" ", strip=True))
 
     # ------------------------------------------------------------------
     # Result helpers

@@ -279,6 +279,80 @@ class TestIsBlocked:
         assert results[0].success is False
         assert results[0].error == "Blocked by WAF"
 
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_waf_signature_with_nav_chrome_still_blocked(self, mock_crawler_cls, tmp_path: Path):
+        """A page with WAF signature whose raw markdown exceeds 500 chars due to
+        nav chrome should still be flagged when the *real* content is empty."""
+        # Simulate a JS-required page with navigation boilerplate
+        nav_text = " ".join(["Nav link"] * 100)  # >500 chars of nav chrome
+        html = (
+            '<html><head><title>Product PLP/PDP</title></head><body>'
+            f'<nav>{nav_text}</nav>'
+            '<main><noscript>JavaScript is required</noscript></main>'
+            '</body></html>'
+        )
+        # Crawl4AI raw markdown includes the nav text
+        long_nav_markdown = nav_text + "\nJavaScript is required"
+        mock_result = _make_mock_result("https://example.com/product", html, long_nav_markdown)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com/product"], limit=1)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        assert results[0].success is False
+        assert "Blocked" in (results[0].error or "")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_waf_signature_with_real_main_content_not_blocked(self, mock_crawler_cls, tmp_path: Path):
+        """A page with a WAF signature but substantial <main> content stays successful."""
+        real_content = "Galaxy S26 Ultra specs and pricing. " * 30  # >500 chars of real content
+        html = (
+            '<html><head><title>Galaxy S26 Ultra</title></head><body>'
+            '<nav>Menu Home About</nav>'
+            '<noscript>JavaScript is required</noscript>'
+            f'<main><p>{real_content}</p></main>'
+            '</body></html>'
+        )
+        mock_result = _make_mock_result("https://example.com/product", html, real_content)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com/product"], limit=1)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        assert results[0].success is True
+        assert results[0].error is None
+
+    def test_content_length_without_chrome_strips_nav(self):
+        """_content_length_without_chrome ignores nav, header, footer, script, style, form."""
+        html = (
+            '<html><body>'
+            '<nav>Menu Home About Contact Support</nav>'
+            '<header>Site Header</header>'
+            '<main><p>Real content here</p></main>'
+            '<footer>Footer links</footer>'
+            '</body></html>'
+        )
+        length = SiteCrawler._content_length_without_chrome(html)
+        assert "Real content here" in html
+        # Should only count the <main> content, not nav/header/footer
+        assert length < 50
+        assert length > 0
+
+    def test_content_length_without_chrome_empty_html(self):
+        assert SiteCrawler._content_length_without_chrome("") == 0
+
 
 class TestSaveUrlLists:
     """Tests for per-round URL list splitting."""

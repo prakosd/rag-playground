@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 import trafilatura
@@ -83,7 +84,25 @@ class ContentExtractor:
             cleaned = self._clean_markdown(formatted)
             if cleaned.strip():
                 md = md.rstrip() + "\n\n---\n\n" + cleaned
+
+        # Recover product metadata and use it for a richer title & header.
+        product = self._extract_product_header(result.html)
         title = self._extract_title(result.html)
+        if product:
+            product_name = product.get("name", "")
+            if product_name:
+                title = product_name
+            header_parts: list[str] = []
+            if product.get("brand"):
+                header_parts.append(f"**{product['brand']}**")
+            if product_name:
+                header_parts.append(f"## {product_name}")
+            price_display = self._format_product_price(product)
+            if price_display:
+                header_parts.append(f"Retail price: {price_display}")
+            if header_parts:
+                md = "\n\n".join(header_parts) + "\n\n" + md
+
         return ExtractedPage(
             url=result.url,
             title=title,
@@ -353,12 +372,14 @@ class ContentExtractor:
         2. Deduplicate consecutive identical paragraphs.
         3. Reformat ``---``-separated product items into structured bullets.
         4. Compact product-listing blocks (name + price pairs) into bullet lists.
-        5. Compact runs of short standalone paragraphs into bullet lists.
+        5. Promote standalone short labels followed by content to headings.
+        6. Compact runs of short standalone paragraphs into bullet lists.
         """
         text = ContentExtractor._collapse_blank_lines(text)
         text = ContentExtractor._dedup_paragraphs(text)
         text = ContentExtractor._reformat_separated_items(text)
         text = ContentExtractor._compact_product_listings(text)
+        text = ContentExtractor._promote_section_labels(text)
         text = ContentExtractor._compact_short_paragraphs(text)
         return text
 
@@ -918,10 +939,253 @@ class ContentExtractor:
 
         return sections
 
+    # Known-generic titles that should be replaced by a better source.
+    _GENERIC_TITLES = re.compile(
+        r"^(product\s+plp/?pdp|home|untitled|welcome|page)$",
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def _extract_title(html: str) -> str:
-        """Pull the <title> text from HTML, or return empty string."""
-        import re
+        """Extract the best page title from multiple HTML sources.
 
-        match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-        return match.group(1).strip() if match else ""
+        Priority order:
+        1. ``<title>`` tag — used if it looks specific (not generic).
+        2. ``<meta property="og:title">`` — common on product / listing pages.
+        3. First ``<h1>`` in the body — last resort.
+
+        Returns an empty string when no usable title is found.
+        """
+        # 1. <title> tag
+        title_match = re.search(
+            r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL,
+        )
+        title_text = title_match.group(1).strip() if title_match else ""
+
+        if title_text and not ContentExtractor._GENERIC_TITLES.match(title_text):
+            return title_text
+
+        # 2. og:title meta tag
+        og_match = re.search(
+            r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+            html,
+            re.IGNORECASE,
+        )
+        if not og_match:
+            og_match = re.search(
+                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+                html,
+                re.IGNORECASE,
+            )
+        if og_match:
+            og_text = og_match.group(1).strip()
+            if og_text and not ContentExtractor._GENERIC_TITLES.match(og_text):
+                return og_text
+
+        # 3. First <h1>
+        h1_match = re.search(
+            r"<h1[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL,
+        )
+        if h1_match:
+            # Strip inner HTML tags to get plain text.
+            h1_text = re.sub(r"<[^>]+>", "", h1_match.group(1)).strip()
+            if h1_text:
+                return h1_text
+
+        # 4. Fall back to the (possibly generic) <title>.
+        return title_text
+
+    # ------------------------------------------------------------------
+    # Product header recovery (JSON-LD / OG meta)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_product_header(html: str) -> dict | None:
+        """Extract product metadata from structured data in the HTML.
+
+        Checks two sources in priority order:
+
+        1. **JSON-LD** ``<script type="application/ld+json">`` blocks
+           with ``@type: "Product"``.
+        2. **Open Graph** ``<meta>`` tags (``og:title``,
+           ``product:price:amount``, ``product:brand``).
+
+        Returns a dict with keys ``name``, ``brand``, ``price``,
+        ``high_price`` (all optional strings), or ``None`` when the
+        page does not appear to be a product detail page.
+        """
+        result = ContentExtractor._product_from_jsonld(html)
+        if result:
+            return result
+        return ContentExtractor._product_from_og(html)
+
+    @staticmethod
+    def _product_from_jsonld(html: str) -> dict | None:
+        """Parse JSON-LD blocks for a Product entity."""
+        for match in re.finditer(
+            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            html,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            try:
+                data = json.loads(match.group(1))
+            except (json.JSONDecodeError, ValueError):
+                continue
+            product = ContentExtractor._find_product_in_jsonld(data)
+            if product:
+                return product
+        return None
+
+    @staticmethod
+    def _find_product_in_jsonld(data: object) -> dict | None:
+        """Recursively search for a Product entity in parsed JSON-LD."""
+        if isinstance(data, list):
+            for item in data:
+                result = ContentExtractor._find_product_in_jsonld(item)
+                if result:
+                    return result
+            return None
+        if not isinstance(data, dict):
+            return None
+        ld_type = data.get("@type", "")
+        if isinstance(ld_type, list):
+            ld_type = " ".join(ld_type)
+        if "Product" not in ld_type:
+            # Check @graph
+            if "@graph" in data:
+                return ContentExtractor._find_product_in_jsonld(data["@graph"])
+            return None
+
+        name = data.get("name", "")
+        brand = ""
+        brand_obj = data.get("brand")
+        if isinstance(brand_obj, dict):
+            brand = brand_obj.get("name", "")
+        elif isinstance(brand_obj, str):
+            brand = brand_obj
+
+        price = ""
+        high_price = ""
+        offers = data.get("offers")
+        if isinstance(offers, dict):
+            price = str(offers.get("price", offers.get("lowPrice", "")))
+            high_price = str(offers.get("highPrice", ""))
+        elif isinstance(offers, list) and offers:
+            first = offers[0] if isinstance(offers[0], dict) else {}
+            price = str(first.get("price", first.get("lowPrice", "")))
+            high_price = str(first.get("highPrice", ""))
+
+        if not name:
+            return None
+        return {
+            "name": name,
+            "brand": brand,
+            "price": price,
+            "high_price": high_price,
+        }
+
+    @staticmethod
+    def _product_from_og(html: str) -> dict | None:
+        """Detect a product page from Open Graph meta tags.
+
+        Only returns a result when ``product:price:amount`` is present,
+        preventing false positives on listing / article pages.
+        """
+        def _og(prop: str) -> str:
+            pat = (
+                rf'<meta[^>]+property=["\'](?:og:)?{re.escape(prop)}["\']'
+                rf'[^>]+content=["\']([^"\']+)["\']'
+            )
+            m = re.search(pat, html, re.IGNORECASE)
+            if not m:
+                pat = (
+                    rf'<meta[^>]+content=["\']([^"\']+)["\']'
+                    rf'[^>]+property=["\'](?:og:)?{re.escape(prop)}["\']'
+                )
+                m = re.search(pat, html, re.IGNORECASE)
+            return m.group(1).strip() if m else ""
+
+        price = _og("product:price:amount")
+        if not price:
+            return None
+        name = _og("title")
+        brand = _og("product:brand")
+        return {"name": name, "brand": brand, "price": price, "high_price": ""}
+
+    @staticmethod
+    def _format_product_price(product: dict) -> str:
+        """Build a human-readable price string from product metadata."""
+        price = product.get("price", "")
+        high_price = product.get("high_price", "")
+        if not price and not high_price:
+            return ""
+        if high_price and price and high_price != price:
+            return f"~~${high_price}~~ ${price}"
+        if price:
+            return f"${price}"
+        return ""
+
+    # ------------------------------------------------------------------
+    # Section-label promotion
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _promote_section_labels(text: str) -> str:
+        """Promote standalone short labels followed by content to headings.
+
+        Detects short single-line paragraphs (e.g. ``Front camera``,
+        ``Battery Life``) that are immediately followed by bullet lists
+        or substantial content blocks, and converts them to ``###``
+        headings.  This recovers structure lost when CSS-layout pages
+        are flattened by content extractors.
+
+        Guards against false positives:
+
+        * Labels matching price patterns, badge keywords, or existing
+          headings / list items are skipped.
+        * The label must be followed by at least 1 bullet (``- …``) or
+          a paragraph of ≥ 80 characters.
+        """
+        paragraphs = re.split(r"\n\n+", text)
+        heading_re = re.compile(r"^#{1,6}\s")
+        hr_re = re.compile(r"^---+$")
+        list_re = re.compile(r"^[-*+]\s")
+        max_label_len = 60
+
+        result: list[str] = []
+        i = 0
+        while i < len(paragraphs):
+            stripped = paragraphs[i].strip()
+            is_single_line = "\n" not in stripped
+
+            if (
+                is_single_line
+                and 0 < len(stripped) <= max_label_len
+                and not heading_re.match(stripped)
+                and not hr_re.match(stripped)
+                and not list_re.match(stripped)
+                and not ContentExtractor._MONTHLY_PRICE_RE.match(stripped)
+                and not ContentExtractor._OUTRIGHT_PRICE_RE.match(stripped)
+                and not ContentExtractor._OFFERS_RE.match(stripped)
+                and not ContentExtractor._BADGE_KEYWORDS.match(stripped)
+                and not stripped.startswith("**")
+                and i + 1 < len(paragraphs)
+            ):
+                # Check if the next paragraph is a bullet list or long block.
+                nxt = paragraphs[i + 1].strip()
+                next_has_bullets = any(
+                    list_re.match(ln.strip())
+                    for ln in nxt.split("\n")
+                    if ln.strip()
+                )
+                next_is_substantial = len(nxt) >= 80
+
+                if next_has_bullets or next_is_substantial:
+                    result.append(f"### {stripped}")
+                    i += 1
+                    continue
+
+            result.append(paragraphs[i])
+            i += 1
+
+        return "\n\n".join(result)

@@ -1031,3 +1031,388 @@ class TestBadgeVsNameHeuristic:
         result = ContentExtractor._compact_product_listings(text)
         assert "- **Galaxy S26** — $76.16/mth" in result
         assert "  Limited time only!" in result
+
+
+class TestExtractTitle:
+    """Tests for _extract_title — multi-source title extraction with fallbacks."""
+
+    def test_specific_title_tag_preferred(self):
+        html = '<html><head><title>Buy New Samsung Phones</title></head><body></body></html>'
+        assert ContentExtractor._extract_title(html) == "Buy New Samsung Phones"
+
+    def test_generic_title_falls_back_to_og(self):
+        html = (
+            "<html><head>"
+            "<title>Product PLP/PDP</title>"
+            '<meta property="og:title" content="Galaxy S26 Ultra 5G">'
+            "</head><body></body></html>"
+        )
+        assert ContentExtractor._extract_title(html) == "Galaxy S26 Ultra 5G"
+
+    def test_generic_title_falls_back_to_h1(self):
+        html = (
+            "<html><head><title>Product PLP/PDP</title></head>"
+            "<body><h1>Galaxy S26 Ultra 5G</h1></body></html>"
+        )
+        assert ContentExtractor._extract_title(html) == "Galaxy S26 Ultra 5G"
+
+    def test_og_title_not_used_when_title_is_specific(self):
+        html = (
+            "<html><head>"
+            "<title>StarHub 5G Unlimited+ SIM Only Mobile Plans</title>"
+            '<meta property="og:title" content="StarHub Plans">'
+            "</head><body></body></html>"
+        )
+        assert ContentExtractor._extract_title(html) == "StarHub 5G Unlimited+ SIM Only Mobile Plans"
+
+    def test_h1_with_inner_html_stripped(self):
+        html = (
+            "<html><head><title>Home</title></head>"
+            "<body><h1><span>Welcome</span> to <b>StarHub</b></h1></body></html>"
+        )
+        assert ContentExtractor._extract_title(html) == "Welcome to StarHub"
+
+    def test_no_title_returns_empty(self):
+        html = "<html><body><p>No title here.</p></body></html>"
+        assert ContentExtractor._extract_title(html) == ""
+
+    def test_empty_og_title_falls_through(self):
+        html = (
+            '<html><head><title>Home</title>'
+            '<meta property="og:title" content="">'
+            "</head><body><h1>Real Title Here</h1></body></html>"
+        )
+        assert ContentExtractor._extract_title(html) == "Real Title Here"
+
+    def test_existing_good_titles_preserved(self):
+        """Regression: known good titles from our crawl must not change."""
+        cases = [
+            ("Buy New Mobile Phones and Pay later with 0% instalments",
+             "Buy New Mobile Phones and Pay later with 0% instalments"),
+            ("Buy Latest Apple Phones and Pay later with 0% instalments",
+             "Buy Latest Apple Phones and Pay later with 0% instalments"),
+            ("StarHub 5G Unlimited+ SIM Only Mobile Plans",
+             "StarHub 5G Unlimited+ SIM Only Mobile Plans"),
+            ("Activating Your StarHub Welcome Plan | StarHub Support",
+             "Activating Your StarHub Welcome Plan | StarHub Support"),
+        ]
+        for title_text, expected in cases:
+            html = f"<html><head><title>{title_text}</title></head><body></body></html>"
+            assert ContentExtractor._extract_title(html) == expected
+
+    def test_og_meta_with_reversed_attributes(self):
+        """og:title with content before property attribute."""
+        html = (
+            "<html><head>"
+            "<title>Product PLP/PDP</title>"
+            '<meta content="Galaxy S26 Ultra" property="og:title">'
+            "</head></html>"
+        )
+        assert ContentExtractor._extract_title(html) == "Galaxy S26 Ultra"
+
+
+class TestProductHeaderRecovery:
+    """Tests for _extract_product_header — JSON-LD and OG meta product detection."""
+
+    def test_jsonld_product_extracted(self):
+        html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type": "Product", "name": "Galaxy S26 Ultra 5G",
+         "brand": {"@type": "Brand", "name": "Samsung"},
+         "offers": {"@type": "AggregateOffer", "lowPrice": "1828", "highPrice": "2128"}}
+        </script>
+        </head><body></body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is not None
+        assert result["name"] == "Galaxy S26 Ultra 5G"
+        assert result["brand"] == "Samsung"
+        assert result["price"] == "1828"
+        assert result["high_price"] == "2128"
+
+    def test_jsonld_graph_product_extracted(self):
+        html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@context": "https://schema.org", "@graph": [
+          {"@type": "WebPage", "name": "Store"},
+          {"@type": "Product", "name": "iPhone 17 Pro",
+           "brand": {"@type": "Brand", "name": "Apple"},
+           "offers": {"price": "1749"}}
+        ]}
+        </script>
+        </head><body></body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is not None
+        assert result["name"] == "iPhone 17 Pro"
+        assert result["brand"] == "Apple"
+        assert result["price"] == "1749"
+
+    def test_og_product_extracted(self):
+        html = """
+        <html><head>
+        <meta property="og:title" content="Galaxy S26 Ultra 5G">
+        <meta property="product:price:amount" content="1828.00">
+        <meta property="product:brand" content="Samsung">
+        </head><body></body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is not None
+        assert result["name"] == "Galaxy S26 Ultra 5G"
+        assert result["brand"] == "Samsung"
+        assert result["price"] == "1828.00"
+
+    def test_no_product_on_listing_page(self):
+        """PLP/listing pages must NOT return a product header."""
+        html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type": "ItemList", "name": "Mobile Phones",
+         "itemListElement": [{"@type": "ListItem", "name": "Galaxy S26"}]}
+        </script>
+        <meta property="og:title" content="Buy New Mobile Phones">
+        </head><body></body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is None
+
+    def test_no_product_on_faq_page(self):
+        html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type": "FAQPage", "mainEntity": []}
+        </script>
+        </head><body></body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is None
+
+    def test_no_structured_data_returns_none(self):
+        html = "<html><head><title>Just a page</title></head><body></body></html>"
+        result = ContentExtractor._extract_product_header(html)
+        assert result is None
+
+    def test_invalid_jsonld_skipped(self):
+        html = """
+        <html><head>
+        <script type="application/ld+json">NOT VALID JSON</script>
+        </head><body></body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is None
+
+    def test_format_product_price_with_discount(self):
+        product = {"price": "1828", "high_price": "2128"}
+        assert ContentExtractor._format_product_price(product) == "~~$2128~~ $1828"
+
+    def test_format_product_price_single(self):
+        product = {"price": "1499", "high_price": ""}
+        assert ContentExtractor._format_product_price(product) == "$1499"
+
+    def test_format_product_price_empty(self):
+        product = {"price": "", "high_price": ""}
+        assert ContentExtractor._format_product_price(product) == ""
+
+    def test_jsonld_product_list_offers(self):
+        """Product with offers as a list instead of a single object."""
+        html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type": "Product", "name": "Test Phone",
+         "brand": "TestBrand",
+         "offers": [{"price": "999"}]}
+        </script>
+        </head><body></body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is not None
+        assert result["price"] == "999"
+        assert result["brand"] == "TestBrand"
+
+    def test_integration_product_header_prepended(self):
+        """Full pipeline: product header from JSON-LD is prepended to markdown."""
+        html = """
+        <html><head>
+        <title>Product PLP/PDP</title>
+        <script type="application/ld+json">
+        {"@type": "Product", "name": "Galaxy S26 Ultra 5G",
+         "brand": {"@type": "Brand", "name": "Samsung"},
+         "offers": {"lowPrice": "1828", "highPrice": "2128"}}
+        </script>
+        </head>
+        <body>
+        <main>
+        <p>Preorder now for exclusive offers on the latest Samsung flagship phone
+           with amazing features and specifications.</p>
+        </main>
+        </body></html>
+        """
+        config = PageConfig(extract_main_content=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = CrawlResult(url="https://example.com/product", html=html, success=True)
+        page = extractor._extract_page(result)
+        assert page.title == "Galaxy S26 Ultra 5G"
+        assert "**Samsung**" in page.markdown
+        assert "## Galaxy S26 Ultra 5G" in page.markdown
+        assert "~~$2128~~ $1828" in page.markdown
+
+    def test_integration_no_product_header_on_plp(self):
+        """Regression: PLP pages must NOT get a product header prepended."""
+        html = """
+        <html><head>
+        <title>Buy New Mobile Phones</title>
+        <script type="application/ld+json">
+        {"@type": "ItemList", "name": "Mobile Phones"}
+        </script>
+        </head>
+        <body>
+        <main>
+        <p>Browse our selection of the latest mobile phones from top brands with
+           amazing deals and 0% instalment plans available.</p>
+        </main>
+        </body></html>
+        """
+        config = PageConfig(extract_main_content=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = CrawlResult(url="https://example.com/phones", html=html, success=True)
+        page = extractor._extract_page(result)
+        assert page.title == "Buy New Mobile Phones"
+        assert "**Samsung**" not in page.markdown
+        assert "Retail price" not in page.markdown
+
+
+class TestPromoteSectionLabels:
+    """Tests for _promote_section_labels — promoting standalone labels to headings."""
+
+    def test_label_before_bullets_promoted(self):
+        text = "Front camera\n\n- 12.0 MP\n- 50.0 MP"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### Front camera" in result
+        assert "- 12.0 MP" in result
+
+    def test_label_before_long_block_promoted(self):
+        text = (
+            "Display\n\n"
+            "6.9-inch, 3120 x 1440 (Quad HD+), Dynamic AMOLED 2X, 120 Hz — "
+            "the latest display technology with incredible color accuracy"
+        )
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### Display" in result
+
+    def test_multiple_labels_promoted(self):
+        text = (
+            "Front camera\n\n- 12.0 MP\n\n"
+            "Battery Life\n\n- 5000 mAh\n\n"
+            "CPU\n\n- Snapdragon 8 Elite Gen5 (3nm)"
+        )
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### Front camera" in result
+        assert "### Battery Life" in result
+        assert "### CPU" in result
+
+    def test_heading_not_double_promoted(self):
+        text = "## Already a heading\n\n- Some content"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### ## Already" not in result
+        assert "## Already a heading" in result
+
+    def test_price_not_promoted(self):
+        text = "from $76.16/mth\n\n- Some content here\n- More content"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### from" not in result
+
+    def test_badge_keyword_not_promoted(self):
+        text = "Preorder\n\n- Some content here\n- More content"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### Preorder" not in result
+
+    def test_offers_line_not_promoted(self):
+        text = "15 offers available\n\n- Some content here\n- More content"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### 15 offers" not in result
+
+    def test_bold_text_not_promoted(self):
+        text = "**Galaxy S26 Ultra 5G**\n\n- from $76.16/mth"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### **Galaxy" not in result
+
+    def test_label_at_end_not_promoted(self):
+        """Label with nothing following should NOT be promoted."""
+        text = "Some content\n\nTrending Brands"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### Trending" not in result
+
+    def test_label_before_short_text_not_promoted(self):
+        """Label before a very short non-bullet paragraph should NOT be promoted."""
+        text = "Colour\n\nCobalt Violet"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### Colour" not in result
+
+    def test_existing_list_item_not_promoted(self):
+        text = "- Already a list\n\n- More items"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### - Already" not in result
+
+    def test_long_label_not_promoted(self):
+        """Labels over 60 chars (like promotional text) should NOT be promoted."""
+        text = (
+            "We got you covered with the new 5G Unlimited+ Discover our plans now for great deals\n\n"
+            "- Some content"
+        )
+        result = ContentExtractor._promote_section_labels(text)
+        assert "###" not in result
+
+    def test_hr_separator_not_promoted(self):
+        text = "---\n\n- Some content"
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### ---" not in result
+
+    def test_plp_footer_not_promoted(self):
+        """Regression: PLP footer text like 'Trending Brands' followed by short
+        metadata should NOT be promoted."""
+        text = (
+            "- **Galaxy S26** — from $76.16/mth\n\n"
+            "Trending Brands\n\n"
+            "Mobile Devices35 products"
+        )
+        result = ContentExtractor._promote_section_labels(text)
+        assert "### Trending Brands" not in result
+        assert "### Mobile Devices" not in result
+
+    def test_integration_spec_labels_in_full_pipeline(self):
+        """Full pipeline: spec labels in a PDP-like context get promoted."""
+        text = (
+            "Preorder\n\n"
+            "Free storage upgrade to 512GB\n\n"
+            "Colour: Cobalt Violet\n\n"
+            "Front camera\n\n"
+            "- 12.0 MP\n\n"
+            "Battery Life\n\n"
+            "- 5000 mAh\n\n"
+            "CPU\n\n"
+            "- Snapdragon 8 Elite Gen5 (3nm)\n\n"
+            "Display\n\n"
+            "- 6.9-inch, 3120 x 1440 (Quad HD+), Dynamic AMOLED 2X, 120 Hz"
+        )
+        result = ContentExtractor._clean_markdown(text)
+        assert "### Front camera" in result
+        assert "### Battery Life" in result
+        assert "### CPU" in result
+        assert "### Display" in result
+        # Non-spec labels should NOT be promoted
+        assert "### Preorder" not in result
+
+    def test_support_article_headings_untouched(self):
+        """Regression: existing ## headings in support articles must survive pipeline."""
+        text = (
+            "## What is the Welcome Plan offer all about?\n\n"
+            "The Welcome Plan is a free mobile line that you can enjoy.\n\n"
+            "## How can I get a Welcome Plan?\n\n"
+            "Sign up or recontract to any of the following services."
+        )
+        result = ContentExtractor._clean_markdown(text)
+        assert "## What is the Welcome Plan offer all about?" in result
+        assert "## How can I get a Welcome Plan?" in result
+        assert "### ##" not in result
