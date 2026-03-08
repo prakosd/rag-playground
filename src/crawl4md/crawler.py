@@ -6,7 +6,6 @@ import asyncio
 import concurrent.futures
 import random
 import re
-import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -138,25 +137,17 @@ class SiteCrawler:
             _print_files("Fail content", fail_content)
             _print_files("URL lists", url_files)
 
-        # --- Final merged files (unsorted) ---
-        final_success = sorted(self.output_dir.glob("final_success_content_*"))
-        final_fail = sorted(self.output_dir.glob("final_fail_content_*"))
-        final_urls = sorted(self.output_dir.glob("final_*_urls.txt"))
-        if final_success or final_fail:
-            print("--- Final (unsorted) ---")
-            _print_files("Success content", final_success)
-            _print_files("Fail content", final_fail)
-            _print_files("URL lists", final_urls)
-
         # --- Sorted files (primary output) ---
         sorted_success = sorted(self.output_dir.glob("sorted_final_success_content_*"))
         sorted_fail = sorted(self.output_dir.glob("sorted_final_fail_content_*"))
         sorted_urls = sorted(self.output_dir.glob("sorted_final_*_urls.txt"))
+        final_urls = sorted(self.output_dir.glob("final_*_urls.txt"))
+        all_urls = sorted(set(sorted_urls) | set(final_urls), key=lambda p: p.name)
         if sorted_success or sorted_fail:
             print("--- Sorted by URL path (primary output) ---")
             _print_files("Success content", sorted_success)
             _print_files("Fail content", sorted_fail)
-            _print_files("URL lists", sorted_urls)
+            _print_files("URL lists", all_urls)
 
         if fail_count > 0:
             print(
@@ -180,8 +171,6 @@ class SiteCrawler:
         """Run the initial crawl + retry rounds, producing per-round and final files."""
         all_success: list[CrawlResult] = []
         all_fail: list[CrawlResult] = []
-        all_content_files: list[Path] = []
-        all_fail_content_files: list[Path] = []
         succeeded_urls: set[str] = set()  # URLs already crawled successfully
         total_rounds = 1 + self.config.max_retries  # round 1 + retries
 
@@ -210,11 +199,9 @@ class SiteCrawler:
         success, fail = self._split_results(round_results)
         self._save_url_lists(success, fail, round_prefix)
         if self._writer is not None:
-            round_files = self._writer.flush()
-            all_content_files.extend(round_files)
+            self._writer.flush()
         if self._fail_writer is not None:
-            fail_files = self._fail_writer.flush()
-            all_fail_content_files.extend(fail_files)
+            self._fail_writer.flush()
         all_success.extend(success)
         succeeded_urls.update(r.url for r in success)
         all_fail.extend(fail)
@@ -249,11 +236,9 @@ class SiteCrawler:
             success, fail = self._split_results(round_results)
             self._save_url_lists(success, fail, round_prefix)
             if self._writer is not None:
-                round_files = self._writer.flush()
-                all_content_files.extend(round_files)
+                self._writer.flush()
             if self._fail_writer is not None:
-                fail_files = self._fail_writer.flush()
-                all_fail_content_files.extend(fail_files)
+                self._fail_writer.flush()
             # Deduplicate: only add genuinely new successes
             new_success = [r for r in success if r.url not in succeeded_urls]
             all_success.extend(new_success)
@@ -265,9 +250,9 @@ class SiteCrawler:
             all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
             failed_urls = [r.url for r in fail]
 
-        # --- Final merged files ---
+        # --- Final URL lists ---
         remaining_fail_urls = [r.url for r in all_fail]
-        self._write_final_files(all_success, remaining_fail_urls, all_content_files, all_fail_content_files)
+        self._write_final_files(all_success, remaining_fail_urls)
 
         # --- Sorted final files (grouped by URL path) ---
         self._write_sorted_files(all_success, all_fail)
@@ -471,10 +456,8 @@ class SiteCrawler:
         self,
         all_success: list[CrawlResult],
         remaining_fail_urls: list[str],
-        all_content_files: list[Path],
-        all_fail_content_files: list[Path] | None = None,
     ) -> None:
-        """Produce final merged output files."""
+        """Produce final merged URL lists (deduplicated)."""
         assert self.output_dir is not None
 
         # final_success_urls.txt — all successful URLs across all rounds (deduplicated)
@@ -493,24 +476,6 @@ class SiteCrawler:
             unique_fail = list(dict.fromkeys(remaining_fail_urls))
             path = self.output_dir / "final_fail_urls.txt"
             path.write_text("\n".join(unique_fail), encoding="utf-8")
-
-        # Merge per-round content → final_success_content_001.ext, …
-        if all_content_files:
-            ext = self.page_config.output_extension
-            final_index = 1
-            for src in all_content_files:
-                dst = self.output_dir / f"final_success_content_{final_index:03d}{ext}"
-                shutil.copy2(src, dst)
-                final_index += 1
-
-        # Merge per-round fail content → final_fail_content_001.ext, …
-        if all_fail_content_files:
-            ext = self.page_config.output_extension
-            final_index = 1
-            for src in all_fail_content_files:
-                dst = self.output_dir / f"final_fail_content_{final_index:03d}{ext}"
-                shutil.copy2(src, dst)
-                final_index += 1
 
     def _write_sorted_files(
         self,
@@ -593,14 +558,9 @@ class SiteCrawler:
                 )
 
     def _get_final_content_files(self) -> list[Path]:
-        """Return sorted list of final content files (prefers sorted versions)."""
+        """Return sorted list of final content files."""
         assert self.output_dir is not None
-        sorted_pattern = f"sorted_final_success_content_*{self.page_config.output_extension}"
-        sorted_files = sorted(self.output_dir.glob(sorted_pattern))
-        if sorted_files:
-            return sorted_files
-        # Fall back to unsorted final files when sorting produced nothing
-        pattern = f"final_success_content_*{self.page_config.output_extension}"
+        pattern = f"sorted_final_success_content_*{self.page_config.output_extension}"
         return sorted(self.output_dir.glob(pattern))
 
     def _build_run_config(self, run_config_cls: type) -> object:

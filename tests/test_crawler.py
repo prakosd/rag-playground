@@ -562,10 +562,6 @@ class TestFailContentFiles:
         assert "Blocked by WAF" in content
         assert "blocked page text" in content  # raw response preserved
 
-        # Final merged fail content file
-        final_fail = list(crawler.output_dir.glob("final_fail_content_*.txt"))
-        assert len(final_fail) >= 1
-
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_fail_content_includes_error_and_raw_markdown(self, mock_crawler_cls, tmp_path: Path):
         """Fail content contains both the error reason and the raw markdown response."""
@@ -747,9 +743,6 @@ class TestPrintSummary:
         round2_fail = list(crawler.output_dir.glob("round_2_fail_content_*.txt"))
         assert len(round1_fail) >= 1
         assert len(round2_fail) >= 1
-        # Final merged fail content
-        final_fail = list(crawler.output_dir.glob("final_fail_content_*.txt"))
-        assert len(final_fail) >= 1
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_skips_already_succeeded_url(self, mock_crawler_cls, tmp_path: Path):
