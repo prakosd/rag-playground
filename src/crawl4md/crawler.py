@@ -137,6 +137,14 @@ class SiteCrawler:
             _print_files("Fail content", fail_content)
             _print_files("URL lists", url_files)
 
+        # --- Unsorted final files (merged across rounds) ---
+        final_success = sorted(self.output_dir.glob("final_success_content_*"))
+        final_fail = sorted(self.output_dir.glob("final_fail_content_*"))
+        if final_success or final_fail:
+            print("--- Final (unsorted, merged across rounds) ---")
+            _print_files("Success content", final_success)
+            _print_files("Fail content", final_fail)
+
         # --- Sorted files (primary output) ---
         sorted_success = sorted(self.output_dir.glob("sorted_final_success_content_*"))
         sorted_fail = sorted(self.output_dir.glob("sorted_final_fail_content_*"))
@@ -250,9 +258,9 @@ class SiteCrawler:
             all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
             failed_urls = [r.url for r in fail]
 
-        # --- Final URL lists ---
+        # --- Final merged files (unsorted) ---
         remaining_fail_urls = [r.url for r in all_fail]
-        self._write_final_files(all_success, remaining_fail_urls)
+        self._write_final_files(all_success, all_fail, remaining_fail_urls)
 
         # --- Sorted final files (grouped by URL path) ---
         self._write_sorted_files(all_success, all_fail)
@@ -455,10 +463,12 @@ class SiteCrawler:
     def _write_final_files(
         self,
         all_success: list[CrawlResult],
+        all_fail: list[CrawlResult],
         remaining_fail_urls: list[str],
     ) -> None:
-        """Produce final merged URL lists (deduplicated)."""
+        """Produce final merged URL lists and unsorted content files (deduplicated)."""
         assert self.output_dir is not None
+        ext = self.page_config.output_extension
 
         # final_success_urls.txt — all successful URLs across all rounds (deduplicated)
         if all_success:
@@ -476,6 +486,61 @@ class SiteCrawler:
             unique_fail = list(dict.fromkeys(remaining_fail_urls))
             path = self.output_dir / "final_fail_urls.txt"
             path.write_text("\n".join(unique_fail), encoding="utf-8")
+
+        # final_success_content_*.ext — unsorted merged content (deduplicated)
+        if all_success and self._extractor is not None and self._writer is not None:
+            seen_urls: set[str] = set()
+            unique_success: list[CrawlResult] = []
+            for r in all_success:
+                if r.url not in seen_urls:
+                    seen_urls.add(r.url)
+                    unique_success.append(r)
+            pages = [
+                self._extractor._extract_page(r)
+                for r in unique_success
+                if r.markdown.strip()
+            ]
+            pages = [p for p in pages if p.markdown.strip()]
+            if pages:
+                w = FileWriter(
+                    output_dir=self.output_dir,
+                    max_file_size_mb=self.page_config.max_file_size_mb,
+                    file_extension=ext,
+                    prefix="final_success_",
+                )
+                for page in pages:
+                    w.add(page)
+                w.flush()
+
+        # final_fail_content_*.ext — unsorted fail content (deduplicated)
+        if all_fail and self._writer is not None:
+            seen_fail_urls: set[str] = set()
+            unique_fail_results: list[CrawlResult] = []
+            for r in all_fail:
+                if r.url not in seen_fail_urls:
+                    seen_fail_urls.add(r.url)
+                    unique_fail_results.append(r)
+            fail_pages = []
+            for r in unique_fail_results:
+                raw_body = r.markdown.strip() or r.html.strip() or "(no response)"
+                fail_pages.append(ExtractedPage(
+                    url=r.url,
+                    title=f"FAILED \u2014 {r.error or 'Unknown error'}",
+                    markdown=(
+                        f"**Error:** {r.error or 'Unknown error'}\n\n"
+                        f"**Raw response:**\n\n{raw_body}"
+                    ),
+                ))
+            if fail_pages:
+                w = FileWriter(
+                    output_dir=self.output_dir,
+                    max_file_size_mb=self.page_config.max_file_size_mb,
+                    file_extension=ext,
+                    prefix="final_fail_",
+                )
+                for page in fail_pages:
+                    w.add(page)
+                w.flush()
 
     def _write_sorted_files(
         self,
