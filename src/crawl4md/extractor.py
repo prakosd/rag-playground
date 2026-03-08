@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import urlparse
 
 import trafilatura
 from bs4 import BeautifulSoup, Tag
@@ -87,7 +88,7 @@ class ContentExtractor:
 
         # Recover product metadata and use it for a richer title & header.
         product = self._extract_product_header(result.html)
-        title = self._extract_title(result.html)
+        title = self._extract_title(result.html, url=result.url)
         if product:
             product_name = product.get("name", "")
             if product_name:
@@ -117,7 +118,24 @@ class ContentExtractor:
             html = self._insert_item_separators(html, use_sentinel=False)
         md = markdownify(html, heading_style="ATX", strip=["img"], table_infer_header=True)
         md = self._clean_markdown(md)
-        title = self._extract_title(result.html)
+
+        product = self._extract_product_header(result.html)
+        title = self._extract_title(result.html, url=result.url)
+        if product:
+            product_name = product.get("name", "")
+            if product_name:
+                title = product_name
+            header_parts: list[str] = []
+            if product.get("brand"):
+                header_parts.append(f"**{product['brand']}**")
+            if product_name:
+                header_parts.append(f"## {product_name}")
+            price_display = self._format_product_price(product)
+            if price_display:
+                header_parts.append(f"Retail price: {price_display}")
+            if header_parts:
+                md = "\n\n".join(header_parts) + "\n\n" + md
+
         return ExtractedPage(
             url=result.url,
             title=title,
@@ -368,6 +386,7 @@ class ContentExtractor:
 
         Applies a chain of safe transforms:
 
+        0. Strip leaked template / framework variables.
         1. Collapse 3+ consecutive blank lines into one.
         2. Deduplicate consecutive identical paragraphs.
         3. Reformat ``---``-separated product items into structured bullets.
@@ -375,6 +394,7 @@ class ContentExtractor:
         5. Promote standalone short labels followed by content to headings.
         6. Compact runs of short standalone paragraphs into bullet lists.
         """
+        text = ContentExtractor._strip_template_variables(text)
         text = ContentExtractor._collapse_blank_lines(text)
         text = ContentExtractor._dedup_paragraphs(text)
         text = ContentExtractor._reformat_separated_items(text)
@@ -382,6 +402,46 @@ class ContentExtractor:
         text = ContentExtractor._promote_section_labels(text)
         text = ContentExtractor._compact_short_paragraphs(text)
         return text
+
+    # Patterns matching leaked SPA / OutSystems template variables.
+    _TEMPLATE_VAR_RE = re.compile(
+        r"^[-*]?\s*"
+        r"(?:"
+        r"(?:Var_|In_|TrueVar_|FalseVar_)\w+"
+        r"|PayLaterOptionList\.\w+"
+        r"|(?:Var_|In_)?\w*(?:ErrorCode|Error|MaxMonthOfInstallment"
+        r"|PayLaterStatus|IsEligible|IsProcessing|BNPLErrorCode)"
+        r"|NumberOfMonths"
+        r"|isOutOfStock"
+        r")\s*[:.].*$",
+        re.IGNORECASE,
+    )
+    _CONCATENATED_VARS_RE = re.compile(
+        r"(?:Var_|In_|True|False)\w+:.*(?:Var_|In_|True|False)\w+:",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _strip_template_variables(text: str) -> str:
+        """Remove lines that look like leaked SPA template variables.
+
+        Targets known patterns from OutSystems and similar frameworks:
+        ``Var_*``, ``In_*``, ``PayLaterOptionList.*``, ``isOutOfStock``,
+        concatenated variable dumps, etc.
+        """
+        lines = text.split("\n")
+        cleaned: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                cleaned.append(line)
+                continue
+            if ContentExtractor._TEMPLATE_VAR_RE.match(stripped):
+                continue
+            if ContentExtractor._CONCATENATED_VARS_RE.search(stripped):
+                continue
+            cleaned.append(line)
+        return "\n".join(cleaned)
 
     @staticmethod
     def _collapse_blank_lines(text: str) -> str:
@@ -946,13 +1006,15 @@ class ContentExtractor:
     )
 
     @staticmethod
-    def _extract_title(html: str) -> str:
+    def _extract_title(html: str, *, url: str = "") -> str:
         """Extract the best page title from multiple HTML sources.
 
         Priority order:
         1. ``<title>`` tag — used if it looks specific (not generic).
         2. ``<meta property="og:title">`` — common on product / listing pages.
-        3. First ``<h1>`` in the body — last resort.
+        3. First ``<h1>`` in the body.
+        4. URL slug — derive a human-readable title from the URL path.
+        5. Fall back to the (possibly generic) ``<title>``.
 
         Returns an empty string when no usable title is found.
         """
@@ -992,8 +1054,38 @@ class ContentExtractor:
             if h1_text:
                 return h1_text
 
-        # 4. Fall back to the (possibly generic) <title>.
+        # 4. URL slug
+        if url:
+            slug_title = ContentExtractor._title_from_url(url)
+            if slug_title:
+                return slug_title
+
+        # 5. Fall back to the (possibly generic) <title>.
         return title_text
+
+    # Known tech-product suffixes to upper-case after title-casing a slug.
+    _SLUG_UPPER = re.compile(
+        r"\b(5g|4g|lte|wifi|nfc|gb|tb|mb|ram|cpu|gpu|oled|amoled|ai|se|pro|max)\b",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _title_from_url(url: str) -> str:
+        """Derive a human-readable title from the last URL path segment."""
+        path = urlparse(url).path.rstrip("/")
+        if not path or path == "/":
+            return ""
+        slug = path.rsplit("/", 1)[-1]
+        # Ignore slugs that look like IDs / hashes / query-like.
+        if not slug or len(slug) < 3 or slug.isdigit():
+            return ""
+        title = slug.replace("-", " ").replace("_", " ").strip()
+        title = title.title()
+        # Fix common tech abbreviations.
+        title = ContentExtractor._SLUG_UPPER.sub(
+            lambda m: m.group(1).upper(), title,
+        )
+        return title
 
     # ------------------------------------------------------------------
     # Product header recovery (JSON-LD / OG meta)
@@ -1017,7 +1109,10 @@ class ContentExtractor:
         result = ContentExtractor._product_from_jsonld(html)
         if result:
             return result
-        return ContentExtractor._product_from_og(html)
+        result = ContentExtractor._product_from_og(html)
+        if result:
+            return result
+        return ContentExtractor._product_from_dom(html)
 
     @staticmethod
     def _product_from_jsonld(html: str) -> dict | None:
@@ -1111,6 +1206,91 @@ class ContentExtractor:
         name = _og("title")
         brand = _og("product:brand")
         return {"name": name, "brand": brand, "price": price, "high_price": ""}
+
+    @staticmethod
+    def _product_from_dom(html: str) -> dict | None:
+        """Fall back to scanning the rendered DOM for product metadata.
+
+        Looks for a strikethrough price (``<del>``, ``<s>``, ``<strike>``)
+        which strongly signals a product detail page with a discounted
+        price.  Extracts the product name from the nearest heading and
+        the brand from the URL path when possible.
+
+        Returns ``None`` when no strikethrough price is found, avoiding
+        false positives on listing and article pages.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        # Remove non-visible content.
+        for tag in soup.find_all(["script", "style", "noscript"]):
+            tag.decompose()
+
+        # Look for a strikethrough element containing a price.
+        price_re = re.compile(r"\$[\d,]+(?:\.\d{2})?")
+        strike_tag = None
+        for tag_name in ("del", "s", "strike"):
+            for tag in soup.find_all(tag_name):
+                text = tag.get_text(strip=True)
+                if price_re.search(text):
+                    strike_tag = tag
+                    break
+            if strike_tag:
+                break
+
+        if not strike_tag:
+            return None
+
+        high_price_match = price_re.search(strike_tag.get_text(strip=True))
+        high_price = high_price_match.group(0).lstrip("$") if high_price_match else ""
+
+        # Current/discounted price: next sibling text or parent text after the strike.
+        price = ""
+        parent = strike_tag.parent
+        if parent:
+            full_text = parent.get_text(" ", strip=True)
+            prices = price_re.findall(full_text)
+            # The last price that differs from high_price is the current price.
+            for p in prices:
+                if p.lstrip("$") != high_price:
+                    price = p.lstrip("$")
+
+        # Product name: walk up DOM to find the nearest heading.
+        name = ""
+        node = strike_tag
+        for _ in range(15):
+            node = node.parent
+            if node is None:
+                break
+            heading = node.find(["h1", "h2", "h3"])
+            if heading:
+                name = heading.get_text(" ", strip=True)
+                break
+
+        # Brand: try to extract from URL in a <link rel="canonical"> or <meta og:url>.
+        brand = ""
+        canonical = soup.find("link", rel="canonical")
+        page_url = str(canonical["href"]) if canonical and canonical.get("href") else ""
+        if not page_url:
+            og_url = soup.find("meta", attrs={"property": "og:url"})
+            page_url = str(og_url["content"]) if og_url and og_url.get("content") else ""
+        if page_url:
+            parts = urlparse(page_url).path.strip("/").split("/")
+            # Heuristic: brand is the second-to-last segment before the product slug.
+            if len(parts) >= 2:
+                candidate = parts[-2].replace("-", " ").title()
+                if candidate.lower() not in (
+                    "devices", "mobile", "store", "personal",
+                    "products", "shop", "buy",
+                ):
+                    brand = candidate
+
+        if not name and not price and not high_price:
+            return None
+        return {
+            "name": name,
+            "brand": brand,
+            "price": price,
+            "high_price": high_price,
+        }
 
     @staticmethod
     def _format_product_price(product: dict) -> str:

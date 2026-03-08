@@ -1416,3 +1416,328 @@ class TestPromoteSectionLabels:
         assert "## What is the Welcome Plan offer all about?" in result
         assert "## How can I get a Welcome Plan?" in result
         assert "### ##" not in result
+
+
+class TestStripTemplateVariables:
+    """Tests for _strip_template_variables — removing leaked SPA variables."""
+
+    def test_var_prefix_stripped(self):
+        text = "Some content\n\nVar_IsEligible: True\nVar_PayLaterStatus: normal\n\nMore content"
+        result = ContentExtractor._strip_template_variables(text)
+        assert "Var_IsEligible" not in result
+        assert "Var_PayLaterStatus" not in result
+        assert "Some content" in result
+        assert "More content" in result
+
+    def test_in_prefix_stripped(self):
+        text = "In_PayLaterErrorCode: 0\nIn_BNPLErrorCode: 0"
+        result = ContentExtractor._strip_template_variables(text)
+        assert "In_PayLaterErrorCode" not in result
+        assert "In_BNPLErrorCode" not in result
+
+    def test_isoutofstock_stripped(self):
+        text = "isOutOfStock: False\nPrice: $1,828"
+        result = ContentExtractor._strip_template_variables(text)
+        assert "isOutOfStock" not in result
+        assert "Price: $1,828" in result
+
+    def test_paylater_option_list_stripped(self):
+        text = "PayLaterOptionList.Current.NumberOfMonths: 24\nVar_MaxMonthOfInstallment: 36"
+        result = ContentExtractor._strip_template_variables(text)
+        assert "PayLaterOptionList" not in result
+        assert "Var_MaxMonthOfInstallment" not in result
+
+    def test_numberofmonths_stripped(self):
+        text = "NumberOfMonths: 24\nSome real content here."
+        result = ContentExtractor._strip_template_variables(text)
+        assert "NumberOfMonths" not in result
+        assert "Some real content here." in result
+
+    def test_concatenated_var_dump_stripped(self):
+        text = "TrueVar_IsProcessing: FalseVar_PayLaterStatus: normalVar_PayLaterError:"
+        result = ContentExtractor._strip_template_variables(text)
+        assert "TrueVar_IsProcessing" not in result
+
+    def test_normal_content_preserved(self):
+        text = (
+            "### Dimension\n\n"
+            "- Size (mm): 163.6 x 78.1 x 7.9 mm\n"
+            "- Weight: 214g\n\n"
+            "### Battery Life\n\n"
+            "- 5000 mAh"
+        )
+        result = ContentExtractor._strip_template_variables(text)
+        assert result == text
+
+    def test_bullet_with_var_stripped(self):
+        text = "- In_IsAddOnAccessory: False, In_IsAddOnDevice: False, IsResetData: False"
+        result = ContentExtractor._strip_template_variables(text)
+        assert "In_IsAddOnAccessory" not in result
+
+    def test_var_error_suffix_stripped(self):
+        text = "Var_PayLaterError:\nSome content"
+        result = ContentExtractor._strip_template_variables(text)
+        assert "Var_PayLaterError" not in result
+        assert "Some content" in result
+
+    def test_integration_in_clean_markdown(self):
+        """Template variables are stripped as part of the full _clean_markdown pipeline."""
+        text = (
+            "Preorder\n\n"
+            "isOutOfStock: False\n"
+            "Var_IsEligible: True\n"
+            "Var_PayLaterStatus: normal\n\n"
+            "### Battery Life\n\n"
+            "- 5000 mAh"
+        )
+        result = ContentExtractor._clean_markdown(text)
+        assert "Var_IsEligible" not in result
+        assert "isOutOfStock" not in result
+        assert "### Battery Life" in result
+        assert "5000 mAh" in result
+
+
+class TestTitleFromUrl:
+    """Tests for _title_from_url — deriving titles from URL slugs."""
+
+    def test_product_slug(self):
+        url = "https://consumer.starhub.com/personal/store/mobile/devices/samsung/galaxy-s26-ultra-5g"
+        result = ContentExtractor._title_from_url(url)
+        assert result == "Galaxy S26 Ultra 5G"
+
+    def test_simple_slug(self):
+        url = "https://example.com/products/iphone-17-pro"
+        result = ContentExtractor._title_from_url(url)
+        assert result == "Iphone 17 PRO"
+
+    def test_trailing_slash_ignored(self):
+        url = "https://example.com/devices/samsung/galaxy-s26-ultra-5g/"
+        result = ContentExtractor._title_from_url(url)
+        assert result == "Galaxy S26 Ultra 5G"
+
+    def test_root_url_returns_empty(self):
+        assert ContentExtractor._title_from_url("https://example.com/") == ""
+        assert ContentExtractor._title_from_url("https://example.com") == ""
+
+    def test_short_slug_ignored(self):
+        assert ContentExtractor._title_from_url("https://example.com/ab") == ""
+
+    def test_numeric_slug_ignored(self):
+        assert ContentExtractor._title_from_url("https://example.com/12345") == ""
+
+    def test_tech_abbreviations_uppercased(self):
+        url = "https://example.com/devices/galaxy-tab-s11-5g-wifi-lte"
+        result = ContentExtractor._title_from_url(url)
+        assert "5G" in result
+        assert "WIFI" in result
+        assert "LTE" in result
+
+    def test_underscore_slug(self):
+        url = "https://example.com/products/smart_watch_pro"
+        result = ContentExtractor._title_from_url(url)
+        assert result == "Smart Watch PRO"
+
+    def test_url_slug_fallback_in_extract_title(self):
+        """When title is generic and no OG/h1, URL slug is used."""
+        html = "<html><head><title>Product PLP/PDP</title></head><body></body></html>"
+        url = "https://consumer.starhub.com/personal/store/mobile/devices/samsung/galaxy-s26-ultra-5g"
+        result = ContentExtractor._extract_title(html, url=url)
+        assert result == "Galaxy S26 Ultra 5G"
+
+    def test_url_slug_not_used_when_title_is_good(self):
+        """Specific title trumps URL slug."""
+        html = "<html><head><title>Buy Samsung Phones</title></head><body></body></html>"
+        url = "https://example.com/some-page-slug"
+        result = ContentExtractor._extract_title(html, url=url)
+        assert result == "Buy Samsung Phones"
+
+    def test_url_slug_not_used_when_h1_available(self):
+        """h1 trumps URL slug."""
+        html = (
+            "<html><head><title>Product PLP/PDP</title></head>"
+            "<body><h1>Galaxy S26 Ultra 5G</h1></body></html>"
+        )
+        result = ContentExtractor._extract_title(html, url="https://example.com/foo")
+        assert result == "Galaxy S26 Ultra 5G"
+
+
+class TestProductFromDom:
+    """Tests for _product_from_dom — DOM fallback product detection."""
+
+    def test_strikethrough_del_tag_detected(self):
+        html = """
+        <html><head>
+        <link rel="canonical" href="https://store.com/devices/samsung/galaxy-s26-ultra-5g">
+        </head><body>
+        <h2>Galaxy S26 Ultra 5G</h2>
+        <div class="price">
+            <del>$2,128.00</del> <span>$1,828.00</span>
+        </div>
+        </body></html>
+        """
+        result = ContentExtractor._product_from_dom(html)
+        assert result is not None
+        assert result["high_price"] == "2,128.00"
+        assert result["price"] == "1,828.00"
+        assert result["name"] == "Galaxy S26 Ultra 5G"
+        assert result["brand"] == "Samsung"
+
+    def test_strikethrough_s_tag_detected(self):
+        html = """
+        <html><body>
+        <h1>Test Product</h1>
+        <div><s>$999.00</s> <span>$799.00</span></div>
+        </body></html>
+        """
+        result = ContentExtractor._product_from_dom(html)
+        assert result is not None
+        assert result["high_price"] == "999.00"
+        assert result["price"] == "799.00"
+        assert result["name"] == "Test Product"
+
+    def test_no_strikethrough_returns_none(self):
+        html = """
+        <html><body>
+        <h1>Some Product</h1>
+        <div>$1,499.00</div>
+        </body></html>
+        """
+        result = ContentExtractor._product_from_dom(html)
+        assert result is None
+
+    def test_listing_page_no_false_positive(self):
+        """PLP with no strikethrough prices should not trigger DOM fallback."""
+        html = """
+        <html><body>
+        <h1>Buy Mobile Phones</h1>
+        <div class="product"><span>Galaxy S26</span> $1,828.00</div>
+        <div class="product"><span>iPhone 17</span> $1,299.00</div>
+        </body></html>
+        """
+        result = ContentExtractor._product_from_dom(html)
+        assert result is None
+
+    def test_brand_from_canonical_url(self):
+        html = """
+        <html><head>
+        <link rel="canonical" href="https://store.com/mobile/devices/apple/iphone-17-pro">
+        </head><body>
+        <h2>iPhone 17 Pro</h2>
+        <div><del>$1,999.00</del> $1,749.00</div>
+        </body></html>
+        """
+        result = ContentExtractor._product_from_dom(html)
+        assert result is not None
+        assert result["brand"] == "Apple"
+
+    def test_brand_from_og_url(self):
+        html = """
+        <html><head>
+        <meta property="og:url" content="https://store.com/devices/oppo/find-x9-pro">
+        </head><body>
+        <h3>Find X9 Pro</h3>
+        <div><del>$1,800.00</del> $1,599.00</div>
+        </body></html>
+        """
+        result = ContentExtractor._product_from_dom(html)
+        assert result is not None
+        assert result["brand"] == "Oppo"
+
+    def test_generic_brand_segment_skipped(self):
+        """URL segments like 'devices' or 'store' should not become brand."""
+        html = """
+        <html><head>
+        <link rel="canonical" href="https://store.com/devices/galaxy-s26">
+        </head><body>
+        <h1>Galaxy S26</h1>
+        <div><del>$999.00</del> $799.00</div>
+        </body></html>
+        """
+        result = ContentExtractor._product_from_dom(html)
+        assert result is not None
+        assert result["brand"] == ""
+
+    def test_dom_fallback_in_extract_product_header(self):
+        """DOM fallback is called when JSON-LD and OG are absent."""
+        html = """
+        <html><head><title>Product PLP/PDP</title></head>
+        <body>
+        <h2>Galaxy S26 Ultra 5G</h2>
+        <div><del>$2,128.00</del> $1,828.00</div>
+        </body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result is not None
+        assert result["name"] == "Galaxy S26 Ultra 5G"
+        assert result["high_price"] == "2,128.00"
+        assert result["price"] == "1,828.00"
+
+    def test_jsonld_still_preferred_over_dom(self):
+        """JSON-LD takes priority even when DOM has strikethrough prices."""
+        html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type": "Product", "name": "From JSON-LD",
+         "brand": {"@type": "Brand", "name": "TestBrand"},
+         "offers": {"price": "999"}}
+        </script>
+        </head><body>
+        <h2>From DOM</h2>
+        <div><del>$1,200.00</del> $999.00</div>
+        </body></html>
+        """
+        result = ContentExtractor._extract_product_header(html)
+        assert result["name"] == "From JSON-LD"
+        assert result["brand"] == "TestBrand"
+
+    def test_integration_dom_header_prepended(self):
+        """Full pipeline: DOM-detected product header prepended to markdown."""
+        html = """
+        <html><head><title>Product PLP/PDP</title>
+        <link rel="canonical"
+              href="https://store.com/devices/samsung/galaxy-s26-ultra-5g">
+        </head>
+        <body>
+        <main>
+        <h2>Galaxy S26 Ultra 5G</h2>
+        <div class="price"><del>$2,128.00</del> <span>$1,828.00</span></div>
+        <p>Preorder now for exclusive offers on the latest Samsung flagship phone
+           with amazing camera and battery life improvements.</p>
+        </main>
+        </body></html>
+        """
+        config = PageConfig(extract_main_content=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        cr = CrawlResult(
+            url="https://store.com/devices/samsung/galaxy-s26-ultra-5g",
+            html=html, success=True,
+        )
+        page = extractor._extract_page(cr)
+        assert page.title == "Galaxy S26 Ultra 5G"
+        assert "**Samsung**" in page.markdown
+        assert "## Galaxy S26 Ultra 5G" in page.markdown
+        assert "~~$2,128.00~~ $1,828.00" in page.markdown
+
+    def test_integration_full_html_path_also_recovers(self):
+        """Product header recovery also works in the markdownify path."""
+        html = """
+        <html><head><title>Product PLP/PDP</title>
+        <link rel="canonical"
+              href="https://store.com/devices/samsung/galaxy-s26-ultra-5g">
+        </head>
+        <body>
+        <h2>Galaxy S26 Ultra 5G</h2>
+        <div><del>$2,128.00</del> $1,828.00</div>
+        <p>Some content here about the product.</p>
+        </body></html>
+        """
+        config = PageConfig(extract_main_content=False, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        cr = CrawlResult(
+            url="https://store.com/devices/samsung/galaxy-s26-ultra-5g",
+            html=html, success=True,
+        )
+        page = extractor._extract_page(cr)
+        assert "**Samsung**" in page.markdown
+        assert "## Galaxy S26 Ultra 5G" in page.markdown
+        assert "~~$2,128.00~~ $1,828.00" in page.markdown
