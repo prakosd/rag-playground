@@ -638,6 +638,9 @@ class SiteCrawler:
         if self.page_config.wait_for:
             kwargs["delay_before_return_html"] = self.page_config.wait_for
 
+        if self.page_config.js_code:
+            kwargs["js_code"] = self.page_config.js_code
+
         if self.page_config.timeout:
             kwargs["page_timeout"] = self.page_config.timeout
 

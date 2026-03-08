@@ -10,6 +10,7 @@ A Python library for crawling websites and extracting their content as Markdown-
 - **Size-limited output files** — pages are never split across files
 - **Real-time progress** — progress bar with ETA in both Jupyter and terminal
 - **Configurable filtering** — include/exclude URL paths and HTML tags via regex
+- **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) and inserts separators between them
 
 ## Installation
 
@@ -74,6 +75,8 @@ writer.write(pages, crawler.output_dir, page_config.max_file_size_mb)
 | `timeout` | `int` | `30000` | Page load timeout in milliseconds |
 | `max_file_size_mb` | `float` | `15.0` | Max size per output file in MB |
 | `output_extension` | `".txt" \| ".md"` | `".txt"` | Output file format |
+| `separate_items` | `bool` | `False` | Insert `---` separators between repeated items (e.g. product cards) |
+| `item_selector` | `str` | `""` | CSS selector for items; empty = auto-detect |
 
 ## Output Structure
 

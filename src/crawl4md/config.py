@@ -89,6 +89,18 @@ class PageConfig(BaseModel):
     max_file_size_mb: float = 15.0
     extract_main_content: bool = True
     output_extension: Literal[".txt", ".md"] = ".txt"
+    separate_items: bool = False
+    item_selector: str = ""
+    js_code: list[str] = []
+
+    @field_validator("js_code", mode="before")
+    @classmethod
+    def parse_js_code(cls, v: Any) -> list[str]:
+        """Accept a single JS string or a list of JS snippets."""
+        if isinstance(v, str):
+            v = v.strip()
+            return [v] if v else []
+        return v
 
     @field_validator("exclude_tags", "include_only_tags", mode="before")
     @classmethod
@@ -110,6 +122,13 @@ class PageConfig(BaseModel):
     def validate_max_file_size(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("Max file size must be positive.")
+        return v
+
+    @field_validator("item_selector", mode="before")
+    @classmethod
+    def strip_item_selector(cls, v: Any) -> str:
+        if isinstance(v, str):
+            return v.strip()
         return v
 
     @model_validator(mode="after")

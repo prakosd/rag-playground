@@ -9,7 +9,7 @@ crawl4md is a Python library for crawling websites and extracting content as Mar
 - **src layout**: All library code under `src/crawl4md/`.
 - **Config models**: Pydantic v2 models in `config.py` — all user-facing parameters are validated here.
 - **SiteCrawler**: Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jupyter compatibility.
-- **ContentExtractor**: Converts crawled HTML to Markdown text using trafilatura (main content) or markdownify (full HTML).
+- **ContentExtractor**: Converts crawled HTML to Markdown text using trafilatura (main content) or markdownify (full HTML). Optionally inserts `---` separators between repeated structural items via BeautifulSoup pre-processing (`separate_items`/`item_selector`).
 - **FileWriter**: Combines extracted pages into size-limited output files (`.txt` or `.md`, configurable via `PageConfig.output_extension`). Never splits a single page across files.
 - **ProgressReporter**: Real-time progress display for Jupyter and terminal.
 
@@ -30,6 +30,7 @@ crawl4md is a Python library for crawling websites and extracting content as Mar
 | markdownify | Full HTML → Markdown conversion |
 | pydantic | Config validation |
 | nest-asyncio | Allows asyncio.run() inside Jupyter's event loop |
+| beautifulsoup4 | HTML DOM parsing for item separation |
 
 ## File Layout
 

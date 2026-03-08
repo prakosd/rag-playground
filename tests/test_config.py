@@ -118,3 +118,36 @@ class TestPageConfig:
     def test_output_extension_invalid_rejected(self):
         with pytest.raises(ValueError):
             PageConfig(output_extension=".html")
+
+    def test_separate_items_default(self):
+        cfg = PageConfig()
+        assert cfg.separate_items is False
+
+    def test_separate_items_enabled(self):
+        cfg = PageConfig(separate_items=True)
+        assert cfg.separate_items is True
+
+    def test_item_selector_default(self):
+        cfg = PageConfig()
+        assert cfg.item_selector == ""
+
+    def test_item_selector_stripped(self):
+        cfg = PageConfig(item_selector="  div.product-card  ")
+        assert cfg.item_selector == "div.product-card"
+
+    def test_js_code_default(self):
+        cfg = PageConfig()
+        assert cfg.js_code == []
+
+    def test_js_code_from_string(self):
+        cfg = PageConfig(js_code="document.querySelector('button').click()")
+        assert cfg.js_code == ["document.querySelector('button').click()"]
+
+    def test_js_code_empty_string(self):
+        cfg = PageConfig(js_code="")
+        assert cfg.js_code == []
+
+    def test_js_code_from_list(self):
+        snippets = ["console.log('a')", "console.log('b')"]
+        cfg = PageConfig(js_code=snippets)
+        assert cfg.js_code == snippets

@@ -5,10 +5,19 @@ from __future__ import annotations
 import re
 
 import trafilatura
+from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
 
 from crawl4md.config import CrawlResult, ExtractedPage, PageConfig
 from crawl4md.progress import ProgressReporter
+
+# Sentinel inserted between repeated items *before* trafilatura extraction.
+# trafilatura strips <hr> but preserves plain text in <p> tags.
+_ITEM_SENTINEL = "CRAWL4MD_ITEM_BREAK"
+
+# If trafilatura captures less than this fraction of the page's visible text,
+# fall back to markdownify to avoid losing significant content.
+_COVERAGE_THRESHOLD = 0.15
 
 
 class ContentExtractor:
@@ -41,16 +50,39 @@ class ContentExtractor:
         return self._extract_full_html(result)
 
     def _extract_main_content(self, result: CrawlResult) -> ExtractedPage:
-        """Use trafilatura to extract the main body content."""
+        """Use trafilatura to extract the main body content.
+
+        Falls back to markdownify when trafilatura captures less than
+        ``_COVERAGE_THRESHOLD`` of the page's visible text.
+        """
+        html = result.html
+        # Capture supplementary sections (e.g. FAQs) before trafilatura strips them.
+        supplements = self._extract_supplementary_sections(html)
+        html = self._preserve_strikethrough(html)
+        if self.page_config.separate_items:
+            html = self._insert_item_separators(html, use_sentinel=True)
         extracted = trafilatura.extract(
-            result.html,
+            html,
             output_format="markdown",
             include_links=True,
             include_tables=True,
             favor_recall=True,
         )
         md = self._fix_markdown_tables(extracted or "")
+        if self.page_config.separate_items:
+            md = md.replace(_ITEM_SENTINEL, "\n\n---\n\n")
         md = self._clean_markdown(md)
+
+        # Fall back to markdownify when trafilatura captured too little.
+        visible_len = self._visible_text_length(result.html)
+        if visible_len > 0 and len(md.strip()) / visible_len < _COVERAGE_THRESHOLD:
+            return self._extract_full_html(result)
+
+        for fragment in supplements:
+            formatted = self._format_faq_questions(fragment)
+            cleaned = self._clean_markdown(formatted)
+            if cleaned.strip():
+                md = md.rstrip() + "\n\n---\n\n" + cleaned
         title = self._extract_title(result.html)
         return ExtractedPage(
             url=result.url,
@@ -61,6 +93,9 @@ class ContentExtractor:
     def _extract_full_html(self, result: CrawlResult) -> ExtractedPage:
         """Use markdownify on the (optionally tag-filtered) HTML."""
         html = self._filter_tags(result.html)
+        html = self._preserve_strikethrough(html)
+        if self.page_config.separate_items:
+            html = self._insert_item_separators(html, use_sentinel=False)
         md = markdownify(html, heading_style="ATX", strip=["img"], table_infer_header=True)
         md = self._clean_markdown(md)
         title = self._extract_title(result.html)
@@ -69,6 +104,116 @@ class ContentExtractor:
             title=title,
             markdown=md,
         )
+
+    # ------------------------------------------------------------------
+    # Strikethrough preservation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _preserve_strikethrough(html: str) -> str:
+        """Convert ``<del>``, ``<s>``, and ``<strike>`` tags to ``~~text~~``.
+
+        Trafilatura silently drops these tags, losing the visual
+        distinction between original and discounted prices (e.g.
+        ``<del>$2,128.00</del>$1,828.00``).  By replacing them with
+        Markdown strikethrough *before* extraction, the semantic is
+        preserved in the final output.
+        """
+        return re.sub(
+            r"<(del|s|strike)\b[^>]*>(.*?)</\1>",
+            r"~~\2~~",
+            html,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+    # ------------------------------------------------------------------
+    # Item separation (structured product/card grouping)
+    # ------------------------------------------------------------------
+
+    def _insert_item_separators(self, html: str, *, use_sentinel: bool) -> str:
+        """Insert separators between repeated structural items in the HTML.
+
+        When *use_sentinel* is ``True`` (trafilatura mode), a ``<p>`` with
+        a unique text sentinel is inserted because trafilatura strips
+        ``<hr>`` elements.  When ``False`` (markdownify mode), a plain
+        ``<hr>`` is used.
+
+        If ``page_config.item_selector`` is set, that CSS selector
+        identifies items directly.  Otherwise, auto-detection finds the
+        largest group of repeated same-tag-and-class siblings.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+
+        if self.page_config.item_selector:
+            items = soup.select(self.page_config.item_selector)
+        else:
+            items = self._find_repeated_items(soup)
+
+        if len(items) < 2:
+            return html
+
+        separator_tag = "p" if use_sentinel else "hr"
+        for item in reversed(items[1:]):
+            sep = soup.new_tag(separator_tag)
+            if use_sentinel:
+                sep.string = _ITEM_SENTINEL
+            item.insert_before(sep)
+
+        return str(soup)
+
+    @staticmethod
+    def _find_repeated_items(soup: BeautifulSoup) -> list[Tag]:
+        """Auto-detect the dominant group of repeated structural elements.
+
+        Walks the DOM looking for parents whose direct children share the
+        same ``(tag_name, frozenset_of_classes)`` signature.  Groups must
+        have at least 3 members, each with at least 30 characters of text.
+        The group with the highest ``count * avg_text_length`` score wins.
+
+        Elements inside ``<nav>``, ``<header>``, ``<footer>`` are ignored
+        to avoid picking up navigation links.
+        """
+        skip_parents = {"nav", "header", "footer"}
+        min_text_len = 20
+        groups: dict[tuple, list[Tag]] = {}
+
+        for parent in soup.find_all(True):
+            if parent.name in skip_parents:
+                continue
+            # Check if any ancestor is a skip_parents tag
+            if any(a.name in skip_parents for a in parent.parents if isinstance(a, Tag)):
+                continue
+
+            children_by_sig: dict[tuple, list[Tag]] = {}
+            for child in parent.children:
+                if not isinstance(child, Tag):
+                    continue
+                classes = frozenset(child.get("class", []))
+                sig = (child.name, classes)
+                children_by_sig.setdefault(sig, []).append(child)
+
+            for sig, children in children_by_sig.items():
+                if len(children) < 3:
+                    continue
+                # Filter: each child must have meaningful text
+                qualified = [
+                    c for c in children if len(c.get_text(strip=True)) >= min_text_len
+                ]
+                if len(qualified) < 3:
+                    continue
+                key = (id(parent), sig)
+                groups[key] = qualified
+
+        if not groups:
+            return []
+
+        # Score: count * average text length — favours large groups of content-rich items
+        def score(items: list[Tag]) -> float:
+            avg_len = sum(len(t.get_text(strip=True)) for t in items) / len(items)
+            return len(items) * avg_len
+
+        best = max(groups.values(), key=score)
+        return best
 
     @staticmethod
     def _fix_markdown_tables(text: str) -> str:
@@ -206,11 +351,13 @@ class ContentExtractor:
 
         1. Collapse 3+ consecutive blank lines into one.
         2. Deduplicate consecutive identical paragraphs.
-        3. Compact product-listing blocks (name + price pairs) into bullet lists.
-        4. Compact runs of short standalone paragraphs into bullet lists.
+        3. Reformat ``---``-separated product items into structured bullets.
+        4. Compact product-listing blocks (name + price pairs) into bullet lists.
+        5. Compact runs of short standalone paragraphs into bullet lists.
         """
         text = ContentExtractor._collapse_blank_lines(text)
         text = ContentExtractor._dedup_paragraphs(text)
+        text = ContentExtractor._reformat_separated_items(text)
         text = ContentExtractor._compact_product_listings(text)
         text = ContentExtractor._compact_short_paragraphs(text)
         return text
@@ -219,6 +366,173 @@ class ContentExtractor:
     def _collapse_blank_lines(text: str) -> str:
         """Replace runs of 3+ blank lines with a single blank line."""
         return re.sub(r"\n{3,}", "\n\n", text)
+
+    # ------------------------------------------------------------------
+    # Separated-item reformatter (product cards split by ---)
+    # ------------------------------------------------------------------
+
+    # Shared patterns for product field classification
+    _MONTHLY_PRICE_RE = re.compile(
+        r"^(?:from\s+)?\$[\d,]+(?:\.\d{2})?/mth$", re.IGNORECASE,
+    )
+    _OUTRIGHT_PRICE_RE = re.compile(
+        r"^(?:or\s*)?(?:~~)?\$\$?[\d,]+(?:\.\d{2})?(?:~~)?"
+        r"(?:\$\$?[\d,]+(?:\.\d{2})?)?$",
+        re.IGNORECASE,
+    )
+    _OFFERS_RE = re.compile(r"^\d+\s+offers?\s+available$", re.IGNORECASE)
+    _BADGE_KEYWORDS = re.compile(
+        r"^(?:Preorder|Pre-order|New|LNY\s+Offers?|Exclusive\s+Bundle|"
+        r"Limited[- ]time\s+only|StarHub\s+[Ee]xclusive|PWP\s+Offers?|"
+        r"Wi-Fi\s+Only|eSIM\s+Exclusive|Trending\s+Brands|Best\s+value"
+        r"(?:\s+with\s+device)?)$",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _reformat_separated_items(text: str) -> str:
+        """Reformat ``---``-separated product sections into structured bullets.
+
+        Only fires when the text contains at least 3 ``---`` separators
+        (indicating ``separate_items`` was active).  Each section is parsed
+        for product fields: name, monthly price, outright price, badges,
+        and offer count.  Successfully-parsed sections become::
+
+            - **Galaxy S26 Ultra 5G**
+              from $76.16/mth · or ~~$2,128.00~~ $1,828.00
+              Preorder · 15 offers available
+
+        Sections that don't look like products pass through unchanged.
+        """
+        hr_re = re.compile(r"^---+$")
+        # Split on --- lines preserving them as delimiters
+        sections: list[str] = []
+        current: list[str] = []
+        for line in text.split("\n"):
+            if hr_re.match(line.strip()):
+                sections.append("\n".join(current))
+                current = []
+            else:
+                current.append(line)
+        sections.append("\n".join(current))
+
+        # Need at least 3 separators (4 sections) to activate
+        if len(sections) < 4:
+            return text
+
+        # Try to reformat each section
+        reformatted: list[str] = []
+        product_count = 0
+        for section in sections:
+            parsed = ContentExtractor._parse_product_section(section)
+            if parsed is not None:
+                product_count += 1
+                reformatted.append(parsed)
+            else:
+                reformatted.append(section)
+
+        # Only use reformatted output if we found enough products
+        if product_count < 3:
+            return text
+
+        return "\n\n---\n\n".join(reformatted)
+
+    @staticmethod
+    def _parse_product_section(section: str) -> str | None:
+        """Try to parse a single ``---``-delimited section as a product entry.
+
+        Returns a formatted bullet string on success, or ``None`` if the
+        section does not look like a product listing.
+        """
+        lines = [ln.strip() for ln in section.strip().split("\n") if ln.strip()]
+        if not lines:
+            return None
+
+        name = None
+        monthly = None
+        outright = None
+        badges: list[str] = []
+        offers = None
+        unclassified: list[str] = []
+
+        for line in lines:
+            # Strip leading "- " from list items produced by earlier transforms
+            clean = re.sub(r"^[-*]\s+", "", line)
+            if ContentExtractor._MONTHLY_PRICE_RE.match(clean):
+                monthly = clean
+            elif ContentExtractor._OUTRIGHT_PRICE_RE.match(clean):
+                outright = clean
+            elif ContentExtractor._OFFERS_RE.match(clean):
+                offers = clean
+            elif ContentExtractor._BADGE_KEYWORDS.match(clean):
+                badges.append(clean)
+            elif clean.lower() == "from":
+                # Standalone "from" — will be merged with price later
+                continue
+            else:
+                unclassified.append(clean)
+
+        if not monthly and not outright:
+            return None
+
+        # Pick the product name: longest unclassified line
+        if unclassified:
+            name = max(unclassified, key=len)
+            unclassified = [u for u in unclassified if u != name]
+        else:
+            return None
+
+        # Build the formatted output
+        result_lines = [f"- **{name}**"]
+
+        # Price line
+        price_parts = []
+        if monthly:
+            price_parts.append(monthly)
+        if outright:
+            # Normalize outright price display
+            price_parts.append(ContentExtractor._format_outright_price(outright))
+        if price_parts:
+            result_lines.append("  " + " · ".join(price_parts))
+
+        # Badges + offers line
+        badge_parts = list(badges)
+        if offers:
+            badge_parts.append(offers)
+        # Add remaining short unclassified lines as badges
+        for u in unclassified:
+            if len(u) < 60:
+                badge_parts.append(u)
+        if badge_parts:
+            result_lines.append("  " + " · ".join(badge_parts))
+
+        return "\n".join(result_lines)
+
+    @staticmethod
+    def _format_outright_price(price: str) -> str:
+        """Normalize outright price strings for display.
+
+        Converts ``or$2,128.00$1,828.00`` → ``or ~~$2,128.00~~ $1,828.00``
+        and ``or$$1,499.00`` → ``or $1,499.00``.
+        """
+        # Already has strikethrough from _preserve_strikethrough
+        if "~~" in price:
+            return re.sub(r"^or(?=\S)", "or ", price)
+
+        # Double-dollar from Markdown escaping: or$$1,499.00 → or $1,499.00
+        m = re.match(r"^(or\s*)\$\$(\d[\d,]*(?:\.\d{2})?)$", price)
+        if m:
+            return f"or ${m.group(2)}"
+
+        # Two concatenated prices: or$2,128.00$1,828.00 → or ~~$2,128.00~~ $1,828.00
+        m = re.match(
+            r"^(or\s*)?\$(\d[\d,]*(?:\.\d{2})?)\$(\d[\d,]*(?:\.\d{2})?)$", price,
+        )
+        if m:
+            prefix = "or " if m.group(1) else ""
+            return f"{prefix}~~${m.group(2)}~~ ${m.group(3)}"
+
+        return re.sub(r"^or(?=\$)", "or ", price)
 
     @staticmethod
     def _compact_product_listings(text: str) -> str:
@@ -235,7 +549,10 @@ class ContentExtractor:
         entries are found, to avoid false positives on article pages that
         mention prices incidentally.
         """
-        price_re = re.compile(r"^(?:from\s+)?\$[\d,]+(?:\.\d{2})?$")
+        price_re = re.compile(
+            r"^(?:from\s+)?(?:or\s*)?(?:~~)?\$\$?[\d,]+(?:\.\d{2})?(?:~~)?"
+            r"(?:/mth)?(?:\$\$?[\d,]+(?:\.\d{2})?)?$"
+        )
         heading_re = re.compile(r"^#{1,6}\s")
         hr_re = re.compile(r"^---+$")
 
@@ -319,6 +636,15 @@ class ContentExtractor:
         if not content_lines:
             return None, start
 
+        # If the last content line is a standalone "from", remove it so it
+        # doesn't taint the product name. It will be prepended to the price.
+        from_prefix = ""
+        if content_lines and content_lines[-1].lower() == "from":
+            from_prefix = "from "
+            content_lines.pop()
+        if not content_lines:
+            return None, start
+
         # Skip blank lines between content and price
         while j < len(lines) and lines[j].strip() == "":
             j += 1
@@ -330,18 +656,45 @@ class ContentExtractor:
         price_line = lines[j].strip()
         if not price_re.match(price_line):
             return None, start
+        if from_prefix and not price_line.lower().startswith("from"):
+            price_line = from_prefix + price_line
+        if re.match(r"^or\s*\$", price_line, re.IGNORECASE):
+            price_line = ContentExtractor._format_outright_price(price_line)
         j += 1
+
+        # Collect additional price lines (e.g. outright prices like
+        # "or$2,128.00$1,828.00" or "or$$1,499.00") that belong to the
+        # same product.  These appear right after the monthly price.
+        extra_prices: list[str] = []
+        while j < len(lines):
+            k = j
+            while k < len(lines) and lines[k].strip() == "":
+                k += 1
+            if k >= len(lines):
+                break
+            candidate = lines[k].strip()
+            if price_re.match(candidate) and re.match(r"(?:or\s*)", candidate, re.IGNORECASE):
+                extra_prices.append(
+                    ContentExtractor._format_outright_price(candidate),
+                )
+                j = k + 1
+            else:
+                break
 
         # Split content_lines into badges (before name) and the name itself.
         # The last content line (or group of long lines) is the name;
-        # short preceding lines are pre-badges.
+        # short preceding lines that match known badge patterns are pre-badges.
         pre_badges: list[str] = []
         name_parts: list[str] = list(content_lines)
 
-        # Peel off leading short lines as badges (< 40 chars or ends with '!')
+        # Peel off leading lines that look like badges (known patterns or
+        # very short generic text, but NOT product-name-like text containing
+        # alphanumeric model identifiers).
         while len(name_parts) > 1:
             candidate = name_parts[0]
-            if len(candidate) < 40 or candidate.endswith("!"):
+            if ContentExtractor._BADGE_KEYWORDS.match(candidate):
+                pre_badges.append(name_parts.pop(0))
+            elif candidate.endswith("!") and len(candidate) < 80:
                 pre_badges.append(name_parts.pop(0))
             else:
                 break
@@ -357,13 +710,25 @@ class ContentExtractor:
                 continue
             if price_re.match(line) or heading_re.match(line) or hr_re.match(line):
                 break
+            # Known badge keywords are pre-badges for the next product.
+            if ContentExtractor._BADGE_KEYWORDS.match(line):
+                break
             # Peek ahead: if a price follows this line (skipping blanks),
             # this line is the next product name, not a badge.
             k = j + 1
             while k < len(lines) and lines[k].strip() == "":
                 k += 1
-            if k < len(lines) and price_re.match(lines[k].strip()):
-                break
+            if k < len(lines):
+                nxt = lines[k].strip()
+                if price_re.match(nxt):
+                    break
+                # Handle standalone "from" → price pattern
+                if nxt.lower() == "from":
+                    m = k + 1
+                    while m < len(lines) and lines[m].strip() == "":
+                        m += 1
+                    if m < len(lines) and price_re.match(lines[m].strip()):
+                        break
             if len(line) < 80 and (len(line) < 40 or line.endswith("!")):
                 post_badges.append(line)
                 j += 1
@@ -371,9 +736,13 @@ class ContentExtractor:
                 break
 
         name = " ".join(name_parts)
+        # Combine all price components into a single display string
+        full_price = price_line
+        if extra_prices:
+            full_price = full_price + " · " + " · ".join(extra_prices)
         return {
             "name": name,
-            "price": price_line,
+            "price": full_price,
             "badges": pre_badges + post_badges,
         }, j
 
@@ -434,6 +803,120 @@ class ContentExtractor:
 
         flush_run()
         return "\n\n".join(result)
+
+    # ------------------------------------------------------------------
+    # Coverage check
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _visible_text_length(html: str) -> int:
+        """Approximate the length of human-visible text in HTML."""
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup.find_all(["script", "style", "noscript"]):
+            tag.decompose()
+        return len(soup.get_text(separator=" ", strip=True))
+
+    # ------------------------------------------------------------------
+    # FAQ formatting
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _format_faq_questions(text: str) -> str:
+        """Promote FAQ question lines to ``###`` Markdown headings.
+
+        Single-line paragraphs that end with ``?`` (and are not already
+        headings or list items) are converted to level-3 headings so that
+        questions stand out visually from their answers.
+        """
+        heading_re = re.compile(r"^#{1,6}\s")
+        list_re = re.compile(r"^[-*+]\s")
+        max_len = 200
+
+        paragraphs = re.split(r"\n\n+", text)
+        result: list[str] = []
+        for para in paragraphs:
+            stripped = para.strip()
+            is_single_line = "\n" not in stripped
+            if (
+                is_single_line
+                and stripped.endswith("?")
+                and len(stripped) <= max_len
+                and not heading_re.match(stripped)
+                and not list_re.match(stripped)
+            ):
+                result.append(f"### {stripped}")
+            else:
+                result.append(para)
+        return "\n\n".join(result)
+
+    # ------------------------------------------------------------------
+    # Supplementary section recovery (FAQ, accordion, Q&A)
+    # ------------------------------------------------------------------
+
+    _SUPP_CLASS_KEYWORDS = re.compile(
+        r"faq|frequently.asked|accordion|q.and.a|questions?.and.answers?",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _extract_supplementary_sections(html: str) -> list[str]:
+        """Detect FAQ / accordion sections that trafilatura would strip.
+
+        Returns a list of Markdown fragments (one per detected section).
+        Uses four heuristics, deduplicates by element identity, and
+        converts each matched subtree to Markdown via *markdownify*.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        seen_ids: set[int] = set()
+        sections: list[str] = []
+
+        def _add(tag: Tag) -> None:
+            tid = id(tag)
+            if tid in seen_ids:
+                return
+            # Skip tiny fragments that are unlikely to be real content.
+            if len(tag.get_text(strip=True)) < 30:
+                return
+            seen_ids.add(tid)
+            # Also mark all descendants so later heuristics skip them.
+            for desc in tag.find_all(True):
+                seen_ids.add(id(desc))
+            md = markdownify(str(tag), heading_style="ATX", strip=["img"])
+            if md.strip():
+                sections.append(md)
+
+        # 1. Schema.org FAQPage structured data
+        for el in soup.find_all(attrs={"itemtype": re.compile(r"FAQPage", re.I)}):
+            if isinstance(el, Tag):
+                _add(el)
+
+        # 2. HTML5 <details>/<summary> groups (≥ 3 siblings)
+        for parent in soup.find_all(True):
+            details = [c for c in parent.children if isinstance(c, Tag) and c.name == "details"]
+            if len(details) >= 3 and id(parent) not in seen_ids:
+                _add(parent)
+
+        # 3. CSS class / id keyword matching
+        for el in soup.find_all(True):
+            if id(el) in seen_ids:
+                continue
+            classes = " ".join(el.get("class", []))
+            el_id = el.get("id", "") or ""
+            if ContentExtractor._SUPP_CLASS_KEYWORDS.search(classes) or \
+               ContentExtractor._SUPP_CLASS_KEYWORDS.search(el_id):
+                _add(el)
+
+        # 4. Heading (h2-h4) whose text mentions FAQ / Frequently Asked
+        faq_heading_re = re.compile(r"\bfaq\b|frequently\s+asked", re.I)
+        for heading in soup.find_all(re.compile(r"^h[2-4]$")):
+            if id(heading) in seen_ids:
+                continue
+            if faq_heading_re.search(heading.get_text()):
+                parent = heading.parent
+                if parent and isinstance(parent, Tag) and id(parent) not in seen_ids:
+                    _add(parent)
+
+        return sections
 
     @staticmethod
     def _extract_title(html: str) -> str:

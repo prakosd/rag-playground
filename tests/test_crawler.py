@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from crawl4md.config import CrawlerConfig, ExtractedPage
+from crawl4md.config import CrawlerConfig, ExtractedPage, PageConfig
 from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter
@@ -170,6 +170,17 @@ class TestSiteCrawler:
         assert run_cfg.simulate_user is True
         assert run_cfg.override_navigator is True
         assert run_cfg.magic is True
+
+    def test_js_code_passed_to_run_config(self):
+        """js_code from PageConfig is forwarded to CrawlerRunConfig."""
+        from crawl4ai import CrawlerRunConfig
+
+        page_config = PageConfig(js_code="document.querySelector('.faq').click()")
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config, page_config)
+
+        run_cfg = crawler._build_run_config(CrawlerRunConfig)
+        assert run_cfg.js_code == ["document.querySelector('.faq').click()"]
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_crawl_with_extractor_and_writer(self, mock_crawler_cls, tmp_path: Path):
