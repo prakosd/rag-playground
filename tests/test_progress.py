@@ -6,7 +6,14 @@ import time
 from datetime import datetime
 from unittest.mock import patch
 
-from crawl4md.progress import _MAX_LOG_ENTRIES, ProgressReporter, _ProgressWidget
+from crawl4md.progress import (
+    _MAX_LOG_ENTRIES,
+    _NOTEBOOK_SHELL_NAMES,
+    ProgressReporter,
+    _in_colab,
+    _in_notebook,
+    _ProgressWidget,
+)
 
 
 class TestProgressWidget:
@@ -427,6 +434,260 @@ class TestProgressReporter:
         assert "c4md-log-fail" in html
         # Normal entry should NOT have fail class — check first entry is not styled
         assert html.count("c4md-log-fail") == 3  # CSS rules (light + dark) + one entry
+
+
+class TestInNotebook:
+    """Tests for the _in_notebook() detection function."""
+
+    def test_zmq_shell_returns_true(self):
+        """Standard Jupyter shell is detected as notebook."""
+        mock_shell = type("ZMQInteractiveShell", (), {})()
+        with patch("IPython.get_ipython", return_value=mock_shell, create=True):
+            assert _in_notebook() is True
+
+    def test_colab_shell_returns_true(self):
+        """Google Colab's Shell class is detected as notebook."""
+        mock_shell = type("Shell", (), {})()
+        with patch("IPython.get_ipython", return_value=mock_shell, create=True):
+            assert _in_notebook() is True
+
+    def test_none_shell_returns_false(self):
+        """Returns False when get_ipython() returns None."""
+        with patch("IPython.get_ipython", return_value=None, create=True):
+            assert _in_notebook() is False
+
+    def test_terminal_shell_returns_false(self):
+        """IPython terminal shell is not a notebook."""
+        mock_shell = type("TerminalInteractiveShell", (), {})()
+        with patch("IPython.get_ipython", return_value=mock_shell, create=True):
+            assert _in_notebook() is False
+
+    def test_notebook_shell_names_constant(self):
+        """The allowlist contains expected shell names."""
+        assert "ZMQInteractiveShell" in _NOTEBOOK_SHELL_NAMES
+        assert "Shell" in _NOTEBOOK_SHELL_NAMES
+
+
+class TestInColab:
+    """Tests for the _in_colab() detection function."""
+
+    def test_colab_module_present(self):
+        """Returns True when google.colab is in sys.modules."""
+        with patch.dict("sys.modules", {"google.colab": object()}):
+            assert _in_colab() is True
+
+    def test_colab_module_absent(self):
+        """Returns False when google.colab is not in sys.modules."""
+        import sys
+
+        # Ensure google.colab is not present
+        modules_copy = {k: v for k, v in sys.modules.items() if k != "google.colab"}
+        with patch.dict("sys.modules", modules_copy, clear=True):
+            assert _in_colab() is False
+
+
+class TestProgressWidgetColab:
+    """Tests for the Colab-safe HTML rendering path."""
+
+    def test_colab_html_has_inline_styles(self):
+        """Colab rendering uses inline style= attributes."""
+        widget = _ProgressWidget(current=3, total=10, colab=True)
+        html = widget._repr_html_()
+        assert 'style="' in html
+
+    def test_colab_html_no_style_block(self):
+        """Colab rendering does NOT contain a <style> block."""
+        widget = _ProgressWidget(current=3, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "<style>" not in html
+
+    def test_colab_html_no_keyframes(self):
+        """Colab rendering does NOT use @keyframes animations."""
+        widget = _ProgressWidget(current=3, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "@keyframes" not in html
+
+    def test_colab_html_no_position_absolute(self):
+        """Colab rendering does NOT use position:absolute."""
+        widget = _ProgressWidget(current=3, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "position" not in html.lower() or "absolute" not in html.lower()
+
+    def test_colab_html_contains_spider(self):
+        """Colab rendering still shows the spider emoji."""
+        widget = _ProgressWidget(current=3, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "\U0001f577" in html
+
+    def test_colab_spider_in_table_layout(self):
+        """Spider is positioned inside a table so it tracks the progress bar."""
+        widget = _ProgressWidget(current=5, total=10, colab=True)
+        html = widget._repr_html_()
+        # Spider should be inside a <table> layout, not a standalone div
+        assert "<table" in html
+        # The table cell with the spider should have a width based on progress
+        assert "width:50%" in html
+        assert "text-align:right" in html
+
+    def test_colab_web_thread_present(self):
+        """Colab rendering includes a dashed web thread line."""
+        widget = _ProgressWidget(current=5, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "dashed" in html
+        assert "border-top" in html
+
+    def test_colab_html_contains_percentage(self):
+        """Colab rendering shows the progress percentage."""
+        widget = _ProgressWidget(current=5, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "50%" in html
+
+    def test_colab_html_contains_activity(self):
+        """Colab rendering shows the current activity."""
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity="Crawling https://example.com",
+            activity_start_time="12:30:00",
+            colab=True,
+        )
+        html = widget._repr_html_()
+        assert "Crawling https://example.com" in html
+        assert "12:30:00" in html
+
+    def test_colab_html_contains_log(self):
+        """Colab rendering shows the activity log."""
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[(now, "Crawling https://example.com/a", 2.5)],
+            colab=True,
+        )
+        html = widget._repr_html_()
+        assert "Activity Log" in html
+        assert "2.5s" in html
+
+    def test_colab_html_contains_round_label(self):
+        """Colab rendering shows the round label."""
+        widget = _ProgressWidget(current=1, total=5, round_label="Round 2/3", colab=True)
+        html = widget._repr_html_()
+        assert "Round 2/3" in html
+
+    def test_colab_html_contains_stats_and_eta(self):
+        """Colab rendering shows stats and ETA."""
+        widget = _ProgressWidget(
+            current=2,
+            total=10,
+            stats="5 crawled, 3 succeeded, 2 failed",
+            eta="~02:30 left",
+            colab=True,
+        )
+        html = widget._repr_html_()
+        assert "5 crawled" in html
+        assert "~02:30 left" in html
+
+    def test_colab_html_failed_log_entry_red(self):
+        """Failed entries in Colab log are styled red."""
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[
+                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+            ],
+            colab=True,
+        )
+        html = widget._repr_html_()
+        assert "color:#d32f2f" in html
+
+    def test_non_colab_still_uses_style_block(self):
+        """Non-Colab widget (colab=False) still uses <style> block — regression check."""
+        widget = _ProgressWidget(current=3, total=10, colab=False)
+        html = widget._repr_html_()
+        assert "<style>" in html
+        assert "@keyframes" in html
+
+
+class TestColabDisplayPath:
+    """Tests that Colab uses display(HTML(...)) while regular Jupyter uses display(widget)."""
+
+    @patch("crawl4md.progress._in_notebook", return_value=True)
+    @patch("crawl4md.progress._in_colab", return_value=True)
+    def test_colab_refresh_uses_display_html(self, _mock_colab, _mock_nb):
+        """In Colab, _refresh_display() wraps the HTML string in IPython.display.HTML."""
+        reporter = ProgressReporter(total=5)
+        with patch("crawl4md.progress.ProgressReporter._refresh_display") as _:
+            pass  # avoid side effects from __init__
+
+        # Call the real _refresh_display, intercepting IPython.display
+        from unittest.mock import MagicMock
+
+        mock_display = MagicMock()
+        mock_clear = MagicMock()
+        mock_html_cls = MagicMock()
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "IPython": MagicMock(),
+                    "IPython.display": MagicMock(
+                        display=mock_display, clear_output=mock_clear, HTML=mock_html_cls
+                    ),
+                },
+            ),
+        ):
+            # Re-import to pick up the mocked module
+            import importlib
+
+            import crawl4md.progress
+
+            importlib.reload(crawl4md.progress)
+            reporter._use_notebook = True
+            reporter._use_colab = True
+            reporter._refresh_display()
+            # display() should have been called with an HTML() wrapper
+            mock_html_cls.assert_called_once()
+            mock_display.assert_called_once()
+            # The argument to display() should be the HTML(...) object
+            assert mock_display.call_args[0][0] is mock_html_cls.return_value
+            # Reload to restore original module state
+            importlib.reload(crawl4md.progress)
+
+    @patch("crawl4md.progress._in_notebook", return_value=True)
+    @patch("crawl4md.progress._in_colab", return_value=False)
+    def test_non_colab_refresh_uses_display_widget(self, _mock_colab, _mock_nb):
+        """In regular Jupyter, _refresh_display() passes the widget object directly."""
+        reporter = ProgressReporter(total=5)
+        from unittest.mock import MagicMock
+
+        mock_display = MagicMock()
+        mock_clear = MagicMock()
+        mock_html_cls = MagicMock()
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "IPython": MagicMock(),
+                    "IPython.display": MagicMock(
+                        display=mock_display, clear_output=mock_clear, HTML=mock_html_cls
+                    ),
+                },
+            ),
+        ):
+            import importlib
+
+            import crawl4md.progress
+
+            importlib.reload(crawl4md.progress)
+            reporter._use_notebook = True
+            reporter._use_colab = False
+            reporter._refresh_display()
+            # HTML() should NOT have been called
+            mock_html_cls.assert_not_called()
+            # display() should have been called with a _ProgressWidget instance
+            mock_display.assert_called_once()
+            importlib.reload(crawl4md.progress)
 
     def test_repr_html_dark_mode_styles(self):
         """Widget HTML includes dark-mode CSS media query."""

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from datetime import datetime, timedelta
 
 # Maximum number of recent activities shown in the activity log.
 _MAX_LOG_ENTRIES = 10
+
+# IPython shell class names that indicate a notebook environment.
+_NOTEBOOK_SHELL_NAMES = frozenset({"ZMQInteractiveShell", "Shell"})
 
 
 def _in_notebook() -> bool:
@@ -17,9 +21,14 @@ def _in_notebook() -> bool:
         shell = get_ipython()
         if shell is None:
             return False
-        return shell.__class__.__name__ == "ZMQInteractiveShell"
+        return shell.__class__.__name__ in _NOTEBOOK_SHELL_NAMES
     except ImportError:
         return False
+
+
+def _in_colab() -> bool:
+    """Detect whether we are running inside Google Colab."""
+    return "google.colab" in sys.modules
 
 
 class ProgressReporter:
@@ -40,6 +49,7 @@ class ProgressReporter:
         self.action = action
         self._start_time = time.time()
         self._use_notebook = _in_notebook()
+        self._use_colab = self._use_notebook and _in_colab()
         self._prior_success = prior_success
         self._prior_fail = prior_fail
         self._round_success = 0
@@ -114,10 +124,14 @@ class ProgressReporter:
         """Refresh the Jupyter widget (notebook mode only)."""
         if not self._use_notebook:
             return
-        from IPython.display import clear_output, display  # type: ignore[import-untyped]
+        from IPython.display import HTML, clear_output, display  # type: ignore[import-untyped]
 
         clear_output(wait=True)
-        display(self._build_widget())
+        widget = self._build_widget()
+        if self._use_colab:
+            display(HTML(widget._repr_html_()))
+        else:
+            display(widget)
 
     def _build_widget(self) -> _ProgressWidget:
         """Construct the widget with current state."""
@@ -158,6 +172,7 @@ class ProgressReporter:
             activity_eta=activity_eta,
             activity_est_duration=activity_est_duration,
             activity_log=list(self._activity_log),
+            colab=self._use_colab,
         )
 
     def update(self, url: str, *, success: bool = True) -> None:
@@ -217,6 +232,8 @@ class _ProgressWidget:
         activity_eta: str = "",
         activity_est_duration: str = "",
         activity_log: list[tuple[datetime, str, float]] | None = None,
+        *,
+        colab: bool = False,
     ) -> None:
         self.current = current
         self.total = total
@@ -228,6 +245,7 @@ class _ProgressWidget:
         self.activity_eta = activity_eta
         self.activity_est_duration = activity_est_duration
         self.activity_log = activity_log or []
+        self.colab = colab
 
     @staticmethod
     def _fmt_duration(seconds: float) -> str:
@@ -274,6 +292,8 @@ class _ProgressWidget:
         return "⚙️"
 
     def _repr_html_(self) -> str:
+        if self.colab:
+            return self._repr_html_colab()
         pct = int(self.current / self.total * 100) if self.total else 0
 
         # --- Header ---
@@ -451,5 +471,112 @@ class _ProgressWidget:
             f"{log_html}"
             # Footer
             f'<div class="c4md-footer">{footer}</div>'
+            f"</div>"
+        )
+
+    def _repr_html_colab(self) -> str:
+        """Colab-safe HTML rendering using only inline styles (no <style> block)."""
+        pct = int(self.current / self.total * 100) if self.total else 0
+
+        # Shared inline style fragments
+        font = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"
+
+        # --- Header ---
+        header_parts = []
+        if self.round_label:
+            header_parts.append(self.round_label)
+        header_parts.append(f"Page {self.current} / {self.total}")
+        header = " \u00b7 ".join(header_parts)
+
+        # --- Activity row ---
+        activity_html = ""
+        if self.activity:
+            icon = self._activity_icon(self.activity)
+            display_label = self.activity
+            if len(display_label) > 80:
+                display_label = display_label[:77] + "\u2026"
+            time_info = f"since {self.activity_start_time}" if self.activity_start_time else ""
+            if self.activity_eta:
+                time_info += f" \u2192 ~{self.activity_eta}"
+            if self.activity_est_duration:
+                time_info += f" (~{self.activity_est_duration})"
+            time_span = f'<span style="color:#888"> \u2014 {time_info}</span>' if time_info else ""
+            activity_html = (
+                f'<div style="margin:6px 0;color:#1a73e8;font-size:12.5px;{font}">'
+                f'<span style="display:inline-block;width:8px;height:8px;'
+                f"background:#1a73e8;border-radius:50%;vertical-align:middle;"
+                f'margin-right:5px"></span>'
+                f" {icon} {display_label}"
+                f"{time_span}"
+                f"</div>"
+            )
+
+        # --- Activity log ---
+        log_html = ""
+        if self.activity_log:
+            rows = ""
+            for ts, label, dur in reversed(self.activity_log):
+                icon = self._activity_icon(label)
+                display_label = label if len(label) <= 70 else label[:67] + "\u2026"
+                ts_str = ts.strftime("%H:%M:%S")
+                is_fail = label.startswith("\u274c")
+                label_color = "color:#d32f2f" if is_fail else ""
+                rows += (
+                    f"<tr>"
+                    f'<td style="white-space:nowrap;font-family:monospace;color:#999;'
+                    f'font-size:11px;width:58px;padding:1px 4px">{ts_str}</td>'
+                    f'<td style="width:18px;text-align:center;padding:1px 4px">{icon}</td>'
+                    f'<td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+                    f'max-width:460px;padding:1px 4px;{label_color}">{display_label}</td>'
+                    f'<td style="text-align:right;color:#888;white-space:nowrap;'
+                    f'padding:1px 4px">{self._fmt_duration(dur)}</td>'
+                    f"</tr>"
+                )
+            log_html = (
+                f'<div style="margin-top:4px;max-height:200px;overflow-y:auto">'
+                f'<div style="font-size:11.5px;font-weight:600;color:#888;'
+                f'margin-bottom:2px">Activity Log</div>'
+                f'<table style="width:100%;font-size:11.5px;border-collapse:collapse;'
+                f'color:#555">{rows}</table>'
+                f"</div>"
+            )
+
+        # --- Stats + ETA ---
+        footer = f"{self.stats}"
+        if self.eta:
+            footer += f" &nbsp;\u00b7&nbsp; {self.eta}"
+
+        # Spider + thread: use a table so the spider sits at the leading edge
+        # of the filled portion, mimicking the VS Code animated spider.
+        spider_pct = max(pct, 2)  # ensure spider column is visible even at 0%
+        return (
+            f'<div style="{font};font-size:13px;color:#333;max-width:680px">'
+            # Header
+            f'<div style="font-weight:600;font-size:14px;margin-bottom:8px;color:#111">'
+            f"{header}"
+            f'<span style="float:right;font-weight:600;color:#43a047">{pct}%</span>'
+            f"</div>"
+            # Spider row (table layout: spider tracks progress)
+            f'<table style="width:100%;border-collapse:collapse;margin-bottom:0;'
+            f'table-layout:fixed"><tr>'
+            f'<td style="width:{spider_pct}%;text-align:right;padding:0;'
+            f'vertical-align:bottom;line-height:1">'
+            f'<span style="font-size:18px">\U0001f577\ufe0f</span></td>'
+            f'<td style="padding:0"></td>'
+            f"</tr></table>"
+            # Web thread (dashed line from left to spider)
+            f'<div style="width:{spider_pct}%;border-top:1.5px dashed #999;'
+            f'margin-bottom:2px"></div>'
+            # Progress bar
+            f'<div style="background:#e8eaed;border-radius:10px;height:22px;'
+            f'margin-bottom:6px;overflow:hidden">'
+            f'<div style="background:linear-gradient(90deg,#43a047,#66bb6a);'
+            f'height:100%;border-radius:10px;width:{pct}%"></div>'
+            f"</div>"
+            # Activity + log
+            f"{activity_html}"
+            f"{log_html}"
+            # Footer
+            f'<div style="margin-top:6px;font-size:12px;color:#333">{footer}</div>'
             f"</div>"
         )
