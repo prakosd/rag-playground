@@ -676,6 +676,73 @@ class TestRetryRounds:
         # The redirect target is outside /blog, so it should be skipped
         assert len(results) == 0
 
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_round1_skips_per_page_delay(self, mock_crawler_cls, tmp_path: Path):
+        """Round 1 does not apply per-page delay even when delay > 0."""
+        ok_result = _make_mock_result("https://example.com", "<p>ok</p>", "ok")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=ok_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            limit=1, delay=5, max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            crawler.crawl()
+
+        # asyncio.sleep should not have been called with a jitter value
+        # (only the _ROUND_COOLDOWN sleep may appear, which is patched to 0)
+        for call in mock_sleep.call_args_list:
+            args = call[0]
+            assert args[0] == 0 or args == (), (
+                f"Unexpected sleep({args[0]}) in round 1 — delay should be skipped"
+            )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_retry_round_applies_delay(self, mock_crawler_cls, tmp_path: Path):
+        """Retry rounds apply per-page delay with jitter."""
+        blocked_html = '<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>'
+        ok_result = _make_mock_result("https://example.com", "<p>good</p>", "good")
+        blocked_result = _make_mock_result("https://example.com", blocked_html, "blocked")
+
+        call_count = {"n": 0}
+        async def mock_arun(url, config):
+            call_count["n"] += 1
+            if call_count["n"] <= 1:
+                return blocked_result
+            return ok_result
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        delay_value = 2.0
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            limit=1, delay=delay_value, max_retries=1,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            crawler.crawl()
+
+        # At least one sleep call should be in the jitter range for the retry round
+        jitter_calls = [
+            call[0][0] for call in mock_sleep.call_args_list
+            if call[0] and call[0][0] > 0
+        ]
+        assert any(
+            delay_value * 0.3 <= v <= delay_value * 3.0 for v in jitter_calls
+        ), f"Expected a jitter sleep in [{delay_value * 0.3}, {delay_value * 3.0}], got {jitter_calls}"
+
 
 class TestFailContentFiles:
     """Tests for fail content file generation (symmetrical with success content)."""

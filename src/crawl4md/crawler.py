@@ -250,6 +250,7 @@ class SiteCrawler:
                     crawler=crawler,
                     run_cfg=run_cfg,
                     discover_links=False,
+                    is_retry=True,
                     round_prefix=round_prefix,
                     prior_success=len(all_success),
                     prior_fail=len(all_fail),
@@ -299,6 +300,7 @@ class SiteCrawler:
         run_cfg: object,
         *,
         discover_links: bool = True,
+        is_retry: bool = False,
         round_prefix: str = "",
         prior_success: int = 0,
         prior_fail: int = 0,
@@ -429,8 +431,10 @@ class SiteCrawler:
                 success, fail = self._split_results(results)
                 self._save_url_lists(success, fail, round_prefix)
 
-            # Throttle between pages — wide jitter mimics human browsing
-            if self.config.delay > 0:
+            # Throttle between pages — wide jitter mimics human browsing.
+            # Round 1 runs without delay for speed; retries apply the
+            # configured delay so WAFs have time to cool down.
+            if self.config.delay > 0 and is_retry:
                 jitter = self.config.delay * random.uniform(0.3, 3.0)
                 await asyncio.sleep(jitter)
 

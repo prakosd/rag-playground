@@ -33,8 +33,8 @@ Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jup
 
 **Multi-round strategy:**
 
-1. **Round 1** — crawl seed URLs with link discovery (respects `max_depth`). Discovered links are added to the queue up to `config.limit`.
-2. **Rounds 2+** — retry failed URLs only (no link discovery). A `_ROUND_COOLDOWN` (30 s) pause between rounds lets WAFs cool down.
+1. **Round 1** — crawl seed URLs with link discovery (respects `max_depth`). Discovered links are added to the queue up to `config.limit`. **No per-page delay** is applied in round 1 for speed.
+2. **Rounds 2+** — retry failed URLs only (no link discovery). A `_ROUND_COOLDOWN` (30 s) pause between rounds lets WAFs cool down. Per-page `delay` (with jitter 0.3x–3.0x) is applied only during these retry rounds.
 3. **Early exit** — skip remaining retries if all pages succeed.
 4. **Session persistence** — a single `AsyncWebCrawler` instance is shared across all rounds so cookies (including WAF challenge tokens) persist through retries.
 

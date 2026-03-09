@@ -82,7 +82,7 @@ SiteCrawler.crawl()
 | `max_depth` | `int` | `1` | How many clicks deep to follow links |
 | `exclude_paths` | `list[str]` | `[]` | Regex patterns for URLs to skip |
 | `include_only_paths` | `list[str]` | `[]` | Regex patterns for URLs to keep (skip everything else) |
-| `delay` | `float` | `0` | Seconds between page crawls (uses jitter 0.3x–3.0x) |
+| `delay` | `float` | `0` | Seconds between page crawls on retry rounds (uses jitter 0.3x–3.0x; round 1 runs without delay) |
 | `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages |
