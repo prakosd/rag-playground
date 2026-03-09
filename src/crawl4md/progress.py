@@ -12,6 +12,45 @@ _MAX_LOG_ENTRIES = 10
 # IPython shell class names that indicate a notebook environment.
 _NOTEBOOK_SHELL_NAMES = frozenset({"ZMQInteractiveShell", "Shell"})
 
+# ---------------------------------------------------------------------------
+# Color palettes for light and dark themes
+# ---------------------------------------------------------------------------
+_LIGHT_COLORS: dict[str, str] = {
+    "text": "#333",
+    "header": "#111",
+    "bar_bg": "#e8eaed",
+    "bar_gradient": "linear-gradient(90deg,#43a047,#66bb6a)",
+    "activity": "#1a73e8",
+    "pulse": "#1a73e8",
+    "duration": "#888",
+    "log_heading": "#888",
+    "log_text": "#555",
+    "log_time": "#999",
+    "log_dur": "#888",
+    "log_fail": "#d32f2f",
+    "footer": "#333",
+    "pct": "#43a047",
+    "thread": "#999",
+}
+
+_DARK_COLORS: dict[str, str] = {
+    "text": "#e0e0e0",
+    "header": "#f0f0f0",
+    "bar_bg": "#3a3a3a",
+    "bar_gradient": "linear-gradient(90deg,#43a047,#66bb6a)",
+    "activity": "#64b5f6",
+    "pulse": "#64b5f6",
+    "duration": "#aaa",
+    "log_heading": "#aaa",
+    "log_text": "#bbb",
+    "log_time": "#999",
+    "log_dur": "#aaa",
+    "log_fail": "#ef5350",
+    "footer": "#d0d0d0",
+    "pct": "#81c784",
+    "thread": "#888",
+}
+
 
 def _in_notebook() -> bool:
     """Detect whether we are running inside a Jupyter/IPython notebook."""
@@ -29,6 +68,22 @@ def _in_notebook() -> bool:
 def _in_colab() -> bool:
     """Detect whether we are running inside Google Colab."""
     return "google.colab" in sys.modules
+
+
+def _colab_is_dark() -> bool:
+    """Detect whether Google Colab is using a dark theme.
+
+    Uses ``google.colab.output.eval_js`` to read the ``data-colab-attr-theme``
+    attribute from the ``<html>`` element.  Returns ``False`` (light mode) if
+    detection fails for any reason.
+    """
+    try:
+        from google.colab import output  # type: ignore[import-untyped]
+
+        theme = output.eval_js("document.documentElement.getAttribute('data-colab-attr-theme')")
+        return str(theme).strip().lower() == "dark"
+    except Exception:  # noqa: BLE001
+        return False
 
 
 class ProgressReporter:
@@ -173,6 +228,7 @@ class ProgressReporter:
             activity_est_duration=activity_est_duration,
             activity_log=list(self._activity_log),
             colab=self._use_colab,
+            dark=self._use_colab and _colab_is_dark(),
         )
 
     def update(self, url: str, *, success: bool = True) -> None:
@@ -234,6 +290,7 @@ class _ProgressWidget:
         activity_log: list[tuple[datetime, str, float]] | None = None,
         *,
         colab: bool = False,
+        dark: bool = False,
     ) -> None:
         self.current = current
         self.total = total
@@ -246,6 +303,7 @@ class _ProgressWidget:
         self.activity_est_duration = activity_est_duration
         self.activity_log = activity_log or []
         self.colab = colab
+        self.dark = dark
 
     @staticmethod
     def _fmt_duration(seconds: float) -> str:
@@ -355,23 +413,26 @@ class _ProgressWidget:
         if self.eta:
             footer += f" &nbsp;·&nbsp; {self.eta}"
 
+        lt = _LIGHT_COLORS
+        dk = _DARK_COLORS
+
         return (
             f'<div class="c4md-widget">'
             f"<style>"
             f".c4md-widget {{"
             f"  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
-            f"  font-size: 13px; color: #333; max-width: 680px;"
+            f"  font-size: 13px; color: {lt['text']}; max-width: 680px;"
             f"}}"
             f".c4md-header {{"
-            f"  font-weight: 600; font-size: 14px; margin-bottom: 8px; color: #111;"
+            f"  font-weight: 600; font-size: 14px; margin-bottom: 8px; color: {lt['header']};"
             f"}}"
             # Progress bar container
             f".c4md-bar-wrap {{"
-            f"  position: relative; background: #e8eaed; border-radius: 10px;"
+            f"  position: relative; background: {lt['bar_bg']}; border-radius: 10px;"
             f"  height: 22px; overflow: visible; margin-bottom: 6px;"
             f"}}"
             f".c4md-bar {{"
-            f"  background: linear-gradient(90deg, #43a047, #66bb6a);"
+            f"  background: {lt['bar_gradient']};"
             f"  height: 100%; border-radius: 10px;"
             f"  transition: width 0.4s ease;"
             f"}}"
@@ -386,7 +447,7 @@ class _ProgressWidget:
             # Web thread (dashed line from left edge to spider)
             f".c4md-thread {{"
             f"  position: absolute; top: 0px; left: 0; height: 2px;"
-            f"  border-top: 1.5px dashed #999;"
+            f"  border-top: 1.5px dashed {lt['thread']};"
             f"  transition: width 0.4s ease;"
             f"}}"
             f"@keyframes c4md-bob {{"
@@ -395,12 +456,12 @@ class _ProgressWidget:
             f"}}"
             # Pulsing dot for current activity
             f".c4md-activity {{"
-            f"  margin: 6px 0; color: #1a73e8; font-size: 12.5px;"
+            f"  margin: 6px 0; color: {lt['activity']}; font-size: 12.5px;"
             f"  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
             f"}}"
             f".c4md-pulse {{"
             f"  display: inline-block; width: 7px; height: 7px;"
-            f"  background: #1a73e8; border-radius: 50%;"
+            f"  background: {lt['pulse']}; border-radius: 50%;"
             f"  animation: c4md-blink 1s ease-in-out infinite;"
             f"  vertical-align: middle; margin-right: 4px;"
             f"}}"
@@ -408,21 +469,22 @@ class _ProgressWidget:
             f"  0%, 100% {{ opacity: 1; }}"
             f"  50% {{ opacity: 0.25; }}"
             f"}}"
-            f".c4md-dur {{ color: #888; }}"
+            f".c4md-dur {{ color: {lt['duration']}; }}"
             # Activity log
             f".c4md-log {{"
             f"  margin-top: 4px; max-height: 200px; overflow-y: auto;"
             f"}}"
             f".c4md-log-heading {{"
-            f"  font-size: 11.5px; font-weight: 600; color: #888;"
+            f"  font-size: 11.5px; font-weight: 600; color: {lt['log_heading']};"
             f"  margin-bottom: 2px;"
             f"}}"
             f".c4md-log-table {{"
-            f"  width: 100%; font-size: 11.5px; border-collapse: collapse; color: #555;"
+            f"  width: 100%; font-size: 11.5px; border-collapse: collapse;"
+            f"  color: {lt['log_text']};"
             f"}}"
             f".c4md-log-table td {{ padding: 1px 4px; }}"
             f".c4md-log-time {{"
-            f"  white-space: nowrap; font-family: monospace; color: #999;"
+            f"  white-space: nowrap; font-family: monospace; color: {lt['log_time']};"
             f"  font-size: 11px; width: 58px;"
             f"}}"
             f".c4md-log-icon {{ width: 18px; text-align: center; }}"
@@ -430,31 +492,32 @@ class _ProgressWidget:
             f"  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
             f"  max-width: 460px;"
             f"}}"
-            f".c4md-log-dur {{ text-align: right; color: #888; white-space: nowrap; }}"
-            f".c4md-log-fail {{ color: #d32f2f; }}"
+            f".c4md-log-dur {{ text-align: right; color: {lt['log_dur']};"
+            f"  white-space: nowrap; }}"
+            f".c4md-log-fail {{ color: {lt['log_fail']}; }}"
             # Footer
             f".c4md-footer {{"
-            f"  margin-top: 6px; font-size: 12px; color: #333;"
+            f"  margin-top: 6px; font-size: 12px; color: {lt['footer']};"
             f"}}"
             f".c4md-pct {{"
-            f"  float: right; font-weight: 600; color: #43a047;"
+            f"  float: right; font-weight: 600; color: {lt['pct']};"
             f"}}"
             # Dark-mode overrides
             f"@media (prefers-color-scheme: dark) {{"
-            f"  .c4md-widget {{ color: #e0e0e0; }}"
-            f"  .c4md-header {{ color: #f0f0f0; }}"
-            f"  .c4md-bar-wrap {{ background: #3a3a3a; }}"
-            f"  .c4md-thread {{ border-color: #888; }}"
-            f"  .c4md-activity {{ color: #64b5f6; }}"
-            f"  .c4md-pulse {{ background: #64b5f6; }}"
-            f"  .c4md-dur {{ color: #aaa; }}"
-            f"  .c4md-log-heading {{ color: #aaa; }}"
-            f"  .c4md-log-table {{ color: #bbb; }}"
-            f"  .c4md-log-time {{ color: #999; }}"
-            f"  .c4md-log-dur {{ color: #aaa; }}"
-            f"  .c4md-log-fail {{ color: #ef5350; }}"
-            f"  .c4md-footer {{ color: #d0d0d0; }}"
-            f"  .c4md-pct {{ color: #81c784; }}"
+            f"  .c4md-widget {{ color: {dk['text']}; }}"
+            f"  .c4md-header {{ color: {dk['header']}; }}"
+            f"  .c4md-bar-wrap {{ background: {dk['bar_bg']}; }}"
+            f"  .c4md-thread {{ border-color: {dk['thread']}; }}"
+            f"  .c4md-activity {{ color: {dk['activity']}; }}"
+            f"  .c4md-pulse {{ background: {dk['pulse']}; }}"
+            f"  .c4md-dur {{ color: {dk['duration']}; }}"
+            f"  .c4md-log-heading {{ color: {dk['log_heading']}; }}"
+            f"  .c4md-log-table {{ color: {dk['log_text']}; }}"
+            f"  .c4md-log-time {{ color: {dk['log_time']}; }}"
+            f"  .c4md-log-dur {{ color: {dk['log_dur']}; }}"
+            f"  .c4md-log-fail {{ color: {dk['log_fail']}; }}"
+            f"  .c4md-footer {{ color: {dk['footer']}; }}"
+            f"  .c4md-pct {{ color: {dk['pct']}; }}"
             f"}}"
             f"</style>"
             # Header
@@ -477,6 +540,7 @@ class _ProgressWidget:
     def _repr_html_colab(self) -> str:
         """Colab-safe HTML rendering using only inline styles (no <style> block)."""
         pct = int(self.current / self.total * 100) if self.total else 0
+        c = _DARK_COLORS if self.dark else _LIGHT_COLORS
 
         # Shared inline style fragments
         font = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"
@@ -500,11 +564,15 @@ class _ProgressWidget:
                 time_info += f" \u2192 ~{self.activity_eta}"
             if self.activity_est_duration:
                 time_info += f" (~{self.activity_est_duration})"
-            time_span = f'<span style="color:#888"> \u2014 {time_info}</span>' if time_info else ""
+            time_span = (
+                f'<span style="color:{c["duration"]}"> \u2014 {time_info}</span>'
+                if time_info
+                else ""
+            )
             activity_html = (
-                f'<div style="margin:6px 0;color:#1a73e8;font-size:12.5px;{font}">'
+                f'<div style="margin:6px 0;color:{c["activity"]};font-size:12.5px;{font}">'
                 f'<span style="display:inline-block;width:8px;height:8px;'
-                f"background:#1a73e8;border-radius:50%;vertical-align:middle;"
+                f"background:{c['pulse']};border-radius:50%;vertical-align:middle;"
                 f'margin-right:5px"></span>'
                 f" {icon} {display_label}"
                 f"{time_span}"
@@ -520,24 +588,25 @@ class _ProgressWidget:
                 display_label = label if len(label) <= 70 else label[:67] + "\u2026"
                 ts_str = ts.strftime("%H:%M:%S")
                 is_fail = label.startswith("\u274c")
-                label_color = "color:#d32f2f" if is_fail else ""
+                label_color = f"color:{c['log_fail']}" if is_fail else ""
                 rows += (
                     f"<tr>"
-                    f'<td style="white-space:nowrap;font-family:monospace;color:#999;'
+                    f'<td style="white-space:nowrap;font-family:monospace;'
+                    f"color:{c['log_time']};"
                     f'font-size:11px;width:58px;padding:1px 4px">{ts_str}</td>'
                     f'<td style="width:18px;text-align:center;padding:1px 4px">{icon}</td>'
                     f'<td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
                     f'max-width:460px;padding:1px 4px;{label_color}">{display_label}</td>'
-                    f'<td style="text-align:right;color:#888;white-space:nowrap;'
+                    f'<td style="text-align:right;color:{c["log_dur"]};white-space:nowrap;'
                     f'padding:1px 4px">{self._fmt_duration(dur)}</td>'
                     f"</tr>"
                 )
             log_html = (
                 f'<div style="margin-top:4px;max-height:200px;overflow-y:auto">'
-                f'<div style="font-size:11.5px;font-weight:600;color:#888;'
+                f'<div style="font-size:11.5px;font-weight:600;color:{c["log_heading"]};'
                 f'margin-bottom:2px">Activity Log</div>'
                 f'<table style="width:100%;font-size:11.5px;border-collapse:collapse;'
-                f'color:#555">{rows}</table>'
+                f'color:{c["log_text"]}">{rows}</table>'
                 f"</div>"
             )
 
@@ -550,11 +619,12 @@ class _ProgressWidget:
         # of the filled portion, mimicking the VS Code animated spider.
         spider_pct = max(pct, 2)  # ensure spider column is visible even at 0%
         return (
-            f'<div style="{font};font-size:13px;color:#333;max-width:680px">'
+            f'<div style="{font};font-size:13px;color:{c["text"]};max-width:680px">'
             # Header
-            f'<div style="font-weight:600;font-size:14px;margin-bottom:8px;color:#111">'
+            f'<div style="font-weight:600;font-size:14px;margin-bottom:8px;'
+            f'color:{c["header"]}">'
             f"{header}"
-            f'<span style="float:right;font-weight:600;color:#43a047">{pct}%</span>'
+            f'<span style="float:right;font-weight:600;color:{c["pct"]}">{pct}%</span>'
             f"</div>"
             # Spider row (table layout: spider tracks progress)
             f'<table style="width:100%;border-collapse:collapse;margin-bottom:0;'
@@ -565,18 +635,19 @@ class _ProgressWidget:
             f'<td style="padding:0"></td>'
             f"</tr></table>"
             # Web thread (dashed line from left to spider)
-            f'<div style="width:{spider_pct}%;border-top:1.5px dashed #999;'
+            f'<div style="width:{spider_pct}%;border-top:1.5px dashed {c["thread"]};'
             f'margin-bottom:2px"></div>'
             # Progress bar
-            f'<div style="background:#e8eaed;border-radius:10px;height:22px;'
+            f'<div style="background:{c["bar_bg"]};border-radius:10px;height:22px;'
             f'margin-bottom:6px;overflow:hidden">'
-            f'<div style="background:linear-gradient(90deg,#43a047,#66bb6a);'
+            f'<div style="background:{c["bar_gradient"]};'
             f'height:100%;border-radius:10px;width:{pct}%"></div>'
             f"</div>"
             # Activity + log
             f"{activity_html}"
             f"{log_html}"
             # Footer
-            f'<div style="margin-top:6px;font-size:12px;color:#333">{footer}</div>'
+            f'<div style="margin-top:6px;font-size:12px;color:{c["footer"]}">'
+            f"{footer}</div>"
             f"</div>"
         )

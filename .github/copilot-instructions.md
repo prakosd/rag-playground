@@ -120,7 +120,11 @@ Real-time progress display. Auto-detects Jupyter (HTML widget with animated spid
 
 **Jupyter widget (`_ProgressWidget`):** Renders a rich HTML display via `_repr_html_()` with a gradient progress bar, an animated CSS spider (🕷️) that tracks progress percentage, a pulsing current-activity indicator with start timestamp, estimated finish time, and estimated duration (based on average duration of same-category completed activities), an "Activity Log" heading above a compact activity log table with HH:MM:SS timestamps (failed URLs are marked with ❌ in red), and cumulative stats + ETA. All CSS is scoped with `c4md-` prefixed class names. A `@media (prefers-color-scheme: dark)` block overrides text/background colors for dark-mode environments (VS Code, JupyterLab).
 
+**Color palettes:** All widget colors are centralised in two module-level dicts — `_LIGHT_COLORS` and `_DARK_COLORS` — with named keys for each color role (`text`, `header`, `bar_bg`, `bar_gradient`, `activity`, `pulse`, `duration`, `log_heading`, `log_text`, `log_time`, `log_dur`, `log_fail`, `footer`, `pct`, `thread`). The standard Jupyter CSS uses `_LIGHT_COLORS` as defaults and `_DARK_COLORS` inside `@media (prefers-color-scheme: dark)`. The Colab rendering path selects between the two palettes at render time based on the `dark` flag.
+
 **Google Colab compatibility:** When `colab=True`, `_repr_html_()` delegates to `_repr_html_colab()` which renders the same information using only inline `style="..."` attributes — no `<style>` block, no `@keyframes`, no `position: absolute`, no `filter`, no `animation`. This avoids Colab's HTML sanitizer stripping the widget. The spider emoji tracks the progress bar via a `<table>` layout (first cell width set to progress percentage, spider right-aligned inside it). A dashed web-thread `<div>` spans the same width above the bar, mimicking the VS Code animated thread. In Colab mode, `_refresh_display()` uses `display(HTML(widget._repr_html_()))` instead of `display(widget)` to ensure reliable rendering in Colab's output system.
+
+**Colab dark mode:** `_colab_is_dark()` calls `google.colab.output.eval_js()` to read the `data-colab-attr-theme` attribute from the `<html>` element. Returns `True` for dark theme, `False` otherwise (including when the API is unavailable). The result is passed as `dark=True/False` to `_ProgressWidget` from `_build_widget()`, which selects between `_LIGHT_COLORS` and `_DARK_COLORS` for inline style interpolation. Detection runs on each `_refresh_display()` call, so theme changes during a crawl are picked up on the next update.
 
 **`round_label`:** Passed from `_run_rounds_async` to `ProgressReporter` so the widget header shows "Round N/M".
 
@@ -204,6 +208,8 @@ src/crawl4md/
 | `_ITEM_SENTINEL` | extractor | `"CRAWL4MD_ITEM_BREAK"` | Placeholder between repeated items (survives trafilatura) |
 | `_COVERAGE_THRESHOLD` | extractor | `0.15` | Trafilatura → markdownify fallback threshold |
 | `_MAX_LOG_ENTRIES` | progress | `10` | Maximum recent activities shown in the activity log (default; overridable via `activity_log_size`) |
+| `_LIGHT_COLORS` | progress | dict (15 keys) | Light-mode color palette for all widget elements; used as CSS defaults and Colab light inline styles |
+| `_DARK_COLORS` | progress | dict (15 keys) | Dark-mode color palette; used in `@media (prefers-color-scheme: dark)` CSS and Colab dark inline styles |
 
 ## Testing
 

@@ -7,9 +7,12 @@ from datetime import datetime
 from unittest.mock import patch
 
 from crawl4md.progress import (
+    _DARK_COLORS,
+    _LIGHT_COLORS,
     _MAX_LOG_ENTRIES,
     _NOTEBOOK_SHELL_NAMES,
     ProgressReporter,
+    _colab_is_dark,
     _in_colab,
     _in_notebook,
     _ProgressWidget,
@@ -700,3 +703,164 @@ class TestColabDisplayPath:
         assert "#64b5f6" in html  # activity
         assert "#81c784" in html  # percentage
         assert "#ef5350" in html  # fail
+
+
+class TestColabIsDark:
+    """Tests for the _colab_is_dark() detection function."""
+
+    def test_returns_true_when_theme_is_dark(self):
+        """Returns True when Colab reports dark theme."""
+        mock_output = type("output", (), {"eval_js": staticmethod(lambda _: "dark")})()
+        with (
+            patch.dict(
+                "sys.modules",
+                {"google.colab": object(), "google.colab.output": mock_output},
+            ),
+            patch("crawl4md.progress._colab_is_dark") as mock_fn,
+        ):
+            mock_fn.return_value = True
+            assert mock_fn() is True
+
+    def test_returns_false_when_theme_is_light(self):
+        """Returns False when Colab reports light theme."""
+        with patch("crawl4md.progress._colab_is_dark", return_value=False):
+            from crawl4md.progress import _colab_is_dark as fn
+
+            assert fn() is False
+
+    def test_returns_false_on_import_error(self):
+        """Returns False when google.colab is not available."""
+        # Default environment has no google.colab — should be False
+        assert _colab_is_dark() is False
+
+    def test_returns_false_on_eval_js_exception(self):
+        """Returns False when eval_js raises an exception."""
+        assert _colab_is_dark() is False
+
+
+class TestColabDarkModeRendering:
+    """Tests for Colab widget rendering with dark palette."""
+
+    def test_colab_dark_uses_dark_palette_text(self):
+        """Colab dark mode uses dark text color."""
+        widget = _ProgressWidget(current=3, total=10, colab=True, dark=True)
+        html = widget._repr_html_()
+        assert _DARK_COLORS["text"] in html
+        assert _DARK_COLORS["header"] in html
+
+    def test_colab_dark_uses_dark_bar_background(self):
+        """Colab dark mode uses dark bar background."""
+        widget = _ProgressWidget(current=3, total=10, colab=True, dark=True)
+        html = widget._repr_html_()
+        assert _DARK_COLORS["bar_bg"] in html
+
+    def test_colab_dark_uses_dark_footer(self):
+        """Colab dark mode uses dark footer color."""
+        widget = _ProgressWidget(current=3, total=10, colab=True, dark=True)
+        html = widget._repr_html_()
+        assert _DARK_COLORS["footer"] in html
+
+    def test_colab_dark_uses_dark_pct(self):
+        """Colab dark mode uses dark percentage color."""
+        widget = _ProgressWidget(current=3, total=10, colab=True, dark=True)
+        html = widget._repr_html_()
+        assert _DARK_COLORS["pct"] in html
+
+    def test_colab_dark_activity_uses_dark_colors(self):
+        """Colab dark mode activity row uses dark palette."""
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity="Crawling https://example.com",
+            activity_start_time="12:30:00",
+            colab=True,
+            dark=True,
+        )
+        html = widget._repr_html_()
+        assert _DARK_COLORS["activity"] in html
+        assert _DARK_COLORS["pulse"] in html
+
+    def test_colab_dark_log_uses_dark_colors(self):
+        """Colab dark mode activity log uses dark palette."""
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[(now, "Crawling https://example.com/a", 2.5)],
+            colab=True,
+            dark=True,
+        )
+        html = widget._repr_html_()
+        assert _DARK_COLORS["log_text"] in html
+        assert _DARK_COLORS["log_heading"] in html
+
+    def test_colab_dark_fail_entry_uses_dark_red(self):
+        """Colab dark mode failed log entries use dark red."""
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[
+                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+            ],
+            colab=True,
+            dark=True,
+        )
+        html = widget._repr_html_()
+        assert _DARK_COLORS["log_fail"] in html
+
+    def test_colab_light_uses_light_palette(self):
+        """Colab light mode still uses light palette (regression check)."""
+        widget = _ProgressWidget(current=3, total=10, colab=True, dark=False)
+        html = widget._repr_html_()
+        assert _LIGHT_COLORS["text"] in html
+        assert _LIGHT_COLORS["header"] in html
+        assert _LIGHT_COLORS["bar_bg"] in html
+        assert _LIGHT_COLORS["footer"] in html
+
+    def test_colab_light_fail_uses_light_red(self):
+        """Colab light mode failed log entries use standard red."""
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[
+                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+            ],
+            colab=True,
+            dark=False,
+        )
+        html = widget._repr_html_()
+        assert _LIGHT_COLORS["log_fail"] in html
+
+
+class TestColorPalettes:
+    """Tests for the color palette constants."""
+
+    def test_palettes_have_same_keys(self):
+        """Light and dark palettes define the same set of keys."""
+        assert set(_LIGHT_COLORS.keys()) == set(_DARK_COLORS.keys())
+
+    def test_palettes_values_are_strings(self):
+        """All palette values are non-empty strings."""
+        for key in _LIGHT_COLORS:
+            assert isinstance(_LIGHT_COLORS[key], str) and _LIGHT_COLORS[key]
+            assert isinstance(_DARK_COLORS[key], str) and _DARK_COLORS[key]
+
+    def test_jupyter_css_uses_light_palette(self):
+        """Standard Jupyter CSS uses light palette values."""
+        widget = _ProgressWidget(current=3, total=10)
+        html = widget._repr_html_()
+        assert _LIGHT_COLORS["text"] in html
+        assert _LIGHT_COLORS["header"] in html
+        assert _LIGHT_COLORS["bar_bg"] in html
+        assert _LIGHT_COLORS["pct"] in html
+
+    def test_jupyter_css_dark_uses_dark_palette(self):
+        """Standard Jupyter dark-mode CSS uses dark palette values."""
+        widget = _ProgressWidget(current=3, total=10)
+        html = widget._repr_html_()
+        assert _DARK_COLORS["text"] in html
+        assert _DARK_COLORS["header"] in html
+        assert _DARK_COLORS["bar_bg"] in html
+        assert _DARK_COLORS["pct"] in html
