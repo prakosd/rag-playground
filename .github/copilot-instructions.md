@@ -197,3 +197,12 @@ src/crawl4md/
 - Test files: `test_config.py`, `test_crawler.py`, `test_extractor.py`, `test_sorter.py`, `test_writer.py`.
 - `_ROUND_COOLDOWN` (the 30 s sleep between retry rounds) is globally patched to 0 via an autouse fixture in `conftest.py`. No per-test patching is needed.
 - When running tests in a terminal, **always wait for the command to finish and return its full output** before re-running, retrying, or drawing any conclusions. Do not start a new test run while one is still in progress.
+
+## Documentation Sync
+
+For every code change or plan, review `.github/copilot-instructions.md` and `README.md` for accuracy against the change. If either file needs updating (e.g. new/renamed config fields, changed defaults, new modules, altered data flow, new constants, updated dependencies):
+
+- **Plan mode** — include the specific documentation updates as steps in the plan.
+- **Agent mode** — make the documentation updates directly alongside the code change.
+
+Common triggers: new or removed config parameters, changed architecture or data flow, new/renamed modules or classes, updated constants or default values, new dependencies, changed output file naming.
