@@ -32,11 +32,16 @@ class TestCrawlerConfig:
         assert cfg.max_depth == 1
         assert cfg.exclude_paths == []
         assert cfg.include_only_paths == []
+        assert cfg.stealth is True
+        assert cfg.headers == {}
+
+    def test_stealth_disabled(self):
+        cfg = CrawlerConfig(urls=["https://example.com"], stealth=False)
         assert cfg.stealth is False
 
-    def test_stealth_enabled(self):
-        cfg = CrawlerConfig(urls=["https://example.com"], stealth=True)
-        assert cfg.stealth is True
+    def test_headers_accepted(self):
+        cfg = CrawlerConfig(urls=["https://example.com"], headers={"Accept-Language": "en"})
+        assert cfg.headers == {"Accept-Language": "en"}
 
     def test_limit_must_be_positive(self):
         with pytest.raises(ValueError, match="at least 1"):
@@ -85,6 +90,12 @@ class TestPageConfig:
         assert cfg.timeout == 30
         assert cfg.max_file_size_mb == 15.0
         assert cfg.extract_main_content is True
+        assert cfg.scan_full_page is True
+        assert cfg.scroll_delay == 0.4
+
+    def test_scroll_delay_negative_rejected(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            PageConfig(scroll_delay=-1)
 
     def test_exclude_tags_from_string(self):
         cfg = PageConfig(exclude_tags="nav, footer", include_only_tags=[])

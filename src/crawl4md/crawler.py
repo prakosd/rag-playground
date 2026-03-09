@@ -183,10 +183,19 @@ class SiteCrawler:
         succeeded_urls: set[str] = set()  # URLs already crawled successfully
         total_rounds = 1 + self.config.max_retries  # round 1 + retries
 
-        browser_cfg = BrowserConfig(
-            headless=True,
-            enable_stealth=self.config.stealth,
-        )
+        browser_kwargs: dict = {
+            "headless": True,
+            "enable_stealth": self.config.stealth,
+        }
+        if self.config.stealth:
+            browser_kwargs["user_agent_mode"] = "random"
+            browser_kwargs["user_agent_generator_config"] = {
+                "platforms": ["desktop"],
+                "browsers": ["Chrome", "Edge"],
+            }
+        if self.config.headers:
+            browser_kwargs["headers"] = dict(self.config.headers)
+        browser_cfg = BrowserConfig(**browser_kwargs)
         run_cfg = self._build_run_config(CrawlerRunConfig)
 
         # --- Round 1: full crawl with link discovery ---
@@ -196,51 +205,18 @@ class SiteCrawler:
         if self._fail_writer is not None:
             self._fail_writer.reset(f"{round_prefix}fail_")
         print(f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---")
-        round_results = await self._crawl_urls_async(
-            urls=self.config.urls,
-            browser_cfg=browser_cfg,
-            run_cfg=run_cfg,
-            discover_links=True,
-            round_prefix=round_prefix,
-            prior_success=0,
-            prior_fail=0,
-        )
-        success, fail = self._split_results(round_results)
-        self._save_url_lists(success, fail, round_prefix)
-        if self._writer is not None:
-            self._writer.flush()
-        if self._fail_writer is not None:
-            self._fail_writer.flush()
-        all_success.extend(success)
-        succeeded_urls.update(r.url for r in success)
-        all_fail.extend(fail)
 
-        # --- Retry rounds ---
-        failed_urls = [r.url for r in all_fail]
-        for retry_num in range(1, self.config.max_retries + 1):
-            if not failed_urls:
-                print(f"\nAll pages succeeded — skipping remaining retries.")
-                break
-
-            round_num = retry_num + 1
-            round_prefix = f"round_{round_num}_"
-            if self._writer is not None:
-                self._writer.reset(f"{round_prefix}success_")
-            if self._fail_writer is not None:
-                self._fail_writer.reset(f"{round_prefix}fail_")
-
-            print(f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {_ROUND_COOLDOWN}s cooldown) ---")
-            await asyncio.sleep(_ROUND_COOLDOWN)
-
+        # Use a single browser instance across all rounds so that
+        # cookies (including WAF challenge tokens) persist through retries.
+        async with AsyncWebCrawler(config=browser_cfg) as crawler:
             round_results = await self._crawl_urls_async(
-                urls=failed_urls,
-                browser_cfg=browser_cfg,
+                urls=self.config.urls,
+                crawler=crawler,
                 run_cfg=run_cfg,
-                discover_links=False,
+                discover_links=True,
                 round_prefix=round_prefix,
-                prior_success=len(all_success),
-                prior_fail=len(all_fail),
-                skip_urls=frozenset(succeeded_urls),
+                prior_success=0,
+                prior_fail=0,
             )
             success, fail = self._split_results(round_results)
             self._save_url_lists(success, fail, round_prefix)
@@ -248,16 +224,53 @@ class SiteCrawler:
                 self._writer.flush()
             if self._fail_writer is not None:
                 self._fail_writer.flush()
-            # Deduplicate: only add genuinely new successes
-            new_success = [r for r in success if r.url not in succeeded_urls]
-            all_success.extend(new_success)
-            succeeded_urls.update(r.url for r in new_success)
-            # Remove newly-succeeded URLs from all_fail; add new failures (skip dupes)
-            new_success_urls = {r.url for r in new_success}
-            all_fail = [r for r in all_fail if r.url not in new_success_urls]
-            existing_fail_urls = {r.url for r in all_fail}
-            all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
-            failed_urls = [r.url for r in fail]
+            all_success.extend(success)
+            succeeded_urls.update(r.url for r in success)
+            all_fail.extend(fail)
+
+            # --- Retry rounds ---
+            failed_urls = [r.url for r in all_fail]
+            for retry_num in range(1, self.config.max_retries + 1):
+                if not failed_urls:
+                    print(f"\nAll pages succeeded — skipping remaining retries.")
+                    break
+
+                round_num = retry_num + 1
+                round_prefix = f"round_{round_num}_"
+                if self._writer is not None:
+                    self._writer.reset(f"{round_prefix}success_")
+                if self._fail_writer is not None:
+                    self._fail_writer.reset(f"{round_prefix}fail_")
+
+                print(f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {_ROUND_COOLDOWN}s cooldown) ---")
+                await asyncio.sleep(_ROUND_COOLDOWN)
+
+                round_results = await self._crawl_urls_async(
+                    urls=failed_urls,
+                    crawler=crawler,
+                    run_cfg=run_cfg,
+                    discover_links=False,
+                    round_prefix=round_prefix,
+                    prior_success=len(all_success),
+                    prior_fail=len(all_fail),
+                    skip_urls=frozenset(succeeded_urls),
+                )
+                success, fail = self._split_results(round_results)
+                self._save_url_lists(success, fail, round_prefix)
+                if self._writer is not None:
+                    self._writer.flush()
+                if self._fail_writer is not None:
+                    self._fail_writer.flush()
+                # Deduplicate: only add genuinely new successes
+                new_success = [r for r in success if r.url not in succeeded_urls]
+                all_success.extend(new_success)
+                succeeded_urls.update(r.url for r in new_success)
+                # Remove newly-succeeded URLs from all_fail; add new failures (skip dupes)
+                new_success_urls = {r.url for r in new_success}
+                all_fail = [r for r in all_fail if r.url not in new_success_urls]
+                existing_fail_urls = {r.url for r in all_fail}
+                all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
+                failed_urls = [r.url for r in fail]
 
         # --- Final merged files (unsorted) ---
         remaining_fail_urls = [r.url for r in all_fail]
@@ -282,7 +295,7 @@ class SiteCrawler:
     async def _crawl_urls_async(
         self,
         urls: list[str],
-        browser_cfg: BrowserConfig,
+        crawler: AsyncWebCrawler,
         run_cfg: object,
         *,
         discover_links: bool = True,
@@ -316,123 +329,122 @@ class SiteCrawler:
             prior_fail=prior_fail,
         )
 
-        async with AsyncWebCrawler(config=browser_cfg) as crawler:
-            while queue and len(results) < self.config.limit:
-                url, depth = queue.pop(0)
+        while queue and len(results) < self.config.limit:
+            url, depth = queue.pop(0)
 
-                if url in visited:
+            if url in visited:
+                continue
+            visited.add(url)
+
+            if not self._url_allowed(url):
+                continue
+
+            try:
+                result = await crawler.arun(url=url, config=run_cfg)
+
+                # Use the final URL after any redirects
+                final_url = getattr(result, "redirected_url", None) or url
+                redirected = final_url != url
+
+                if redirected and final_url in visited:
                     continue
-                visited.add(url)
 
-                if not self._url_allowed(url):
+                visited.add(final_url)
+                generated.add(final_url)
+
+                if redirected and not self._url_allowed(final_url):
                     continue
 
-                try:
-                    result = await crawler.arun(url=url, config=run_cfg)
+                crawl_result = CrawlResult(
+                    url=final_url,
+                    html=result.html or "",
+                    markdown=result.markdown or "",
+                    success=result.success,
+                    error=None if result.success else str(getattr(result, "error", "")),
+                    redirected_url=final_url if redirected else None,
+                )
+            except Exception as exc:
+                crawl_result = CrawlResult(
+                    url=url,
+                    html="",
+                    markdown="",
+                    success=False,
+                    error=str(exc),
+                )
 
-                    # Use the final URL after any redirects
-                    final_url = getattr(result, "redirected_url", None) or url
-                    redirected = final_url != url
+            # Detect WAF blocks (Incapsula etc. return HTTP 200 with block HTML).
+            # Only flag as blocked when the extracted markdown is short —
+            # pages with substantial content are not mere challenge pages.
+            # We measure content length *after* stripping boilerplate tags
+            # (nav, script, form, style) so that navigation chrome doesn't
+            # inflate the count and mask a failed JS render.
+            raw_markdown = crawl_result.markdown
+            if (
+                crawl_result.success
+                and self._is_blocked(crawl_result.html)
+                and self._content_length_without_chrome(crawl_result.html) < _BLOCK_MAX_CONTENT_LENGTH
+            ):
+                crawl_result.success = False
+                crawl_result.error = "Blocked by WAF"
+                crawl_result.markdown = ""
 
-                    if redirected and final_url in visited:
-                        continue
+            results.append(crawl_result)
+            progress.update(crawl_result.url, success=crawl_result.success)
 
-                    visited.add(final_url)
-                    generated.add(final_url)
-
-                    if redirected and not self._url_allowed(final_url):
-                        continue
-
-                    crawl_result = CrawlResult(
-                        url=final_url,
-                        html=result.html or "",
-                        markdown=result.markdown or "",
-                        success=result.success,
-                        error=None if result.success else str(getattr(result, "error", "")),
-                        redirected_url=final_url if redirected else None,
-                    )
-                except Exception as exc:
-                    crawl_result = CrawlResult(
-                        url=url,
-                        html="",
-                        markdown="",
-                        success=False,
-                        error=str(exc),
-                    )
-
-                # Detect WAF blocks (Incapsula etc. return HTTP 200 with block HTML).
-                # Only flag as blocked when the extracted markdown is short —
-                # pages with substantial content are not mere challenge pages.
-                # We measure content length *after* stripping boilerplate tags
-                # (nav, script, form, style) so that navigation chrome doesn't
-                # inflate the count and mask a failed JS render.
-                raw_markdown = crawl_result.markdown
+            # Extract and buffer content incrementally
+            if crawl_result.success and self._extractor and self._writer:
+                page = self._extractor._extract_page(crawl_result)
+                # Post-extraction quality gate: if a block signature is
+                # present and the *extracted* content is still thin,
+                # demote to failure so the URL is retried.
                 if (
-                    crawl_result.success
-                    and self._is_blocked(crawl_result.html)
-                    and self._content_length_without_chrome(crawl_result.html) < _BLOCK_MAX_CONTENT_LENGTH
+                    self._is_blocked(crawl_result.html)
+                    and len(page.markdown.strip()) < _BLOCK_MAX_CONTENT_LENGTH
                 ):
                     crawl_result.success = False
-                    crawl_result.error = "Blocked by WAF"
-                    crawl_result.markdown = ""
+                    crawl_result.error = "Blocked — page returned only boilerplate"
+                    crawl_result.markdown = raw_markdown
+                elif page.markdown.strip():
+                    self._writer.add(page)
 
-                results.append(crawl_result)
-                progress.update(crawl_result.url, success=crawl_result.success)
+            # Buffer failed-page content for the fail content file
+            if not crawl_result.success and self._fail_writer is not None:
+                raw_body = raw_markdown.strip() or crawl_result.html.strip() or "(no response)"
+                fail_page = ExtractedPage(
+                    url=crawl_result.url,
+                    title=f"FAILED — {crawl_result.error or 'Unknown error'}",
+                    markdown=(
+                        f"**Error:** {crawl_result.error or 'Unknown error'}\n\n"
+                        f"**Raw response:**\n\n{raw_body}"
+                    ),
+                )
+                self._fail_writer.add(fail_page)
 
-                # Extract and buffer content incrementally
-                if crawl_result.success and self._extractor and self._writer:
-                    page = self._extractor._extract_page(crawl_result)
-                    # Post-extraction quality gate: if a block signature is
-                    # present and the *extracted* content is still thin,
-                    # demote to failure so the URL is retried.
-                    if (
-                        self._is_blocked(crawl_result.html)
-                        and len(page.markdown.strip()) < _BLOCK_MAX_CONTENT_LENGTH
-                    ):
-                        crawl_result.success = False
-                        crawl_result.error = "Blocked — page returned only boilerplate"
-                        crawl_result.markdown = raw_markdown
-                    elif page.markdown.strip():
-                        self._writer.add(page)
+            # Flush content and URL lists periodically
+            if len(results) % self.config.flush_interval == 0:
+                if self._writer is not None:
+                    self._writer.flush()
+                if self._fail_writer is not None:
+                    self._fail_writer.flush()
+                success, fail = self._split_results(results)
+                self._save_url_lists(success, fail, round_prefix)
 
-                # Buffer failed-page content for the fail content file
-                if not crawl_result.success and self._fail_writer is not None:
-                    raw_body = raw_markdown.strip() or crawl_result.html.strip() or "(no response)"
-                    fail_page = ExtractedPage(
-                        url=crawl_result.url,
-                        title=f"FAILED — {crawl_result.error or 'Unknown error'}",
-                        markdown=(
-                            f"**Error:** {crawl_result.error or 'Unknown error'}\n\n"
-                            f"**Raw response:**\n\n{raw_body}"
-                        ),
-                    )
-                    self._fail_writer.add(fail_page)
+            # Throttle between pages — wide jitter mimics human browsing
+            if self.config.delay > 0:
+                jitter = self.config.delay * random.uniform(0.3, 3.0)
+                await asyncio.sleep(jitter)
 
-                # Flush content and URL lists periodically
-                if len(results) % self.config.flush_interval == 0:
-                    if self._writer is not None:
-                        self._writer.flush()
-                    if self._fail_writer is not None:
-                        self._fail_writer.flush()
-                    success, fail = self._split_results(results)
-                    self._save_url_lists(success, fail, round_prefix)
-
-                # Throttle between pages — wide jitter mimics human browsing
-                if self.config.delay > 0:
-                    jitter = self.config.delay * random.uniform(0.3, 3.0)
-                    await asyncio.sleep(jitter)
-
-                # Discover links for deeper crawling (only in round 1)
-                if discover_links and depth < self.config.max_depth and crawl_result.success:
-                    new_links = self._extract_links(crawl_result, crawl_result.url)
-                    for link in new_links:
-                        if len(generated) >= self.config.limit:
-                            break
-                        if link not in generated:
-                            generated.add(link)
-                            queue.append((link, depth + 1))
-                    # Update progress total to reflect discovered pages
-                    progress.total = min(len(generated), self.config.limit)
+            # Discover links for deeper crawling (only in round 1)
+            if discover_links and depth < self.config.max_depth and crawl_result.success:
+                new_links = self._extract_links(crawl_result, crawl_result.url)
+                for link in new_links:
+                    if len(generated) >= self.config.limit:
+                        break
+                    if link not in generated:
+                        generated.add(link)
+                        queue.append((link, depth + 1))
+                # Update progress total to reflect discovered pages
+                progress.total = min(len(generated), self.config.limit)
 
         return results
 
@@ -672,6 +684,10 @@ class SiteCrawler:
 
         if self.page_config.timeout:
             kwargs["page_timeout"] = int(self.page_config.timeout * 1000)
+
+        if self.page_config.scan_full_page:
+            kwargs["scan_full_page"] = True
+            kwargs["scroll_delay"] = self.page_config.scroll_delay
 
         if self.config.stealth:
             kwargs["simulate_user"] = True

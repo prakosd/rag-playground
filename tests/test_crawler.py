@@ -160,7 +160,7 @@ class TestSiteCrawler:
         assert (crawler.output_dir / "final_success_urls.txt").exists()
 
     def test_stealth_enables_browser_and_run_flags(self):
-        """Stealth mode sets enable_stealth, simulate_user, override_navigator, magic."""
+        """Stealth mode sets enable_stealth, simulate_user, override_navigator, magic, scan_full_page."""
         from crawl4ai import BrowserConfig, CrawlerRunConfig
 
         config = CrawlerConfig(urls=["https://example.com"], stealth=True)
@@ -170,6 +170,59 @@ class TestSiteCrawler:
         assert run_cfg.simulate_user is True
         assert run_cfg.override_navigator is True
         assert run_cfg.magic is True
+        assert run_cfg.scan_full_page is True
+        assert run_cfg.scroll_delay == 0.4
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_random_ua_when_stealth(self, mock_crawler_cls, tmp_path: Path):
+        """When stealth=True, BrowserConfig gets random user agent mode."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=_make_mock_result("https://example.com"))
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, stealth=True)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.crawl()
+
+        browser_cfg = mock_crawler_cls.call_args[1].get("config") or mock_crawler_cls.call_args[0][0]
+        assert browser_cfg.user_agent_mode == "random"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_headers_passed_to_browser_config(self, mock_crawler_cls, tmp_path: Path):
+        """Custom headers are forwarded to BrowserConfig."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=_make_mock_result("https://example.com"))
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, headers={"Accept-Language": "en"})
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.crawl()
+
+        browser_cfg = mock_crawler_cls.call_args[1].get("config") or mock_crawler_cls.call_args[0][0]
+        assert browser_cfg.headers.get("Accept-Language") == "en"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_single_crawler_instance_across_rounds(self, mock_crawler_cls, tmp_path: Path):
+        """Only one AsyncWebCrawler instance is created even with retries."""
+        blocked_html = '<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>'
+        blocked_result = _make_mock_result("https://example.com/a", blocked_html, "blocked")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=blocked_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com/a"], limit=1, max_retries=2)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.crawl()
+
+        # AsyncWebCrawler should be instantiated exactly once
+        assert mock_crawler_cls.call_count == 1
 
     def test_js_code_passed_to_run_config(self):
         """js_code from PageConfig is forwarded to CrawlerRunConfig."""

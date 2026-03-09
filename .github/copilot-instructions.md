@@ -22,8 +22,8 @@ Each crawl creates a timestamped output directory. Results pass through multiple
 
 Pydantic v2 models — all user-facing parameters are validated here.
 
-- **CrawlerConfig** — `urls`, `exclude_paths`, `include_only_paths`, `limit`, `max_depth`, `flush_interval`, `delay`, `stealth`, `max_retries`. Accepts CSV strings for list fields; validates regex patterns.
-- **PageConfig** — `exclude_tags`, `include_only_tags`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`. Cannot set both `exclude_tags` and `include_only_tags`.
+- **CrawlerConfig** — `urls`, `exclude_paths`, `include_only_paths`, `limit`, `max_depth`, `flush_interval`, `delay`, `stealth`, `headers`, `max_retries`. Accepts CSV strings for list fields; validates regex patterns. `stealth` defaults to `True` (enables random UA, navigator override, full-page scroll). `headers` is a free-form `dict[str, str]` forwarded to `BrowserConfig`.
+- **PageConfig** — `exclude_tags`, `include_only_tags`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`. Cannot set both `exclude_tags` and `include_only_tags`. `scan_full_page` (default `True`) scrolls through the page before extraction; `scroll_delay` (default `0.4`) controls pause between scroll steps.
 - **CrawlResult** — per-page output: `url`, `html`, `markdown`, `success`, `error`, `redirected_url`.
 - **ExtractedPage** — post-extraction output: `url`, `title`, `markdown`.
 
@@ -36,6 +36,7 @@ Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jup
 1. **Round 1** — crawl seed URLs with link discovery (respects `max_depth`). Discovered links are added to the queue up to `config.limit`.
 2. **Rounds 2+** — retry failed URLs only (no link discovery). A `_ROUND_COOLDOWN` (30 s) pause between rounds lets WAFs cool down.
 3. **Early exit** — skip remaining retries if all pages succeed.
+4. **Session persistence** — a single `AsyncWebCrawler` instance is shared across all rounds so cookies (including WAF challenge tokens) persist through retries.
 
 **WAF detection (two-stage):**
 

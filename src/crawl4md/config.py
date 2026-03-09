@@ -18,7 +18,8 @@ class CrawlerConfig(BaseModel):
     max_depth: int = 1
     flush_interval: int = 10
     delay: float = 0
-    stealth: bool = False
+    stealth: bool = True
+    headers: dict[str, str] = {}
     max_retries: int = 2
 
     @field_validator("urls", mode="before")
@@ -92,6 +93,8 @@ class PageConfig(BaseModel):
     separate_items: bool = False
     item_selector: str = ""
     js_code: list[str] = []
+    scan_full_page: bool = True
+    scroll_delay: float = 0.4
 
     @field_validator("js_code", mode="before")
     @classmethod
@@ -110,11 +113,11 @@ class PageConfig(BaseModel):
             v = [t.strip() for t in v.split(",") if t.strip()]
         return v
 
-    @field_validator("timeout")
+    @field_validator("timeout", "scroll_delay")
     @classmethod
-    def validate_timeout(cls, v: float) -> float:
+    def validate_non_negative_float(cls, v: float) -> float:
         if v < 0:
-            raise ValueError("Timeout must be non-negative.")
+            raise ValueError("Value must be non-negative.")
         return v
 
     @field_validator("max_file_size_mb")

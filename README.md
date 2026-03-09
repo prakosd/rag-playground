@@ -83,7 +83,8 @@ SiteCrawler.crawl()
 | `exclude_paths` | `list[str]` | `[]` | Regex patterns for URLs to skip |
 | `include_only_paths` | `list[str]` | `[]` | Regex patterns for URLs to keep (skip everything else) |
 | `delay` | `float` | `0` | Seconds between page crawls (uses jitter 0.3x–3.0x) |
-| `stealth` | `bool` | `False` | Enable bot-detection avoidance |
+| `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
+| `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages |
 | `flush_interval` | `int` | `10` | Save progress to disk every N pages |
 
@@ -101,6 +102,8 @@ SiteCrawler.crawl()
 | `separate_items` | `bool` | `False` | Insert `---` separators between repeated items (e.g. product cards) |
 | `item_selector` | `str` | `""` | CSS selector for items; empty = auto-detect |
 | `js_code` | `list[str]` | `[]` | JavaScript snippets to execute before extraction (e.g. expand collapsibles) |
+| `scan_full_page` | `bool` | `True` | Scroll through the full page before extraction (helps bypass lazy-load WAFs) |
+| `scroll_delay` | `float` | `0.4` | Seconds to pause between scroll steps (used when `scan_full_page` is on) |
 
 ## Output Structure
 
