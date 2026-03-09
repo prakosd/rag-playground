@@ -48,5 +48,7 @@ src/crawl4md/
 ## Testing
 
 - Tests use pytest with mocked HTTP calls — never make real network requests in tests.
+- **Every code change must include unit tests** — new features need tests for the happy path and key edge cases; bug fixes need a test that reproduces the bug.
+- **All tests must pass before a task is considered complete.** Run `pytest tests/ -v` and confirm zero failures.
 - `_ROUND_COOLDOWN` (the 30 s sleep between retry rounds) is globally patched to 0 via an autouse fixture in `conftest.py`. No per-test patching is needed.
 - When running tests in a terminal, **always wait for the command to finish and return its full output** before re-running, retrying, or drawing any conclusions. Do not start a new test run while one is still in progress.
