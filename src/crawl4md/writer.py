@@ -174,7 +174,9 @@ class FileWriter:
             return
         assert self._output_dir is not None
         self._output_dir.mkdir(parents=True, exist_ok=True)
-        path = self._output_dir / f"{self._prefix}content_{self._file_index:03d}{self._file_extension}"
+        path = (
+            self._output_dir / f"{self._prefix}content_{self._file_index:03d}{self._file_extension}"
+        )
         with path.open("a", encoding="utf-8") as fh:
             fh.write("".join(self._current_chunks))
         if path not in self._files:
@@ -187,7 +189,9 @@ class FileWriter:
         """Write chunks to the current file index (used for oversized pages)."""
         assert self._output_dir is not None
         self._output_dir.mkdir(parents=True, exist_ok=True)
-        path = self._output_dir / f"{self._prefix}content_{self._file_index:03d}{self._file_extension}"
+        path = (
+            self._output_dir / f"{self._prefix}content_{self._file_index:03d}{self._file_extension}"
+        )
         path.write_text("".join(chunks), encoding="utf-8")
         if path not in self._files:
             self._files.append(path)

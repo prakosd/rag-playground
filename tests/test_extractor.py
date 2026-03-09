@@ -84,11 +84,7 @@ class TestFixMarkdownTables:
     """Tests for the _fix_markdown_tables post-processing."""
 
     def test_inserts_separator_when_missing(self):
-        text = (
-            "Col A | Col B | Col C |\n"
-            "val1 | val2 | val3 |\n"
-            "val4 | val5 | val6 |"
-        )
+        text = "Col A | Col B | Col C |\nval1 | val2 | val3 |\nval4 | val5 | val6 |"
         result = ContentExtractor._fix_markdown_tables(text)
         lines = result.split("\n")
         assert lines[0] == "| Col A | Col B | Col C |"
@@ -96,11 +92,7 @@ class TestFixMarkdownTables:
         assert lines[2] == "| val1 | val2 | val3 |"
 
     def test_preserves_existing_separator(self):
-        text = (
-            "| Col A | Col B |\n"
-            "|---|---|\n"
-            "| val1 | val2 |"
-        )
+        text = "| Col A | Col B |\n|---|---|\n| val1 | val2 |"
         result = ContentExtractor._fix_markdown_tables(text)
         lines = result.split("\n")
         assert lines[0] == "| Col A | Col B |"
@@ -119,16 +111,7 @@ class TestFixMarkdownTables:
         assert "---" not in result
 
     def test_mixed_content_with_table(self):
-        text = (
-            "# Heading\n"
-            "\n"
-            "Some text.\n"
-            "\n"
-            "Header A | Header B |\n"
-            "data1 | data2 |\n"
-            "\n"
-            "More text."
-        )
+        text = "# Heading\n\nSome text.\n\nHeader A | Header B |\ndata1 | data2 |\n\nMore text."
         result = ContentExtractor._fix_markdown_tables(text)
         lines = result.split("\n")
         assert lines[4] == "| Header A | Header B |"
@@ -176,11 +159,7 @@ class TestCleanMarkdown:
         assert result == "A\n\nB\n\nC"
 
     def test_compact_product_listings_basic(self):
-        text = (
-            "Product Alpha\n\n$49.90\n\n"
-            "Product Beta\n\n$29.00\n\n"
-            "Product Gamma\n\n$99.00"
-        )
+        text = "Product Alpha\n\n$49.90\n\nProduct Beta\n\n$29.00\n\nProduct Gamma\n\n$99.00"
         result = ContentExtractor._compact_product_listings(text)
         assert "- **Product Alpha** \u2014 $49.90" in result
         assert "- **Product Beta** \u2014 $29.00" in result
@@ -211,11 +190,7 @@ class TestCleanMarkdown:
         assert "$10.00" in result
 
     def test_compact_product_listings_with_from_prefix(self):
-        text = (
-            "Plan A\n\nfrom $10.00\n\n"
-            "Plan B\n\nfrom $20.00\n\n"
-            "Plan C\n\nfrom $30.00"
-        )
+        text = "Plan A\n\nfrom $10.00\n\nPlan B\n\nfrom $20.00\n\nPlan C\n\nfrom $30.00"
         result = ContentExtractor._compact_product_listings(text)
         assert "- **Plan A** \u2014 from $10.00" in result
         assert "- **Plan B** \u2014 from $20.00" in result
@@ -346,9 +321,7 @@ class TestInsertItemSeparators:
         assert result.count("<hr") >= 3
 
     def test_explicit_selector(self):
-        config = PageConfig(
-            separate_items=True, item_selector="div.product-card", exclude_tags=[]
-        )
+        config = PageConfig(separate_items=True, item_selector="div.product-card", exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.PRODUCT_CARDS_HTML, use_sentinel=True)
         assert result.count(_ITEM_SENTINEL) == 3
@@ -392,11 +365,11 @@ class TestInsertItemSeparators:
 
     def test_integration_trafilatura_with_separators(self):
         """Full pipeline: separate_items=True with trafilatura mode."""
-        config = PageConfig(
-            separate_items=True, extract_main_content=True, exclude_tags=[]
-        )
+        config = PageConfig(separate_items=True, extract_main_content=True, exclude_tags=[])
         extractor = ContentExtractor(config)
-        result_obj = CrawlResult(url="https://example.com", html=self.PRODUCT_CARDS_HTML, success=True)
+        result_obj = CrawlResult(
+            url="https://example.com", html=self.PRODUCT_CARDS_HTML, success=True
+        )
         page = extractor._extract_page(result_obj)
         # The sentinel should have been replaced with ---
         assert _ITEM_SENTINEL not in page.markdown
@@ -407,11 +380,12 @@ class TestInsertItemSeparators:
     def test_integration_markdownify_with_separators(self):
         """Full pipeline: separate_items=True with markdownify mode."""
         config = PageConfig(
-            separate_items=True, extract_main_content=False,
-            exclude_tags=[], include_only_tags=[]
+            separate_items=True, extract_main_content=False, exclude_tags=[], include_only_tags=[]
         )
         extractor = ContentExtractor(config)
-        result_obj = CrawlResult(url="https://example.com", html=self.PRODUCT_CARDS_HTML, success=True)
+        result_obj = CrawlResult(
+            url="https://example.com", html=self.PRODUCT_CARDS_HTML, success=True
+        )
         page = extractor._extract_page(result_obj)
         # markdownify preserves <hr> as ---
         assert page.markdown.count("---") >= 3
@@ -420,7 +394,9 @@ class TestInsertItemSeparators:
         """When separate_items=False, no separators are inserted."""
         config = PageConfig(separate_items=False, exclude_tags=[])
         extractor = ContentExtractor(config)
-        result_obj = CrawlResult(url="https://example.com", html=self.PRODUCT_CARDS_HTML, success=True)
+        result_obj = CrawlResult(
+            url="https://example.com", html=self.PRODUCT_CARDS_HTML, success=True
+        )
         page = extractor._extract_page(result_obj)
         assert _ITEM_SENTINEL not in page.markdown
 
@@ -446,9 +422,7 @@ class TestInsertItemSeparators:
 
     def test_interstitial_sibling_not_included_with_explicit_selector(self):
         """Explicit item_selector should NOT include interstitial siblings."""
-        config = PageConfig(
-            separate_items=True, item_selector="div.bg-white", exclude_tags=[]
-        )
+        config = PageConfig(separate_items=True, item_selector="div.bg-white", exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.MIXED_CLASS_HTML, use_sentinel=True)
         # Only the 4 bg-white items are selected → 3 separators
@@ -476,12 +450,16 @@ class TestInsertItemSeparators:
     def test_integration_mixed_class_product_names(self):
         """Full pipeline (markdownify): banner div gets its own separator."""
         config = PageConfig(
-            separate_items=True, extract_main_content=False,
-            exclude_tags=[], include_only_tags=[],
+            separate_items=True,
+            extract_main_content=False,
+            exclude_tags=[],
+            include_only_tags=[],
         )
         extractor = ContentExtractor(config)
         result_obj = CrawlResult(
-            url="https://example.com", html=self.MIXED_CLASS_HTML, success=True,
+            url="https://example.com",
+            html=self.MIXED_CLASS_HTML,
+            success=True,
         )
         page = extractor._extract_page(result_obj)
         # With interstitial separator, the banner div is isolated:
@@ -529,7 +507,9 @@ class TestInsertItemSeparators:
         </body></html>
         """
         config = PageConfig(
-            separate_items=True, extract_main_content=True, exclude_tags=[],
+            separate_items=True,
+            extract_main_content=True,
+            exclude_tags=[],
         )
         extractor = ContentExtractor(config)
         result_obj = CrawlResult(url="https://example.com", html=html, success=True)
@@ -537,13 +517,12 @@ class TestInsertItemSeparators:
         # No line should contain both "Discover" (banner) and "Galaxy S26 5G" (product)
         for line in page.markdown.split("\n"):
             if "Galaxy S26 5G" in line:
-                assert "Discover" not in line, (
-                    f"Banner text merged with product name: {line!r}"
-                )
+                assert "Discover" not in line, f"Banner text merged with product name: {line!r}"
 
     def test_sentinel_placed_inside_items_not_as_sibling(self):
         """Sentinel must be appended inside items so trafilatura preserves it."""
         from bs4 import BeautifulSoup
+
         config = PageConfig(separate_items=True, exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.PRODUCT_CARDS_HTML, use_sentinel=True)
@@ -558,7 +537,8 @@ class TestIncludeInterstitialSiblings:
     """Tests for _include_interstitial_siblings — expanding auto-detected groups."""
 
     def test_interstitial_included_between_matched(self):
-        from bs4 import BeautifulSoup, Tag
+        from bs4 import BeautifulSoup
+
         html = """
         <div class="list">
           <div class="card">Product A with enough text</div>
@@ -577,6 +557,7 @@ class TestIncludeInterstitialSiblings:
 
     def test_no_interstitial_when_all_adjacent(self):
         from bs4 import BeautifulSoup
+
         html = """
         <div class="list">
           <div class="card">Product A with enough text</div>
@@ -595,6 +576,7 @@ class TestIncludeInterstitialSiblings:
 
     def test_single_item_returns_unchanged(self):
         from bs4 import BeautifulSoup
+
         html = '<div class="list"><div class="card">One product</div></div>'
         soup = BeautifulSoup(html, "html.parser")
         cards = soup.select("div.card")
@@ -670,21 +652,13 @@ class TestUpdatedPriceRegex:
     """Tests for the updated price regex in _compact_product_listings."""
 
     def test_price_with_mth_suffix(self):
-        text = (
-            "Galaxy S26\n\n$76.16/mth\n\n"
-            "iPhone 17\n\n$42.12/mth\n\n"
-            "Find X9\n\n$46.29/mth"
-        )
+        text = "Galaxy S26\n\n$76.16/mth\n\niPhone 17\n\n$42.12/mth\n\nFind X9\n\n$46.29/mth"
         result = ContentExtractor._compact_product_listings(text)
         assert "- **Galaxy S26** — $76.16/mth" in result
         assert "- **iPhone 17** — $42.12/mth" in result
 
     def test_price_with_or_prefix(self):
-        text = (
-            "Product A\n\nor$1,499.00\n\n"
-            "Product B\n\nor$1,299.00\n\n"
-            "Product C\n\nor$999.00"
-        )
+        text = "Product A\n\nor$1,499.00\n\nProduct B\n\nor$1,299.00\n\nProduct C\n\nor$999.00"
         result = ContentExtractor._compact_product_listings(text)
         assert "- **Product A** — or $1,499.00" in result
 
@@ -1001,7 +975,9 @@ class TestSentinelOrdering:
     def test_sentinels_replaced_before_product_compaction(self):
         """Products separated by sentinels should not bleed across boundaries."""
         config = PageConfig(
-            separate_items=True, extract_main_content=True, exclude_tags=[],
+            separate_items=True,
+            extract_main_content=True,
+            exclude_tags=[],
         )
         extractor = ContentExtractor(config)
 
@@ -1191,11 +1167,7 @@ class TestUpdatedPriceRegexExtended:
     """Tests for price regex handling $$, ~~, and other patterns."""
 
     def test_double_dollar_price(self):
-        text = (
-            "Product A\n\nor$$1,499.00\n\n"
-            "Product B\n\nor$$1,299.00\n\n"
-            "Product C\n\nor$$999.00"
-        )
+        text = "Product A\n\nor$$1,499.00\n\nProduct B\n\nor$$1,299.00\n\nProduct C\n\nor$$999.00"
         result = ContentExtractor._compact_product_listings(text)
         assert "- **Product A**" in result
 
@@ -1255,7 +1227,7 @@ class TestExtractTitle:
     """Tests for _extract_title — multi-source title extraction with fallbacks."""
 
     def test_specific_title_tag_preferred(self):
-        html = '<html><head><title>Buy New Samsung Phones</title></head><body></body></html>'
+        html = "<html><head><title>Buy New Samsung Phones</title></head><body></body></html>"
         assert ContentExtractor._extract_title(html) == "Buy New Samsung Phones"
 
     def test_generic_title_falls_back_to_og(self):
@@ -1281,7 +1253,9 @@ class TestExtractTitle:
             '<meta property="og:title" content="StarHub Plans">'
             "</head><body></body></html>"
         )
-        assert ContentExtractor._extract_title(html) == "StarHub 5G Unlimited+ SIM Only Mobile Plans"
+        assert (
+            ContentExtractor._extract_title(html) == "StarHub 5G Unlimited+ SIM Only Mobile Plans"
+        )
 
     def test_h1_with_inner_html_stripped(self):
         html = (
@@ -1296,7 +1270,7 @@ class TestExtractTitle:
 
     def test_empty_og_title_falls_through(self):
         html = (
-            '<html><head><title>Home</title>'
+            "<html><head><title>Home</title>"
             '<meta property="og:title" content="">'
             "</head><body><h1>Real Title Here</h1></body></html>"
         )
@@ -1305,14 +1279,22 @@ class TestExtractTitle:
     def test_existing_good_titles_preserved(self):
         """Regression: known good titles from our crawl must not change."""
         cases = [
-            ("Buy New Mobile Phones and Pay later with 0% instalments",
-             "Buy New Mobile Phones and Pay later with 0% instalments"),
-            ("Buy Latest Apple Phones and Pay later with 0% instalments",
-             "Buy Latest Apple Phones and Pay later with 0% instalments"),
-            ("StarHub 5G Unlimited+ SIM Only Mobile Plans",
-             "StarHub 5G Unlimited+ SIM Only Mobile Plans"),
-            ("Activating Your StarHub Welcome Plan | StarHub Support",
-             "Activating Your StarHub Welcome Plan | StarHub Support"),
+            (
+                "Buy New Mobile Phones and Pay later with 0% instalments",
+                "Buy New Mobile Phones and Pay later with 0% instalments",
+            ),
+            (
+                "Buy Latest Apple Phones and Pay later with 0% instalments",
+                "Buy Latest Apple Phones and Pay later with 0% instalments",
+            ),
+            (
+                "StarHub 5G Unlimited+ SIM Only Mobile Plans",
+                "StarHub 5G Unlimited+ SIM Only Mobile Plans",
+            ),
+            (
+                "Activating Your StarHub Welcome Plan | StarHub Support",
+                "Activating Your StarHub Welcome Plan | StarHub Support",
+            ),
         ]
         for title_text, expected in cases:
             html = f"<html><head><title>{title_text}</title></head><body></body></html>"
@@ -1590,11 +1572,7 @@ class TestPromoteSectionLabels:
     def test_plp_footer_not_promoted(self):
         """Regression: PLP footer text like 'Trending Brands' followed by short
         metadata should NOT be promoted."""
-        text = (
-            "- **Galaxy S26** — from $76.16/mth\n\n"
-            "Trending Brands\n\n"
-            "Mobile Devices35 products"
-        )
+        text = "- **Galaxy S26** — from $76.16/mth\n\nTrending Brands\n\nMobile Devices35 products"
         result = ContentExtractor._promote_section_labels(text)
         assert "### Trending Brands" not in result
         assert "### Mobile Devices" not in result
@@ -1719,7 +1697,9 @@ class TestTitleFromUrl:
     """Tests for _title_from_url — deriving titles from URL slugs."""
 
     def test_product_slug(self):
-        url = "https://consumer.starhub.com/personal/store/mobile/devices/samsung/galaxy-s26-ultra-5g"
+        url = (
+            "https://consumer.starhub.com/personal/store/mobile/devices/samsung/galaxy-s26-ultra-5g"
+        )
         result = ContentExtractor._title_from_url(url)
         assert result == "Galaxy S26 Ultra 5G"
 
@@ -1758,7 +1738,9 @@ class TestTitleFromUrl:
     def test_url_slug_fallback_in_extract_title(self):
         """When title is generic and no OG/h1, URL slug is used."""
         html = "<html><head><title>Product PLP/PDP</title></head><body></body></html>"
-        url = "https://consumer.starhub.com/personal/store/mobile/devices/samsung/galaxy-s26-ultra-5g"
+        url = (
+            "https://consumer.starhub.com/personal/store/mobile/devices/samsung/galaxy-s26-ultra-5g"
+        )
         result = ContentExtractor._extract_title(html, url=url)
         assert result == "Galaxy S26 Ultra 5G"
 
@@ -1928,7 +1910,8 @@ class TestProductFromDom:
         extractor = ContentExtractor(config)
         cr = CrawlResult(
             url="https://store.com/devices/samsung/galaxy-s26-ultra-5g",
-            html=html, success=True,
+            html=html,
+            success=True,
         )
         page = extractor._extract_page(cr)
         assert page.title == "Galaxy S26 Ultra 5G"
@@ -1953,7 +1936,8 @@ class TestProductFromDom:
         extractor = ContentExtractor(config)
         cr = CrawlResult(
             url="https://store.com/devices/samsung/galaxy-s26-ultra-5g",
-            html=html, success=True,
+            html=html,
+            success=True,
         )
         page = extractor._extract_page(cr)
         assert "**Samsung**" in page.markdown
@@ -1982,12 +1966,7 @@ class TestValidateMarkdown:
             assert token in result
 
     def test_preserves_table_content(self):
-        md = (
-            "| Product | Price |\n"
-            "| --- | --- |\n"
-            "| Widget A | $19.99 |\n"
-            "| Widget B | $29.99 |\n"
-        )
+        md = "| Product | Price |\n| --- | --- |\n| Widget A | $19.99 |\n| Widget B | $29.99 |\n"
         result = ContentExtractor._validate_markdown(md)
         assert "Widget A" in result
         assert "$19.99" in result

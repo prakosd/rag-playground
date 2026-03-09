@@ -251,9 +251,7 @@ class ContentExtractor:
                 if len(children) < 3:
                     continue
                 # Filter: each child must have meaningful text
-                qualified = [
-                    c for c in children if len(c.get_text(strip=True)) >= min_text_len
-                ]
+                qualified = [c for c in children if len(c.get_text(strip=True)) >= min_text_len]
                 if len(qualified) < 3:
                     continue
                 key = (id(parent), sig)
@@ -296,9 +294,7 @@ class ContentExtractor:
         siblings = [child for child in parent.children if isinstance(child, Tag)]
 
         # Find index range of matched items among siblings
-        matched_indices = [
-            i for i, sib in enumerate(siblings) if id(sib) in items_set
-        ]
+        matched_indices = [i for i, sib in enumerate(siblings) if id(sib) in items_set]
         if not matched_indices:
             return items
 
@@ -308,9 +304,7 @@ class ContentExtractor:
         expanded: list[Tag] = []
         for i in range(first_idx, last_idx + 1):
             sib = siblings[i]
-            if id(sib) in items_set:
-                expanded.append(sib)
-            elif len(sib.get_text(strip=True)) >= 20:
+            if id(sib) in items_set or len(sib.get_text(strip=True)) >= 20:
                 expanded.append(sib)
 
         return expanded
@@ -413,9 +407,7 @@ class ContentExtractor:
                 if self.include_only and tag_lower in self.include_only:
                     self._include_depth += 1
                 if self._skip_depth == 0 and self._include_depth > 0:
-                    attr_str = "".join(
-                        f' {k}="{v}"' if v else f" {k}" for k, v in attrs
-                    )
+                    attr_str = "".join(f' {k}="{v}"' if v else f" {k}" for k, v in attrs)
                     self.output.write(f"<{tag}{attr_str}>")
 
             def handle_endtag(self, tag: str) -> None:
@@ -562,7 +554,8 @@ class ContentExtractor:
 
     # Shared patterns for product field classification
     _MONTHLY_PRICE_RE = re.compile(
-        r"^(?:from\s+)?\$[\d,]+(?:\.\d{2})?/mth$", re.IGNORECASE,
+        r"^(?:from\s+)?\$[\d,]+(?:\.\d{2})?/mth$",
+        re.IGNORECASE,
     )
     _OUTRIGHT_PRICE_RE = re.compile(
         r"^(?:or\s*)?(?:~~)?\$\$?[\d,]+(?:\.\d{2})?(?:~~)?"
@@ -669,10 +662,7 @@ class ContentExtractor:
         # appears at the top of the block).
         if unclassified:
             short_candidates = [u for u in unclassified if len(u) <= 80]
-            if short_candidates:
-                name = short_candidates[-1]
-            else:
-                name = max(unclassified, key=len)
+            name = short_candidates[-1] if short_candidates else max(unclassified, key=len)
             unclassified = [u for u in unclassified if u != name]
         else:
             return None
@@ -721,7 +711,8 @@ class ContentExtractor:
 
         # Two concatenated prices: or$2,128.00$1,828.00 → or ~~$2,128.00~~ $1,828.00
         m = re.match(
-            r"^(or\s*)?\$(\d[\d,]*(?:\.\d{2})?)\$(\d[\d,]*(?:\.\d{2})?)$", price,
+            r"^(or\s*)?\$(\d[\d,]*(?:\.\d{2})?)\$(\d[\d,]*(?:\.\d{2})?)$",
+            price,
         )
         if m:
             prefix = "or " if m.group(1) else ""
@@ -761,7 +752,11 @@ class ContentExtractor:
             j = i
             while j < len(lines):
                 entry, j = ContentExtractor._try_parse_product_entry(
-                    lines, j, price_re, heading_re, hr_re,
+                    lines,
+                    j,
+                    price_re,
+                    heading_re,
+                    hr_re,
                 )
                 if entry is None:
                     break
@@ -887,9 +882,9 @@ class ContentExtractor:
         # alphanumeric model identifiers).
         while len(name_parts) > 1:
             candidate = name_parts[0]
-            if ContentExtractor._BADGE_KEYWORDS.match(candidate):
-                pre_badges.append(name_parts.pop(0))
-            elif candidate.endswith("!") and len(candidate) < 80:
+            if ContentExtractor._BADGE_KEYWORDS.match(candidate) or (
+                candidate.endswith("!") and len(candidate) < 80
+            ):
                 pre_badges.append(name_parts.pop(0))
             else:
                 break
@@ -1097,8 +1092,9 @@ class ContentExtractor:
                 continue
             classes = " ".join(el.get("class", []))
             el_id = el.get("id", "") or ""
-            if ContentExtractor._SUPP_CLASS_KEYWORDS.search(classes) or \
-               ContentExtractor._SUPP_CLASS_KEYWORDS.search(el_id):
+            if ContentExtractor._SUPP_CLASS_KEYWORDS.search(
+                classes
+            ) or ContentExtractor._SUPP_CLASS_KEYWORDS.search(el_id):
                 _add(el)
 
         # 4. Heading (h2-h4) whose text mentions FAQ / Frequently Asked
@@ -1134,7 +1130,9 @@ class ContentExtractor:
         """
         # 1. <title> tag
         title_match = re.search(
-            r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL,
+            r"<title[^>]*>(.*?)</title>",
+            html,
+            re.IGNORECASE | re.DOTALL,
         )
         title_text = title_match.group(1).strip() if title_match else ""
 
@@ -1160,7 +1158,9 @@ class ContentExtractor:
 
         # 3. First <h1>
         h1_match = re.search(
-            r"<h1[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL,
+            r"<h1[^>]*>(.*?)</h1>",
+            html,
+            re.IGNORECASE | re.DOTALL,
         )
         if h1_match:
             # Strip inner HTML tags to get plain text.
@@ -1197,7 +1197,8 @@ class ContentExtractor:
         title = title.title()
         # Fix common tech abbreviations.
         title = ContentExtractor._SLUG_UPPER.sub(
-            lambda m: m.group(1).upper(), title,
+            lambda m: m.group(1).upper(),
+            title,
         )
         return title
 
@@ -1300,6 +1301,7 @@ class ContentExtractor:
         Only returns a result when ``product:price:amount`` is present,
         preventing false positives on listing / article pages.
         """
+
         def _og(prop: str) -> str:
             pat = (
                 rf'<meta[^>]+property=["\'](?:og:)?{re.escape(prop)}["\']'
@@ -1392,8 +1394,13 @@ class ContentExtractor:
             if len(parts) >= 2:
                 candidate = parts[-2].replace("-", " ").title()
                 if candidate.lower() not in (
-                    "devices", "mobile", "store", "personal",
-                    "products", "shop", "buy",
+                    "devices",
+                    "mobile",
+                    "store",
+                    "personal",
+                    "products",
+                    "shop",
+                    "buy",
                 ):
                     brand = candidate
 
@@ -1468,9 +1475,7 @@ class ContentExtractor:
                 # Check if the next paragraph is a bullet list or long block.
                 nxt = paragraphs[i + 1].strip()
                 next_has_bullets = any(
-                    list_re.match(ln.strip())
-                    for ln in nxt.split("\n")
-                    if ln.strip()
+                    list_re.match(ln.strip()) for ln in nxt.split("\n") if ln.strip()
                 )
                 next_is_substantial = len(nxt) >= 80
 

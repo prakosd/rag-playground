@@ -41,8 +41,7 @@ class TestFileWriter:
         """Produces multiple files when content exceeds max size."""
         big_text = "x" * 500
         pages = [
-            ExtractedPage(url=f"https://example.com/p{i}", markdown=big_text)
-            for i in range(5)
+            ExtractedPage(url=f"https://example.com/p{i}", markdown=big_text) for i in range(5)
         ]
         writer = FileWriter()
         # Tiny limit forces splitting
@@ -151,8 +150,7 @@ class TestFileWriterIncremental:
         writer = FileWriter(output_dir=tmp_path, max_file_size_mb=0.001)
         big_text = "x" * 500
         pages = [
-            ExtractedPage(url=f"https://example.com/p{i}", markdown=big_text)
-            for i in range(3)
+            ExtractedPage(url=f"https://example.com/p{i}", markdown=big_text) for i in range(3)
         ]
         for page in pages:
             writer.add(page)

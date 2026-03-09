@@ -237,7 +237,7 @@ class SiteCrawler:
             failed_urls = [r.url for r in all_fail]
             for retry_num in range(1, self.config.max_retries + 1):
                 if not failed_urls:
-                    print(f"\nAll pages succeeded — skipping remaining retries.")
+                    print("\nAll pages succeeded — skipping remaining retries.")
                     break
 
                 round_num = retry_num + 1

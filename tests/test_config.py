@@ -52,9 +52,7 @@ class TestCrawlerConfig:
             CrawlerConfig(urls=["https://example.com"], max_depth=0)
 
     def test_exclude_paths_from_string(self):
-        cfg = CrawlerConfig(
-            urls=["https://example.com"], exclude_paths="/admin, /login"
-        )
+        cfg = CrawlerConfig(urls=["https://example.com"], exclude_paths="/admin, /login")
         assert cfg.exclude_paths == ["/admin", "/login"]
 
     def test_invalid_regex_rejected(self):

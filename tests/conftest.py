@@ -19,6 +19,7 @@ def _zero_round_cooldown():
     with patch("crawl4md.crawler._ROUND_COOLDOWN", 0):
         yield
 
+
 SIMPLE_HTML = """
 <!DOCTYPE html>
 <html>
