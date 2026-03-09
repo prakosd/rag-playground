@@ -136,7 +136,9 @@ Each crawl creates a timestamped folder with three tiers of output:
 
 ## Notebook Usage
 
-See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook.
+See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook. You can also run it directly in Google Colab:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prakosd/crawl4md/blob/master/notebooks/crawl4md.ipynb)
 
 ## Architecture
 
