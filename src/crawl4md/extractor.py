@@ -200,12 +200,19 @@ class ContentExtractor:
         if len(items) < 2:
             return html
 
-        separator_tag = "p" if use_sentinel else "hr"
-        for item in reversed(items[1:]):
-            sep = soup.new_tag(separator_tag)
-            if use_sentinel:
+        if use_sentinel:
+            # Append sentinel as last child *inside* each item (except the
+            # last) so it becomes part of the item's content subtree.
+            # Trafilatura preserves inline text but may strip standalone
+            # sibling elements sitting between items.
+            for item in items[:-1]:
+                sep = soup.new_tag("p")
                 sep.string = _ITEM_SENTINEL
-            item.insert_before(sep)
+                item.append(sep)
+        else:
+            for item in reversed(items[1:]):
+                sep = soup.new_tag("hr")
+                item.insert_before(sep)
 
         return str(soup)
 

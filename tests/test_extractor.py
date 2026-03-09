@@ -492,6 +492,67 @@ class TestInsertItemSeparators:
         assert "Galaxy S26 5G" in page.markdown
         assert "Magic8 Pro" in page.markdown
 
+    def test_trafilatura_banner_not_merged_with_product(self):
+        """Full pipeline (trafilatura): banner text must not merge with next product name."""
+        # Use richer HTML so trafilatura extracts product names reliably.
+        html = """
+        <html><head><title>Buy New Mobile Phones</title></head><body>
+        <main>
+        <h1>Buy New Mobile Phones</h1>
+        <div class="product-list">
+          <div class="product-card bg-white">
+            <h3>Galaxy S26 Ultra 5G</h3>
+            <p>The latest flagship from Samsung with advanced AI features and titanium build.</p>
+            <p>from $76.16/mth</p><p>or $1,828.00</p><p>15 offers available</p>
+          </div>
+          <div class="product-card bg-white">
+            <h3>Galaxy S26+ 5G</h3>
+            <p>Premium performance with a large display and pro camera system.</p>
+            <p>from $67.83/mth</p><p>or $1,628.00</p><p>13 offers available</p>
+          </div>
+          <div class="product-card bg-tint-blue">
+            <p>We got you covered with the new 5G Unlimited+ Discover our new mobile plans with unlimited local and roaming features, all in!</p>
+            <a href="#">Learn more</a>
+          </div>
+          <div class="product-card bg-white">
+            <h3>Galaxy S26 5G</h3>
+            <p>Flagship Galaxy experience with Snapdragon processor and vibrant display.</p>
+            <p>from $59.91/mth</p><p>or $1,438.00</p><p>13 offers available</p>
+          </div>
+          <div class="product-card bg-white">
+            <h3>Magic8 Pro</h3>
+            <p>Powerful performance with cutting-edge camera technology and fast charging.</p>
+            <p>from $44.62/mth</p><p>or $1,499.00</p><p>9 offers available</p>
+          </div>
+        </div>
+        </main>
+        </body></html>
+        """
+        config = PageConfig(
+            separate_items=True, extract_main_content=True, exclude_tags=[],
+        )
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(url="https://example.com", html=html, success=True)
+        page = extractor._extract_page(result_obj)
+        # No line should contain both "Discover" (banner) and "Galaxy S26 5G" (product)
+        for line in page.markdown.split("\n"):
+            if "Galaxy S26 5G" in line:
+                assert "Discover" not in line, (
+                    f"Banner text merged with product name: {line!r}"
+                )
+
+    def test_sentinel_placed_inside_items_not_as_sibling(self):
+        """Sentinel must be appended inside items so trafilatura preserves it."""
+        from bs4 import BeautifulSoup
+        config = PageConfig(separate_items=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = extractor._insert_item_separators(self.PRODUCT_CARDS_HTML, use_sentinel=True)
+        soup = BeautifulSoup(result, "html.parser")
+        # Sentinels should be inside product-card divs, not as siblings
+        for sentinel_p in soup.find_all("p", string=_ITEM_SENTINEL):
+            assert sentinel_p.parent is not None
+            assert "product-card" in " ".join(sentinel_p.parent.get("class", []))
+
 
 class TestIncludeInterstitialSiblings:
     """Tests for _include_interstitial_siblings — expanding auto-detected groups."""
