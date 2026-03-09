@@ -5,13 +5,14 @@ A Python library for crawling websites and extracting their content as Markdown-
 ## Features
 
 - **Synchronous API** — no `async`/`await` needed; works seamlessly in Jupyter Notebooks
-- **Smart content extraction** — trafilatura for main content, markdownify for full HTML
-- **WAF / bot-detection handling** — automatic retry rounds for blocked pages
-- **Size-limited output files** — pages are never split across files
-- **Real-time progress** — progress bar with ETA in both Jupyter and terminal
+- **Smart content extraction** — trafilatura for main content (with automatic fallback to markdownify when coverage is below 15%), plus supplementary section recovery for FAQs, accordions, and product metadata
+- **WAF / bot-detection handling** — two-stage detection (HTML block signatures + post-extraction content-length check) with automatic retry rounds and cooldown between rounds
+- **Size-limited output files** — pages are never split across files; oversized pages get their own file
+- **Real-time progress** — animated HTML progress bar in Jupyter, plain-text ETA in terminal
 - **Configurable filtering** — include/exclude URL paths and HTML tags via regex
-- **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) and inserts separators between them
+- **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) via DOM analysis and inserts `---` separators; supports custom CSS selectors
 - **Markdown validation** — every extracted page is auto-fixed via mdformat (with GFM support) to ensure structurally correct, renderable Markdown; a content-preservation guard prevents any words, numbers, or punctuation from being lost
+- **Sorted output** — final files are sorted by URL path for natural reading order
 
 ## Installation
 
@@ -33,21 +34,42 @@ page_config = PageConfig()
 
 crawler = SiteCrawler(config, page_config)
 results = crawler.crawl()
+
+# Print a summary of results and output file locations
+crawler.print_summary(results)
 ```
 
-`SiteCrawler` handles crawling, extraction, and file writing automatically. Output is saved to a timestamped folder in the current directory.
+`SiteCrawler` handles crawling, extraction, and file writing automatically. Output is saved to a timestamped folder (e.g. `2026-03-07_14-01-02/`) in the current directory.
 
 For step-by-step control, use the components individually:
 
 ```python
-from crawl4md import ContentExtractor, FileWriter
+from crawl4md import ContentExtractor, ContentSorter, FileWriter
 
 extractor = ContentExtractor(page_config)
 pages = extractor.extract(results)
 
+sorter = ContentSorter()
+pages = sorter.sort(pages)
+
 writer = FileWriter()
 writer.write(pages, crawler.output_dir, page_config.max_file_size_mb)
 ```
+
+## How It Works
+
+```
+SiteCrawler.crawl()
+  ├─ Crawl4AI (async)   → CrawlResult (raw HTML per page)
+  ├─ ContentExtractor    → ExtractedPage (clean Markdown per page)
+  ├─ FileWriter          → size-limited content files + URL lists
+  └─ ContentSorter       → sorted final files grouped by URL path
+```
+
+1. **Crawl** — seed URLs are crawled with link discovery up to `max_depth`. Discovered links are queued up to `limit`.
+2. **Retry** — failed/blocked pages are retried in subsequent rounds (up to `max_retries`), with a 30-second cooldown between rounds.
+3. **Extract** — HTML is converted to Markdown via trafilatura or markdownify, then cleaned through a 7-step post-processing pipeline.
+4. **Write** — pages are written to numbered, size-limited files. Per-round files are produced during crawl; final merged and sorted files are written after all rounds complete.
 
 ## Configuration
 
@@ -78,21 +100,35 @@ writer.write(pages, crawler.output_dir, page_config.max_file_size_mb)
 | `output_extension` | `".txt" \| ".md"` | `".txt"` | Output file format |
 | `separate_items` | `bool` | `False` | Insert `---` separators between repeated items (e.g. product cards) |
 | `item_selector` | `str` | `""` | CSS selector for items; empty = auto-detect |
+| `js_code` | `list[str]` | `[]` | JavaScript snippets to execute before extraction (e.g. expand collapsibles) |
 
 ## Output Structure
 
-Each crawl creates a timestamped folder with:
+Each crawl creates a timestamped folder with three tiers of output:
 
 ```
-2026-03-07_14-01-02/
-├── content_001.md          # Merged output (all successful pages)
-├── content_002.md          # Additional file if size limit exceeded
-├── urls_success.txt        # All successfully crawled URLs
-├── urls_fail.txt           # URLs that failed after all retries
-├── round_1_content_001.md  # Per-round content
-├── round_1_urls_success.txt
-├── round_1_urls_fail.txt
-└── round_1_fail_content_001.md  # Error details for failed pages
+2026-03-08_17-39-59/
+│
+│  # Per-round files (written during crawl)
+├── round_1_success_content_001.md
+├── round_1_success_urls.txt
+├── round_1_fail_content_001.md        # Error details + raw HTML for blocked pages
+├── round_1_fail_urls.txt
+├── round_2_success_content_001.md     # Retry round (if needed)
+├── round_2_fail_urls.txt
+│
+│  # Final merged files (after all rounds, unsorted)
+├── final_success_content_001.md       # All successful pages merged
+├── final_success_content_002.md       # Additional file if size limit exceeded
+├── final_fail_content_001.md          # All failed pages merged
+├── final_success_urls.txt             # All successful URLs (deduplicated)
+├── final_fail_urls.txt                # URLs that never succeeded
+│
+│  # Sorted final files (grouped by URL path)
+├── sorted_final_success_content_001.md
+├── sorted_final_fail_content_001.md
+├── sorted_final_success_urls.txt
+└── sorted_final_fail_urls.txt
 ```
 
 ## Notebook Usage
@@ -107,8 +143,9 @@ src/crawl4md/
 ├── config.py         # Pydantic v2 config models (CrawlerConfig, PageConfig, CrawlResult, ExtractedPage)
 ├── crawler.py        # SiteCrawler — synchronous wrapper around Crawl4AI
 ├── extractor.py      # ContentExtractor — HTML → Markdown via trafilatura or markdownify, validated with mdformat
+├── sorter.py         # ContentSorter — sorts pages by URL path for natural display order
 ├── writer.py         # FileWriter — size-limited output files (batch & incremental modes)
-└── progress.py       # ProgressReporter — real-time progress with ETA
+└── progress.py       # ProgressReporter — real-time progress with ETA (Jupyter & terminal)
 ```
 
 ## Development
@@ -118,6 +155,10 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ruff check src/ tests/
 ```
+
+Test files: `test_config.py`, `test_crawler.py`, `test_extractor.py`, `test_sorter.py`, `test_writer.py`.
+
+Tests use mocked HTTP calls — no real network requests are made.
 
 ## License
 
