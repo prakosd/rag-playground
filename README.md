@@ -95,7 +95,7 @@ SiteCrawler.crawl()
 | `exclude_tags` | `list[str]` | `["nav", "script", "form", "style"]` | HTML tags to remove before extraction |
 | `include_only_tags` | `list[str]` | `[]` | Keep only these HTML tags (mutually exclusive with `exclude_tags`) |
 | `wait_for` | `float \| None` | `None` | Seconds to wait after page load (for JS-heavy sites) |
-| `timeout` | `int` | `30000` | Page load timeout in milliseconds |
+| `timeout` | `float` | `30` | Page load timeout in seconds |
 | `max_file_size_mb` | `float` | `15.0` | Max size per output file in MB |
 | `output_extension` | `".txt" \| ".md"` | `".txt"` | Output file format |
 | `separate_items` | `bool` | `False` | Insert `---` separators between repeated items (e.g. product cards) |

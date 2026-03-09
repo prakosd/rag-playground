@@ -85,7 +85,7 @@ class PageConfig(BaseModel):
     exclude_tags: list[str] = ["nav", "script", "form", "style"]
     include_only_tags: list[str] = []
     wait_for: float | None = None
-    timeout: int = 30000
+    timeout: float = 30
     max_file_size_mb: float = 15.0
     extract_main_content: bool = True
     output_extension: Literal[".txt", ".md"] = ".txt"
@@ -112,7 +112,7 @@ class PageConfig(BaseModel):
 
     @field_validator("timeout")
     @classmethod
-    def validate_timeout(cls, v: int) -> int:
+    def validate_timeout(cls, v: float) -> float:
         if v < 0:
             raise ValueError("Timeout must be non-negative.")
         return v

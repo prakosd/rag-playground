@@ -671,7 +671,7 @@ class SiteCrawler:
             kwargs["js_code"] = self.page_config.js_code
 
         if self.page_config.timeout:
-            kwargs["page_timeout"] = self.page_config.timeout
+            kwargs["page_timeout"] = int(self.page_config.timeout * 1000)
 
         if self.config.stealth:
             kwargs["simulate_user"] = True

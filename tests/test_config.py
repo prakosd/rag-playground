@@ -82,7 +82,7 @@ class TestPageConfig:
         assert cfg.exclude_tags == ["nav", "script", "form", "style"]
         assert cfg.include_only_tags == []
         assert cfg.wait_for is None
-        assert cfg.timeout == 30000
+        assert cfg.timeout == 30
         assert cfg.max_file_size_mb == 15.0
         assert cfg.extract_main_content is True
 

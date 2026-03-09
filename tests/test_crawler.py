@@ -182,6 +182,17 @@ class TestSiteCrawler:
         run_cfg = crawler._build_run_config(CrawlerRunConfig)
         assert run_cfg.js_code == ["document.querySelector('.faq').click()"]
 
+    def test_timeout_converted_to_milliseconds(self):
+        """timeout (seconds) is converted to page_timeout (milliseconds) in CrawlerRunConfig."""
+        from crawl4ai import CrawlerRunConfig
+
+        page_config = PageConfig(timeout=15)
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config, page_config)
+
+        run_cfg = crawler._build_run_config(CrawlerRunConfig)
+        assert run_cfg.page_timeout == 15000
+
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_crawl_with_extractor_and_writer(self, mock_crawler_cls, tmp_path: Path):
         """Content files are written incrementally when extractor/writer are provided."""
