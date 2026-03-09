@@ -57,6 +57,7 @@ class SiteCrawler:
         output_base: Path | str | None = None,
         extractor: ContentExtractor | None = None,
         writer: FileWriter | None = None,
+        activity_log_size: int = 10,
     ) -> None:
         self.config = config
         self.page_config = page_config or PageConfig()
@@ -65,6 +66,7 @@ class SiteCrawler:
         self._allowed_domains: set[str] = self._extract_base_domains(config.urls)
         self._extractor = extractor
         self._writer = writer
+        self._activity_log_size = activity_log_size
         self.content_files: list[Path] = []
         # Internal writer for failed-page content (symmetrical with _writer)
         self._fail_writer: FileWriter | None = None
@@ -123,11 +125,13 @@ class SiteCrawler:
             print()
 
         # --- Per-round files ---
-        round_nums = sorted({
-            int(m.group(1))
-            for f in self.output_dir.iterdir()
-            if (m := re.match(r"round_(\d+)_", f.name))
-        })
+        round_nums = sorted(
+            {
+                int(m.group(1))
+                for f in self.output_dir.iterdir()
+                if (m := re.match(r"round_(\d+)_", f.name))
+            }
+        )
         for rn in round_nums:
             prefix = f"round_{rn}_"
             content = sorted(self.output_dir.glob(f"{prefix}success_content_*"))
@@ -217,6 +221,7 @@ class SiteCrawler:
                 round_prefix=round_prefix,
                 prior_success=0,
                 prior_fail=0,
+                round_label=f"Round 1/{total_rounds}",
             )
             success, fail = self._split_results(round_results)
             self._save_url_lists(success, fail, round_prefix)
@@ -242,7 +247,9 @@ class SiteCrawler:
                 if self._fail_writer is not None:
                     self._fail_writer.reset(f"{round_prefix}fail_")
 
-                print(f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {_ROUND_COOLDOWN}s cooldown) ---")
+                print(
+                    f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {_ROUND_COOLDOWN}s cooldown) ---"
+                )
                 await asyncio.sleep(_ROUND_COOLDOWN)
 
                 round_results = await self._crawl_urls_async(
@@ -255,6 +262,7 @@ class SiteCrawler:
                     prior_success=len(all_success),
                     prior_fail=len(all_fail),
                     skip_urls=frozenset(succeeded_urls),
+                    round_label=f"Round {round_num}/{total_rounds}",
                 )
                 success, fail = self._split_results(round_results)
                 self._save_url_lists(success, fail, round_prefix)
@@ -282,7 +290,9 @@ class SiteCrawler:
         self.content_files = self._get_final_content_files()
 
         total_crawled = len(all_success) + len(all_fail)
-        print(f"\nDone! {len(all_success)} succeeded, {len(all_fail)} failed out of {total_crawled} total.")
+        print(
+            f"\nDone! {len(all_success)} succeeded, {len(all_fail)} failed out of {total_crawled} total."
+        )
         assert self.output_dir is not None
         print(f"Output folder: {self.output_dir}")
 
@@ -305,6 +315,7 @@ class SiteCrawler:
         prior_success: int = 0,
         prior_fail: int = 0,
         skip_urls: frozenset[str] = frozenset(),
+        round_label: str = "",
     ) -> list[CrawlResult]:
         """Crawl a list of URLs and return per-page results.
 
@@ -329,6 +340,8 @@ class SiteCrawler:
             min(len(urls), self.config.limit),
             prior_success=prior_success,
             prior_fail=prior_fail,
+            round_label=round_label,
+            max_log_entries=self._activity_log_size,
         )
 
         while queue and len(results) < self.config.limit:
@@ -342,6 +355,7 @@ class SiteCrawler:
                 continue
 
             try:
+                progress.set_activity(f"Crawling {url}")
                 result = await crawler.arun(url=url, config=run_cfg)
 
                 # Use the final URL after any redirects
@@ -384,7 +398,8 @@ class SiteCrawler:
             if (
                 crawl_result.success
                 and self._is_blocked(crawl_result.html)
-                and self._content_length_without_chrome(crawl_result.html) < _BLOCK_MAX_CONTENT_LENGTH
+                and self._content_length_without_chrome(crawl_result.html)
+                < _BLOCK_MAX_CONTENT_LENGTH
             ):
                 crawl_result.success = False
                 crawl_result.error = "Blocked by WAF"
@@ -395,6 +410,7 @@ class SiteCrawler:
 
             # Extract and buffer content incrementally
             if crawl_result.success and self._extractor and self._writer:
+                progress.set_activity("Extracting content")
                 page = self._extractor._extract_page(crawl_result)
                 # Post-extraction quality gate: if a block signature is
                 # present and the *extracted* content is still thin,
@@ -424,6 +440,7 @@ class SiteCrawler:
 
             # Flush content and URL lists periodically
             if len(results) % self.config.flush_interval == 0:
+                progress.set_activity(f"Flushing to disk ({len(results)} pages processed)")
                 if self._writer is not None:
                     self._writer.flush()
                 if self._fail_writer is not None:
@@ -436,17 +453,22 @@ class SiteCrawler:
             # configured delay so WAFs have time to cool down.
             if self.config.delay > 0 and is_retry:
                 jitter = self.config.delay * random.uniform(0.3, 3.0)
+                progress.set_activity(f"Delay {jitter:.1f}s (retry cooldown)")
                 await asyncio.sleep(jitter)
 
             # Discover links for deeper crawling (only in round 1)
             if discover_links and depth < self.config.max_depth and crawl_result.success:
+                progress.set_activity(f"Discovering links from {url}")
                 new_links = self._extract_links(crawl_result, crawl_result.url)
+                added = 0
                 for link in new_links:
                     if len(generated) >= self.config.limit:
                         break
                     if link not in generated:
                         generated.add(link)
                         queue.append((link, depth + 1))
+                        added += 1
+                progress.update_activity_label(f"Discovered {added} links from {url}")
                 # Update progress total to reflect discovered pages
                 progress.total = min(len(generated), self.config.limit)
 
@@ -475,7 +497,9 @@ class SiteCrawler:
         if not html:
             return 0
         soup = BeautifulSoup(html, "html.parser")
-        for tag in soup.find_all(["nav", "script", "style", "form", "header", "footer", "noscript"]):
+        for tag in soup.find_all(
+            ["nav", "script", "style", "form", "header", "footer", "noscript"]
+        ):
             tag.decompose()
         return len(soup.get_text(separator=" ", strip=True))
 
@@ -540,11 +564,7 @@ class SiteCrawler:
                 if r.url not in seen_urls:
                     seen_urls.add(r.url)
                     unique_success.append(r)
-            pages = [
-                self._extractor._extract_page(r)
-                for r in unique_success
-                if r.markdown.strip()
-            ]
+            pages = [self._extractor._extract_page(r) for r in unique_success if r.markdown.strip()]
             pages = [p for p in pages if p.markdown.strip()]
             if pages:
                 w = FileWriter(
@@ -568,14 +588,16 @@ class SiteCrawler:
             fail_pages = []
             for r in unique_fail_results:
                 raw_body = r.markdown.strip() or r.html.strip() or "(no response)"
-                fail_pages.append(ExtractedPage(
-                    url=r.url,
-                    title=f"FAILED \u2014 {r.error or 'Unknown error'}",
-                    markdown=(
-                        f"**Error:** {r.error or 'Unknown error'}\n\n"
-                        f"**Raw response:**\n\n{raw_body}"
-                    ),
-                ))
+                fail_pages.append(
+                    ExtractedPage(
+                        url=r.url,
+                        title=f"FAILED \u2014 {r.error or 'Unknown error'}",
+                        markdown=(
+                            f"**Error:** {r.error or 'Unknown error'}\n\n"
+                            f"**Raw response:**\n\n{raw_body}"
+                        ),
+                    )
+                )
             if fail_pages:
                 w = FileWriter(
                     output_dir=self.output_dir,
@@ -606,11 +628,7 @@ class SiteCrawler:
                 if r.url not in seen_urls:
                     seen_urls.add(r.url)
                     unique_success.append(r)
-            pages = [
-                self._extractor._extract_page(r)
-                for r in unique_success
-                if r.markdown.strip()
-            ]
+            pages = [self._extractor._extract_page(r) for r in unique_success if r.markdown.strip()]
             pages = [p for p in pages if p.markdown.strip()]
             sorted_pages = ContentSorter.sort(pages)
             if sorted_pages:
@@ -641,14 +659,16 @@ class SiteCrawler:
             fail_pages = []
             for r in unique_fail:
                 raw_body = r.markdown.strip() or r.html.strip() or "(no response)"
-                fail_pages.append(ExtractedPage(
-                    url=r.url,
-                    title=f"FAILED — {r.error or 'Unknown error'}",
-                    markdown=(
-                        f"**Error:** {r.error or 'Unknown error'}\n\n"
-                        f"**Raw response:**\n\n{raw_body}"
-                    ),
-                ))
+                fail_pages.append(
+                    ExtractedPage(
+                        url=r.url,
+                        title=f"FAILED — {r.error or 'Unknown error'}",
+                        markdown=(
+                            f"**Error:** {r.error or 'Unknown error'}\n\n"
+                            f"**Raw response:**\n\n{raw_body}"
+                        ),
+                    )
+                )
             sorted_fail = ContentSorter.sort(fail_pages)
             if sorted_fail:
                 w = FileWriter(
@@ -708,15 +728,16 @@ class SiteCrawler:
 
         # Restrict to the same base domain(s) as the seed URLs
         if self._allowed_domains and not any(
-            parsed.netloc == d or parsed.netloc.endswith("." + d)
-            for d in self._allowed_domains
+            parsed.netloc == d or parsed.netloc.endswith("." + d) for d in self._allowed_domains
         ):
             return False
 
         # Block boilerplate browser-upgrade domains
         netloc_path = parsed.netloc + parsed.path
-        if any(netloc_path.startswith(d) or netloc_path.startswith("www." + d)
-               for d in self._BOILERPLATE_DOMAINS):
+        if any(
+            netloc_path.startswith(d) or netloc_path.startswith("www." + d)
+            for d in self._BOILERPLATE_DOMAINS
+        ):
             return False
 
         if self.config.include_only_paths and not any(
@@ -725,25 +746,55 @@ class SiteCrawler:
             return False
 
         return not (
-            self.config.exclude_paths
-            and any(re.search(p, url) for p in self.config.exclude_paths)
+            self.config.exclude_paths and any(re.search(p, url) for p in self.config.exclude_paths)
         )
 
     # File extensions that are never useful pages to crawl
-    _STATIC_ASSET_EXTENSIONS = frozenset((
-        ".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg",
-        ".webp", ".bmp", ".tiff", ".woff", ".woff2", ".ttf", ".eot",
-        ".otf", ".mp3", ".mp4", ".avi", ".mov", ".webm", ".ogg",
-        ".pdf", ".zip", ".gz", ".tar", ".rar", ".7z",
-        ".xml", ".json", ".rss", ".atom",
-    ))
+    _STATIC_ASSET_EXTENSIONS = frozenset(
+        (
+            ".css",
+            ".js",
+            ".ico",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".webp",
+            ".bmp",
+            ".tiff",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+            ".otf",
+            ".mp3",
+            ".mp4",
+            ".avi",
+            ".mov",
+            ".webm",
+            ".ogg",
+            ".pdf",
+            ".zip",
+            ".gz",
+            ".tar",
+            ".rar",
+            ".7z",
+            ".xml",
+            ".json",
+            ".rss",
+            ".atom",
+        )
+    )
 
     # Domains that appear as boilerplate "upgrade your browser" links on
     # many websites and are never useful crawl targets.
-    _BOILERPLATE_DOMAINS = frozenset((
-        "browsehappy.com",
-        "google.com",
-    ))
+    _BOILERPLATE_DOMAINS = frozenset(
+        (
+            "browsehappy.com",
+            "google.com",
+        )
+    )
 
     @staticmethod
     def _extract_base_domains(urls: list[str]) -> set[str]:
@@ -777,8 +828,10 @@ class SiteCrawler:
                 # Skip boilerplate browser-upgrade links
                 parsed = urlparse(absolute)
                 netloc_path = parsed.netloc + parsed.path
-                if any(netloc_path.startswith(d) or netloc_path.startswith("www." + d)
-                       for d in SiteCrawler._BOILERPLATE_DOMAINS):
+                if any(
+                    netloc_path.startswith(d) or netloc_path.startswith("www." + d)
+                    for d in SiteCrawler._BOILERPLATE_DOMAINS
+                ):
                     continue
                 # Skip static asset URLs
                 path = parsed.path.lower()

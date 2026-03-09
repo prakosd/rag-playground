@@ -31,6 +31,8 @@ Pydantic v2 models — all user-facing parameters are validated here.
 
 Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jupyter compatibility; on Windows uses `ProactorEventLoop` in a `ThreadPoolExecutor`.
 
+Constructor accepts an optional keyword argument `activity_log_size` (default `10`) that controls how many recent activities are shown in the Jupyter progress widget's activity log.
+
 **Multi-round strategy:**
 
 1. **Round 1** — crawl seed URLs with link discovery (respects `max_depth`). Discovered links are added to the queue up to `config.limit`. **No per-page delay** is applied in round 1 for speed.
@@ -110,7 +112,15 @@ A symmetric `_fail_writer` handles failed-page output (error details + raw HTML)
 
 ### ProgressReporter (`progress.py`)
 
-Real-time progress display. Auto-detects Jupyter (HTML widget with animated bar) vs terminal (plain text with ETA). Tracks success/fail counts across rounds via `prior_success`/`prior_fail`.
+Real-time progress display. Auto-detects Jupyter (HTML widget with animated spider + activity log) vs terminal (plain text with ETA). Tracks success/fail counts across rounds via `prior_success`/`prior_fail`.
+
+**Activity tracking:** `set_activity(label)` records what the crawler is currently doing (crawling, extracting, flushing, delay, discovering links). Each activity's duration and completion timestamp are captured and shown in a recent-activity log (last 10 entries by default, configurable via `activity_log_size`). Activity log entries are 3-element tuples `(datetime, label, duration)`. The crawler instruments `_crawl_urls_async` with `set_activity()` calls at key phases. Additionally, `update_activity_label(label)` can rename the current activity without closing it (timer keeps running), used to update "Discovering links" with the final link count after extraction.
+
+**Jupyter widget (`_ProgressWidget`):** Renders a rich HTML display via `_repr_html_()` with a gradient progress bar, an animated CSS spider (🕷️) that tracks progress percentage, a pulsing current-activity indicator with elapsed time, an "Activity Log" heading above a compact activity log table with HH:MM:SS timestamps, and cumulative stats + ETA. All CSS is scoped with `c4md-` prefixed class names.
+
+**`round_label`:** Passed from `_run_rounds_async` to `ProgressReporter` so the widget header shows "Round N/M".
+
+**Backward compatibility:** `set_activity()` is optional — reporters that never call it still produce a valid widget. The `update()` signature is unchanged. Terminal mode is unaffected (plain `print()`).
 
 ## Output File Naming
 
@@ -189,6 +199,7 @@ src/crawl4md/
 | `_BOILERPLATE_DOMAINS` | crawler | frozenset | Domains to always skip (`browsehappy.com`, `google.com`) |
 | `_ITEM_SENTINEL` | extractor | `"CRAWL4MD_ITEM_BREAK"` | Placeholder between repeated items (survives trafilatura) |
 | `_COVERAGE_THRESHOLD` | extractor | `0.15` | Trafilatura → markdownify fallback threshold |
+| `_MAX_LOG_ENTRIES` | progress | `10` | Maximum recent activities shown in the activity log (default; overridable via `activity_log_size`) |
 
 ## Testing
 
@@ -196,7 +207,7 @@ src/crawl4md/
 - **Every code change must include unit tests** — new features need tests for the happy path and key edge cases; bug fixes need a test that reproduces the bug.
 - **All tests must pass before a task is considered complete.** Run `pytest tests/ -v` and confirm zero failures.
 - **After tests pass, run linting:** `ruff check src/ tests/` and `ruff format --check src/ tests/`. Fix any errors and re-run both tests and linting until **both pass with zero errors**. A task is not complete until tests AND linting are clean.
-- Test files: `test_config.py`, `test_crawler.py`, `test_extractor.py`, `test_sorter.py`, `test_writer.py`.
+- Test files: `test_config.py`, `test_crawler.py`, `test_extractor.py`, `test_sorter.py`, `test_writer.py`, `test_progress.py`.
 - `_ROUND_COOLDOWN` (the 30 s sleep between retry rounds) is globally patched to 0 via an autouse fixture in `conftest.py`. No per-test patching is needed.
 - When running tests in a terminal, **always wait for the command to finish and return its full output** before re-running, retrying, or drawing any conclusions. Do not start a new test run while one is still in progress.
 

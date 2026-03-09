@@ -8,7 +8,7 @@ A Python library for crawling websites and extracting their content as Markdown-
 - **Smart content extraction** — trafilatura for main content (with automatic fallback to markdownify when coverage is below 15%), plus supplementary section recovery for FAQs, accordions, and product metadata
 - **WAF / bot-detection handling** — two-stage detection (HTML block signatures + post-extraction content-length check) with automatic retry rounds and cooldown between rounds
 - **Size-limited output files** — pages are never split across files; oversized pages get their own file
-- **Real-time progress** — animated HTML progress bar in Jupyter, plain-text ETA in terminal
+- **Real-time progress** — animated spider progress widget in Jupyter (with live activity tracking and duration log), plain-text ETA in terminal
 - **Configurable filtering** — include/exclude URL paths and HTML tags via regex
 - **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) via DOM analysis and inserts `---` separators; supports custom CSS selectors
 - **Markdown validation** — every extracted page is auto-fixed via mdformat (with GFM support) to ensure structurally correct, renderable Markdown; a content-preservation guard prevents any words, numbers, or punctuation from being lost
