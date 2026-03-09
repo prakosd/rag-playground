@@ -129,9 +129,23 @@ class ProgressReporter:
         total_fail = self._prior_fail + self._round_fail
         stats = f"{total_crawled} crawled, {total_success} succeeded, {total_fail} failed"
 
-        activity_elapsed = 0.0
+        activity_start_time = ""
+        activity_eta = ""
+        activity_est_duration = ""
         if self._current_activity and self._activity_start > 0:
-            activity_elapsed = time.time() - self._activity_start
+            activity_start_time = datetime.fromtimestamp(self._activity_start).strftime("%H:%M:%S")
+            # Estimate finish from avg duration of same-category activities
+            cat = _ProgressWidget._activity_category(self._current_activity)
+            durations = [
+                d
+                for _, lbl, d in self._activity_log
+                if _ProgressWidget._activity_category(lbl) == cat
+            ]
+            if durations:
+                avg = sum(durations) / len(durations)
+                est_finish = datetime.fromtimestamp(self._activity_start) + timedelta(seconds=avg)
+                activity_eta = est_finish.strftime("%H:%M:%S")
+                activity_est_duration = _ProgressWidget._fmt_duration(avg)
 
         return _ProgressWidget(
             current=self.count,
@@ -140,12 +154,16 @@ class ProgressReporter:
             stats=stats,
             round_label=self._round_label,
             activity=self._current_activity,
-            activity_elapsed=activity_elapsed,
+            activity_start_time=activity_start_time,
+            activity_eta=activity_eta,
+            activity_est_duration=activity_est_duration,
             activity_log=list(self._activity_log),
         )
 
     def update(self, url: str, *, success: bool = True) -> None:
         """Report that a page has been processed."""
+        if not success and self._current_activity:
+            self._current_activity = f"\u274c FAILED \u2014 {self._current_activity}"
         self._close_activity()
         self.count += 1
         if success:
@@ -195,7 +213,9 @@ class _ProgressWidget:
         stats: str = "",
         round_label: str = "",
         activity: str = "",
-        activity_elapsed: float = 0.0,
+        activity_start_time: str = "",
+        activity_eta: str = "",
+        activity_est_duration: str = "",
         activity_log: list[tuple[datetime, str, float]] | None = None,
     ) -> None:
         self.current = current
@@ -204,7 +224,9 @@ class _ProgressWidget:
         self.stats = stats
         self.round_label = round_label
         self.activity = activity
-        self.activity_elapsed = activity_elapsed
+        self.activity_start_time = activity_start_time
+        self.activity_eta = activity_eta
+        self.activity_est_duration = activity_est_duration
         self.activity_log = activity_log or []
 
     @staticmethod
@@ -218,9 +240,27 @@ class _ProgressWidget:
         return f"{mins}m {secs:02d}s"
 
     @staticmethod
+    def _activity_category(label: str) -> str:
+        """Categorise an activity label for ETA averaging."""
+        low = label.lower()
+        if "crawl" in low:
+            return "crawl"
+        if "extract" in low:
+            return "extract"
+        if "flush" in low:
+            return "flush"
+        if "delay" in low:
+            return "delay"
+        if "discover" in low:
+            return "discover"
+        return "other"
+
+    @staticmethod
     def _activity_icon(label: str) -> str:
         """Pick a small icon for the activity label."""
         low = label.lower()
+        if "failed" in low:
+            return "❌"
         if "crawl" in low:
             return "🌐"
         if "extract" in low:
@@ -247,16 +287,21 @@ class _ProgressWidget:
         activity_html = ""
         if self.activity:
             icon = self._activity_icon(self.activity)
-            dur = self._fmt_duration(self.activity_elapsed)
             # Truncate long URLs in the label for display
             display_label = self.activity
             if len(display_label) > 80:
                 display_label = display_label[:77] + "…"
+            time_info = f"since {self.activity_start_time}" if self.activity_start_time else ""
+            if self.activity_eta:
+                time_info += f" \u2192 ~{self.activity_eta}"
+            if self.activity_est_duration:
+                time_info += f" (~{self.activity_est_duration})"
+            time_span = f'<span class="c4md-dur"> \u2014 {time_info}</span>' if time_info else ""
             activity_html = (
                 f'<div class="c4md-activity">'
                 f'<span class="c4md-pulse"></span>'
                 f" {icon} {display_label}"
-                f'<span class="c4md-dur"> — {dur}</span>'
+                f"{time_span}"
                 f"</div>"
             )
 
@@ -268,11 +313,13 @@ class _ProgressWidget:
                 icon = self._activity_icon(label)
                 display_label = label if len(label) <= 70 else label[:67] + "…"
                 ts_str = ts.strftime("%H:%M:%S")
+                is_fail = label.startswith("\u274c")
+                label_cls = "c4md-log-label c4md-log-fail" if is_fail else "c4md-log-label"
                 rows += (
                     f"<tr>"
                     f'<td class="c4md-log-time">{ts_str}</td>'
                     f'<td class="c4md-log-icon">{icon}</td>'
-                    f'<td class="c4md-log-label">{display_label}</td>'
+                    f'<td class="{label_cls}">{display_label}</td>'
                     f'<td class="c4md-log-dur">{self._fmt_duration(dur)}</td>'
                     f"</tr>"
                 )
@@ -296,7 +343,7 @@ class _ProgressWidget:
             f"  font-size: 13px; color: #333; max-width: 680px;"
             f"}}"
             f".c4md-header {{"
-            f"  font-weight: 600; font-size: 14px; margin-bottom: 8px;"
+            f"  font-weight: 600; font-size: 14px; margin-bottom: 8px; color: #111;"
             f"}}"
             # Progress bar container
             f".c4md-bar-wrap {{"
@@ -364,12 +411,30 @@ class _ProgressWidget:
             f"  max-width: 460px;"
             f"}}"
             f".c4md-log-dur {{ text-align: right; color: #888; white-space: nowrap; }}"
+            f".c4md-log-fail {{ color: #d32f2f; }}"
             # Footer
             f".c4md-footer {{"
-            f"  margin-top: 6px; font-size: 12px; color: #666;"
+            f"  margin-top: 6px; font-size: 12px; color: #333;"
             f"}}"
             f".c4md-pct {{"
             f"  float: right; font-weight: 600; color: #43a047;"
+            f"}}"
+            # Dark-mode overrides
+            f"@media (prefers-color-scheme: dark) {{"
+            f"  .c4md-widget {{ color: #e0e0e0; }}"
+            f"  .c4md-header {{ color: #f0f0f0; }}"
+            f"  .c4md-bar-wrap {{ background: #3a3a3a; }}"
+            f"  .c4md-thread {{ border-color: #888; }}"
+            f"  .c4md-activity {{ color: #64b5f6; }}"
+            f"  .c4md-pulse {{ background: #64b5f6; }}"
+            f"  .c4md-dur {{ color: #aaa; }}"
+            f"  .c4md-log-heading {{ color: #aaa; }}"
+            f"  .c4md-log-table {{ color: #bbb; }}"
+            f"  .c4md-log-time {{ color: #999; }}"
+            f"  .c4md-log-dur {{ color: #aaa; }}"
+            f"  .c4md-log-fail {{ color: #ef5350; }}"
+            f"  .c4md-footer {{ color: #d0d0d0; }}"
+            f"  .c4md-pct {{ color: #81c784; }}"
             f"}}"
             f"</style>"
             # Header

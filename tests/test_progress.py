@@ -37,11 +37,11 @@ class TestProgressWidget:
             current=2,
             total=10,
             activity="Crawling https://example.com/page",
-            activity_elapsed=3.5,
+            activity_start_time="14:23:05",
         )
         html = widget._repr_html_()
         assert "Crawling https://example.com/page" in html
-        assert "3.5s" in html
+        assert "since 14:23:05" in html
         # Should have the crawling icon
         assert "🌐" in html
 
@@ -86,7 +86,7 @@ class TestProgressWidget:
             current=1,
             total=5,
             activity=f"Crawling {long_url}",
-            activity_elapsed=1.0,
+            activity_start_time="14:23:05",
         )
         html = widget._repr_html_()
         assert "…" in html
@@ -98,6 +98,7 @@ class TestProgressWidget:
         assert _ProgressWidget._activity_icon("Delay 5.0s") == "⏳"
         assert _ProgressWidget._activity_icon("Discovered 10 links from x") == "🔗"
         assert _ProgressWidget._activity_icon("Something else") == "⚙️"
+        assert _ProgressWidget._activity_icon("❌ FAILED \u2014 Crawling x") == "❌"
 
     def test_fmt_duration_ranges(self):
         assert _ProgressWidget._fmt_duration(0.01) == "<0.1s"
@@ -285,3 +286,156 @@ class TestProgressReporter:
             reporter._close_activity()
             assert reporter._activity_log == []
             assert reporter._current_activity == ""
+
+    def test_repr_html_activity_with_eta(self):
+        """Widget shows both start time and ETA when available."""
+        widget = _ProgressWidget(
+            current=5,
+            total=10,
+            activity="Crawling https://example.com/page",
+            activity_start_time="14:23:05",
+            activity_eta="14:23:18",
+        )
+        html = widget._repr_html_()
+        assert "since 14:23:05" in html
+        assert "~14:23:18" in html
+        assert "\u2192" in html
+
+    def test_repr_html_activity_with_est_duration(self):
+        """Widget shows estimated duration when provided."""
+        widget = _ProgressWidget(
+            current=5,
+            total=10,
+            activity="Crawling https://example.com/page",
+            activity_start_time="14:23:05",
+            activity_eta="14:23:18",
+            activity_est_duration="13.0s",
+        )
+        html = widget._repr_html_()
+        assert "(~13.0s)" in html
+
+    def test_repr_html_activity_no_est_duration(self):
+        """Widget does not show estimated duration when not provided."""
+        widget = _ProgressWidget(
+            current=1,
+            total=10,
+            activity="Crawling https://example.com/page",
+            activity_start_time="14:23:05",
+        )
+        html = widget._repr_html_()
+        assert "(~" not in html
+
+    def test_repr_html_activity_no_eta(self):
+        """Widget shows only start time when no ETA is available."""
+        widget = _ProgressWidget(
+            current=1,
+            total=10,
+            activity="Crawling https://example.com/page",
+            activity_start_time="14:23:05",
+        )
+        html = widget._repr_html_()
+        assert "since 14:23:05" in html
+        assert "\u2192" not in html
+
+    def test_activity_category(self):
+        """_activity_category returns correct categories."""
+        assert _ProgressWidget._activity_category("Crawling https://x.com") == "crawl"
+        assert _ProgressWidget._activity_category("Extracting content") == "extract"
+        assert _ProgressWidget._activity_category("Flushing to disk") == "flush"
+        assert _ProgressWidget._activity_category("Delay 5.0s") == "delay"
+        assert _ProgressWidget._activity_category("Discovering links from x") == "discover"
+        assert _ProgressWidget._activity_category("Something else") == "other"
+        # Failed activities keep their category based on the underlying label
+        assert _ProgressWidget._activity_category("\u274c FAILED \u2014 Crawling x") == "crawl"
+
+    def test_build_widget_computes_activity_eta(self):
+        """_build_widget computes ETA from same-category log entries."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+
+            # Simulate a few completed crawling activities (10s each)
+            now = datetime.now()
+            reporter._activity_log = [
+                (now, "Crawling https://example.com/a", 10.0),
+                (now, "Extracting content", 0.5),
+                (now, "Crawling https://example.com/b", 10.0),
+            ]
+            # Start a new crawling activity
+            reporter._current_activity = "Crawling https://example.com/c"
+            reporter._activity_start = time.time()
+
+            widget = reporter._build_widget()
+            assert widget.activity_start_time != ""
+            assert widget.activity_eta != ""
+            assert widget.activity_est_duration != ""
+
+    def test_build_widget_no_eta_without_history(self):
+        """_build_widget has empty ETA when no prior same-category activities exist."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+
+            # Start a crawling activity with no prior log
+            reporter._current_activity = "Crawling https://example.com/a"
+            reporter._activity_start = time.time()
+
+            widget = reporter._build_widget()
+            assert widget.activity_start_time != ""
+            assert widget.activity_eta == ""
+            assert widget.activity_est_duration == ""
+
+    def test_update_marks_failed_activity(self):
+        """update() with success=False prepends fail marker to activity label."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(5)
+            reporter._use_notebook = False
+
+            reporter.set_activity("Crawling https://example.com/blocked")
+            reporter.update("https://example.com/blocked", success=False)
+
+            assert len(reporter._activity_log) == 1
+            label = reporter._activity_log[0][1]
+            assert label.startswith("\u274c FAILED")
+            assert "Crawling https://example.com/blocked" in label
+
+    def test_update_success_no_fail_marker(self):
+        """update() with success=True does NOT add fail marker."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(5)
+            reporter._use_notebook = False
+
+            reporter.set_activity("Crawling https://example.com/ok")
+            reporter.update("https://example.com/ok", success=True)
+
+            assert len(reporter._activity_log) == 1
+            label = reporter._activity_log[0][1]
+            assert not label.startswith("\u274c")
+
+    def test_failed_log_entry_styled_red(self):
+        """Failed log entries get the c4md-log-fail CSS class."""
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[
+                (now, "Crawling https://example.com/ok", 5.0),
+                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+            ],
+        )
+        html = widget._repr_html_()
+        assert "c4md-log-fail" in html
+        # Normal entry should NOT have fail class — check first entry is not styled
+        assert html.count("c4md-log-fail") == 3  # CSS rules (light + dark) + one entry
+
+    def test_repr_html_dark_mode_styles(self):
+        """Widget HTML includes dark-mode CSS media query."""
+        widget = _ProgressWidget(current=3, total=10)
+        html = widget._repr_html_()
+        assert "prefers-color-scheme: dark" in html
+        # Key dark-mode color overrides
+        assert "#f0f0f0" in html  # header
+        assert "#d0d0d0" in html  # footer
+        assert "#64b5f6" in html  # activity
+        assert "#81c784" in html  # percentage
+        assert "#ef5350" in html  # fail
