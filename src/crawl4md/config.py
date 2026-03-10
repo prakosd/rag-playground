@@ -90,7 +90,7 @@ class PageConfig(BaseModel):
     max_file_size_mb: float = 15.0
     extract_main_content: bool = True
     output_extension: Literal[".txt", ".md"] = ".txt"
-    separate_items: bool = False
+    separate_items: bool = True
     item_selector: str = ""
     js_code: list[str] = []
     scan_full_page: bool = True

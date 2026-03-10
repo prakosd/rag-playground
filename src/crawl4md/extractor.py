@@ -67,6 +67,8 @@ class ContentExtractor:
         # Capture supplementary sections (e.g. FAQs) before trafilatura strips them.
         supplements = self._extract_supplementary_sections(html)
         html = self._preserve_strikethrough(html)
+        html = self._space_heading_children(html)
+        html = self._populate_empty_links(html)
         if self.page_config.separate_items:
             html = self._insert_item_separators(html, use_sentinel=True)
         extracted = trafilatura.extract(
@@ -122,6 +124,8 @@ class ContentExtractor:
         """Use markdownify on the (optionally tag-filtered) HTML."""
         html = self._filter_tags(result.html)
         html = self._preserve_strikethrough(html)
+        html = self._space_heading_children(html)
+        html = self._populate_empty_links(html)
         if self.page_config.separate_items:
             html = self._insert_item_separators(html, use_sentinel=False)
         md = markdownify(html, heading_style="ATX", strip=["img"], table_infer_header=True)
@@ -151,6 +155,121 @@ class ContentExtractor:
             title=title,
             markdown=md,
         )
+
+    # ------------------------------------------------------------------
+    # Empty link population
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _link_text_from_href(href: str) -> str:
+        """Derive human-readable link text from a URL.
+
+        Fallback chain: last meaningful path segment (stripped of
+        extension, hyphens/underscores converted to spaces, title-cased)
+        → ``"Link"``.
+        """
+        path = urlparse(href).path.rstrip("/")
+        if path:
+            segment = path.rsplit("/", 1)[-1]
+            # Strip common file extensions
+            dot = segment.rfind(".")
+            if dot > 0:
+                segment = segment[:dot]
+            if segment:
+                return segment.replace("-", " ").replace("_", " ").title()
+        return "Link"
+
+    @staticmethod
+    def _populate_empty_links(html: str) -> str:
+        """Give visible text to ``<a>`` tags that have ``href`` but no content.
+
+        Many sites use empty ``<a>`` overlays (e.g. card-link patterns)
+        that have a valid ``href`` but no inner text.  Both trafilatura
+        and markdownify silently discard these, so the URL never appears
+        in the extracted Markdown.
+
+        This pre-processing step populates each empty anchor with text
+        derived from: ``title`` attr → ``aria-label`` attr → URL path
+        slug → ``"Link"``.
+
+        **Overlay relocation:** when the populated anchor appears to be a
+        CSS overlay (no child elements, and its parent has other children
+        with ≥ 30 chars of combined text), the anchor is moved to the
+        *end* of its parent so that card content appears first and the
+        reference link follows.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        relocate: list[Tag] = []
+        for a in soup.find_all("a", href=True):
+            # Only target anchors with no meaningful text content
+            if a.get_text(strip=True):
+                continue
+            href = a["href"].strip()
+            if not href or href.startswith(("#", "javascript:")):
+                continue
+            # Record whether the anchor had child elements before we add
+            # text (e.g. <img>, <span>).  Anchors with children are not
+            # empty overlays — they're intentional structures.
+            had_children = bool(a.find(True))
+            if had_children:
+                continue
+            # Fallback chain for link text
+            text = (
+                (a.get("title") or "").strip()
+                or (a.get("aria-label") or "").strip()
+                or ContentExtractor._link_text_from_href(href)
+            )
+            a.string = text
+            # Detect overlay links: truly empty (no prior child elements)
+            # and parent has substantial sibling content.
+            if a.parent is not None:
+                sibling_text = "".join(
+                    sib.get_text(strip=True)
+                    for sib in a.parent.children
+                    if sib is not a and isinstance(sib, Tag)
+                )
+                if len(sibling_text) >= 30:
+                    relocate.append(a)
+        # Move overlay links to the end of their parent so card content
+        # appears before the reference link.
+        for a in relocate:
+            parent = a.parent
+            if parent is not None:
+                a.extract()
+                parent.append(a)
+        return str(soup)
+
+    # ------------------------------------------------------------------
+    # Heading child spacing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _space_heading_children(html: str) -> str:
+        """Insert whitespace between adjacent inline children in headings.
+
+        Headings like ``<h6><span>Broadband</span><span>For seamless
+        connection</span></h6>`` produce ``BroadbandFor seamless
+        connection`` after extraction because there is no whitespace
+        between the sibling elements.  This inserts a single space
+        between consecutive inline Tag children to prevent concatenation.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        from itertools import pairwise
+
+        from bs4.element import NavigableString
+
+        for heading in soup.find_all(re.compile(r"^h[1-6]$")):
+            children = list(heading.children)
+            if len(children) < 2:
+                continue
+            for a, b in pairwise(children):
+                if isinstance(a, Tag) and isinstance(b, Tag):
+                    # Check there is no whitespace text node between them.
+                    # (pairwise gives consecutive children; if the DOM has
+                    # a text node between two Tags it will appear as a
+                    # separate child and the pair won't be (Tag, Tag).)
+                    a.insert_after(NavigableString(" "))
+        return str(soup)
 
     # ------------------------------------------------------------------
     # Strikethrough preservation
@@ -186,44 +305,48 @@ class ContentExtractor:
         ``<hr>`` is used.
 
         If ``page_config.item_selector`` is set, that CSS selector
-        identifies items directly.  Otherwise, auto-detection finds the
-        largest group of repeated same-tag-and-class siblings.
+        identifies items directly.  Otherwise, auto-detection finds all
+        qualifying groups of repeated same-tag-and-class siblings and
+        inserts separators into each group.
         """
         soup = BeautifulSoup(html, "html.parser")
 
         if self.page_config.item_selector:
-            items = soup.select(self.page_config.item_selector)
+            all_groups = [soup.select(self.page_config.item_selector)]
         else:
-            items = self._find_repeated_items(soup)
-            items = self._include_interstitial_siblings(items)
+            all_groups = self._find_repeated_items(soup)
+            all_groups = [self._include_interstitial_siblings(g) for g in all_groups]
 
-        if len(items) < 2:
+        modified = False
+        for items in all_groups:
+            if len(items) < 2:
+                continue
+            modified = True
+            if use_sentinel:
+                for item in items[:-1]:
+                    sep = soup.new_tag("p")
+                    sep.string = _ITEM_SENTINEL
+                    item.append(sep)
+            else:
+                for item in reversed(items[1:]):
+                    sep = soup.new_tag("hr")
+                    item.insert_before(sep)
+
+        if not modified:
             return html
-
-        if use_sentinel:
-            # Append sentinel as last child *inside* each item (except the
-            # last) so it becomes part of the item's content subtree.
-            # Trafilatura preserves inline text but may strip standalone
-            # sibling elements sitting between items.
-            for item in items[:-1]:
-                sep = soup.new_tag("p")
-                sep.string = _ITEM_SENTINEL
-                item.append(sep)
-        else:
-            for item in reversed(items[1:]):
-                sep = soup.new_tag("hr")
-                item.insert_before(sep)
-
         return str(soup)
 
     @staticmethod
-    def _find_repeated_items(soup: BeautifulSoup) -> list[Tag]:
-        """Auto-detect the dominant group of repeated structural elements.
+    def _find_repeated_items(soup: BeautifulSoup) -> list[list[Tag]]:
+        """Auto-detect all qualifying groups of repeated structural elements.
 
         Walks the DOM looking for parents whose direct children share the
         same ``(tag_name, frozenset_of_classes)`` signature.  Groups must
-        have at least 3 members, each with at least 30 characters of text.
-        The group with the highest ``count * avg_text_length`` score wins.
+        have at least 3 members, each with at least 20 characters of text.
+
+        Returns **all** qualifying groups (sorted by descending score so
+        the highest-scoring group comes first).  Groups whose items are
+        already covered by a higher-scoring group are deduplicated.
 
         Elements inside ``<nav>``, ``<header>``, ``<footer>`` are ignored
         to avoid picking up navigation links.
@@ -265,8 +388,18 @@ class ContentExtractor:
             avg_len = sum(len(t.get_text(strip=True)) for t in items) / len(items)
             return len(items) * avg_len
 
-        best = max(groups.values(), key=score)
-        return best
+        # Sort by score descending and deduplicate: if any item in a group
+        # is already covered by a higher-scoring group, skip that group.
+        ranked = sorted(groups.values(), key=score, reverse=True)
+        seen_ids: set[int] = set()
+        result: list[list[Tag]] = []
+        for items in ranked:
+            item_ids = {id(t) for t in items}
+            if item_ids & seen_ids:
+                continue
+            seen_ids.update(item_ids)
+            result.append(items)
+        return result
 
     @staticmethod
     def _include_interstitial_siblings(items: list[Tag]) -> list[Tag]:

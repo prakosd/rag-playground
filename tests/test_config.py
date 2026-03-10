@@ -130,11 +130,11 @@ class TestPageConfig:
 
     def test_separate_items_default(self):
         cfg = PageConfig()
-        assert cfg.separate_items is False
-
-    def test_separate_items_enabled(self):
-        cfg = PageConfig(separate_items=True)
         assert cfg.separate_items is True
+
+    def test_separate_items_disabled(self):
+        cfg = PageConfig(separate_items=False)
+        assert cfg.separate_items is False
 
     def test_item_selector_default(self):
         cfg = PageConfig()

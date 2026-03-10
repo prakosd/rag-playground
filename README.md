@@ -99,7 +99,7 @@ SiteCrawler.crawl()
 | `timeout` | `float` | `30` | Page load timeout in seconds |
 | `max_file_size_mb` | `float` | `15.0` | Max size per output file in MB |
 | `output_extension` | `".txt" \| ".md"` | `".txt"` | Output file format |
-| `separate_items` | `bool` | `False` | Insert `---` separators between repeated items (e.g. product cards) |
+| `separate_items` | `bool` | `True` | Insert `---` separators between repeated items (e.g. product cards) |
 | `item_selector` | `str` | `""` | CSS selector for items; empty = auto-detect |
 | `js_code` | `list[str]` | `[]` | JavaScript snippets to execute before extraction (e.g. expand collapsibles) |
 | `scan_full_page` | `bool` | `True` | Scroll through the full page before extraction (helps bypass lazy-load WAFs) |

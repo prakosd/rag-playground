@@ -23,7 +23,7 @@ Each crawl creates a timestamped output directory. Results pass through multiple
 Pydantic v2 models — all user-facing parameters are validated here.
 
 - **CrawlerConfig** — `urls`, `exclude_paths`, `include_only_paths`, `limit`, `max_depth`, `flush_interval`, `delay`, `stealth`, `headers`, `max_retries`. Accepts CSV strings for list fields; validates regex patterns. `stealth` defaults to `True` (enables random UA, navigator override, full-page scroll). `headers` is a free-form `dict[str, str]` forwarded to `BrowserConfig`.
-- **PageConfig** — `exclude_tags`, `include_only_tags`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`. Cannot set both `exclude_tags` and `include_only_tags`. `scan_full_page` (default `True`) scrolls through the page before extraction; `scroll_delay` (default `0.4`) controls pause between scroll steps.
+- **PageConfig** — `exclude_tags`, `include_only_tags`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`. Cannot set both `exclude_tags` and `include_only_tags`. `separate_items` defaults to `True` (auto-detects and separates repeated items). `scan_full_page` (default `True`) scrolls through the page before extraction; `scroll_delay` (default `0.4`) controls pause between scroll steps.
 - **CrawlResult** — per-page output: `url`, `html`, `markdown`, `success`, `error`, `redirected_url`.
 - **ExtractedPage** — post-extraction output: `url`, `title`, `markdown`.
 
@@ -69,7 +69,9 @@ Converts crawled HTML to Markdown. Two extraction modes controlled by `PageConfi
 
 - `_filter_tags()` — apply `exclude_tags` / `include_only_tags` via HTMLParser.
 - `_preserve_strikethrough()` — convert `<del>/<s>/<strike>` → `~~text~~` so strikethrough survives extraction.
-- `_insert_item_separators()` — if `separate_items` is enabled, insert sentinel markers (`_ITEM_SENTINEL`) between repeated structural elements (auto-detected or via `item_selector` CSS).
+- `_space_heading_children()` — insert whitespace between adjacent inline Tag children in `<h1>`–`<h6>` elements to prevent text concatenation (e.g. `<span>Broadband</span><span>For seamless</span>` → `Broadband For seamless`).
+- `_populate_empty_links()` — find `<a>` tags with `href` but no text content and populate them with visible link text derived from: `title` attr → `aria-label` attr → URL path slug → `"Link"`. Skips `href="#"`, `javascript:`, and empty strings. Always-on, no config flag. **Overlay relocation:** when the populated anchor has no child elements and its parent's other children have ≥ 30 chars of combined text, the anchor is moved to the *end* of its parent so card content appears before the reference link.
+- `_insert_item_separators()` — if `separate_items` is enabled (default `True`), insert sentinel markers (`_ITEM_SENTINEL`) between repeated structural elements. Auto-detection via `_find_repeated_items()` returns **all** qualifying groups (≥ 3 same-signature siblings with ≥ 20 chars each), deduplicated by item overlap and sorted by descending score. Each group is expanded via `_include_interstitial_siblings()`. When `item_selector` CSS is provided, only that single group is used.
 - `_fix_markdown_tables()` — normalize colspan/rowspan, fix missing separator rows, equalize column counts.
 
 **Supplementary section recovery (trafilatura mode only):**
