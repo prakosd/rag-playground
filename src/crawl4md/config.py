@@ -7,6 +7,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
+# Accepted URL schemes for seed URLs.
+_VALID_URL_SCHEMES = ("http://", "https://")
+# Default HTML tags excluded from extraction.
+_DEFAULT_EXCLUDE_TAGS: list[str] = ["nav", "script", "form", "style"]
+
 
 class CrawlerConfig(BaseModel):
     """Configuration for the web crawler."""
@@ -36,7 +41,7 @@ class CrawlerConfig(BaseModel):
         if not v:
             raise ValueError("At least one URL is required.")
         for url in v:
-            if not url.startswith(("http://", "https://")):
+            if not url.startswith(_VALID_URL_SCHEMES):
                 raise ValueError(f"Invalid URL (must start with http:// or https://): {url}")
         return v
 
@@ -83,7 +88,7 @@ class CrawlerConfig(BaseModel):
 class PageConfig(BaseModel):
     """Configuration for page extraction."""
 
-    exclude_tags: list[str] = ["nav", "script", "form", "style"]
+    exclude_tags: list[str] = _DEFAULT_EXCLUDE_TAGS
     include_only_tags: list[str] = []
     wait_for: float | None = None
     timeout: float = 30

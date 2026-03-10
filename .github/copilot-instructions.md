@@ -125,6 +125,7 @@ sorted_final_{success|fail}_urls.txt
 - Linting via ruff (config in `pyproject.toml`).
 - Tests use pytest with mocked HTTP calls — never make real network requests in tests.
 - Keep the notebook UX simple: plain language, no jargon, no code explanations.
+- **No inline magic values:** All behavioral thresholds, tag lists, regex patterns, and repeated string literals must be defined as module-level `_UPPER_SNAKE_CASE` constants with a descriptive comment. Group constants categorically at the top of the file (after imports). Pydantic field defaults and standard Python idioms (e.g. `divmod(x, 60)`) are exempt.
 
 ## Dependencies
 

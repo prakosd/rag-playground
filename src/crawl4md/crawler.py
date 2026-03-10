@@ -62,6 +62,36 @@ _BLOCK_SIGNATURES = (
 # when a block signature is present in the raw HTML.
 _BLOCK_MAX_CONTENT_LENGTH = 500
 
+# ------------------------------------------------------------------
+# Content-length measurement: tags stripped before counting visible text
+# ------------------------------------------------------------------
+_CHROME_STRIP_TAGS = ["nav", "script", "style", "form", "header", "footer", "noscript"]
+
+# ------------------------------------------------------------------
+# Browser configuration defaults
+# ------------------------------------------------------------------
+
+# User-agent generation settings used when stealth mode is enabled
+_USER_AGENT_MODE = "random"
+_USER_AGENT_PLATFORMS = ["desktop"]
+_USER_AGENT_BROWSERS = ["Chrome", "Edge"]
+
+# ------------------------------------------------------------------
+# Output file naming
+# ------------------------------------------------------------------
+
+# Prefixes for merged content files (unsorted and sorted)
+_FINAL_SUCCESS_PREFIX = "final_success_"
+_FINAL_FAIL_PREFIX = "final_fail_"
+_SORTED_FINAL_SUCCESS_PREFIX = "sorted_final_success_"
+_SORTED_FINAL_FAIL_PREFIX = "sorted_final_fail_"
+
+# URL list filenames
+_FINAL_SUCCESS_URLS_FILE = "final_success_urls.txt"
+_FINAL_FAIL_URLS_FILE = "final_fail_urls.txt"
+_SORTED_FINAL_SUCCESS_URLS_FILE = "sorted_final_success_urls.txt"
+_SORTED_FINAL_FAIL_URLS_FILE = "sorted_final_fail_urls.txt"
+
 
 class SiteCrawler:
     """Crawls websites and collects HTML/Markdown content.
@@ -213,10 +243,10 @@ class SiteCrawler:
             "enable_stealth": self.config.stealth,
         }
         if self.config.stealth:
-            browser_kwargs["user_agent_mode"] = "random"
+            browser_kwargs["user_agent_mode"] = _USER_AGENT_MODE
             browser_kwargs["user_agent_generator_config"] = {
-                "platforms": ["desktop"],
-                "browsers": ["Chrome", "Edge"],
+                "platforms": list(_USER_AGENT_PLATFORMS),
+                "browsers": list(_USER_AGENT_BROWSERS),
             }
         if self.config.headers:
             browser_kwargs["headers"] = dict(self.config.headers)
@@ -569,9 +599,7 @@ class SiteCrawler:
         if not html:
             return 0
         soup = BeautifulSoup(html, "html.parser")
-        for tag in soup.find_all(
-            ["nav", "script", "style", "form", "header", "footer", "noscript"]
-        ):
+        for tag in soup.find_all(_CHROME_STRIP_TAGS):
             tag.decompose()
         return len(soup.get_text(separator=" ", strip=True))
 
@@ -619,13 +647,13 @@ class SiteCrawler:
                 if r.url not in seen:
                     seen.add(r.url)
                     unique_urls.append(r.url)
-            path = self.output_dir / "final_success_urls.txt"
+            path = self.output_dir / _FINAL_SUCCESS_URLS_FILE
             path.write_text("\n".join(unique_urls), encoding="utf-8")
 
         # final_fail_urls.txt — URLs that still failed after all retries (deduplicated)
         if remaining_fail_urls:
             unique_fail = list(dict.fromkeys(remaining_fail_urls))
-            path = self.output_dir / "final_fail_urls.txt"
+            path = self.output_dir / _FINAL_FAIL_URLS_FILE
             path.write_text("\n".join(unique_fail), encoding="utf-8")
 
         # final_success_content_*.ext — unsorted merged content (deduplicated)
@@ -643,7 +671,7 @@ class SiteCrawler:
                     output_dir=self.output_dir,
                     max_file_size_mb=self.page_config.max_file_size_mb,
                     file_extension=ext,
-                    prefix="final_success_",
+                    prefix=_FINAL_SUCCESS_PREFIX,
                 )
                 for page in pages:
                     w.add(page)
@@ -675,7 +703,7 @@ class SiteCrawler:
                     output_dir=self.output_dir,
                     max_file_size_mb=self.page_config.max_file_size_mb,
                     file_extension=ext,
-                    prefix="final_fail_",
+                    prefix=_FINAL_FAIL_PREFIX,
                 )
                 for page in fail_pages:
                     w.add(page)
@@ -708,13 +736,13 @@ class SiteCrawler:
                     output_dir=self.output_dir,
                     max_file_size_mb=self.page_config.max_file_size_mb,
                     file_extension=ext,
-                    prefix="sorted_final_success_",
+                    prefix=_SORTED_FINAL_SUCCESS_PREFIX,
                 )
                 for page in sorted_pages:
                     w.add(page)
                 w.flush()
                 # Sorted success URLs
-                path = self.output_dir / "sorted_final_success_urls.txt"
+                path = self.output_dir / _SORTED_FINAL_SUCCESS_URLS_FILE
                 path.write_text(
                     "\n".join(p.url for p in sorted_pages),
                     encoding="utf-8",
@@ -747,13 +775,13 @@ class SiteCrawler:
                     output_dir=self.output_dir,
                     max_file_size_mb=self.page_config.max_file_size_mb,
                     file_extension=ext,
-                    prefix="sorted_final_fail_",
+                    prefix=_SORTED_FINAL_FAIL_PREFIX,
                 )
                 for page in sorted_fail:
                     w.add(page)
                 w.flush()
                 # Sorted fail URLs
-                path = self.output_dir / "sorted_final_fail_urls.txt"
+                path = self.output_dir / _SORTED_FINAL_FAIL_URLS_FILE
                 path.write_text(
                     "\n".join(p.url for p in sorted_fail),
                     encoding="utf-8",

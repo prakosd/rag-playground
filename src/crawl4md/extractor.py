@@ -27,6 +27,97 @@ _MD_SYNTAX_RE = re.compile(r"[#*`>|~\[\]\\]")
 # fall back to markdownify to avoid losing significant content.
 _COVERAGE_THRESHOLD = 0.15
 
+# ------------------------------------------------------------------
+# Extraction parameters
+# ------------------------------------------------------------------
+
+# Tags stripped during markdownify conversion (images removed from output)
+_MARKDOWNIFY_STRIP_TAGS = ["img"]
+# Heading style for markdownify output
+_MARKDOWNIFY_HEADING_STYLE = "ATX"
+# BeautifulSoup parser used throughout the extractor
+_HTML_PARSER = "html.parser"
+# mdformat extension for GitHub Flavoured Markdown validation
+_MDFORMAT_EXTENSIONS = ("gfm",)
+# Markdown separator replacing item sentinels after extraction
+_ITEM_SEPARATOR_MD = "\n\n---\n\n"
+
+# ------------------------------------------------------------------
+# Strikethrough preservation
+# ------------------------------------------------------------------
+
+# Regex matching HTML strikethrough tags (<del>, <s>, <strike>)
+_STRIKETHROUGH_RE = re.compile(
+    r"<(del|s|strike)\b[^>]*>(.*?)</\1>",
+    re.IGNORECASE | re.DOTALL,
+)
+# Markdown replacement pattern for strikethrough tags
+_STRIKETHROUGH_MD = r"~~\2~~"
+
+# ------------------------------------------------------------------
+# Heading detection
+# ------------------------------------------------------------------
+
+# Regex matching heading tag names (h1 through h6)
+_HEADING_TAG_RE = re.compile(r"^h[1-6]$")
+
+# ------------------------------------------------------------------
+# Item detection thresholds
+# ------------------------------------------------------------------
+
+# Minimum text length (chars) for a child element to count as a repeated item
+_MIN_ITEM_TEXT_LEN = 20
+# Minimum number of same-signature children to qualify as a repeated group
+_MIN_REPEATED_GROUP = 3
+# Minimum text length for interstitial siblings between item groups
+_MIN_INTERSTITIAL_LEN = 20
+# Parent tags to skip when scanning for repeated items (navigation chrome)
+_ITEM_SKIP_TAGS = frozenset({"nav", "header", "footer"})
+
+# ------------------------------------------------------------------
+# Empty link population thresholds
+# ------------------------------------------------------------------
+
+# Minimum combined child-text length for wrapper <a> tag relocation
+_MIN_WRAPPER_TEXT_LEN = 20
+# Minimum sibling text length to detect CSS overlay links
+_MIN_OVERLAY_SIBLING_LEN = 30
+# Default text for empty links when no label can be recovered
+_LINK_FALLBACK_TEXT = "Link"
+
+# ------------------------------------------------------------------
+# Product parsing thresholds
+# ------------------------------------------------------------------
+
+# Maximum chars for a line to be considered a product name
+_MAX_PRODUCT_NAME_LEN = 80
+# Maximum chars for unclassified short lines treated as badges
+_MAX_BADGE_LINE_LEN = 60
+# Minimum consecutive product entries needed to trigger reformatting
+_MIN_PRODUCT_ENTRIES = 3
+# Minimum number of --- separators (sections - 1) to activate item reformatting
+_MIN_SEPARATED_SECTIONS = 4
+
+# ------------------------------------------------------------------
+# Supplementary / FAQ detection thresholds
+# ------------------------------------------------------------------
+
+# Minimum text length for a supplementary section fragment to be included
+_MIN_SUPPLEMENT_TEXT_LEN = 30
+# Minimum <details> siblings to trigger FAQ/accordion grouping
+_MIN_FAQ_DETAILS = 3
+# Maximum question line length for FAQ heading promotion
+_MAX_FAQ_QUESTION_LEN = 200
+# Minimum URL slug length for title derivation
+_MIN_SLUG_LEN = 3
+
+# ------------------------------------------------------------------
+# Short-paragraph compaction
+# ------------------------------------------------------------------
+
+# Maximum single-line paragraph length before it's excluded from compaction
+_MAX_SHORT_PARAGRAPH_LEN = 120
+
 
 class ContentExtractor:
     """Extracts readable Markdown content from crawled pages.
@@ -81,7 +172,7 @@ class ContentExtractor:
         )
         md = self._fix_markdown_tables(extracted or "")
         if self.page_config.separate_items:
-            md = md.replace(_ITEM_SENTINEL, "\n\n---\n\n")
+            md = md.replace(_ITEM_SENTINEL, _ITEM_SEPARATOR_MD)
         md = self._clean_markdown(md)
 
         # Fall back to markdownify when trafilatura captured too little.
@@ -93,7 +184,7 @@ class ContentExtractor:
             formatted = self._format_faq_questions(fragment)
             cleaned = self._clean_markdown(formatted)
             if cleaned.strip():
-                md = md.rstrip() + "\n\n---\n\n" + cleaned
+                md = md.rstrip() + _ITEM_SEPARATOR_MD + cleaned
 
         # Recover product metadata and use it for a richer title & header.
         product = self._extract_product_header(result.html)
@@ -130,7 +221,12 @@ class ContentExtractor:
         html = self._populate_empty_links(html)
         if self.page_config.separate_items:
             html = self._insert_item_separators(html, use_sentinel=False)
-        md = markdownify(html, heading_style="ATX", strip=["img"], table_infer_header=True)
+        md = markdownify(
+            html,
+            heading_style=_MARKDOWNIFY_HEADING_STYLE,
+            strip=_MARKDOWNIFY_STRIP_TAGS,
+            table_infer_header=True,
+        )
         md = self._clean_markdown(md)
 
         product = self._extract_product_header(result.html)
@@ -199,7 +295,7 @@ class ContentExtractor:
                 segment = segment[:dot]
             if segment:
                 return segment.replace("-", " ").replace("_", " ").title()
-        return "Link"
+        return _LINK_FALLBACK_TEXT
 
     @staticmethod
     def _populate_empty_links(html: str) -> str:
@@ -220,7 +316,7 @@ class ContentExtractor:
         *end* of its parent so that card content appears first and the
         reference link follows.
         """
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, _HTML_PARSER)
         relocate: list[Tag] = []
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
@@ -232,7 +328,7 @@ class ContentExtractor:
             # substantial text (e.g. product cards).  Unwrap and inject a
             # reference link after the promoted children so the URL is
             # preserved.
-            if had_children and child_text and len(child_text) >= 20:
+            if had_children and child_text and len(child_text) >= _MIN_WRAPPER_TEXT_LEN:
                 ref = soup.new_tag("a", href=href)
                 ref.string = "more..."
                 a.insert_after(ref)
@@ -261,7 +357,7 @@ class ContentExtractor:
                     for sib in a.parent.children
                     if sib is not a and isinstance(sib, Tag)
                 )
-                if len(sibling_text) >= 30:
+                if len(sibling_text) >= _MIN_OVERLAY_SIBLING_LEN:
                     relocate.append(a)
         # Move overlay links to the end of their parent so card content
         # appears before the reference link.
@@ -286,12 +382,12 @@ class ContentExtractor:
         between the sibling elements.  This inserts a single space
         between consecutive inline Tag children to prevent concatenation.
         """
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, _HTML_PARSER)
         from itertools import pairwise
 
         from bs4.element import NavigableString
 
-        for heading in soup.find_all(re.compile(r"^h[1-6]$")):
+        for heading in soup.find_all(_HEADING_TAG_RE):
             children = list(heading.children)
             if len(children) < 2:
                 continue
@@ -318,11 +414,9 @@ class ContentExtractor:
         Markdown strikethrough *before* extraction, the semantic is
         preserved in the final output.
         """
-        return re.sub(
-            r"<(del|s|strike)\b[^>]*>(.*?)</\1>",
-            r"~~\2~~",
+        return _STRIKETHROUGH_RE.sub(
+            _STRIKETHROUGH_MD,
             html,
-            flags=re.IGNORECASE | re.DOTALL,
         )
 
     # ------------------------------------------------------------------
@@ -342,7 +436,7 @@ class ContentExtractor:
         qualifying groups of repeated same-tag-and-class siblings and
         inserts separators into each group.
         """
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, _HTML_PARSER)
 
         if self.page_config.item_selector:
             all_groups = [soup.select(self.page_config.item_selector)]
@@ -391,8 +485,8 @@ class ContentExtractor:
         Elements inside ``<nav>``, ``<header>``, ``<footer>`` are ignored
         to avoid picking up navigation links.
         """
-        skip_parents = {"nav", "header", "footer"}
-        min_text_len = 20
+        skip_parents = _ITEM_SKIP_TAGS
+        min_text_len = _MIN_ITEM_TEXT_LEN
         groups: dict[tuple, list[Tag]] = {}
 
         for parent in soup.find_all(True):
@@ -411,11 +505,11 @@ class ContentExtractor:
                 children_by_sig.setdefault(sig, []).append(child)
 
             for sig, children in children_by_sig.items():
-                if len(children) < 3:
+                if len(children) < _MIN_REPEATED_GROUP:
                     continue
                 # Filter: each child must have meaningful text
                 qualified = [c for c in children if len(c.get_text(strip=True)) >= min_text_len]
-                if len(qualified) < 3:
+                if len(qualified) < _MIN_REPEATED_GROUP:
                     continue
                 key = (id(parent), sig)
                 groups[key] = qualified
@@ -477,7 +571,7 @@ class ContentExtractor:
         expanded: list[Tag] = []
         for i in range(first_idx, last_idx + 1):
             sib = siblings[i]
-            if id(sib) in items_set or len(sib.get_text(strip=True)) >= 20:
+            if id(sib) in items_set or len(sib.get_text(strip=True)) >= _MIN_INTERSTITIAL_LEN:
                 expanded.append(sib)
 
         return expanded
@@ -635,7 +729,7 @@ class ContentExtractor:
         if not md or not md.strip():
             return md
         try:
-            formatted = mdformat.text(md, extensions=["gfm"])
+            formatted = mdformat.text(md, extensions=list(_MDFORMAT_EXTENSIONS))
         except Exception:  # noqa: BLE001 — never crash the crawl
             return md
 
@@ -778,7 +872,7 @@ class ContentExtractor:
         sections.append("\n".join(current))
 
         # Need at least 3 separators (4 sections) to activate
-        if len(sections) < 4:
+        if len(sections) < _MIN_SEPARATED_SECTIONS:
             return text
 
         # Try to reformat each section
@@ -793,10 +887,10 @@ class ContentExtractor:
                 reformatted.append(section)
 
         # Only use reformatted output if we found enough products
-        if product_count < 3:
+        if product_count < _MIN_PRODUCT_ENTRIES:
             return text
 
-        return "\n\n---\n\n".join(reformatted)
+        return _ITEM_SEPARATOR_MD.join(reformatted)
 
     @staticmethod
     def _parse_product_section(section: str) -> str | None:
@@ -845,7 +939,7 @@ class ContentExtractor:
         # are short and sit right before the price; long banner/promo text
         # appears at the top of the block).
         if unclassified:
-            short_candidates = [u for u in unclassified if len(u) <= 80]
+            short_candidates = [u for u in unclassified if len(u) <= _MAX_PRODUCT_NAME_LEN]
             name = short_candidates[-1] if short_candidates else max(unclassified, key=len)
             unclassified = [u for u in unclassified if u != name]
         else:
@@ -870,7 +964,7 @@ class ContentExtractor:
             badge_parts.append(offers)
         # Add remaining short unclassified lines as badges
         for u in unclassified:
-            if len(u) < 60:
+            if len(u) < _MAX_BADGE_LINE_LEN:
                 badge_parts.append(u)
         if badge_parts:
             result_lines.append("  " + " · ".join(badge_parts))
@@ -950,8 +1044,7 @@ class ContentExtractor:
                     break
                 entries.append(entry)
 
-            if len(entries) >= 3:
-                # Emit as bullet list
+            if len(entries) >= _MIN_PRODUCT_ENTRIES:
                 for entry in entries:
                     result.append(f"- **{entry['name']}** — {entry['price']}")
                     for badge in entry["badges"]:
@@ -1114,7 +1207,7 @@ class ContentExtractor:
                         m += 1
                     if m < len(lines) and price_re.match(lines[m].strip()):
                         break
-            if len(line) < 80 and (len(line) < 40 or line.endswith("!")):
+            if len(line) < _MAX_PRODUCT_NAME_LEN and (len(line) < 40 or line.endswith("!")):
                 post_badges.append(line)
                 j += 1
             else:
@@ -1155,7 +1248,7 @@ class ContentExtractor:
         heading_re = re.compile(r"^#{1,6}\s")
         hr_re = re.compile(r"^---+$")
         list_re = re.compile(r"^[-*+]\s")
-        max_len = 120
+        max_len = _MAX_SHORT_PARAGRAPH_LEN
 
         result: list[str] = []
         run: list[str] = []
@@ -1196,7 +1289,7 @@ class ContentExtractor:
     @staticmethod
     def _visible_text_length(html: str) -> int:
         """Approximate the length of human-visible text in HTML."""
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, _HTML_PARSER)
         for tag in soup.find_all(["script", "style", "noscript"]):
             tag.decompose()
         return len(soup.get_text(separator=" ", strip=True))
@@ -1215,7 +1308,7 @@ class ContentExtractor:
         """
         heading_re = re.compile(r"^#{1,6}\s")
         list_re = re.compile(r"^[-*+]\s")
-        max_len = 200
+        max_len = _MAX_FAQ_QUESTION_LEN
 
         paragraphs = re.split(r"\n\n+", text)
         result: list[str] = []
@@ -1251,7 +1344,7 @@ class ContentExtractor:
         Uses four heuristics, deduplicates by element identity, and
         converts each matched subtree to Markdown via *markdownify*.
         """
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, _HTML_PARSER)
         seen_ids: set[int] = set()
         sections: list[str] = []
 
@@ -1260,13 +1353,15 @@ class ContentExtractor:
             if tid in seen_ids:
                 return
             # Skip tiny fragments that are unlikely to be real content.
-            if len(tag.get_text(strip=True)) < 30:
+            if len(tag.get_text(strip=True)) < _MIN_SUPPLEMENT_TEXT_LEN:
                 return
             seen_ids.add(tid)
             # Also mark all descendants so later heuristics skip them.
             for desc in tag.find_all(True):
                 seen_ids.add(id(desc))
-            md = markdownify(str(tag), heading_style="ATX", strip=["img"])
+            md = markdownify(
+                str(tag), heading_style=_MARKDOWNIFY_HEADING_STYLE, strip=_MARKDOWNIFY_STRIP_TAGS
+            )
             if md.strip():
                 sections.append(md)
 
@@ -1278,7 +1373,7 @@ class ContentExtractor:
         # 2. HTML5 <details>/<summary> groups (≥ 3 siblings)
         for parent in soup.find_all(True):
             details = [c for c in parent.children if isinstance(c, Tag) and c.name == "details"]
-            if len(details) >= 3 and id(parent) not in seen_ids:
+            if len(details) >= _MIN_FAQ_DETAILS and id(parent) not in seen_ids:
                 _add(parent)
 
         # 3. CSS class / id keyword matching
@@ -1386,7 +1481,7 @@ class ContentExtractor:
             return ""
         slug = path.rsplit("/", 1)[-1]
         # Ignore slugs that look like IDs / hashes / query-like.
-        if not slug or len(slug) < 3 or slug.isdigit():
+        if not slug or len(slug) < _MIN_SLUG_LEN or slug.isdigit():
             return ""
         title = slug.replace("-", " ").replace("_", " ").strip()
         title = title.title()

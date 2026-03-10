@@ -13,6 +13,49 @@ _MAX_LOG_ENTRIES = 10
 _NOTEBOOK_SHELL_NAMES = frozenset({"ZMQInteractiveShell", "Shell"})
 
 # ---------------------------------------------------------------------------
+# ETA / duration formatting
+# ---------------------------------------------------------------------------
+# Shown while ETA cannot yet be calculated (no pages completed).
+_ETA_PLACEHOLDER = "estimating..."
+# Durations shorter than this threshold are displayed as "<0.1s".
+_SHORT_DURATION_THRESHOLD = 0.1
+
+# ---------------------------------------------------------------------------
+# Google Colab detection
+# ---------------------------------------------------------------------------
+# sys.modules key that indicates Google Colab runtime.
+_COLAB_MODULE = "google.colab"
+# HTML attribute and value used to detect Colab dark theme.
+_COLAB_THEME_ATTR = "data-colab-attr-theme"
+_COLAB_DARK_VALUE = "dark"
+
+# ---------------------------------------------------------------------------
+# Activity label truncation limits (characters)
+# ---------------------------------------------------------------------------
+# Maximum display length for the current-activity label.
+_ACTIVITY_LABEL_MAX_LEN = 80
+# Slice endpoint when truncating with an ellipsis character.
+_ACTIVITY_LABEL_TRUNC = 77
+# Maximum display length for activity-log labels.
+_LOG_LABEL_MAX_LEN = 70
+# Slice endpoint when truncating log labels.
+_LOG_LABEL_TRUNC = 67
+
+# ---------------------------------------------------------------------------
+# Activity icon mapping (keyword → emoji)
+# ---------------------------------------------------------------------------
+_ACTIVITY_ICONS: dict[str, str] = {
+    "failed": "❌",
+    "crawl": "🌐",
+    "extract": "📝",
+    "flush": "💾",
+    "delay": "⏳",
+    "discover": "🔗",
+}
+# Fallback icon when no keyword matches.
+_ACTIVITY_ICON_DEFAULT = "⚙️"
+
+# ---------------------------------------------------------------------------
 # Color palettes for light and dark themes
 # ---------------------------------------------------------------------------
 _LIGHT_COLORS: dict[str, str] = {
@@ -71,7 +114,7 @@ def _in_notebook() -> bool:
 
 def _in_colab() -> bool:
     """Detect whether we are running inside Google Colab."""
-    return "google.colab" in sys.modules
+    return _COLAB_MODULE in sys.modules
 
 
 def _colab_is_dark() -> bool:
@@ -84,8 +127,8 @@ def _colab_is_dark() -> bool:
     try:
         from google.colab import output  # type: ignore[import-untyped]
 
-        theme = output.eval_js("document.documentElement.getAttribute('data-colab-attr-theme')")
-        return str(theme).strip().lower() == "dark"
+        theme = output.eval_js(f"document.documentElement.getAttribute('{_COLAB_THEME_ATTR}')")
+        return str(theme).strip().lower() == _COLAB_DARK_VALUE
     except Exception:  # noqa: BLE001
         return False
 
@@ -129,7 +172,7 @@ class ProgressReporter:
     def _eta_remaining(self) -> str:
         """Estimated time remaining."""
         if self.count == 0:
-            return "estimating..."
+            return _ETA_PLACEHOLDER
         elapsed = time.time() - self._start_time
         remaining = elapsed / self.count * (self.total - self.count)
         mins, secs = divmod(int(remaining), 60)
@@ -141,7 +184,7 @@ class ProgressReporter:
     def _eta_finish_time(self) -> str:
         """Estimated wall-clock finish time."""
         if self.count == 0:
-            return "estimating..."
+            return _ETA_PLACEHOLDER
         elapsed = time.time() - self._start_time
         remaining = elapsed / self.count * (self.total - self.count)
         finish = datetime.now() + timedelta(seconds=remaining)
@@ -312,7 +355,7 @@ class _ProgressWidget:
     @staticmethod
     def _fmt_duration(seconds: float) -> str:
         """Format a duration as a compact human-readable string."""
-        if seconds < 0.1:
+        if seconds < _SHORT_DURATION_THRESHOLD:
             return "<0.1s"
         if seconds < 60:
             return f"{seconds:.1f}s"
@@ -339,19 +382,10 @@ class _ProgressWidget:
     def _activity_icon(label: str) -> str:
         """Pick a small icon for the activity label."""
         low = label.lower()
-        if "failed" in low:
-            return "❌"
-        if "crawl" in low:
-            return "🌐"
-        if "extract" in low:
-            return "📝"
-        if "flush" in low:
-            return "💾"
-        if "delay" in low:
-            return "⏳"
-        if "discover" in low:
-            return "🔗"
-        return "⚙️"
+        for keyword, icon in _ACTIVITY_ICONS.items():
+            if keyword in low:
+                return icon
+        return _ACTIVITY_ICON_DEFAULT
 
     def _repr_html_(self) -> str:
         if self.colab:
@@ -371,8 +405,8 @@ class _ProgressWidget:
             icon = self._activity_icon(self.activity)
             # Truncate long URLs in the label for display
             display_label = self.activity
-            if len(display_label) > 80:
-                display_label = display_label[:77] + "…"
+            if len(display_label) > _ACTIVITY_LABEL_MAX_LEN:
+                display_label = display_label[:_ACTIVITY_LABEL_TRUNC] + "…"
             time_info = f"since {self.activity_start_time}" if self.activity_start_time else ""
             if self.activity_eta:
                 time_info += f" \u2192 ~{self.activity_eta}"
@@ -393,7 +427,9 @@ class _ProgressWidget:
             rows = ""
             for ts, label, dur in reversed(self.activity_log):
                 icon = self._activity_icon(label)
-                display_label = label if len(label) <= 70 else label[:67] + "…"
+                display_label = (
+                    label if len(label) <= _LOG_LABEL_MAX_LEN else label[:_LOG_LABEL_TRUNC] + "…"
+                )
                 ts_str = ts.strftime("%H:%M:%S")
                 is_fail = label.startswith("\u274c")
                 label_cls = "c4md-log-label c4md-log-fail" if is_fail else "c4md-log-label"
@@ -598,8 +634,8 @@ class _ProgressWidget:
         if self.activity:
             icon = self._activity_icon(self.activity)
             display_label = self.activity
-            if len(display_label) > 80:
-                display_label = display_label[:77] + "\u2026"
+            if len(display_label) > _ACTIVITY_LABEL_MAX_LEN:
+                display_label = display_label[:_ACTIVITY_LABEL_TRUNC] + "\u2026"
             time_info = f"since {self.activity_start_time}" if self.activity_start_time else ""
             if self.activity_eta:
                 time_info += f" \u2192 ~{self.activity_eta}"
@@ -626,7 +662,11 @@ class _ProgressWidget:
             rows = ""
             for ts, label, dur in reversed(self.activity_log):
                 icon = self._activity_icon(label)
-                display_label = label if len(label) <= 70 else label[:67] + "\u2026"
+                display_label = (
+                    label
+                    if len(label) <= _LOG_LABEL_MAX_LEN
+                    else label[:_LOG_LABEL_TRUNC] + "\u2026"
+                )
                 ts_str = ts.strftime("%H:%M:%S")
                 is_fail = label.startswith("\u274c")
                 label_color = f"color:{c['log_fail']}" if is_fail else ""
