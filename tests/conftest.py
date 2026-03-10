@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from crawl4md.config import CrawlResult, ExtractedPage
+
+
+def _make_mock_result(
+    url: str,
+    html: str = "<p>hello</p>",
+    markdown: str = "hello",
+    *,
+    redirected_url: str | None = None,
+):
+    """Create a mock crawl4ai result object."""
+    result = MagicMock()
+    result.url = url
+    result.html = html
+    result.markdown = markdown
+    result.success = True
+    result.redirected_url = redirected_url
+    return result
 
 
 @pytest.fixture(autouse=True, scope="session")
