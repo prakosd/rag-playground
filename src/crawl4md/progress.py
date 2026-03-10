@@ -31,6 +31,8 @@ _LIGHT_COLORS: dict[str, str] = {
     "footer": "#333",
     "pct": "#43a047",
     "thread": "#999",
+    "web": "#bbb",
+    "bar_glow": "rgba(255,255,255,0.2)",
 }
 
 _DARK_COLORS: dict[str, str] = {
@@ -49,6 +51,8 @@ _DARK_COLORS: dict[str, str] = {
     "footer": "#d0d0d0",
     "pct": "#81c784",
     "thread": "#888",
+    "web": "#666",
+    "bar_glow": "rgba(255,255,255,0.12)",
 }
 
 
@@ -432,17 +436,32 @@ class _ProgressWidget:
             f"  height: 22px; overflow: visible; margin-bottom: 6px;"
             f"}}"
             f".c4md-bar {{"
+            f"  position: relative;"
             f"  background: {lt['bar_gradient']};"
             f"  height: 100%; border-radius: 10px;"
             f"  transition: width 0.4s ease;"
+            f"  overflow: hidden;"
             f"}}"
+            # Pulsating glow overlay on the filled bar
+            f".c4md-bar::after {{"
+            f"  content: ''; position: absolute; inset: 0;"
+            f"  border-radius: 10px;"
+            f"  background: {lt['bar_glow']};"
+            f"  animation: c4md-glow 2s ease-in-out infinite;"
+            f"}}"
+            # Spider web SVG decoration at top-left of bar
+            f".c4md-web {{"
+            f"  position: absolute; top: -1px; left: -1px; z-index: 1;"
+            f"  opacity: 0.18; pointer-events: none;"
+            f"}}"
+            f".c4md-web svg {{ display: block; }}"
             # Spider sitting at the leading edge of the bar
             f".c4md-spider {{"
             f"  position: absolute; top: -10px;"
             f"  font-size: 20px; line-height: 1;"
             f"  transition: left 0.4s ease;"
             f"  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"
-            f"  animation: c4md-bob 1.2s ease-in-out infinite;"
+            f"  animation: c4md-crawl 3s ease-in-out infinite;"
             f"}}"
             # Web thread (dashed line from left edge to spider)
             f".c4md-thread {{"
@@ -450,9 +469,17 @@ class _ProgressWidget:
             f"  border-top: 1.5px dashed {lt['thread']};"
             f"  transition: width 0.4s ease;"
             f"}}"
-            f"@keyframes c4md-bob {{"
-            f"  0%, 100% {{ transform: translateY(0); }}"
-            f"  50% {{ transform: translateY(-3px); }}"
+            # Spider crawl animation: combines horizontal patrol + vertical bob
+            f"@keyframes c4md-crawl {{"
+            f"  0% {{ transform: translateX(0) translateY(0); }}"
+            f"  25% {{ transform: translateX(-18px) translateY(-3px); }}"
+            f"  50% {{ transform: translateX(-35px) translateY(0); }}"
+            f"  75% {{ transform: translateX(-18px) translateY(-3px); }}"
+            f"  100% {{ transform: translateX(0) translateY(0); }}"
+            f"}}"
+            f"@keyframes c4md-glow {{"
+            f"  0%, 100% {{ opacity: 0; }}"
+            f"  50% {{ opacity: 1; }}"
             f"}}"
             # Pulsing dot for current activity
             f".c4md-activity {{"
@@ -508,6 +535,8 @@ class _ProgressWidget:
             f"  .c4md-header {{ color: {dk['header']}; }}"
             f"  .c4md-bar-wrap {{ background: {dk['bar_bg']}; }}"
             f"  .c4md-thread {{ border-color: {dk['thread']}; }}"
+            f"  .c4md-web svg {{ stroke: {dk['web']}; }}"
+            f"  .c4md-bar::after {{ background: {dk['bar_glow']}; }}"
             f"  .c4md-activity {{ color: {dk['activity']}; }}"
             f"  .c4md-pulse {{ background: {dk['pulse']}; }}"
             f"  .c4md-dur {{ color: {dk['duration']}; }}"
@@ -523,8 +552,20 @@ class _ProgressWidget:
             # Header
             f'<div class="c4md-header">{header}'
             f'<span class="c4md-pct">{pct}%</span></div>'
-            # Bar + spider + thread
+            # Bar + spider + thread + web decoration
             f'<div class="c4md-bar-wrap">'
+            f'<div class="c4md-web">'
+            f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
+            f' xmlns="http://www.w3.org/2000/svg">'
+            f'<path d="M0 0 Q0 14 14 14" stroke="{lt["web"]}" stroke-width="0.8" fill="none"/>'
+            f'<path d="M0 0 Q0 21 21 21" stroke="{lt["web"]}" stroke-width="0.8" fill="none"/>'
+            f'<path d="M0 0 Q0 28 28 28" stroke="{lt["web"]}" stroke-width="0.8" fill="none"/>'
+            f'<line x1="0" y1="0" x2="14" y2="0" stroke="{lt["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="0" y2="14" stroke="{lt["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="10" y2="10" stroke="{lt["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="4" y2="13" stroke="{lt["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="13" y2="4" stroke="{lt["web"]}" stroke-width="0.8"/>'
+            f"</svg></div>"
             f'<div class="c4md-thread" style="width:{max(pct, 0)}%;"></div>'
             f'<div class="c4md-bar" style="width:{pct}%;"></div>'
             f'<div class="c4md-spider" style="left:calc({pct}% - 10px);">🕷️</div>'
@@ -618,6 +659,21 @@ class _ProgressWidget:
         # Spider + thread: use a table so the spider sits at the leading edge
         # of the filled portion, mimicking the VS Code animated spider.
         spider_pct = max(pct, 2)  # ensure spider column is visible even at 0%
+        # Spider web SVG (inline, overlaps bar via negative margin)
+        web_svg = (
+            f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
+            f' style="display:block"'
+            f' xmlns="http://www.w3.org/2000/svg">'
+            f'<path d="M0 0 Q0 14 14 14" stroke="{c["web"]}" stroke-width="0.8" fill="none"/>'
+            f'<path d="M0 0 Q0 21 21 21" stroke="{c["web"]}" stroke-width="0.8" fill="none"/>'
+            f'<path d="M0 0 Q0 28 28 28" stroke="{c["web"]}" stroke-width="0.8" fill="none"/>'
+            f'<line x1="0" y1="0" x2="14" y2="0" stroke="{c["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="0" y2="14" stroke="{c["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="10" y2="10" stroke="{c["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="4" y2="13" stroke="{c["web"]}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="13" y2="4" stroke="{c["web"]}" stroke-width="0.8"/>'
+            f"</svg>"
+        )
         return (
             f'<div style="{font};font-size:13px;color:{c["text"]};max-width:680px">'
             # Header
@@ -637,11 +693,15 @@ class _ProgressWidget:
             # Web thread (dashed line from left to spider)
             f'<div style="width:{spider_pct}%;border-top:1.5px dashed {c["thread"]};'
             f'margin-bottom:2px"></div>'
-            # Progress bar
+            # Spider web decoration (overlaps bar via negative margin)
+            f'<div style="opacity:0.18;margin-bottom:-22px;pointer-events:none">'
+            f"{web_svg}</div>"
+            # Progress bar (with static glow via box-shadow)
             f'<div style="background:{c["bar_bg"]};border-radius:10px;height:22px;'
             f'margin-bottom:6px;overflow:hidden">'
             f'<div style="background:{c["bar_gradient"]};'
-            f'height:100%;border-radius:10px;width:{pct}%"></div>'
+            f"height:100%;border-radius:10px;width:{pct}%;"
+            f'box-shadow:inset 0 1px 3px {c["bar_glow"]}"></div>'
             f"</div>"
             # Activity + log
             f"{activity_html}"

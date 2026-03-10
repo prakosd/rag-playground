@@ -116,6 +116,29 @@ class TestProgressWidget:
         assert _ProgressWidget._fmt_duration(45.3) == "45.3s"
         assert _ProgressWidget._fmt_duration(125) == "2m 05s"
 
+    def test_repr_html_contains_web_decoration(self):
+        """Standard Jupyter HTML includes the spider web SVG decoration."""
+        widget = _ProgressWidget(current=3, total=10)
+        html = widget._repr_html_()
+        assert "c4md-web" in html
+        assert "<svg" in html
+        assert '<path d="M0 0 Q0 14 14 14"' in html
+
+    def test_repr_html_contains_bar_glow(self):
+        """Standard Jupyter HTML includes the pulsating bar glow animation."""
+        widget = _ProgressWidget(current=3, total=10)
+        html = widget._repr_html_()
+        assert "c4md-glow" in html
+        assert "c4md-bar::after" in html
+
+    def test_repr_html_spider_crawl_animation(self):
+        """Standard Jupyter HTML includes the spider crawl animation."""
+        widget = _ProgressWidget(current=5, total=10)
+        html = widget._repr_html_()
+        assert "c4md-crawl" in html
+        assert "translateX(-35px)" in html
+        assert "translateY(-3px)" in html
+
 
 class TestProgressReporter:
     """Tests for ProgressReporter activity tracking."""
@@ -610,6 +633,26 @@ class TestProgressWidgetColab:
         html = widget._repr_html_()
         assert "<style>" in html
         assert "@keyframes" in html
+
+    def test_colab_html_contains_web_decoration(self):
+        """Colab rendering includes the spider web SVG decoration."""
+        widget = _ProgressWidget(current=3, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "<svg" in html
+        assert '<path d="M0 0 Q0 14 14 14"' in html
+
+    def test_colab_html_has_bar_glow_shadow(self):
+        """Colab rendering uses box-shadow for a static bar glow."""
+        widget = _ProgressWidget(current=5, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "box-shadow" in html
+
+    def test_colab_html_no_spider_crawl_animation(self):
+        """Colab rendering does NOT have the spider crawl CSS animation."""
+        widget = _ProgressWidget(current=5, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "c4md-crawl" not in html
+        assert "animation" not in html.lower()
 
 
 class TestColabDisplayPath:

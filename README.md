@@ -161,7 +161,7 @@ pytest tests/ -v
 ruff check src/ tests/
 ```
 
-Test files: `test_config.py`, `test_crawler.py`, `test_extractor.py`, `test_sorter.py`, `test_writer.py`.
+Test files: `test_config.py`, `test_crawler.py`, `test_crawler_output.py`, `test_crawler_retry.py`, `test_extractor.py`, `test_extractor_items.py`, `test_extractor_links.py`, `test_extractor_product.py`, `test_extractor_supplementary.py`, `test_sorter.py`, `test_writer.py`, `test_progress.py`.
 
 Tests use mocked HTTP calls — no real network requests are made.
 
