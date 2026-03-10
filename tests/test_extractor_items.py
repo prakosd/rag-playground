@@ -378,3 +378,51 @@ class TestSentinelOrdering:
         assert _ITEM_SENTINEL not in page.markdown
         # --- separators should be present
         assert "---" in page.markdown
+
+
+class TestTableRowsNotSeparated:
+    """Table rows must not be treated as repeated items."""
+
+    TABLE_HTML = """
+    <html><body>
+    <table>
+      <thead><tr><th>Service</th><th>Channel</th><th>Price</th></tr></thead>
+      <tbody>
+        <tr><td>4G SIM-only Plans with enough text for detection threshold</td><td>Shop</td><td>$25</td></tr>
+        <tr><td>Mobile+ SIM-only Plans with enough text for detection threshold</td><td>Online</td><td>$38</td></tr>
+        <tr><td>Mobile+ 2-year Plans with enough text for detection threshold</td><td>Shop</td><td>$69</td></tr>
+        <tr><td>Broadband 2-year Plans with enough text for detection threshold</td><td>Telesales</td><td>$45</td></tr>
+      </tbody>
+    </table>
+    </body></html>
+    """
+
+    def test_table_rows_no_sentinels(self):
+        config = PageConfig(separate_items=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = extractor._insert_item_separators(self.TABLE_HTML, use_sentinel=True)
+        assert _ITEM_SENTINEL not in result
+
+    def test_table_rows_no_hr(self):
+        config = PageConfig(separate_items=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = extractor._insert_item_separators(self.TABLE_HTML, use_sentinel=False)
+        assert "<hr" not in result
+
+    def test_items_outside_table_still_detected(self):
+        """Items outside a table should still get separators even when a table is present."""
+        html = """
+        <html><body>
+        <table><tr><td>Row A data</td></tr><tr><td>Row B data</td></tr></table>
+        <div class="list">
+          <div class="card"><p>Product Alpha with enough descriptive text for detection</p></div>
+          <div class="card"><p>Product Bravo with enough descriptive text for detection</p></div>
+          <div class="card"><p>Product Charlie with enough descriptive text for detection</p></div>
+        </div>
+        </body></html>
+        """
+        config = PageConfig(separate_items=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result = extractor._insert_item_separators(html, use_sentinel=True)
+        # Cards outside the table should still be detected
+        assert _ITEM_SENTINEL in result

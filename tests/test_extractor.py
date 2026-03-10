@@ -512,3 +512,64 @@ class TestNavStrippingTrafilatura:
         assert "Frequently Asked Questions" in page.markdown
         # FAQ details should be recovered via supplementary section extraction
         assert "5G" in page.markdown
+
+
+class TestFlattenTableCells:
+    """Tests for _flatten_table_cells — block elements and <br> inside table cells."""
+
+    def test_br_replaced_with_space(self):
+        html = "<table><tr><td>Plan A<br>Plan B<br/>Plan C</td><td>$25</td></tr></table>"
+        result = ContentExtractor._flatten_table_cells(html)
+        assert "<br" not in result
+        assert "Plan A" in result
+        assert "Plan B" in result
+        assert "Plan C" in result
+
+    def test_p_unwrapped(self):
+        html = "<table><tr><td><p>First</p><p>Second</p></td></tr></table>"
+        result = ContentExtractor._flatten_table_cells(html)
+        assert "<p>" not in result
+        assert "First" in result
+        assert "Second" in result
+
+    def test_div_unwrapped(self):
+        html = "<table><tr><td><div>Alpha</div><div>Beta</div></td></tr></table>"
+        result = ContentExtractor._flatten_table_cells(html)
+        assert "<div>" not in result
+        assert "Alpha" in result
+        assert "Beta" in result
+
+    def test_th_cells_also_flattened(self):
+        html = "<table><tr><th><p>Header A</p></th><th>Header B<br>Extra</th></tr></table>"
+        result = ContentExtractor._flatten_table_cells(html)
+        assert "<p>" not in result
+        assert "<br" not in result
+        assert "Header A" in result
+        assert "Extra" in result
+
+    def test_no_table_returns_unchanged(self):
+        html = "<div><p>Just a paragraph<br>with a break</p></div>"
+        result = ContentExtractor._flatten_table_cells(html)
+        # <br> outside table cells should NOT be affected
+        assert "<br" in result or "<br/" in result or "br" in result.lower()
+
+    def test_nested_div_in_cell(self):
+        html = (
+            "<table><tr><td>"
+            "<div class='price'><div class='amount'>$10</div><div class='period'>/mo</div></div>"
+            "</td></tr></table>"
+        )
+        result = ContentExtractor._flatten_table_cells(html)
+        assert "<div" not in result
+        assert "$10" in result
+        assert "/mo" in result
+
+    def test_mixed_block_and_br(self):
+        """Cell with both <p> wrappers and <br> tags."""
+        html = "<table><tr><td><p>Line 1<br>Line 2</p><p>Line 3</p></td></tr></table>"
+        result = ContentExtractor._flatten_table_cells(html)
+        assert "<p>" not in result
+        assert "<br" not in result
+        assert "Line 1" in result
+        assert "Line 2" in result
+        assert "Line 3" in result

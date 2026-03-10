@@ -71,8 +71,10 @@ _MIN_ITEM_TEXT_LEN = 20
 _MIN_REPEATED_GROUP = 3
 # Minimum text length for interstitial siblings between item groups
 _MIN_INTERSTITIAL_LEN = 20
-# Parent tags to skip when scanning for repeated items (navigation chrome)
-_ITEM_SKIP_TAGS = frozenset({"nav", "header", "footer"})
+# Parent tags to skip when scanning for repeated items (navigation chrome, tables)
+_ITEM_SKIP_TAGS = frozenset({"nav", "header", "footer", "table", "thead", "tbody", "tfoot"})
+# Block-level tags to unwrap inside table cells during preprocessing
+_TABLE_CELL_BLOCK_TAGS = frozenset({"p", "div"})
 
 # ------------------------------------------------------------------
 # Empty link population thresholds
@@ -268,6 +270,7 @@ class ContentExtractor:
         html = self._preserve_strikethrough(html)
         html = self._space_heading_children(html)
         html = self._populate_empty_links(html)
+        html = self._flatten_table_cells(html)
         if self.page_config.separate_items:
             html = self._insert_item_separators(html, use_sentinel=True)
         extracted = trafilatura.extract(
@@ -326,6 +329,7 @@ class ContentExtractor:
         html = self._preserve_strikethrough(html)
         html = self._space_heading_children(html)
         html = self._populate_empty_links(html)
+        html = self._flatten_table_cells(html)
         if self.page_config.separate_items:
             html = self._insert_item_separators(html, use_sentinel=False)
         md = markdownify(
@@ -525,6 +529,39 @@ class ContentExtractor:
             _STRIKETHROUGH_MD,
             html,
         )
+
+    # ------------------------------------------------------------------
+    # Table cell flattening (prevent multi-line Markdown table cells)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _flatten_table_cells(html: str) -> str:
+        """Flatten block-level content inside ``<td>`` and ``<th>`` elements.
+
+        Markdown tables require each row to be a single line.  Block
+        elements (``<p>``, ``<div>``) and ``<br>`` tags inside table cells
+        produce line breaks that shatter the table structure during
+        conversion.  This pre-processing step:
+
+        * Replaces ``<br>`` tags with a space.
+        * Unwraps ``<p>`` and ``<div>`` wrappers (keeps inner content).
+        """
+        soup = BeautifulSoup(html, _HTML_PARSER)
+        cells = soup.find_all(["td", "th"])
+        if not cells:
+            return html
+        modified = False
+        for cell in cells:
+            for br in cell.find_all("br"):
+                br.insert_before(" ")
+                br.unwrap()
+                modified = True
+            for tag in cell.find_all(list(_TABLE_CELL_BLOCK_TAGS)):
+                tag.unwrap()
+                modified = True
+        if not modified:
+            return html
+        return str(soup)
 
     # ------------------------------------------------------------------
     # Item separation (structured product/card grouping)
