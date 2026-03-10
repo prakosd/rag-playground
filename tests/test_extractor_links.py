@@ -117,7 +117,7 @@ class TestPopulateEmptyLinks:
         </div>
         """
         result = ContentExtractor._populate_empty_links(html)
-        # The <a> has an <img> child so it's skipped entirely (no text added)
+        # The <a> has an <img> child but <20 chars text — skipped (no unwrap)
         assert ">Page<" not in result
 
     def test_overlay_in_low_content_parent_not_relocated(self):
@@ -155,6 +155,54 @@ class TestPopulateEmptyLinks:
         mobile_body = result.index("Mobile plans")
         mobile_link = result.index(">Mobile Plans<")
         assert mobile_link > mobile_body
+
+    def test_wrapper_link_unwrapped_with_more_reference(self):
+        """A wrapper <a> with child elements and sufficient text is unwrapped."""
+        html = """
+        <div class="product-list">
+            <a href="/devices/samsung/galaxy-s26-ultra-5g">
+                <div class="badge">New</div>
+                <span class="brand">Samsung</span>
+                <span class="model">Galaxy S26 Ultra 5G</span>
+            </a>
+        </div>
+        """
+        result = ContentExtractor._populate_empty_links(html)
+        # Wrapper should be unwrapped — children promoted
+        assert ">more...</" in result
+        assert "galaxy-s26-ultra-5g" in result
+        # Original card content still present
+        assert "Samsung" in result
+        assert "Galaxy S26 Ultra 5G" in result
+        # The <a> wrapper tag should be gone (unwrapped)
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(result, "html.parser")
+        wrapper_links = [
+            a for a in soup.find_all("a", href=True) if "galaxy-s26" in a.get("href", "")
+        ]
+        # Should have exactly one link — the [more...] reference
+        assert len(wrapper_links) == 1
+        assert wrapper_links[0].get_text(strip=True) == "more..."
+
+    def test_wrapper_link_small_text_not_unwrapped(self):
+        """A wrapper <a> with <20 chars child text is not unwrapped."""
+        html = '<a href="/page"><span>Short</span></a>'
+        result = ContentExtractor._populate_empty_links(html)
+        # Too little text — should not be unwrapped
+        assert ">more...</" not in result
+
+    def test_wrapper_link_hash_href_not_unwrapped(self):
+        """A wrapper <a> with href='#' is not unwrapped."""
+        html = """
+        <a href="#">
+            <div class="card-body">
+                <h6>Product title with enough text here for threshold</h6>
+            </div>
+        </a>
+        """
+        result = ContentExtractor._populate_empty_links(html)
+        assert ">more...</" not in result
 
 
 class TestPopulateEmptyLinksIntegration:
@@ -331,3 +379,148 @@ class TestOverlayLinkIntegration:
         # "Broadband" card body should appear before [Broadband] link text
         assert "seamless connection" in page.markdown
         assert "broadband.html" in page.markdown
+
+
+class TestWrapperLinkUnwrap:
+    """Tests for wrapper <a> unwrapping and [more...] injection."""
+
+    def test_wrapper_unwrapped_children_promoted(self):
+        """Wrapper <a> with child elements and sufficient text gets unwrapped."""
+        html = """
+        <div class="product-list">
+            <a href="/devices/samsung/galaxy-s26-ultra">
+                <div class="badge">New</div>
+                <span class="brand">Samsung Galaxy S26 Ultra</span>
+            </a>
+        </div>
+        """
+        result = ContentExtractor._populate_empty_links(html)
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(result, "html.parser")
+        # Children should be promoted — no wrapper <a> with that href
+        wrappers = [
+            a
+            for a in soup.find_all("a")
+            if a.find()  # has child elements
+            and "galaxy-s26" in a.get("href", "")
+        ]
+        assert len(wrappers) == 0, "Wrapper <a> should have been unwrapped"
+        # [more...] link should exist
+        more_links = [a for a in soup.find_all("a") if a.get_text(strip=True) == "more..."]
+        assert len(more_links) == 1
+        assert "/devices/samsung/galaxy-s26-ultra" in more_links[0]["href"]
+
+    def test_wrapper_no_children_not_unwrapped(self):
+        """Wrapper <a> with text only (no child elements) is not on the wrapper path."""
+        html = '<a href="/page">Just plain text with enough chars for the threshold test</a>'
+        result = ContentExtractor._populate_empty_links(html)
+        assert ">more...</" not in result
+
+    def test_wrapper_hash_skipped(self):
+        """Wrapper <a> with href='#' is excluded early."""
+        html = """
+        <a href="#">
+            <div class="card"><span>A product card with more than twenty characters here</span></div>
+        </a>
+        """
+        result = ContentExtractor._populate_empty_links(html)
+        assert ">more...</" not in result
+
+    def test_wrapper_javascript_skipped(self):
+        """Wrapper <a> with javascript: href is excluded early."""
+        html = """
+        <a href="javascript:void(0)">
+            <div class="card"><span>A product card with more than twenty characters here</span></div>
+        </a>
+        """
+        result = ContentExtractor._populate_empty_links(html)
+        assert ">more...</" not in result
+
+    def test_wrapper_integration_markdownify(self):
+        """Full pipeline: wrapper link becomes [more...](url) in markdown output."""
+        html = """
+        <!DOCTYPE html>
+        <html><head><title>Devices</title></head>
+        <body><main>
+        <div class="product-list">
+            <a href="https://example.com/devices/samsung/galaxy-s26-ultra">
+                <div class="badge">New</div>
+                <h6>Samsung Galaxy S26 Ultra 5G Device</h6>
+                <p>From $78/mth on a 24-month plan starting today</p>
+            </a>
+        </div>
+        </main></body></html>
+        """
+        config = PageConfig(extract_main_content=False, exclude_tags=[], include_only_tags=[])
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(url="https://example.com/devices", html=html, success=True)
+        page = extractor._extract_page(result_obj)
+        assert "[more...]" in page.markdown
+        assert "galaxy-s26-ultra" in page.markdown
+
+
+class TestResolveFragmentLinks:
+    """Tests for ContentExtractor._resolve_fragment_links."""
+
+    def test_bare_fragment_resolved(self):
+        """[text](#) → [text](https://example.com/page)"""
+        md = "[Learn more](#)"
+        result = ContentExtractor._resolve_fragment_links(md, "https://example.com/page")
+        assert result == "[Learn more](https://example.com/page)"
+
+    def test_named_fragment_resolved(self):
+        """[text](#section) → [text](https://example.com/page#section)"""
+        md = "[About](#about)"
+        result = ContentExtractor._resolve_fragment_links(md, "https://example.com/page")
+        assert result == "[About](https://example.com/page#about)"
+
+    def test_non_fragment_link_unchanged(self):
+        md = "[Visit](https://other.com/page)"
+        result = ContentExtractor._resolve_fragment_links(md, "https://example.com/page")
+        assert result == md
+
+    def test_multiple_fragments(self):
+        md = "[A](#one) and [B](#two)"
+        result = ContentExtractor._resolve_fragment_links(md, "https://example.com/p")
+        assert "https://example.com/p#one" in result
+        assert "https://example.com/p#two" in result
+
+    def test_empty_page_url_leaves_fragment(self):
+        md = "[A](#section)"
+        result = ContentExtractor._resolve_fragment_links(md, "")
+        # Empty base URL — urljoin with "" still produces "#section"
+        assert "#section" in result
+
+    def test_fragment_in_image_link_resolved(self):
+        """Fragment links inside image references should also be resolved."""
+        md = "[![img](pic.png)](#gallery)"
+        result = ContentExtractor._resolve_fragment_links(md, "https://example.com/p")
+        assert "https://example.com/p#gallery" in result
+
+    def test_integration_trafilatura_path(self):
+        """Full pipeline: fragment links resolved after extraction."""
+        html = """
+        <!DOCTYPE html>
+        <html><head><title>Test Page</title></head>
+        <body><main>
+        <article>
+            <h1>Welcome to the Test Page Title</h1>
+            <p>This is a paragraph with a <a href="#details">details link</a> to learn more.</p>
+            <p>Another paragraph with a <a href="#">learn more</a> link for users.</p>
+            <p>And a normal <a href="https://other.com">external link</a> that stays.</p>
+        </article>
+        </main></body></html>
+        """
+        config = PageConfig(extract_main_content=True)
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(
+            url="https://example.com/test-page",
+            html=html,
+            success=True,
+        )
+        page = extractor._extract_page(result_obj)
+        # Fragment link resolved to full URL
+        assert "https://example.com/test-page#details" in page.markdown
+        # External link unchanged
+        assert "https://other.com" in page.markdown

@@ -26,8 +26,8 @@ class TestInsertItemSeparators:
         config = PageConfig(separate_items=True, exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.PRODUCT_CARDS_HTML, use_sentinel=True)
-        # Should insert sentinels between items (3 separators for 4 items)
-        assert result.count(_ITEM_SENTINEL) == 3
+        # 1 leading sentinel + 3 between items = 4 total for 4 items
+        assert result.count(_ITEM_SENTINEL) == 4
 
     def test_auto_detect_inserts_hr(self):
         config = PageConfig(separate_items=True, exclude_tags=[])
@@ -39,7 +39,8 @@ class TestInsertItemSeparators:
         config = PageConfig(separate_items=True, item_selector="div.product-card", exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.PRODUCT_CARDS_HTML, use_sentinel=True)
-        assert result.count(_ITEM_SENTINEL) == 3
+        # 1 leading + 3 between = 4
+        assert result.count(_ITEM_SENTINEL) == 4
 
     def test_no_items_returns_unchanged(self):
         html = "<html><body><p>Just text</p></body></html>"
@@ -132,16 +133,16 @@ class TestInsertItemSeparators:
         config = PageConfig(separate_items=True, exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.MIXED_CLASS_HTML, use_sentinel=True)
-        # 4 bg-white items + 1 interstitial bg-tint-blue = 5 total items → 4 separators
-        assert result.count(_ITEM_SENTINEL) == 4
+        # 4 bg-white + 1 interstitial = 5 items → 1 leading + 4 between = 5
+        assert result.count(_ITEM_SENTINEL) == 5
 
     def test_interstitial_sibling_not_included_with_explicit_selector(self):
         """Explicit item_selector should NOT include interstitial siblings."""
         config = PageConfig(separate_items=True, item_selector="div.bg-white", exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.MIXED_CLASS_HTML, use_sentinel=True)
-        # Only the 4 bg-white items are selected → 3 separators
-        assert result.count(_ITEM_SENTINEL) == 3
+        # Only 4 bg-white items → 1 leading + 3 between = 4
+        assert result.count(_ITEM_SENTINEL) == 4
 
     def test_interstitial_short_text_excluded(self):
         """Interstitial siblings with very short text (<20 chars) are skipped."""
@@ -159,8 +160,8 @@ class TestInsertItemSeparators:
         config = PageConfig(separate_items=True, exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(html, use_sentinel=True)
-        # 4 cards matched, spacer too short → 3 separators between 4 items
-        assert result.count(_ITEM_SENTINEL) == 3
+        # 4 cards matched, spacer too short → 1 leading + 3 between = 4
+        assert result.count(_ITEM_SENTINEL) == 4
 
     def test_integration_mixed_class_product_names(self):
         """Full pipeline (markdownify): banner div gets its own separator."""
@@ -235,15 +236,20 @@ class TestInsertItemSeparators:
                 assert "Discover" not in line, f"Banner text merged with product name: {line!r}"
 
     def test_sentinel_placed_inside_items_not_as_sibling(self):
-        """Sentinel must be appended inside items so trafilatura preserves it."""
+        """Between-item sentinels must be inside items; leading sentinel is a sibling."""
         from bs4 import BeautifulSoup
 
         config = PageConfig(separate_items=True, exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.PRODUCT_CARDS_HTML, use_sentinel=True)
         soup = BeautifulSoup(result, "html.parser")
-        # Sentinels should be inside product-card divs, not as siblings
-        for sentinel_p in soup.find_all("p", string=_ITEM_SENTINEL):
+        sentinel_ps = soup.find_all("p", string=_ITEM_SENTINEL)
+        # Leading sentinel is a sibling of product-card divs
+        leading = sentinel_ps[0]
+        assert leading.parent is not None
+        assert "product-list" in " ".join(leading.parent.get("class", []))
+        # Remaining sentinels should be inside product-card divs
+        for sentinel_p in sentinel_ps[1:]:
             assert sentinel_p.parent is not None
             assert "product-card" in " ".join(sentinel_p.parent.get("class", []))
 
@@ -268,8 +274,8 @@ class TestInsertItemSeparators:
         config = PageConfig(separate_items=True, exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.MULTI_GROUP_HTML, use_sentinel=True)
-        # 4 offers tiles → 3 sentinels + 3 gear tiles → 2 sentinels = 5 total
-        assert result.count(_ITEM_SENTINEL) == 5
+        # 4 offers: 1 leading + 3 between = 4; 3 gear: 1 leading + 2 between = 3; total = 7
+        assert result.count(_ITEM_SENTINEL) == 7
 
     def test_multi_group_both_get_hr(self):
         """Two distinct tile groups should both receive <hr> separators."""
@@ -283,7 +289,8 @@ class TestInsertItemSeparators:
         config = PageConfig(separate_items=True, exclude_tags=[])
         extractor = ContentExtractor(config)
         result = extractor._insert_item_separators(self.PRODUCT_CARDS_HTML, use_sentinel=True)
-        assert result.count(_ITEM_SENTINEL) == 3
+        # 1 leading + 3 between = 4
+        assert result.count(_ITEM_SENTINEL) == 4
 
 
 class TestIncludeInterstitialSiblings:

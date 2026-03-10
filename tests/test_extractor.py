@@ -414,3 +414,101 @@ class TestExtractContentTokens:
         tokens = ContentExtractor._extract_content_tokens(md)
         assert tokens["hello"] == 3
         assert tokens["world"] == 1
+
+
+class TestNavStrippingTrafilatura:
+    """Nav/header/footer should be stripped in trafilatura mode too."""
+
+    NAV_HTML = """
+    <!DOCTYPE html>
+    <html><head><title>Devices</title></head>
+    <body>
+    <nav>
+        <ul>
+            <li><a href="/personal">Personal</a></li>
+            <li><a href="/sme">SME</a></li>
+            <li><a href="/enterprise">Enterprise</a></li>
+        </ul>
+        <h3>Need help?</h3>
+        <p>Chat now or contact us</p>
+    </nav>
+    <header>
+        <div class="mega-menu">
+            <a href="/broadband">Broadband overview</a>
+            <a href="/mobile">Mobile overview</a>
+        </div>
+    </header>
+    <main>
+        <article>
+            <h1>Buy New Mobile Phones</h1>
+            <p>Find the latest smartphones with great monthly plans and deals.</p>
+            <p>Browse our selection of top brand devices at competitive prices.</p>
+            <p>Get started with a plan that suits your needs and budget today.</p>
+        </article>
+    </main>
+    <footer>
+        <p>Other Useful Links</p>
+        <a href="/support">FAQ</a>
+        <p>© StarHub 2026. All rights reserved.</p>
+    </footer>
+    </body></html>
+    """
+
+    def test_trafilatura_mode_strips_nav(self):
+        config = PageConfig(extract_main_content=True)
+        extractor = ContentExtractor(config)
+        result = CrawlResult(
+            url="https://example.com/devices",
+            html=self.NAV_HTML,
+            success=True,
+        )
+        page = extractor._extract_page(result)
+        assert "Buy New Mobile Phones" in page.markdown
+        assert "Need help?" not in page.markdown
+        assert "Personal" not in page.markdown
+        assert "SME" not in page.markdown
+        assert "Broadband overview" not in page.markdown
+        assert "All rights reserved" not in page.markdown
+
+    def test_markdownify_mode_strips_nav(self):
+        config = PageConfig(extract_main_content=False, exclude_tags=["nav", "header", "footer"])
+        extractor = ContentExtractor(config)
+        result = CrawlResult(
+            url="https://example.com/devices",
+            html=self.NAV_HTML,
+            success=True,
+        )
+        page = extractor._extract_page(result)
+        assert "Buy New Mobile Phones" in page.markdown
+        assert "Need help?" not in page.markdown
+        assert "All rights reserved" not in page.markdown
+
+    def test_supplementary_sections_survive_nav_filtering(self):
+        """FAQs in <details> should be recovered even when nav is stripped."""
+        html = """
+        <!DOCTYPE html>
+        <html><head><title>FAQ Page</title></head>
+        <body>
+        <nav><ul><li>Personal</li><li>SME</li><li>Enterprise</li></ul></nav>
+        <main>
+            <article>
+                <h1>Frequently Asked Questions About Our Service</h1>
+                <p>Find answers to common questions about our plans and devices below.</p>
+            </article>
+            <details><summary>What is 5G?</summary><p>5G is the fifth generation of mobile networks.</p></details>
+            <details><summary>How do I activate eSIM?</summary><p>Go to Settings and follow the steps.</p></details>
+            <details><summary>Can I keep my number?</summary><p>Yes, you can port your existing number.</p></details>
+        </main>
+        <footer><p>© 2026 StarHub</p></footer>
+        </body></html>
+        """
+        config = PageConfig(extract_main_content=True)
+        extractor = ContentExtractor(config)
+        result = CrawlResult(url="https://example.com/faq", html=html, success=True)
+        page = extractor._extract_page(result)
+        # Nav should be stripped
+        assert "Personal" not in page.markdown
+        # Main content should be present
+        assert "Frequently Asked Questions" in page.markdown
+        # FAQ details should be recovered via supplementary section extraction
+        assert "5G" in page.markdown

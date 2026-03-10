@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import mdformat
 import trafilatura
@@ -66,6 +66,7 @@ class ContentExtractor:
         html = result.html
         # Capture supplementary sections (e.g. FAQs) before trafilatura strips them.
         supplements = self._extract_supplementary_sections(html)
+        html = self._filter_tags(html)
         html = self._preserve_strikethrough(html)
         html = self._space_heading_children(html)
         html = self._populate_empty_links(html)
@@ -112,6 +113,7 @@ class ContentExtractor:
             if header_parts:
                 md = "\n\n".join(header_parts) + "\n\n" + md
 
+        md = self._resolve_fragment_links(md, result.url)
         md = self._validate_markdown(md)
 
         return ExtractedPage(
@@ -148,6 +150,7 @@ class ContentExtractor:
             if header_parts:
                 md = "\n\n".join(header_parts) + "\n\n" + md
 
+        md = self._resolve_fragment_links(md, result.url)
         md = self._validate_markdown(md)
 
         return ExtractedPage(
@@ -155,6 +158,25 @@ class ContentExtractor:
             title=title,
             markdown=md,
         )
+
+    # ------------------------------------------------------------------
+    # Fragment link resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_fragment_links(text: str, page_url: str) -> str:
+        """Resolve fragment-only links to absolute URLs.
+
+        Replaces ``](#fragment)`` with ``](page_url#fragment)`` so that
+        fragment-only hrefs (common JS placeholders) point to the
+        actual page.
+        """
+
+        def _replacer(m: re.Match[str]) -> str:
+            fragment = m.group(1)
+            return "](" + urljoin(page_url, "#" + fragment) + ")"
+
+        return re.sub(r"\]\(#([^)]*)\)", _replacer, text)
 
     # ------------------------------------------------------------------
     # Empty link population
@@ -201,17 +223,28 @@ class ContentExtractor:
         soup = BeautifulSoup(html, "html.parser")
         relocate: list[Tag] = []
         for a in soup.find_all("a", href=True):
-            # Only target anchors with no meaningful text content
-            if a.get_text(strip=True):
-                continue
             href = a["href"].strip()
             if not href or href.startswith(("#", "javascript:")):
                 continue
-            # Record whether the anchor had child elements before we add
-            # text (e.g. <img>, <span>).  Anchors with children are not
-            # empty overlays — they're intentional structures.
             had_children = bool(a.find(True))
+            child_text = a.get_text(strip=True)
+            # Wrapper links: <a> wrapping a card with child elements and
+            # substantial text (e.g. product cards).  Unwrap and inject a
+            # reference link after the promoted children so the URL is
+            # preserved.
+            if had_children and child_text and len(child_text) >= 20:
+                ref = soup.new_tag("a", href=href)
+                ref.string = "more..."
+                a.insert_after(ref)
+                ref.insert_before(" ")
+                a.unwrap()
+                continue
+            # Only target anchors with no meaningful text content
+            if child_text:
+                continue
             if had_children:
+                # Anchors with child elements (e.g. <img>) but no text
+                # are intentional structures — skip.
                 continue
             # Fallback chain for link text
             text = (
@@ -323,11 +356,18 @@ class ContentExtractor:
                 continue
             modified = True
             if use_sentinel:
+                # Leading sentinel before the first item isolates preceding
+                # page content (nav, filters) from the product cards.
+                lead = soup.new_tag("p")
+                lead.string = _ITEM_SENTINEL
+                items[0].insert_before(lead)
                 for item in items[:-1]:
                     sep = soup.new_tag("p")
                     sep.string = _ITEM_SENTINEL
                     item.append(sep)
             else:
+                lead_hr = soup.new_tag("hr")
+                items[0].insert_before(lead_hr)
                 for item in reversed(items[1:]):
                     sep = soup.new_tag("hr")
                     item.insert_before(sep)
@@ -700,9 +740,15 @@ class ContentExtractor:
         r"^(?:Preorder|Pre-order|New|LNY\s+Offers?|Exclusive\s+Bundle|"
         r"Limited[- ]time\s+only|StarHub\s+[Ee]xclusive|PWP\s+Offers?|"
         r"Wi-Fi\s+Only|eSIM\s+Exclusive|Trending\s+Brands|Best\s+value"
-        r"(?:\s+with\s+device)?)$",
+        r"(?:\s+with\s+device)?|Best\s+Deal|Trade[- ]in\s+Bonus|Top\s+Seller)$",
         re.IGNORECASE,
     )
+    _UI_ACTION_RE = re.compile(
+        r"^(?:Compare|Compare\s+selected\s+products|Add\s+to\s+cart|"
+        r"Add\s+to\s+bag|Buy\s+now|Select\s+options|View\s+details|Shop\s+now)$",
+        re.IGNORECASE,
+    )
+    _MORE_LINK_RE = re.compile(r"^\[more\.{3}\]\((.+)\)$")
 
     @staticmethod
     def _reformat_separated_items(text: str) -> str:
@@ -770,6 +816,7 @@ class ContentExtractor:
         offers = None
         unclassified: list[str] = []
 
+        more_link = None
         for line in lines:
             # Strip leading "- " from list items produced by earlier transforms
             clean = re.sub(r"^[-*]\s+", "", line)
@@ -781,9 +828,13 @@ class ContentExtractor:
                 offers = clean
             elif ContentExtractor._BADGE_KEYWORDS.match(clean):
                 badges.append(clean)
+            elif ContentExtractor._UI_ACTION_RE.match(clean):
+                continue
             elif clean.lower() == "from":
                 # Standalone "from" — will be merged with price later
                 continue
+            elif ContentExtractor._MORE_LINK_RE.match(clean):
+                more_link = clean
             else:
                 unclassified.append(clean)
 
@@ -823,6 +874,10 @@ class ContentExtractor:
                 badge_parts.append(u)
         if badge_parts:
             result_lines.append("  " + " · ".join(badge_parts))
+
+        # Append [more...](url) reference link if present
+        if more_link:
+            result_lines.append("  " + more_link)
 
         return "\n".join(result_lines)
 
@@ -953,6 +1008,13 @@ class ContentExtractor:
                 continue
             if price_re.match(line) or heading_re.match(line) or hr_re.match(line):
                 break
+            # Skip UI action labels and [more...](url) reference links.
+            if ContentExtractor._UI_ACTION_RE.match(line):
+                j += 1
+                continue
+            if ContentExtractor._MORE_LINK_RE.match(line):
+                j += 1
+                continue
             content_lines.append(line)
             j += 1
 

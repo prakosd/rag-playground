@@ -722,3 +722,156 @@ class TestReformatSeparatedItems:
         assert "- **iPhone 17 Pro**" in result
         assert "- **Find X9 Pro 5G**" in result
         assert "- **Reno15 5G**" in result
+
+
+class TestUIActionSkip:
+    """Tests that UI action lines (Compare, Add to cart) are excluded from products."""
+
+    def test_compare_line_excluded(self):
+        """'Compare' should not appear in output or be used as product name."""
+        text = (
+            "---\n\n"
+            "New\n\nSamsung Galaxy S26 Ultra 5G\n\nfrom $78.00/mth\n\n"
+            "12 offers available\n\nCompare\n\n"
+            "---\n\n"
+            "iPhone 17 Pro\n\nfrom $72.87/mth\n\n"
+            "12 offers available\n\nCompare\n\n"
+            "---\n\n"
+            "Pixel 10 Pro\n\nfrom $65.00/mth\n\n"
+            "10 offers available\n\nCompare\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **Samsung Galaxy S26 Ultra 5G**" in result
+        assert "- **iPhone 17 Pro**" in result
+        assert "- **Pixel 10 Pro**" in result
+        assert "Compare" not in result
+
+    def test_add_to_cart_excluded(self):
+        text = (
+            "---\n\n"
+            "iPhone 17 Pro\n\nfrom $72.87/mth\n\n"
+            "Add to cart\n\n"
+            "---\n\n"
+            "Samsung Galaxy A16 5G\n\nfrom $0.00/mth\n\n"
+            "Add to cart\n\n"
+            "---\n\n"
+            "Pixel 10\n\nfrom $55.00/mth\n\n"
+            "Add to cart\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **iPhone 17 Pro**" in result
+        assert "Add to cart" not in result
+
+    def test_buy_now_excluded(self):
+        text = (
+            "---\n\n"
+            "Pixel 10 Pro\n\nfrom $65.00/mth\n\n"
+            "Buy now\n\n"
+            "---\n\n"
+            "iPhone 17\n\nfrom $60.00/mth\n\n"
+            "Buy now\n\n"
+            "---\n\n"
+            "Samsung Galaxy A56 5G\n\nfrom $45.00/mth\n\n"
+            "Buy now\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **Pixel 10 Pro**" in result
+        assert "Buy now" not in result
+
+
+class TestMoreLinkPreserved:
+    """Tests that [more...](url) lines are preserved in product output."""
+
+    def test_more_link_appended(self):
+        text = (
+            "---\n\n"
+            "New\n\nSamsung Galaxy S26 Ultra 5G\n\nfrom $78.00/mth\n\n"
+            "12 offers available\n\n"
+            "[more...](https://example.com/devices/samsung/galaxy-s26-ultra-5g)\n\n"
+            "---\n\n"
+            "iPhone 17 Pro\n\nfrom $72.87/mth\n\n"
+            "12 offers available\n\n"
+            "[more...](https://example.com/devices/apple/iphone-17-pro)\n\n"
+            "---\n\n"
+            "Pixel 10 Pro\n\nfrom $65.00/mth\n\n"
+            "10 offers available\n\n"
+            "[more...](https://example.com/devices/google/pixel-10-pro)\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **Samsung Galaxy S26 Ultra 5G**" in result
+        assert "[more...](https://example.com/devices/samsung/galaxy-s26-ultra-5g)" in result
+        # more link should appear after the product name
+        lines = result.strip().split("\n")
+        more_line = [ln for ln in lines if "galaxy-s26-ultra-5g" in ln][0]
+        name_line = [ln for ln in lines if "**Samsung Galaxy" in ln][0]
+        assert lines.index(more_line) > lines.index(name_line)
+
+    def test_more_link_not_used_as_name(self):
+        """[more...](url) should never become the product name."""
+        text = (
+            "---\n\n"
+            "[more...](https://example.com/devices/phone)\n\n"
+            "from $78.00/mth\n\n"
+            "---\n\n"
+            "iPhone 17 Pro\n\nfrom $72.87/mth\n\n"
+            "[more...](https://example.com/devices/iphone)\n\n"
+            "---\n\n"
+            "Pixel 10\n\nfrom $55.00/mth\n\n"
+            "[more...](https://example.com/devices/pixel)\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        # The more link should not be the bolded name
+        assert "- **[more...]" not in result
+
+
+class TestNewBadgeKeywords:
+    """Tests that newly added badge keywords are recognised."""
+
+    def test_best_deal_badge(self):
+        text = (
+            "---\n\n"
+            "Best Deal\n\nSamsung Galaxy A16 5G\n\nfrom $0.00/mth\n\n"
+            "---\n\n"
+            "New\n\niPhone 17\n\nfrom $60.00/mth\n\n"
+            "---\n\n"
+            "Pixel 10\n\nfrom $55.00/mth\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **Samsung Galaxy A16 5G**" in result
+        assert "Best Deal" in result
+        # Badge should not be the product name
+        assert "- **Best Deal**" not in result
+
+    def test_trade_in_bonus_badge(self):
+        text = (
+            "---\n\n"
+            "Trade-in Bonus\n\niPhone 17 Pro\n\nfrom $72.87/mth\n\n"
+            "---\n\n"
+            "New\n\nSamsung Galaxy S26 5G\n\nfrom $50.00/mth\n\n"
+            "---\n\n"
+            "Pixel 10\n\nfrom $55.00/mth\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **iPhone 17 Pro**" in result
+        assert "Trade-in Bonus" in result
+
+    def test_top_seller_badge(self):
+        text = (
+            "---\n\n"
+            "Top Seller\n\nPixel 10\n\nfrom $55.00/mth\n\n"
+            "---\n\n"
+            "New\n\niPhone 17\n\nfrom $60.00/mth\n\n"
+            "---\n\n"
+            "Samsung Galaxy A16 5G\n\nfrom $0.00/mth\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **Pixel 10**" in result
+        assert "Top Seller" in result
