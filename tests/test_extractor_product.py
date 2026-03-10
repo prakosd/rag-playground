@@ -1,4 +1,4 @@
-"""Tests for crawl4md.extractor — product and price extraction."""
+"""Tests for crawl4md.extractor — product listing, price formatting, and product header extraction."""
 
 from __future__ import annotations
 
@@ -531,3 +531,194 @@ class TestProductFromDom:
         assert "**Samsung**" in page.markdown
         assert "## Galaxy S26 Ultra 5G" in page.markdown
         assert "~~$2,128.00~~ $1,828.00" in page.markdown
+
+
+class TestCompactProductListings:
+    """Tests for _compact_product_listings — product name/price compaction."""
+
+    def test_compact_product_listings_basic(self):
+        text = "Product Alpha\n\n$49.90\n\nProduct Beta\n\n$29.00\n\nProduct Gamma\n\n$99.00"
+        result = ContentExtractor._compact_product_listings(text)
+        assert "- **Product Alpha** \u2014 $49.90" in result
+        assert "- **Product Beta** \u2014 $29.00" in result
+        assert "- **Product Gamma** \u2014 $99.00" in result
+
+    def test_compact_product_listings_with_badges(self):
+        text = (
+            "New\n\nProduct Alpha\n\n$49.90\n\n"
+            "LNY Offers\n\nProduct Beta\n\n$29.00\n\n3 offers available\n\n"
+            "Product Gamma\n\n$99.00\n\nAdd selected accessories!"
+        )
+        result = ContentExtractor._compact_product_listings(text)
+        assert "- **Product Alpha** \u2014 $49.90" in result
+        assert "  New" in result
+        assert "- **Product Beta** \u2014 $29.00" in result
+        assert "  LNY Offers" in result
+        assert "  3 offers available" in result
+        assert "- **Product Gamma** \u2014 $99.00" in result
+        assert "  Add selected accessories!" in result
+
+    def test_compact_product_listings_no_trigger_below_threshold(self):
+        """Fewer than 3 product-price pairs should NOT be compacted."""
+        text = "Widget A\n\n$10.00\n\nWidget B\n\n$20.00\n\nSome article text."
+        result = ContentExtractor._compact_product_listings(text)
+        # Should remain unchanged \u2014 no bullet list
+        assert "- **" not in result
+        assert "Widget A" in result
+        assert "$10.00" in result
+
+    def test_compact_product_listings_with_from_prefix(self):
+        text = "Plan A\n\nfrom $10.00\n\nPlan B\n\nfrom $20.00\n\nPlan C\n\nfrom $30.00"
+        result = ContentExtractor._compact_product_listings(text)
+        assert "- **Plan A** \u2014 from $10.00" in result
+        assert "- **Plan B** \u2014 from $20.00" in result
+        assert "- **Plan C** \u2014 from $30.00" in result
+
+    def test_compact_preserves_headings_and_tables(self):
+        text = (
+            "# Category\n\n"
+            "Product A\n\n$10.00\n\n"
+            "Product B\n\n$20.00\n\n"
+            "Product C\n\n$30.00\n\n"
+            "| Col | Val |\n| --- | --- |\n| a | 1 |"
+        )
+        result = ContentExtractor._compact_product_listings(text)
+        assert result.startswith("# Category")
+        assert "- **Product A** \u2014 $10.00" in result
+        assert "| Col | Val |" in result
+
+
+class TestReformatSeparatedItems:
+    """Tests for _reformat_separated_items \u2014 structured product formatting."""
+
+    def test_basic_product_sections(self):
+        text = (
+            "---\n\n"
+            "Galaxy S26 Ultra 5G\n\nfrom $76.16/mth\n\nor$2,128.00$1,828.00\n\n"
+            "Preorder\n\n15 offers available\n\n"
+            "---\n\n"
+            "iPhone 17 Pro\n\nfrom $42.12/mth\n\nor$$1,299.00\n\n"
+            "LNY Offers\n\n12 offers available\n\n"
+            "---\n\n"
+            "Find X9 Pro 5G\n\nfrom $46.29/mth\n\nor$$1,599.00\n\n"
+            "LNY Offers\n\n11 offers available\n\n"
+            "---\n\n"
+            "Reno15 5G\n\nfrom $25.37/mth\n\nor$$829.00\n\n"
+            "New\n\n9 offers available"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        # Product names should be bold
+        assert "- **Galaxy S26 Ultra 5G**" in result
+        assert "- **iPhone 17 Pro**" in result
+        assert "- **Find X9 Pro 5G**" in result
+        assert "- **Reno15 5G**" in result
+
+    def test_strikethrough_price_preserved(self):
+        text = (
+            "---\n\n"
+            "Galaxy S26 Ultra 5G\n\nfrom $76.16/mth\n\n"
+            "or~~$2,128.00~~$1,828.00\n\n15 offers available\n\n"
+            "---\n\n"
+            "Galaxy S26+ 5G\n\nfrom $67.83/mth\n\n"
+            "or~~$1,928.00~~$1,628.00\n\n13 offers available\n\n"
+            "---\n\n"
+            "Galaxy S26 5G\n\nfrom $59.91/mth\n\n"
+            "or~~$1,738.00~~$1,438.00\n\n13 offers available\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **Galaxy S26 Ultra 5G**" in result
+        assert "~~" in result  # Strikethrough preserved
+
+    def test_double_dollar_normalized(self):
+        text = (
+            "---\n\n"
+            "iPhone 17\n\nfrom $42.12/mth\n\nor$$1,299.00\n\n12 offers available\n\n"
+            "---\n\n"
+            "iPhone Air\n\nfrom $37.95/mth\n\nor$$1,599.00\n\n11 offers available\n\n"
+            "---\n\n"
+            "iPhone 17 Pro\n\nfrom $72.87/mth\n\nor$$1,749.00\n\n12 offers available\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **iPhone 17**" in result
+        # Double dollar should be normalized
+        assert "$$" not in result
+
+    def test_fewer_than_3_separators_passes_through(self):
+        text = "Hello\n\n---\n\nWorld\n\n---\n\nEnd"
+        result = ContentExtractor._reformat_separated_items(text)
+        assert result == text
+
+    def test_non_product_sections_pass_through(self):
+        """Sections without prices are left unchanged."""
+        text = (
+            "# Main heading\n\n"
+            "---\n\n"
+            "Galaxy S26\n\nfrom $76.16/mth\n\n15 offers available\n\n"
+            "---\n\n"
+            "iPhone 17\n\nfrom $42.12/mth\n\n12 offers available\n\n"
+            "---\n\n"
+            "Find X9\n\nfrom $46.29/mth\n\n11 offers available\n\n"
+            "---\n\n"
+            "Some article text without any prices at all"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **Galaxy S26**" in result
+        assert "Some article text without any prices at all" in result
+
+    def test_badges_collected(self):
+        text = (
+            "---\n\n"
+            "Galaxy S26\n\nPreorder\n\nfrom $76.16/mth\n\n15 offers available\n\n"
+            "---\n\n"
+            "iPhone 17\n\nLNY Offers\n\nfrom $42.12/mth\n\n12 offers available\n\n"
+            "---\n\n"
+            "Find X9\n\nNew\n\nfrom $46.29/mth\n\n11 offers available\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "Preorder" in result
+        assert "LNY Offers" in result
+        assert "New" in result
+
+    def test_banner_text_not_used_as_product_name(self):
+        """Banner text in a section should not become the product name."""
+        text = (
+            "---\n\n"
+            "We got you covered with the new 5G Unlimited+ Discover our new mobile plans!\n\n"
+            "Preorder\n\nGalaxy S26 5G\n\nfrom $59.91/mth\n\n"
+            "or~~$1,738.00~~$1,438.00\n\n13 offers available\n\n"
+            "---\n\n"
+            "Galaxy S26 Ultra 5G\n\nPreorder\n\nfrom $76.16/mth\n\n"
+            "or~~$2,128.00~~$1,828.00\n\n15 offers available\n\n"
+            "---\n\n"
+            "Galaxy S26+ 5G\n\nPreorder\n\nfrom $67.83/mth\n\n"
+            "or~~$1,928.00~~$1,628.00\n\n13 offers available\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        # Product name should be the short actual name, not the banner
+        assert "- **Galaxy S26 5G**" in result
+        assert "- **Galaxy S26 Ultra 5G**" in result
+        # Banner text should NOT appear as a product name
+        assert "- **We got you covered" not in result
+
+    def test_name_prefers_last_short_line(self):
+        """When multiple unclassified lines exist, prefer the last short one."""
+        text = (
+            "---\n\n"
+            "Some long promotional banner text that describes various features and benefits\n\n"
+            "iPhone 17 Pro\n\nfrom $72.87/mth\n\n12 offers available\n\n"
+            "---\n\n"
+            "Another promotional line about amazing deals and great pricing options\n\n"
+            "Find X9 Pro 5G\n\nfrom $46.29/mth\n\n11 offers available\n\n"
+            "---\n\n"
+            "More banner text about new plans\n\n"
+            "Reno15 5G\n\nfrom $25.37/mth\n\n9 offers available\n\n"
+            "---"
+        )
+        result = ContentExtractor._reformat_separated_items(text)
+        assert "- **iPhone 17 Pro**" in result
+        assert "- **Find X9 Pro 5G**" in result
+        assert "- **Reno15 5G**" in result

@@ -1,4 +1,4 @@
-"""Tests for crawl4md.crawler â€” core SiteCrawler, WAF detection, URL lists."""
+"""Tests for crawl4md.crawler — core SiteCrawler and WAF detection."""
 
 from __future__ import annotations
 
@@ -413,38 +413,3 @@ class TestIsBlocked:
 
     def test_content_length_without_chrome_empty_html(self):
         assert SiteCrawler._content_length_without_chrome("") == 0
-
-
-class TestSaveUrlLists:
-    """Tests for per-round URL list splitting."""
-
-    def test_splits_success_and_fail(self, tmp_path: Path):
-        from crawl4md.config import CrawlResult
-
-        config = CrawlerConfig(urls=["https://example.com"])
-        crawler = SiteCrawler(config, output_base=tmp_path)
-        crawler.output_dir = tmp_path
-
-        success = [CrawlResult(url="https://example.com/a", success=True)]
-        fail = [CrawlResult(url="https://example.com/b", success=False, error="Blocked")]
-        crawler._save_url_lists(success, fail, "round_1_")
-
-        assert (tmp_path / "round_1_success_urls.txt").read_text(
-            encoding="utf-8"
-        ) == "https://example.com/a"
-        assert (tmp_path / "round_1_fail_urls.txt").read_text(
-            encoding="utf-8"
-        ) == "https://example.com/b"
-
-    def test_no_fail_file_when_all_succeed(self, tmp_path: Path):
-        from crawl4md.config import CrawlResult
-
-        config = CrawlerConfig(urls=["https://example.com"])
-        crawler = SiteCrawler(config, output_base=tmp_path)
-        crawler.output_dir = tmp_path
-
-        success = [CrawlResult(url="https://example.com/a", success=True)]
-        crawler._save_url_lists(success, [], "round_1_")
-
-        assert (tmp_path / "round_1_success_urls.txt").exists()
-        assert not (tmp_path / "round_1_fail_urls.txt").exists()

@@ -158,57 +158,6 @@ class TestCleanMarkdown:
         result = ContentExtractor._collapse_blank_lines(text)
         assert result == "A\n\nB\n\nC"
 
-    def test_compact_product_listings_basic(self):
-        text = "Product Alpha\n\n$49.90\n\nProduct Beta\n\n$29.00\n\nProduct Gamma\n\n$99.00"
-        result = ContentExtractor._compact_product_listings(text)
-        assert "- **Product Alpha** \u2014 $49.90" in result
-        assert "- **Product Beta** \u2014 $29.00" in result
-        assert "- **Product Gamma** \u2014 $99.00" in result
-
-    def test_compact_product_listings_with_badges(self):
-        text = (
-            "New\n\nProduct Alpha\n\n$49.90\n\n"
-            "LNY Offers\n\nProduct Beta\n\n$29.00\n\n3 offers available\n\n"
-            "Product Gamma\n\n$99.00\n\nAdd selected accessories!"
-        )
-        result = ContentExtractor._compact_product_listings(text)
-        assert "- **Product Alpha** \u2014 $49.90" in result
-        assert "  New" in result
-        assert "- **Product Beta** \u2014 $29.00" in result
-        assert "  LNY Offers" in result
-        assert "  3 offers available" in result
-        assert "- **Product Gamma** \u2014 $99.00" in result
-        assert "  Add selected accessories!" in result
-
-    def test_compact_product_listings_no_trigger_below_threshold(self):
-        """Fewer than 3 product-price pairs should NOT be compacted."""
-        text = "Widget A\n\n$10.00\n\nWidget B\n\n$20.00\n\nSome article text."
-        result = ContentExtractor._compact_product_listings(text)
-        # Should remain unchanged — no bullet list
-        assert "- **" not in result
-        assert "Widget A" in result
-        assert "$10.00" in result
-
-    def test_compact_product_listings_with_from_prefix(self):
-        text = "Plan A\n\nfrom $10.00\n\nPlan B\n\nfrom $20.00\n\nPlan C\n\nfrom $30.00"
-        result = ContentExtractor._compact_product_listings(text)
-        assert "- **Plan A** \u2014 from $10.00" in result
-        assert "- **Plan B** \u2014 from $20.00" in result
-        assert "- **Plan C** \u2014 from $30.00" in result
-
-    def test_compact_preserves_headings_and_tables(self):
-        text = (
-            "# Category\n\n"
-            "Product A\n\n$10.00\n\n"
-            "Product B\n\n$20.00\n\n"
-            "Product C\n\n$30.00\n\n"
-            "| Col | Val |\n| --- | --- |\n| a | 1 |"
-        )
-        result = ContentExtractor._compact_product_listings(text)
-        assert result.startswith("# Category")
-        assert "- **Product A** \u2014 $10.00" in result
-        assert "| Col | Val |" in result
-
     def test_dedup_paragraphs(self):
         text = "Hello world\n\nHello world\n\nSomething else\n\nSomething else\n\nFinal"
         result = ContentExtractor._dedup_paragraphs(text)

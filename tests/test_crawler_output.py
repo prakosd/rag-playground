@@ -1,4 +1,4 @@
-"""Tests for crawl4md.crawler — output files and print_summary."""
+"""Tests for crawl4md.crawler — output files, URL lists, and print_summary."""
 
 from __future__ import annotations
 
@@ -342,6 +342,41 @@ class TestPrintSummary:
             assert len(urls) == len(set(urls)), (
                 f"Duplicate fail URLs found: {[u for u in urls if urls.count(u) > 1]}"
             )
+
+
+class TestSaveUrlLists:
+    """Tests for per-round URL list splitting."""
+
+    def test_splits_success_and_fail(self, tmp_path: Path):
+        from crawl4md.config import CrawlResult
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.output_dir = tmp_path
+
+        success = [CrawlResult(url="https://example.com/a", success=True)]
+        fail = [CrawlResult(url="https://example.com/b", success=False, error="Blocked")]
+        crawler._save_url_lists(success, fail, "round_1_")
+
+        assert (tmp_path / "round_1_success_urls.txt").read_text(
+            encoding="utf-8"
+        ) == "https://example.com/a"
+        assert (tmp_path / "round_1_fail_urls.txt").read_text(
+            encoding="utf-8"
+        ) == "https://example.com/b"
+
+    def test_no_fail_file_when_all_succeed(self, tmp_path: Path):
+        from crawl4md.config import CrawlResult
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.output_dir = tmp_path
+
+        success = [CrawlResult(url="https://example.com/a", success=True)]
+        crawler._save_url_lists(success, [], "round_1_")
+
+        assert (tmp_path / "round_1_success_urls.txt").exists()
+        assert not (tmp_path / "round_1_fail_urls.txt").exists()
 
 
 class TestFinalUnsortedContentFiles:
