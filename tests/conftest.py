@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -17,6 +17,18 @@ def _zero_round_cooldown():
     Tests use mocked HTTP, so the sleep is unnecessary.
     """
     with patch("crawl4md.crawler._ROUND_COOLDOWN", 0):
+        yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _zero_async_sleep():
+    """Patch asyncio.sleep to a no-op for the entire test suite.
+
+    WAF back-off, jitter, and round-cooldown all call asyncio.sleep with
+    real delays (3–15 s).  Tests that need to inspect sleep calls create
+    their own function-scoped patch which shadows this one.
+    """
+    with patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock):
         yield
 
 
