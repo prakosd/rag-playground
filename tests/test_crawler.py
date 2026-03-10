@@ -770,6 +770,141 @@ class TestRetryRounds:
             f"Expected a jitter sleep in [{delay_value * 0.3}, {delay_value * 3.0}], got {jitter_calls}"
         )
 
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_retry_discovers_links_from_recovered_page(self, mock_crawler_cls, tmp_path: Path):
+        """A page that fails in R1 and succeeds in R2 should have its links discovered."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        # /start fails in R1, succeeds in R2 with a link to /linked
+        start_html_ok = (
+            '<html><body><p>Real content here</p><a href="/linked">Link</a></body></html>'
+        )
+        linked_html = "<html><body><p>Linked page content</p></body></html>"
+
+        blocked_result = _make_mock_result("https://example.com/start", blocked_html, "blocked")
+        start_ok_result = _make_mock_result(
+            "https://example.com/start", start_html_ok, "Real content here"
+        )
+        linked_result = _make_mock_result(
+            "https://example.com/linked", linked_html, "Linked page content"
+        )
+
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config):
+            call_count["n"] += 1
+            if url == "https://example.com/start":
+                # First call blocked, subsequent calls succeed
+                if call_count["n"] <= 1:
+                    return blocked_result
+                return start_ok_result
+            if url == "https://example.com/linked":
+                return linked_result
+            return _make_mock_result(url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/start"],
+            limit=10,
+            max_retries=1,
+            max_depth=2,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        result_urls = {r.url for r in results if r.success}
+        assert "https://example.com/start" in result_urls
+        assert "https://example.com/linked" in result_urls
+
+        urls_file = (crawler.output_dir / "final_success_urls.txt").read_text(encoding="utf-8")
+        assert "https://example.com/start" in urls_file
+        assert "https://example.com/linked" in urls_file
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_retry_discovery_respects_max_depth(self, mock_crawler_cls, tmp_path: Path):
+        """Links discovered on retry are still subject to max_depth."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        # Seed at depth 1 with max_depth=1 means depth < max_depth is False → no discovery
+        start_html_ok = '<html><body><p>Content</p><a href="/child">Link</a></body></html>'
+
+        blocked_result = _make_mock_result("https://example.com/start", blocked_html, "blocked")
+        start_ok_result = _make_mock_result("https://example.com/start", start_html_ok, "Content")
+
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config):
+            call_count["n"] += 1
+            if url == "https://example.com/start":
+                if call_count["n"] <= 1:
+                    return blocked_result
+                return start_ok_result
+            return _make_mock_result(url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/start"],
+            limit=10,
+            max_retries=1,
+            max_depth=1,  # depth 1 = seeds only, no deeper
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        result_urls = {r.url for r in results}
+        assert "https://example.com/start" in result_urls
+        # /child should NOT be crawled — max_depth=1 prevents discovery
+        assert "https://example.com/child" not in result_urls
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_retry_discovery_respects_limit(self, mock_crawler_cls, tmp_path: Path):
+        """Links discovered on retry are subject to the overall limit."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        start_html_ok = (
+            "<html><body><p>Content</p>"
+            '<a href="/a">A</a><a href="/b">B</a><a href="/c">C</a>'
+            "</body></html>"
+        )
+
+        blocked_result = _make_mock_result("https://example.com/start", blocked_html, "blocked")
+        start_ok_result = _make_mock_result("https://example.com/start", start_html_ok, "Content")
+
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config):
+            call_count["n"] += 1
+            if url == "https://example.com/start":
+                if call_count["n"] <= 1:
+                    return blocked_result
+                return start_ok_result
+            return _make_mock_result(url, "<p>page</p>", "page")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/start"],
+            limit=2,  # only 2 total pages allowed
+            max_retries=1,
+            max_depth=2,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        # limit=2: /start + at most 1 discovered link
+        assert len(results) <= 2
+
 
 class TestFailContentFiles:
     """Tests for fail content file generation (symmetrical with success content)."""

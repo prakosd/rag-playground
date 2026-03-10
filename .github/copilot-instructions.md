@@ -36,9 +36,10 @@ Constructor accepts an optional keyword argument `activity_log_size` (default `1
 **Multi-round strategy:**
 
 1. **Round 1** — crawl seed URLs with link discovery (respects `max_depth`). Discovered links are added to the queue up to `config.limit`. **No per-page delay** is applied in round 1 for speed.
-2. **Rounds 2+** — retry failed URLs only (no link discovery). A `_ROUND_COOLDOWN` (30 s) pause between rounds lets WAFs cool down. Per-page `delay` (with jitter 0.3x–3.0x) is applied only during these retry rounds.
-3. **Early exit** — skip remaining retries if all pages succeed.
-4. **Session persistence** — a single `AsyncWebCrawler` instance is shared across all rounds so cookies (including WAF challenge tokens) persist through retries.
+2. **Rounds 2+** — retry failed URLs with link discovery enabled. Pages that now succeed have their links discovered and crawled within the same round (respecting `max_depth` and `limit`). A `_ROUND_COOLDOWN` (30 s) pause between rounds lets WAFs cool down. Per-page `delay` (with jitter 0.3x–3.0x) is applied during these retry rounds.
+3. **Cross-round state** — `all_generated` (set of all URLs ever queued) and `url_depths` (URL → depth map) are shared across rounds for correct dedup, limit enforcement, and depth tracking.
+4. **Early exit** — skip remaining retries if all pages succeed.
+5. **Session persistence** — a single `AsyncWebCrawler` instance is shared across all rounds so cookies (including WAF challenge tokens) persist through retries.
 
 **WAF detection (two-stage):**
 

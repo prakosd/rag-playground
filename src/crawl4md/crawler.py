@@ -210,6 +210,11 @@ class SiteCrawler:
             self._fail_writer.reset(f"{round_prefix}fail_")
         print(f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---")
 
+        # Shared across all rounds so link discovery in retries sees
+        # every URL ever queued and uses the correct depth.
+        all_generated: set[str] = set()
+        url_depths: dict[str, int] = {}
+
         # Use a single browser instance across all rounds so that
         # cookies (including WAF challenge tokens) persist through retries.
         async with AsyncWebCrawler(config=browser_cfg) as crawler:
@@ -222,6 +227,8 @@ class SiteCrawler:
                 prior_success=0,
                 prior_fail=0,
                 round_label=f"Round 1/{total_rounds}",
+                all_generated=all_generated,
+                url_depths=url_depths,
             )
             success, fail = self._split_results(round_results)
             self._save_url_lists(success, fail, round_prefix)
@@ -256,13 +263,15 @@ class SiteCrawler:
                     urls=failed_urls,
                     crawler=crawler,
                     run_cfg=run_cfg,
-                    discover_links=False,
+                    discover_links=True,
                     is_retry=True,
                     round_prefix=round_prefix,
                     prior_success=len(all_success),
                     prior_fail=len(all_fail),
                     skip_urls=frozenset(succeeded_urls),
                     round_label=f"Round {round_num}/{total_rounds}",
+                    all_generated=all_generated,
+                    url_depths=url_depths,
                 )
                 success, fail = self._split_results(round_results)
                 self._save_url_lists(success, fail, round_prefix)
@@ -316,26 +325,34 @@ class SiteCrawler:
         prior_fail: int = 0,
         skip_urls: frozenset[str] = frozenset(),
         round_label: str = "",
+        all_generated: set[str] | None = None,
+        url_depths: dict[str, int] | None = None,
     ) -> list[CrawlResult]:
         """Crawl a list of URLs and return per-page results.
 
-        When *discover_links* is True (round 1), follow links up to
-        ``max_depth``.  When False (retry rounds), only crawl the
-        given URLs with no link discovery.
+        When *discover_links* is True, follow links up to ``max_depth``.
+        When False, only crawl the given URLs with no link discovery.
 
         *skip_urls* contains URLs already successfully crawled in prior
         rounds — they are pre-loaded into the visited set so they will
         not be crawled again (including as redirect targets).
+
+        *all_generated* and *url_depths* are shared mutable collections
+        that persist across rounds.  ``all_generated`` tracks every URL
+        ever queued (for dedup and limit enforcement); ``url_depths``
+        maps each URL to its crawl depth so retried pages and their
+        discovered links use the correct depth.
         """
         results: list[CrawlResult] = []
         visited: set[str] = set(skip_urls)
-        generated: set[str] = set()
+        generated: set[str] = all_generated if all_generated is not None else set()
+        depths: dict[str, int] = url_depths if url_depths is not None else {}
         queue: list[tuple[str, int]] = []
         for seed_url in urls:
-            if len(generated) >= self.config.limit:
+            if seed_url not in generated and len(generated) >= self.config.limit:
                 break
             generated.add(seed_url)
-            queue.append((seed_url, 1))
+            queue.append((seed_url, depths.get(seed_url, 1)))
         progress = ProgressReporter(
             min(len(urls), self.config.limit),
             prior_success=prior_success,
@@ -367,6 +384,7 @@ class SiteCrawler:
 
                 visited.add(final_url)
                 generated.add(final_url)
+                depths[final_url] = depth
 
                 if redirected and not self._url_allowed(final_url):
                     continue
@@ -456,7 +474,7 @@ class SiteCrawler:
                 progress.set_activity(f"Delay {jitter:.1f}s (retry cooldown)")
                 await asyncio.sleep(jitter)
 
-            # Discover links for deeper crawling (only in round 1)
+            # Discover links for deeper crawling
             if discover_links and depth < self.config.max_depth and crawl_result.success:
                 progress.set_activity(f"Discovering links from {url}")
                 new_links = self._extract_links(crawl_result, crawl_result.url)
@@ -466,6 +484,7 @@ class SiteCrawler:
                         break
                     if link not in generated:
                         generated.add(link)
+                        depths[link] = depth + 1
                         queue.append((link, depth + 1))
                         added += 1
                 progress.update_activity_label(f"Discovered {added} links from {url}")
