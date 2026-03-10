@@ -700,8 +700,8 @@ class TestRetryRounds:
         assert len(results) == 0
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
-    def test_round1_skips_per_page_delay(self, mock_crawler_cls, tmp_path: Path):
-        """Round 1 does not apply per-page delay even when delay > 0."""
+    def test_round1_no_delay_when_delay_is_zero(self, mock_crawler_cls, tmp_path: Path):
+        """Round 1 does not apply per-page delay when delay=0 (default)."""
         ok_result = _make_mock_result("https://example.com", "<p>ok</p>", "ok")
 
         mock_instance = AsyncMock()
@@ -713,7 +713,7 @@ class TestRetryRounds:
         config = CrawlerConfig(
             urls=["https://example.com"],
             limit=1,
-            delay=5,
+            delay=0,
             max_retries=0,
         )
         crawler = SiteCrawler(config, output_base=tmp_path)
@@ -728,6 +728,37 @@ class TestRetryRounds:
             assert args[0] == 0 or args == (), (
                 f"Unexpected sleep({args[0]}) in round 1 — delay should be skipped"
             )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_round1_applies_light_jitter(self, mock_crawler_cls, tmp_path: Path):
+        """Round 1 applies a lighter jitter range when delay > 0."""
+        ok_result = _make_mock_result("https://example.com", "<p>ok</p>", "ok")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=ok_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        delay_value = 5.0
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            limit=1,
+            delay=delay_value,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            crawler.crawl()
+
+        # At least one sleep should be in the round 1 jitter range
+        jitter_calls = [
+            call[0][0] for call in mock_sleep.call_args_list if call[0] and call[0][0] > 0
+        ]
+        assert any(delay_value * 0.1 <= v <= delay_value * 1.0 for v in jitter_calls), (
+            f"Expected a jitter sleep in [{delay_value * 0.1}, {delay_value * 1.0}], got {jitter_calls}"
+        )
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_round_applies_delay(self, mock_crawler_cls, tmp_path: Path):
@@ -769,6 +800,116 @@ class TestRetryRounds:
         assert any(delay_value * 0.3 <= v <= delay_value * 3.0 for v in jitter_calls), (
             f"Expected a jitter sleep in [{delay_value * 0.3}, {delay_value * 3.0}], got {jitter_calls}"
         )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_waf_backoff_fires_on_block(self, mock_crawler_cls, tmp_path: Path):
+        """WAF back-off sleep fires after a block is detected, even when delay=0."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        blocked_result = _make_mock_result("https://example.com", blocked_html, "blocked")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=blocked_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            limit=1,
+            delay=0,  # WAF back-off should still fire
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            crawler.crawl()
+
+        # The WAF back-off floor (3.0s) should appear even with delay=0
+        backoff_calls = [
+            call[0][0] for call in mock_sleep.call_args_list if call[0] and call[0][0] >= 3.0
+        ]
+        assert len(backoff_calls) >= 1, (
+            f"Expected WAF back-off sleep >= 3.0s, got calls: "
+            f"{[c[0][0] for c in mock_sleep.call_args_list if c[0]]}"
+        )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_waf_backoff_escalates_on_consecutive_blocks(self, mock_crawler_cls, tmp_path: Path):
+        """After 3+ consecutive WAF blocks, back-off escalates to the cap (15s)."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        # Create multiple URLs that all get blocked
+        urls = [f"https://example.com/page{i}" for i in range(5)]
+
+        async def mock_arun(url, config):
+            return _make_mock_result(url, blocked_html, "blocked")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=urls,
+            limit=5,
+            delay=0,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            crawler.crawl()
+
+        # After 3 consecutive blocks, back-off should escalate to 15s cap
+        backoff_calls = [
+            call[0][0] for call in mock_sleep.call_args_list if call[0] and call[0][0] > 0
+        ]
+        assert any(v == 15.0 for v in backoff_calls), (
+            f"Expected escalated back-off of 15.0s after consecutive blocks, got {backoff_calls}"
+        )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_round_cooldown_has_jitter(self, mock_crawler_cls, tmp_path: Path):
+        """Round cooldown sleep uses jittered value (not exactly _ROUND_COOLDOWN)."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        ok_result = _make_mock_result("https://example.com", "<p>good</p>", "good")
+        blocked_result = _make_mock_result("https://example.com", blocked_html, "blocked")
+
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config):
+            call_count["n"] += 1
+            if call_count["n"] <= 1:
+                return blocked_result
+            return ok_result
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            limit=1,
+            max_retries=1,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        # Use a real _ROUND_COOLDOWN value (not the 0 from conftest) to test jitter
+        with (
+            patch("crawl4md.crawler._ROUND_COOLDOWN", 30),
+            patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            crawler.crawl()
+
+        # The cooldown should be in [30*0.8, 30*1.5] = [24, 45]
+        cooldown_calls = [
+            call[0][0] for call in mock_sleep.call_args_list if call[0] and call[0][0] >= 20
+        ]
+        assert len(cooldown_calls) >= 1, "Expected at least one round cooldown sleep"
+        for v in cooldown_calls:
+            assert 24.0 <= v <= 45.0, f"Round cooldown {v} outside jitter range [24, 45]"
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_discovers_links_from_recovered_page(self, mock_crawler_cls, tmp_path: Path):

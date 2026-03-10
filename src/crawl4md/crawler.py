@@ -26,6 +26,27 @@ nest_asyncio.apply()
 # Seconds to pause between retry rounds so the WAF can cool down
 _ROUND_COOLDOWN = 30
 
+# ------------------------------------------------------------------
+# Jitter constants — all tunable values in one place
+# ------------------------------------------------------------------
+
+# Per-page jitter multiplier ranges (applied to config.delay)
+_JITTER_ROUND1_MIN = 0.1  # Round 1: light delay to avoid WAF triggers
+_JITTER_ROUND1_MAX = 1.0
+_JITTER_RETRY_MIN = 0.3  # Retry rounds: heavier delay for WAF cooldown
+_JITTER_RETRY_MAX = 3.0
+
+# WAF back-off: sleep after detecting a block (applied even when delay=0)
+_WAF_BACKOFF_MIN = 2.0  # Multiplier lower bound (applied to config.delay)
+_WAF_BACKOFF_MAX = 5.0  # Multiplier upper bound
+_WAF_BACKOFF_FLOOR = 3.0  # Minimum seconds (ensures a pause even when delay=0)
+_WAF_BACKOFF_CAP = 15.0  # Maximum seconds (ceiling for escalated back-off)
+_WAF_CONSECUTIVE_THRESHOLD = 3  # Consecutive blocks before escalating
+
+# Round cooldown jitter multiplier range
+_ROUND_COOLDOWN_JITTER_MIN = 0.8
+_ROUND_COOLDOWN_JITTER_MAX = 1.5
+
 # Known WAF / bot-protection block signatures (matched case-insensitively)
 _BLOCK_SIGNATURES = (
     "incapsula incident",
@@ -254,10 +275,13 @@ class SiteCrawler:
                 if self._fail_writer is not None:
                     self._fail_writer.reset(f"{round_prefix}fail_")
 
-                print(
-                    f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {_ROUND_COOLDOWN}s cooldown) ---"
+                cooldown = _ROUND_COOLDOWN * random.uniform(
+                    _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
                 )
-                await asyncio.sleep(_ROUND_COOLDOWN)
+                print(
+                    f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {cooldown:.0f}s cooldown) ---"
+                )
+                await asyncio.sleep(cooldown)
 
                 round_results = await self._crawl_urls_async(
                     urls=failed_urls,
@@ -361,6 +385,8 @@ class SiteCrawler:
             max_log_entries=self._activity_log_size,
         )
 
+        consecutive_blocks = 0
+
         while queue and len(results) < self.config.limit:
             url, depth = queue.pop(0)
 
@@ -413,6 +439,7 @@ class SiteCrawler:
             # (nav, script, form, style) so that navigation chrome doesn't
             # inflate the count and mask a failed JS render.
             raw_markdown = crawl_result.markdown
+            waf_blocked = False
             if (
                 crawl_result.success
                 and self._is_blocked(crawl_result.html)
@@ -422,6 +449,7 @@ class SiteCrawler:
                 crawl_result.success = False
                 crawl_result.error = "Blocked by WAF"
                 crawl_result.markdown = ""
+                waf_blocked = True
 
             results.append(crawl_result)
             progress.update(crawl_result.url, success=crawl_result.success)
@@ -440,8 +468,25 @@ class SiteCrawler:
                     crawl_result.success = False
                     crawl_result.error = "Blocked — page returned only boilerplate"
                     crawl_result.markdown = raw_markdown
+                    waf_blocked = True
                 elif page.markdown.strip():
                     self._writer.add(page)
+
+            # WAF back-off: pause after a block so the WAF can cool down.
+            # Applies even when delay=0 (floor ensures a minimum pause).
+            if waf_blocked:
+                consecutive_blocks += 1
+                if consecutive_blocks >= _WAF_CONSECUTIVE_THRESHOLD:
+                    backoff = _WAF_BACKOFF_CAP
+                else:
+                    backoff = max(
+                        _WAF_BACKOFF_FLOOR,
+                        self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
+                    )
+                progress.set_activity(f"WAF back-off {backoff:.1f}s")
+                await asyncio.sleep(backoff)
+            else:
+                consecutive_blocks = 0
 
             # Buffer failed-page content for the fail content file
             if not crawl_result.success and self._fail_writer is not None:
@@ -466,12 +511,20 @@ class SiteCrawler:
                 success, fail = self._split_results(results)
                 self._save_url_lists(success, fail, round_prefix)
 
-            # Throttle between pages — wide jitter mimics human browsing.
-            # Round 1 runs without delay for speed; retries apply the
-            # configured delay so WAFs have time to cool down.
-            if self.config.delay > 0 and is_retry:
-                jitter = self.config.delay * random.uniform(0.3, 3.0)
-                progress.set_activity(f"Delay {jitter:.1f}s (retry cooldown)")
+            # Throttle between pages — jitter mimics human browsing.
+            # Round 1 applies a light delay; retries apply a heavier one.
+            # Both require delay > 0 (default 0 keeps current fast behavior).
+            if self.config.delay > 0:
+                if is_retry:
+                    jitter = self.config.delay * random.uniform(
+                        _JITTER_RETRY_MIN, _JITTER_RETRY_MAX
+                    )
+                    progress.set_activity(f"Delay {jitter:.1f}s (retry cooldown)")
+                else:
+                    jitter = self.config.delay * random.uniform(
+                        _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
+                    )
+                    progress.set_activity(f"Delay {jitter:.1f}s (throttle)")
                 await asyncio.sleep(jitter)
 
             # Discover links for deeper crawling

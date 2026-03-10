@@ -35,11 +35,12 @@ Constructor accepts an optional keyword argument `activity_log_size` (default `1
 
 **Multi-round strategy:**
 
-1. **Round 1** — crawl seed URLs with link discovery (respects `max_depth`). Discovered links are added to the queue up to `config.limit`. **No per-page delay** is applied in round 1 for speed.
-2. **Rounds 2+** — retry failed URLs with link discovery enabled. Pages that now succeed have their links discovered and crawled within the same round (respecting `max_depth` and `limit`). A `_ROUND_COOLDOWN` (30 s) pause between rounds lets WAFs cool down. Per-page `delay` (with jitter 0.3x–3.0x) is applied during these retry rounds.
-3. **Cross-round state** — `all_generated` (set of all URLs ever queued) and `url_depths` (URL → depth map) are shared across rounds for correct dedup, limit enforcement, and depth tracking.
-4. **Early exit** — skip remaining retries if all pages succeed.
-5. **Session persistence** — a single `AsyncWebCrawler` instance is shared across all rounds so cookies (including WAF challenge tokens) persist through retries.
+1. **Round 1** — crawl seed URLs with link discovery (respects `max_depth`). Discovered links are added to the queue up to `config.limit`. When `delay > 0`, a light per-page jitter (`delay × 0.1–1.0`) is applied; when `delay` is 0 (default) no per-page delay is used.
+2. **Rounds 2+** — retry failed URLs with link discovery enabled. Pages that now succeed have their links discovered and crawled within the same round (respecting `max_depth` and `limit`). A `_ROUND_COOLDOWN` (30 s, jittered ×0.8–1.5) pause between rounds lets WAFs cool down. Per-page `delay` (with jitter 0.3x–3.0x) is applied during these retry rounds.
+3. **WAF back-off** — when a WAF block is detected, an immediate back-off sleep fires (`max(_WAF_BACKOFF_FLOOR, delay × 2.0–5.0)`). After `_WAF_CONSECUTIVE_THRESHOLD` (3) consecutive blocks the delay escalates to `_WAF_BACKOFF_CAP` (15 s). This applies even when `delay=0`.
+4. **Cross-round state** — `all_generated` (set of all URLs ever queued) and `url_depths` (URL → depth map) are shared across rounds for correct dedup, limit enforcement, and depth tracking.
+5. **Early exit** — skip remaining retries if all pages succeed.
+6. **Session persistence** — a single `AsyncWebCrawler` instance is shared across all rounds so cookies (including WAF challenge tokens) persist through retries.
 
 **WAF detection (two-stage):**
 
@@ -201,7 +202,14 @@ src/crawl4md/
 
 | Constant | Module | Value | Notes |
 |---|---|---|---|
-| `_ROUND_COOLDOWN` | crawler | `30` | Seconds between retry rounds; patched to 0 in tests via autouse fixture |
+| `_ROUND_COOLDOWN` | crawler | `30` | Seconds between retry rounds; jittered ×0.8–1.5; patched to 0 in tests via autouse fixture |
+| `_JITTER_ROUND1_MIN / _MAX` | crawler | `0.1` / `1.0` | Per-page jitter multiplier range for round 1 (applied to `delay`) |
+| `_JITTER_RETRY_MIN / _MAX` | crawler | `0.3` / `3.0` | Per-page jitter multiplier range for retry rounds (applied to `delay`) |
+| `_WAF_BACKOFF_MIN / _MAX` | crawler | `2.0` / `5.0` | WAF back-off jitter multiplier range (applied to `delay`) |
+| `_WAF_BACKOFF_FLOOR` | crawler | `3.0` | Minimum WAF back-off seconds (ensures pause even when `delay=0`) |
+| `_WAF_BACKOFF_CAP` | crawler | `15.0` | Maximum WAF back-off seconds (escalation ceiling) |
+| `_WAF_CONSECUTIVE_THRESHOLD` | crawler | `3` | Consecutive WAF blocks before escalating to `_WAF_BACKOFF_CAP` |
+| `_ROUND_COOLDOWN_JITTER_MIN / _MAX` | crawler | `0.8` / `1.5` | Round cooldown jitter multiplier range |
 | `_BLOCK_SIGNATURES` | crawler | 6 strings | WAF detection keywords (Incapsula, Cloudflare, etc.) |
 | `_BLOCK_MAX_CONTENT_LENGTH` | crawler | `500` | Markdown char threshold for block detection |
 | `_STATIC_ASSET_EXTENSIONS` | crawler | frozenset | File extensions to skip (CSS, JS, images, media, archives) |
