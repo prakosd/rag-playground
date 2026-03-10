@@ -118,6 +118,113 @@ _MIN_SLUG_LEN = 3
 # Maximum single-line paragraph length before it's excluded from compaction
 _MAX_SHORT_PARAGRAPH_LEN = 120
 
+# ------------------------------------------------------------------
+# Markdown structure detection regexes (shared across multiple methods)
+# ------------------------------------------------------------------
+
+# Matches Markdown heading lines (# through ######)
+_MD_HEADING_LINE_RE = re.compile(r"^#{1,6}\s")
+# Matches Markdown horizontal rules (three or more dashes)
+_MD_HORIZONTAL_RULE_RE = re.compile(r"^---+$")
+# Matches Markdown unordered list items (-, *, or +)
+_MD_LIST_ITEM_RE = re.compile(r"^[-*+]\s")
+# Splits text on two or more consecutive newlines (paragraph boundaries)
+_PARAGRAPH_SPLIT_RE = re.compile(r"\n\n+")
+# Splits text on two or more newlines (variant for dedup, matches \n{2,})
+_PARAGRAPH_SPLIT_2_RE = re.compile(r"\n{2,}")
+
+# ------------------------------------------------------------------
+# Fragment link resolution
+# ------------------------------------------------------------------
+
+# Matches Markdown fragment-only links like ](#section-name)
+_FRAGMENT_LINK_RE = re.compile(r"\]\(#([^)]*)\)")
+
+# ------------------------------------------------------------------
+# HTML title / metadata extraction regexes
+# ------------------------------------------------------------------
+
+# Extracts content of <title> tag
+_TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+# Extracts og:title from <meta> tag (property-first attribute order)
+_OG_TITLE_RE_1 = re.compile(
+    r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+# Extracts og:title from <meta> tag (content-first attribute order)
+_OG_TITLE_RE_2 = re.compile(
+    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+    re.IGNORECASE,
+)
+# Extracts content of first <h1> tag
+_H1_TAG_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
+# Strips all HTML tags (used for plain-text extraction from HTML fragments)
+_HTML_TAG_STRIP_RE = re.compile(r"<[^>]+>")
+
+# ------------------------------------------------------------------
+# JSON-LD / structured data extraction
+# ------------------------------------------------------------------
+
+# Extracts <script type="application/ld+json"> blocks from HTML
+_JSON_LD_SCRIPT_RE = re.compile(
+    r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+# ------------------------------------------------------------------
+# Table normalization regexes
+# ------------------------------------------------------------------
+
+# Matches a line containing at least one pipe separator (potential table row)
+_PIPE_LINE_RE = re.compile(r"^\|?.+\|.+\|?\s*$")
+# Matches a Markdown table separator row (e.g. | --- | --- |)
+_TABLE_SEPARATOR_RE = re.compile(r"^\|?(\s*-{3,}\s*\|)+\s*-{3,}\s*\|?\s*$")
+
+# ------------------------------------------------------------------
+# FAQ / supplementary section detection regexes
+# ------------------------------------------------------------------
+
+# Matches heading tag names h2 through h4 (used for FAQ heading search)
+_FAQ_HEADING_RANGE_RE = re.compile(r"^h[2-4]$")
+# Matches text containing "FAQ" or "Frequently Asked" keywords
+_FAQ_KEYWORD_RE = re.compile(r"\bfaq\b|frequently\s+asked", re.IGNORECASE)
+
+# ------------------------------------------------------------------
+# Price detection regexes (compact product listing)
+# ------------------------------------------------------------------
+
+# Matches a full product price line (from $XX.XX/mth, or ~~$XX.XX~~$XX.XX, etc.)
+_PRICE_LINE_RE = re.compile(
+    r"^(?:from\s+)?(?:or\s*)?(?:~~)?\$\$?[\d,]+(?:\.\d{2})?(?:~~)?"
+    r"(?:/mth)?(?:\$\$?[\d,]+(?:\.\d{2})?)?$"
+)
+# Matches any dollar-amount price pattern (e.g. $1,234.56)
+_PRICE_DETECT_RE = re.compile(r"\$[\d,]+(?:\.\d{2})?")
+
+# ------------------------------------------------------------------
+# Product metadata string constants
+# ------------------------------------------------------------------
+
+# Prefix for retail price display in product headers
+_RETAIL_PRICE_PREFIX = "Retail price: "
+# URL path segments that are too generic to be brand names
+_BRAND_EXCLUSION_KEYWORDS = frozenset(
+    {"devices", "mobile", "store", "personal", "products", "shop", "buy"}
+)
+
+# ------------------------------------------------------------------
+# DOM / content thresholds for product metadata extraction
+# ------------------------------------------------------------------
+
+# Lines shorter than this in badges/short-line detection are compacted
+_BADGE_SHORT_LINE_THRESHOLD = 40
+# Maximum parent-node depth to walk when searching for a heading
+_MAX_DOM_DEPTH = 15
+# Minimum content length (chars) for a section to be considered substantial
+_SUBSTANTIAL_CONTENT_LEN = 80
+# Maximum label length for section-label promotion to heading
+_MAX_SECTION_LABEL_LEN = 60
+
 
 class ContentExtractor:
     """Extracts readable Markdown content from crawled pages.
@@ -200,7 +307,7 @@ class ContentExtractor:
                 header_parts.append(f"## {product_name}")
             price_display = self._format_product_price(product)
             if price_display:
-                header_parts.append(f"Retail price: {price_display}")
+                header_parts.append(f"{_RETAIL_PRICE_PREFIX}{price_display}")
             if header_parts:
                 md = "\n\n".join(header_parts) + "\n\n" + md
 
@@ -242,7 +349,7 @@ class ContentExtractor:
                 header_parts.append(f"## {product_name}")
             price_display = self._format_product_price(product)
             if price_display:
-                header_parts.append(f"Retail price: {price_display}")
+                header_parts.append(f"{_RETAIL_PRICE_PREFIX}{price_display}")
             if header_parts:
                 md = "\n\n".join(header_parts) + "\n\n" + md
 
@@ -272,7 +379,7 @@ class ContentExtractor:
             fragment = m.group(1)
             return "](" + urljoin(page_url, "#" + fragment) + ")"
 
-        return re.sub(r"\]\(#([^)]*)\)", _replacer, text)
+        return _FRAGMENT_LINK_RE.sub(_replacer, text)
 
     # ------------------------------------------------------------------
     # Empty link population
@@ -588,16 +695,14 @@ class ContentExtractor:
         * Double pipes (``||``) representing empty cells.
         * Rows with fewer columns than the header (padded with empty cells).
         """
-        pipe_line = re.compile(r"^\|?.+\|.+\|?\s*$")
-
         lines = text.split("\n")
         result: list[str] = []
         i = 0
         while i < len(lines):
             line = lines[i]
-            if pipe_line.match(line):
+            if _PIPE_LINE_RE.match(line):
                 block: list[str] = []
-                while i < len(lines) and pipe_line.match(lines[i]):
+                while i < len(lines) and _PIPE_LINE_RE.match(lines[i]):
                     block.append(lines[i])
                     i += 1
                 result.extend(ContentExtractor._normalize_table_block(block))
@@ -612,8 +717,7 @@ class ContentExtractor:
         if len(block) < 2:
             return block
 
-        separator_re = re.compile(r"^\|?(\s*-{3,}\s*\|)+\s*-{3,}\s*\|?\s*$")
-        has_separator = bool(separator_re.match(block[1]))
+        has_separator = bool(_TABLE_SEPARATOR_RE.match(block[1]))
 
         rows_to_parse = [block[0]] + block[2:] if has_separator else list(block)
 
@@ -859,12 +963,11 @@ class ContentExtractor:
 
         Sections that don't look like products pass through unchanged.
         """
-        hr_re = re.compile(r"^---+$")
         # Split on --- lines preserving them as delimiters
         sections: list[str] = []
         current: list[str] = []
         for line in text.split("\n"):
-            if hr_re.match(line.strip()):
+            if _MD_HORIZONTAL_RULE_RE.match(line.strip()):
                 sections.append("\n".join(current))
                 current = []
             else:
@@ -1017,13 +1120,6 @@ class ContentExtractor:
         entries are found, to avoid false positives on article pages that
         mention prices incidentally.
         """
-        price_re = re.compile(
-            r"^(?:from\s+)?(?:or\s*)?(?:~~)?\$\$?[\d,]+(?:\.\d{2})?(?:~~)?"
-            r"(?:/mth)?(?:\$\$?[\d,]+(?:\.\d{2})?)?$"
-        )
-        heading_re = re.compile(r"^#{1,6}\s")
-        hr_re = re.compile(r"^---+$")
-
         lines = text.split("\n")
         result: list[str] = []
         i = 0
@@ -1036,9 +1132,9 @@ class ContentExtractor:
                 entry, j = ContentExtractor._try_parse_product_entry(
                     lines,
                     j,
-                    price_re,
-                    heading_re,
-                    hr_re,
+                    _PRICE_LINE_RE,
+                    _MD_HEADING_LINE_RE,
+                    _MD_HORIZONTAL_RULE_RE,
                 )
                 if entry is None:
                     break
@@ -1207,7 +1303,9 @@ class ContentExtractor:
                         m += 1
                     if m < len(lines) and price_re.match(lines[m].strip()):
                         break
-            if len(line) < _MAX_PRODUCT_NAME_LEN and (len(line) < 40 or line.endswith("!")):
+            if len(line) < _MAX_PRODUCT_NAME_LEN and (
+                len(line) < _BADGE_SHORT_LINE_THRESHOLD or line.endswith("!")
+            ):
                 post_badges.append(line)
                 j += 1
             else:
@@ -1227,7 +1325,7 @@ class ContentExtractor:
     @staticmethod
     def _dedup_paragraphs(text: str) -> str:
         """Remove consecutive duplicate paragraphs (separated by blank lines)."""
-        paragraphs = re.split(r"\n{2,}", text)
+        paragraphs = _PARAGRAPH_SPLIT_2_RE.split(text)
         deduped: list[str] = []
         for para in paragraphs:
             if not deduped or para.strip() != deduped[-1].strip():
@@ -1244,10 +1342,7 @@ class ContentExtractor:
         rules, existing list items, and multi-line paragraphs are left
         untouched and act as boundaries for the runs.
         """
-        paragraphs = re.split(r"\n\n+", text)
-        heading_re = re.compile(r"^#{1,6}\s")
-        hr_re = re.compile(r"^---+$")
-        list_re = re.compile(r"^[-*+]\s")
+        paragraphs = _PARAGRAPH_SPLIT_RE.split(text)
         max_len = _MAX_SHORT_PARAGRAPH_LEN
 
         result: list[str] = []
@@ -1267,9 +1362,9 @@ class ContentExtractor:
             is_single_line = "\n" not in stripped
             is_short = len(stripped) <= max_len
             is_special = (
-                heading_re.match(stripped)
-                or hr_re.match(stripped)
-                or list_re.match(stripped)
+                _MD_HEADING_LINE_RE.match(stripped)
+                or _MD_HORIZONTAL_RULE_RE.match(stripped)
+                or _MD_LIST_ITEM_RE.match(stripped)
                 or not stripped
             )
 
@@ -1306,11 +1401,9 @@ class ContentExtractor:
         headings or list items) are converted to level-3 headings so that
         questions stand out visually from their answers.
         """
-        heading_re = re.compile(r"^#{1,6}\s")
-        list_re = re.compile(r"^[-*+]\s")
         max_len = _MAX_FAQ_QUESTION_LEN
 
-        paragraphs = re.split(r"\n\n+", text)
+        paragraphs = _PARAGRAPH_SPLIT_RE.split(text)
         result: list[str] = []
         for para in paragraphs:
             stripped = para.strip()
@@ -1319,8 +1412,8 @@ class ContentExtractor:
                 is_single_line
                 and stripped.endswith("?")
                 and len(stripped) <= max_len
-                and not heading_re.match(stripped)
-                and not list_re.match(stripped)
+                and not _MD_HEADING_LINE_RE.match(stripped)
+                and not _MD_LIST_ITEM_RE.match(stripped)
             ):
                 result.append(f"### {stripped}")
             else:
@@ -1388,11 +1481,10 @@ class ContentExtractor:
                 _add(el)
 
         # 4. Heading (h2-h4) whose text mentions FAQ / Frequently Asked
-        faq_heading_re = re.compile(r"\bfaq\b|frequently\s+asked", re.I)
-        for heading in soup.find_all(re.compile(r"^h[2-4]$")):
+        for heading in soup.find_all(_FAQ_HEADING_RANGE_RE):
             if id(heading) in seen_ids:
                 continue
-            if faq_heading_re.search(heading.get_text()):
+            if _FAQ_KEYWORD_RE.search(heading.get_text()):
                 parent = heading.parent
                 if parent and isinstance(parent, Tag) and id(parent) not in seen_ids:
                     _add(parent)
@@ -1419,42 +1511,26 @@ class ContentExtractor:
         Returns an empty string when no usable title is found.
         """
         # 1. <title> tag
-        title_match = re.search(
-            r"<title[^>]*>(.*?)</title>",
-            html,
-            re.IGNORECASE | re.DOTALL,
-        )
+        title_match = _TITLE_TAG_RE.search(html)
         title_text = title_match.group(1).strip() if title_match else ""
 
         if title_text and not ContentExtractor._GENERIC_TITLES.match(title_text):
             return title_text
 
         # 2. og:title meta tag
-        og_match = re.search(
-            r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
-            html,
-            re.IGNORECASE,
-        )
+        og_match = _OG_TITLE_RE_1.search(html)
         if not og_match:
-            og_match = re.search(
-                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
-                html,
-                re.IGNORECASE,
-            )
+            og_match = _OG_TITLE_RE_2.search(html)
         if og_match:
             og_text = og_match.group(1).strip()
             if og_text and not ContentExtractor._GENERIC_TITLES.match(og_text):
                 return og_text
 
         # 3. First <h1>
-        h1_match = re.search(
-            r"<h1[^>]*>(.*?)</h1>",
-            html,
-            re.IGNORECASE | re.DOTALL,
-        )
+        h1_match = _H1_TAG_RE.search(html)
         if h1_match:
             # Strip inner HTML tags to get plain text.
-            h1_text = re.sub(r"<[^>]+>", "", h1_match.group(1)).strip()
+            h1_text = _HTML_TAG_STRIP_RE.sub("", h1_match.group(1)).strip()
             if h1_text:
                 return h1_text
 
@@ -1522,11 +1598,7 @@ class ContentExtractor:
     @staticmethod
     def _product_from_jsonld(html: str) -> dict | None:
         """Parse JSON-LD blocks for a Product entity."""
-        for match in re.finditer(
-            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-            html,
-            re.IGNORECASE | re.DOTALL,
-        ):
+        for match in _JSON_LD_SCRIPT_RE.finditer(html):
             try:
                 data = json.loads(match.group(1))
             except (json.JSONDecodeError, ValueError):
@@ -1631,12 +1703,11 @@ class ContentExtractor:
             tag.decompose()
 
         # Look for a strikethrough element containing a price.
-        price_re = re.compile(r"\$[\d,]+(?:\.\d{2})?")
         strike_tag = None
         for tag_name in ("del", "s", "strike"):
             for tag in soup.find_all(tag_name):
                 text = tag.get_text(strip=True)
-                if price_re.search(text):
+                if _PRICE_DETECT_RE.search(text):
                     strike_tag = tag
                     break
             if strike_tag:
@@ -1645,7 +1716,7 @@ class ContentExtractor:
         if not strike_tag:
             return None
 
-        high_price_match = price_re.search(strike_tag.get_text(strip=True))
+        high_price_match = _PRICE_DETECT_RE.search(strike_tag.get_text(strip=True))
         high_price = high_price_match.group(0).lstrip("$") if high_price_match else ""
 
         # Current/discounted price: next sibling text or parent text after the strike.
@@ -1653,7 +1724,7 @@ class ContentExtractor:
         parent = strike_tag.parent
         if parent:
             full_text = parent.get_text(" ", strip=True)
-            prices = price_re.findall(full_text)
+            prices = _PRICE_DETECT_RE.findall(full_text)
             # The last price that differs from high_price is the current price.
             for p in prices:
                 if p.lstrip("$") != high_price:
@@ -1662,7 +1733,7 @@ class ContentExtractor:
         # Product name: walk up DOM to find the nearest heading.
         name = ""
         node = strike_tag
-        for _ in range(15):
+        for _ in range(_MAX_DOM_DEPTH):
             node = node.parent
             if node is None:
                 break
@@ -1683,15 +1754,7 @@ class ContentExtractor:
             # Heuristic: brand is the second-to-last segment before the product slug.
             if len(parts) >= 2:
                 candidate = parts[-2].replace("-", " ").title()
-                if candidate.lower() not in (
-                    "devices",
-                    "mobile",
-                    "store",
-                    "personal",
-                    "products",
-                    "shop",
-                    "buy",
-                ):
+                if candidate.lower() not in _BRAND_EXCLUSION_KEYWORDS:
                     brand = candidate
 
         if not name and not price and not high_price:
@@ -1737,11 +1800,7 @@ class ContentExtractor:
         * The label must be followed by at least 1 bullet (``- …``) or
           a paragraph of ≥ 80 characters.
         """
-        paragraphs = re.split(r"\n\n+", text)
-        heading_re = re.compile(r"^#{1,6}\s")
-        hr_re = re.compile(r"^---+$")
-        list_re = re.compile(r"^[-*+]\s")
-        max_label_len = 60
+        paragraphs = _PARAGRAPH_SPLIT_RE.split(text)
 
         result: list[str] = []
         i = 0
@@ -1751,10 +1810,10 @@ class ContentExtractor:
 
             if (
                 is_single_line
-                and 0 < len(stripped) <= max_label_len
-                and not heading_re.match(stripped)
-                and not hr_re.match(stripped)
-                and not list_re.match(stripped)
+                and 0 < len(stripped) <= _MAX_SECTION_LABEL_LEN
+                and not _MD_HEADING_LINE_RE.match(stripped)
+                and not _MD_HORIZONTAL_RULE_RE.match(stripped)
+                and not _MD_LIST_ITEM_RE.match(stripped)
                 and not ContentExtractor._MONTHLY_PRICE_RE.match(stripped)
                 and not ContentExtractor._OUTRIGHT_PRICE_RE.match(stripped)
                 and not ContentExtractor._OFFERS_RE.match(stripped)
@@ -1765,9 +1824,9 @@ class ContentExtractor:
                 # Check if the next paragraph is a bullet list or long block.
                 nxt = paragraphs[i + 1].strip()
                 next_has_bullets = any(
-                    list_re.match(ln.strip()) for ln in nxt.split("\n") if ln.strip()
+                    _MD_LIST_ITEM_RE.match(ln.strip()) for ln in nxt.split("\n") if ln.strip()
                 )
-                next_is_substantial = len(nxt) >= 80
+                next_is_substantial = len(nxt) >= _SUBSTANTIAL_CONTENT_LEN
 
                 if next_has_bullets or next_is_substantial:
                     result.append(f"### {stripped}")

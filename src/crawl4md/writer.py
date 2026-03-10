@@ -12,6 +12,8 @@ _MB = 1024 * 1024
 
 # Prefix for numbered content output files (e.g. "content_001.txt")
 _CONTENT_PREFIX = "content_"
+# Zero-padding width for file index numbers (e.g. 3 → 001, 002, …)
+_FILE_INDEX_WIDTH = 3
 
 
 class FileWriter:
@@ -179,7 +181,7 @@ class FileWriter:
         self._output_dir.mkdir(parents=True, exist_ok=True)
         path = (
             self._output_dir
-            / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:03d}{self._file_extension}"
+            / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:0{_FILE_INDEX_WIDTH}d}{self._file_extension}"
         )
         with path.open("a", encoding="utf-8") as fh:
             fh.write("".join(self._current_chunks))
@@ -195,7 +197,7 @@ class FileWriter:
         self._output_dir.mkdir(parents=True, exist_ok=True)
         path = (
             self._output_dir
-            / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:03d}{self._file_extension}"
+            / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:0{_FILE_INDEX_WIDTH}d}{self._file_extension}"
         )
         path.write_text("".join(chunks), encoding="utf-8")
         if path not in self._files:
@@ -216,7 +218,7 @@ class FileWriter:
     @staticmethod
     def _write_to(output_dir: Path, index: int, chunks: list[str], ext: str = ".txt") -> Path:
         """Write chunks to a numbered output file (batch mode helper)."""
-        filename = f"{_CONTENT_PREFIX}{index:03d}{ext}"
+        filename = f"{_CONTENT_PREFIX}{index:0{_FILE_INDEX_WIDTH}d}{ext}"
         path = output_dir / filename
         path.write_text("".join(chunks), encoding="utf-8")
         return path

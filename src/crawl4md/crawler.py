@@ -92,6 +92,48 @@ _FINAL_FAIL_URLS_FILE = "final_fail_urls.txt"
 _SORTED_FINAL_SUCCESS_URLS_FILE = "sorted_final_success_urls.txt"
 _SORTED_FINAL_FAIL_URLS_FILE = "sorted_final_fail_urls.txt"
 
+# ------------------------------------------------------------------
+# Round file naming components
+# ------------------------------------------------------------------
+
+# Prefix for per-round output files (combined with round number)
+_ROUND_PREFIX = "round_"
+# Suffix appended to round prefix for successful pages
+_SUCCESS_SUFFIX = "success_"
+# Suffix appended to round prefix for failed pages
+_FAIL_SUFFIX = "fail_"
+
+# ------------------------------------------------------------------
+# Link extraction patterns
+# ------------------------------------------------------------------
+
+# Regex to extract href attribute values from HTML anchor tags
+_HREF_RE = re.compile(r'href=["\']([^"\']+)["\']')
+# Regex to detect template placeholders (${var}, {{var}}, {%var%})
+_TEMPLATE_PLACEHOLDER_RE = re.compile(r"\$\{|%7B%7B|\{\{|\{%")
+# Valid URL scheme prefixes for discovered links
+_URL_SCHEMES = ("http://", "https://")
+
+# ------------------------------------------------------------------
+# Timestamp format
+# ------------------------------------------------------------------
+
+# strftime format for timestamped output directory names
+_TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
+
+# ------------------------------------------------------------------
+# Failed-page content templates
+# ------------------------------------------------------------------
+
+# Title prefix for pages that failed to crawl
+_FAILED_TITLE_PREFIX = "FAILED \u2014"
+# Fallback error message when the actual error is None
+_UNKNOWN_ERROR_MSG = "Unknown error"
+# Markdown label for the error description section
+_ERROR_SECTION_HEADER = "**Error:**"
+# Markdown label for the raw response section
+_RAW_RESPONSE_HEADER = "**Raw response:**"
+
 
 class SiteCrawler:
     """Crawls websites and collects HTML/Markdown content.
@@ -254,11 +296,11 @@ class SiteCrawler:
         run_cfg = self._build_run_config(CrawlerRunConfig)
 
         # --- Round 1: full crawl with link discovery ---
-        round_prefix = "round_1_"
+        round_prefix = f"{_ROUND_PREFIX}1_"
         if self._writer is not None:
-            self._writer.reset(f"{round_prefix}success_")
+            self._writer.reset(f"{round_prefix}{_SUCCESS_SUFFIX}")
         if self._fail_writer is not None:
-            self._fail_writer.reset(f"{round_prefix}fail_")
+            self._fail_writer.reset(f"{round_prefix}{_FAIL_SUFFIX}")
         print(f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---")
 
         # Shared across all rounds so link discovery in retries sees
@@ -299,11 +341,11 @@ class SiteCrawler:
                     break
 
                 round_num = retry_num + 1
-                round_prefix = f"round_{round_num}_"
+                round_prefix = f"{_ROUND_PREFIX}{round_num}_"
                 if self._writer is not None:
-                    self._writer.reset(f"{round_prefix}success_")
+                    self._writer.reset(f"{round_prefix}{_SUCCESS_SUFFIX}")
                 if self._fail_writer is not None:
-                    self._fail_writer.reset(f"{round_prefix}fail_")
+                    self._fail_writer.reset(f"{round_prefix}{_FAIL_SUFFIX}")
 
                 cooldown = _ROUND_COOLDOWN * random.uniform(
                     _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
@@ -523,10 +565,10 @@ class SiteCrawler:
                 raw_body = raw_markdown.strip() or crawl_result.html.strip() or "(no response)"
                 fail_page = ExtractedPage(
                     url=crawl_result.url,
-                    title=f"FAILED — {crawl_result.error or 'Unknown error'}",
+                    title=f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}",
                     markdown=(
-                        f"**Error:** {crawl_result.error or 'Unknown error'}\n\n"
-                        f"**Raw response:**\n\n{raw_body}"
+                        f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}\n\n"
+                        f"{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
                     ),
                 )
                 self._fail_writer.add(fail_page)
@@ -691,10 +733,10 @@ class SiteCrawler:
                 fail_pages.append(
                     ExtractedPage(
                         url=r.url,
-                        title=f"FAILED \u2014 {r.error or 'Unknown error'}",
+                        title=f"{_FAILED_TITLE_PREFIX} {r.error or _UNKNOWN_ERROR_MSG}",
                         markdown=(
-                            f"**Error:** {r.error or 'Unknown error'}\n\n"
-                            f"**Raw response:**\n\n{raw_body}"
+                            f"{_ERROR_SECTION_HEADER} {r.error or _UNKNOWN_ERROR_MSG}\n\n"
+                            f"{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
                         ),
                     )
                 )
@@ -762,10 +804,10 @@ class SiteCrawler:
                 fail_pages.append(
                     ExtractedPage(
                         url=r.url,
-                        title=f"FAILED — {r.error or 'Unknown error'}",
+                        title=f"{_FAILED_TITLE_PREFIX} {r.error or _UNKNOWN_ERROR_MSG}",
                         markdown=(
-                            f"**Error:** {r.error or 'Unknown error'}\n\n"
-                            f"**Raw response:**\n\n{raw_body}"
+                            f"{_ERROR_SECTION_HEADER} {r.error or _UNKNOWN_ERROR_MSG}\n\n"
+                            f"{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
                         ),
                     )
                 )
@@ -916,13 +958,13 @@ class SiteCrawler:
         from urllib.parse import urljoin, urlparse
 
         links: list[str] = []
-        for match in re.finditer(r'href=["\']([^"\']+)["\']', result.html):
+        for match in _HREF_RE.finditer(result.html):
             href = match.group(1)
             # Skip unresolved template placeholders (e.g. ${var}, {{var}}, {%var%})
-            if re.search(r"\$\{|%7B%7B|\{\{|\{%", href):
+            if _TEMPLATE_PLACEHOLDER_RE.search(href):
                 continue
             absolute = urljoin(base_url, href)
-            if absolute.startswith(("http://", "https://")):
+            if absolute.startswith(_URL_SCHEMES):
                 # Strip fragments
                 absolute = absolute.split("#")[0]
                 # Skip boilerplate browser-upgrade links
@@ -943,7 +985,7 @@ class SiteCrawler:
 
     def _create_output_dir(self) -> Path:
         """Create and return a timestamped output directory."""
-        folder_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        folder_name = datetime.now().strftime(_TIMESTAMP_FORMAT)
         output_dir = self._output_base / folder_name
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir

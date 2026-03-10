@@ -55,6 +55,11 @@ _ACTIVITY_ICONS: dict[str, str] = {
 # Fallback icon when no keyword matches.
 _ACTIVITY_ICON_DEFAULT = "⚙️"
 
+# Separator string used to join header parts (e.g. "Round 1 · Page 5 / 10")
+_HEADER_SEPARATOR = " · "
+# Minimum spider column width percentage to keep it visible at 0% progress
+_SPIDER_MIN_WIDTH_PCT = 2
+
 # ---------------------------------------------------------------------------
 # Color palettes for light and dark themes
 # ---------------------------------------------------------------------------
@@ -397,7 +402,7 @@ class _ProgressWidget:
         if self.round_label:
             header_parts.append(self.round_label)
         header_parts.append(f"Page {self.current} / {self.total}")
-        header = " · ".join(header_parts)
+        header = _HEADER_SEPARATOR.join(header_parts)
 
         # --- Activity row ---
         activity_html = ""
@@ -627,7 +632,7 @@ class _ProgressWidget:
         if self.round_label:
             header_parts.append(self.round_label)
         header_parts.append(f"Page {self.current} / {self.total}")
-        header = " \u00b7 ".join(header_parts)
+        header = _HEADER_SEPARATOR.join(header_parts)
 
         # --- Activity row ---
         activity_html = ""
@@ -698,7 +703,7 @@ class _ProgressWidget:
 
         # Spider + thread: use a table so the spider sits at the leading edge
         # of the filled portion, mimicking the VS Code animated spider.
-        spider_pct = max(pct, 2)  # ensure spider column is visible even at 0%
+        spider_pct = max(pct, _SPIDER_MIN_WIDTH_PCT)  # ensure spider column is visible even at 0%
         # Spider web SVG (inline, overlaps bar via negative margin)
         web_svg = (
             f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
