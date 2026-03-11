@@ -413,3 +413,139 @@ class TestIsBlocked:
 
     def test_content_length_without_chrome_empty_html(self):
         assert SiteCrawler._content_length_without_chrome("") == 0
+
+    def test_fallback_run_config_disables_scan_and_stealth(self):
+        """Fallback config omits scan_full_page and stealth run-flags."""
+        from crawl4ai import CrawlerRunConfig
+
+        config = CrawlerConfig(urls=["https://example.com"], stealth=True)
+        page_config = PageConfig(scan_full_page=True, timeout=20, js_code="alert(1)")
+        crawler = SiteCrawler(config, page_config)
+
+        fallback = crawler._build_fallback_run_config(CrawlerRunConfig)
+        assert fallback.scan_full_page is False
+        assert fallback.magic is False
+        assert fallback.simulate_user is False
+        assert fallback.override_navigator is False
+        # Non-stealth settings are preserved
+        assert fallback.page_timeout == 20000
+        assert fallback.js_code == ["alert(1)"]
+
+    def test_fallback_preserves_same_base_settings_as_primary(self):
+        """Fallback config carries the same excluded_tags, timeout, js_code, wait_for."""
+        from crawl4ai import CrawlerRunConfig
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        page_config = PageConfig(
+            exclude_tags="nav, form",
+            wait_for=5,
+            timeout=30,
+            js_code="window.scrollTo(0,0)",
+        )
+        crawler = SiteCrawler(config, page_config)
+
+        primary = crawler._build_run_config(CrawlerRunConfig)
+        fallback = crawler._build_fallback_run_config(CrawlerRunConfig)
+
+        assert fallback.excluded_tags == primary.excluded_tags
+        assert fallback.page_timeout == primary.page_timeout
+        assert fallback.js_code == primary.js_code
+        assert fallback.delay_before_return_html == primary.delay_before_return_html
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_retry_rounds_use_fallback_run_config(self, mock_crawler_cls, tmp_path: Path):
+        """Retry rounds pass the fallback (reduced) run config, not the primary."""
+        # Round 1: page fails; Retry round 2: page succeeds
+        fail_result = _make_mock_result("https://example.com")
+        fail_result.success = False
+        fail_result.error = ""
+        fail_result.markdown = ""
+        fail_result.html = ""
+
+        ok_result = _make_mock_result("https://example.com")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[fail_result, ok_result])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=1)
+        page_config = PageConfig(scan_full_page=True)
+        crawler = SiteCrawler(config, page_config, output_base=tmp_path)
+        crawler.crawl()
+
+        # arun called twice: once in round 1, once in retry
+        assert mock_instance.arun.call_count == 2
+
+        # Round 1 config should have scan_full_page=True
+        round1_cfg = mock_instance.arun.call_args_list[0][1].get("config")
+        assert round1_cfg.scan_full_page is True
+
+        # Retry config should have scan_full_page=False (fallback)
+        retry_cfg = mock_instance.arun.call_args_list[1][1].get("config")
+        assert retry_cfg.scan_full_page is False
+        assert retry_cfg.magic is False
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_error_includes_status_code(self, mock_crawler_cls, tmp_path: Path):
+        """When a page fails, the error message includes the HTTP status code."""
+        fail_result = _make_mock_result("https://example.com")
+        fail_result.success = False
+        fail_result.error = ""
+        fail_result.status_code = 403
+        fail_result.markdown = ""
+        fail_result.html = ""
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=fail_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        assert "HTTP 403" in (results[0].error or "")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_error_includes_exception_type(self, mock_crawler_cls, tmp_path: Path):
+        """When arun raises, the error includes the exception class name."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=RuntimeError("Execution context was destroyed"))
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        assert results[0].success is False
+        assert "RuntimeError" in (results[0].error or "")
+        assert "Execution context was destroyed" in (results[0].error or "")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_failed_result_with_empty_error_shows_unknown(self, mock_crawler_cls, tmp_path: Path):
+        """A failed result with no error attribute shows 'Unknown error'."""
+        fail_result = _make_mock_result("https://example.com")
+        fail_result.success = False
+        fail_result.error = None
+        fail_result.error_message = None
+        fail_result.status_code = 0
+        fail_result.markdown = ""
+        fail_result.html = ""
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=fail_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        assert "Unknown error" in (results[0].error or "")
+        assert "HTTP 0" in (results[0].error or "")

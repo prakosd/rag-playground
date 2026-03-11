@@ -294,6 +294,7 @@ class SiteCrawler:
             browser_kwargs["headers"] = dict(self.config.headers)
         browser_cfg = BrowserConfig(**browser_kwargs)
         run_cfg = self._build_run_config(CrawlerRunConfig)
+        fallback_run_cfg = self._build_fallback_run_config(CrawlerRunConfig)
 
         # --- Round 1: full crawl with link discovery ---
         round_prefix = f"{_ROUND_PREFIX}1_"
@@ -358,7 +359,7 @@ class SiteCrawler:
                 round_results = await self._crawl_urls_async(
                     urls=failed_urls,
                     crawler=crawler,
-                    run_cfg=run_cfg,
+                    run_cfg=fallback_run_cfg,
                     discover_links=True,
                     is_retry=True,
                     round_prefix=round_prefix,
@@ -487,12 +488,24 @@ class SiteCrawler:
                 if redirected and not self._url_allowed(final_url):
                     continue
 
+                error_msg: str | None = None
+                if not result.success:
+                    raw_err = (
+                        getattr(result, "error_message", None)
+                        or getattr(result, "error", None)
+                        or ""
+                    )
+                    status = getattr(result, "status_code", None)
+                    error_msg = str(raw_err) if raw_err else _UNKNOWN_ERROR_MSG
+                    if status is not None:
+                        error_msg += f" (HTTP {status})"
+
                 crawl_result = CrawlResult(
                     url=final_url,
                     html=result.html or "",
                     markdown=result.markdown or "",
                     success=result.success,
-                    error=None if result.success else str(getattr(result, "error", "")),
+                    error=error_msg,
                     redirected_url=final_url if redirected else None,
                 )
             except Exception as exc:
@@ -501,7 +514,7 @@ class SiteCrawler:
                     html="",
                     markdown="",
                     success=False,
-                    error=str(exc),
+                    error=f"{type(exc).__name__}: {exc}",
                 )
 
             # Detect WAF blocks (Incapsula etc. return HTTP 200 with block HTML).
@@ -859,6 +872,32 @@ class SiteCrawler:
             kwargs["simulate_user"] = True
             kwargs["override_navigator"] = True
             kwargs["magic"] = True
+
+        return run_config_cls(**kwargs)
+
+    def _build_fallback_run_config(self, run_config_cls: type) -> object:
+        """Build a reduced CrawlerRunConfig for retry rounds.
+
+        Disables ``scan_full_page`` and stealth run-flags (``magic``,
+        ``simulate_user``, ``override_navigator``) to avoid browser
+        context destruction on pages that perform JS redirects during
+        page evaluation.  All other settings are preserved.
+        """
+        kwargs: dict = {}
+
+        if self.page_config.exclude_tags:
+            kwargs["excluded_tags"] = self.page_config.exclude_tags
+
+        if self.page_config.wait_for:
+            kwargs["delay_before_return_html"] = self.page_config.wait_for
+
+        if self.page_config.js_code:
+            kwargs["js_code"] = self.page_config.js_code
+
+        if self.page_config.timeout:
+            kwargs["page_timeout"] = int(self.page_config.timeout * 1000)
+
+        # scan_full_page and stealth run-flags intentionally omitted
 
         return run_config_cls(**kwargs)
 
