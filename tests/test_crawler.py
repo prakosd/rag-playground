@@ -76,6 +76,9 @@ class TestSiteCrawler:
                 '<a href="/image.png">PNG</a>'
                 '<a href="/font.woff2">WOFF2</a>'
                 '<a href="/doc.pdf">PDF</a>'
+                '<a href="/DependencyHandler.axd?s=abc&amp;t=Css">AXD</a>'
+                '<a href="/Service.asmx">ASMX</a>'
+                '<a href="/Handler.ashx?id=1">ASHX</a>'
             ),
             success=True,
         )
@@ -87,6 +90,9 @@ class TestSiteCrawler:
         assert "https://example.com/image.png" not in links
         assert "https://example.com/font.woff2" not in links
         assert "https://example.com/doc.pdf" not in links
+        assert not any("DependencyHandler.axd" in link for link in links)
+        assert "https://example.com/Service.asmx" not in links
+        assert not any("Handler.ashx" in link for link in links)
 
     def test_extract_links_skips_template_placeholders(self):
         from crawl4md.config import CrawlResult

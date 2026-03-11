@@ -965,6 +965,9 @@ class SiteCrawler:
             ".json",
             ".rss",
             ".atom",
+            ".axd",
+            ".ashx",
+            ".asmx",
         )
     )
 
