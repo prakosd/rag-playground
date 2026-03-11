@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import warnings
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from crawl4md.config import CrawlResult, PageConfig
-from crawl4md.crawler import SiteCrawler
+from crawl4md.crawler import _OCR_UNAVAILABLE_WARNING, SiteCrawler
 from crawl4md.extractor import ContentExtractor
 
 # ------------------------------------------------------------------
@@ -155,6 +156,8 @@ class TestDownloadPdf:
 
         crawler = SiteCrawler.__new__(SiteCrawler)
         crawler.config = config
+        crawler.page_config = PageConfig(ocr_languages=[])
+        crawler._ocr_warned = False
 
         mock_response = MagicMock()
         mock_response.content = b"fake-pdf-bytes"
@@ -192,6 +195,8 @@ class TestDownloadPdf:
 
         crawler = SiteCrawler.__new__(SiteCrawler)
         crawler.config = config
+        crawler.page_config = PageConfig(ocr_languages=[])
+        crawler._ocr_warned = False
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
@@ -335,3 +340,176 @@ class TestExtractPdfPage:
         page = extractor._extract_pdf_page(result)
         assert page.url == result.url
         assert "Dynamic PDF content" in page.markdown
+
+
+# ------------------------------------------------------------------
+# SiteCrawler._pdf_to_markdown — OCR integration
+# ------------------------------------------------------------------
+
+
+class TestPdfToMarkdownOcr:
+    """Tests for OCR parameter passing in _pdf_to_markdown."""
+
+    def _make_crawler(self, ocr_languages: list[str] | None = None) -> SiteCrawler:
+        crawler = SiteCrawler.__new__(SiteCrawler)
+        crawler.page_config = PageConfig(
+            ocr_languages=ocr_languages if ocr_languages is not None else ["eng", "msa"]
+        )
+        crawler._ocr_warned = False
+        return crawler
+
+    def test_ocr_params_passed_with_default_languages(self):
+        """When ocr_languages is non-empty, use_ocr and ocr_language are passed."""
+        crawler = self._make_crawler(["eng", "msa"])
+        mock_doc = MagicMock()
+
+        with patch(
+            "crawl4md.crawler.pymupdf4llm.to_markdown", return_value="# OCR Result"
+        ) as mock_to_md:
+            result = crawler._pdf_to_markdown(mock_doc)
+
+        mock_to_md.assert_called_once_with(mock_doc, use_ocr=True, ocr_language="eng+msa")
+        assert result == "# OCR Result"
+
+    def test_ocr_params_not_passed_when_empty(self):
+        """When ocr_languages is empty, to_markdown is called without OCR kwargs."""
+        crawler = self._make_crawler([])
+        mock_doc = MagicMock()
+
+        with patch(
+            "crawl4md.crawler.pymupdf4llm.to_markdown", return_value="# Plain Result"
+        ) as mock_to_md:
+            result = crawler._pdf_to_markdown(mock_doc)
+
+        mock_to_md.assert_called_once_with(mock_doc)
+        assert result == "# Plain Result"
+
+    def test_multi_language_joined(self):
+        """Multiple languages are joined with '+' for Tesseract."""
+        crawler = self._make_crawler(["eng", "msa", "chi_sim"])
+        mock_doc = MagicMock()
+
+        with patch(
+            "crawl4md.crawler.pymupdf4llm.to_markdown", return_value="# Multi"
+        ) as mock_to_md:
+            crawler._pdf_to_markdown(mock_doc)
+
+        mock_to_md.assert_called_once_with(mock_doc, use_ocr=True, ocr_language="eng+msa+chi_sim")
+
+    def test_single_language(self):
+        crawler = self._make_crawler(["eng"])
+        mock_doc = MagicMock()
+
+        with patch(
+            "crawl4md.crawler.pymupdf4llm.to_markdown", return_value="# Single"
+        ) as mock_to_md:
+            crawler._pdf_to_markdown(mock_doc)
+
+        mock_to_md.assert_called_once_with(mock_doc, use_ocr=True, ocr_language="eng")
+
+    def test_tesseract_unavailable_warns_and_falls_back(self):
+        """RuntimeError from Tesseract triggers a warning and non-OCR fallback."""
+        crawler = self._make_crawler(["eng", "msa"])
+        mock_doc = MagicMock()
+
+        with (
+            patch(
+                "crawl4md.crawler.pymupdf4llm.to_markdown",
+                side_effect=[RuntimeError("tesseract not found"), "# Fallback"],
+            ) as mock_to_md,
+            warnings.catch_warnings(record=True) as w,
+        ):
+            warnings.simplefilter("always")
+            result = crawler._pdf_to_markdown(mock_doc)
+
+        # First call with OCR, second call without
+        assert mock_to_md.call_count == 2
+        assert mock_to_md.call_args_list[0] == call(mock_doc, use_ocr=True, ocr_language="eng+msa")
+        assert mock_to_md.call_args_list[1] == call(mock_doc)
+        assert result == "# Fallback"
+        assert crawler._ocr_warned is True
+        assert any(_OCR_UNAVAILABLE_WARNING in str(warning.message) for warning in w)
+
+    def test_tesseract_warning_fires_only_once(self):
+        """The OCR-unavailable warning should only fire once per crawler instance."""
+        crawler = self._make_crawler(["eng"])
+        mock_doc = MagicMock()
+
+        with (
+            patch(
+                "crawl4md.crawler.pymupdf4llm.to_markdown",
+                side_effect=[
+                    RuntimeError("no tesseract"),
+                    "# F1",
+                    RuntimeError("no tesseract"),
+                    "# F2",
+                ],
+            ),
+            warnings.catch_warnings(record=True) as w,
+        ):
+            warnings.simplefilter("always")
+            crawler._pdf_to_markdown(mock_doc)
+            crawler._pdf_to_markdown(mock_doc)
+
+        ocr_warnings = [x for x in w if _OCR_UNAVAILABLE_WARNING in str(x.message)]
+        assert len(ocr_warnings) == 1
+
+    def test_type_error_fallback_for_old_pymupdf4llm(self):
+        """TypeError (unknown kwarg) triggers fallback for old pymupdf4llm versions."""
+        crawler = self._make_crawler(["eng"])
+        mock_doc = MagicMock()
+
+        with (
+            patch(
+                "crawl4md.crawler.pymupdf4llm.to_markdown",
+                side_effect=[TypeError("unexpected keyword argument 'use_ocr'"), "# Old Version"],
+            ),
+            warnings.catch_warnings(record=True) as w,
+        ):
+            warnings.simplefilter("always")
+            result = crawler._pdf_to_markdown(mock_doc)
+
+        assert result == "# Old Version"
+        assert crawler._ocr_warned is True
+        assert any(_OCR_UNAVAILABLE_WARNING in str(warning.message) for warning in w)
+
+    def test_file_not_found_fallback(self):
+        """FileNotFoundError (Tesseract binary missing) triggers fallback."""
+        crawler = self._make_crawler(["eng"])
+        mock_doc = MagicMock()
+
+        with patch(
+            "crawl4md.crawler.pymupdf4llm.to_markdown",
+            side_effect=[FileNotFoundError("tesseract"), "# No Binary"],
+        ):
+            result = crawler._pdf_to_markdown(mock_doc)
+
+        assert result == "# No Binary"
+        assert crawler._ocr_warned is True
+
+
+# ------------------------------------------------------------------
+# PageConfig.ocr_languages validation
+# ------------------------------------------------------------------
+
+
+class TestOcrLanguagesConfig:
+    def test_default_value(self):
+        config = PageConfig()
+        assert config.ocr_languages == ["eng", "msa"]
+
+    def test_csv_string_parsed(self):
+        config = PageConfig(ocr_languages="eng, msa, chi_sim")
+        assert config.ocr_languages == ["eng", "msa", "chi_sim"]
+
+    def test_list_input(self):
+        config = PageConfig(ocr_languages=["eng", "fra"])
+        assert config.ocr_languages == ["eng", "fra"]
+
+    def test_empty_list_disables_ocr(self):
+        config = PageConfig(ocr_languages=[])
+        assert config.ocr_languages == []
+
+    def test_empty_string_disables_ocr(self):
+        config = PageConfig(ocr_languages="")
+        assert config.ocr_languages == []

@@ -7,6 +7,7 @@ import concurrent.futures
 import random
 import re
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -157,6 +158,12 @@ _PDF_FALLBACK_THRESHOLD = 50
 
 # Error message assigned when extraction produces empty markdown
 _EMPTY_EXTRACTION_ERROR = "No extractable content"
+# Warning emitted once when Tesseract is not installed and OCR is requested
+_OCR_UNAVAILABLE_WARNING = (
+    "Tesseract OCR is not installed — scanned/image-only PDFs will not be "
+    "extracted. Install Tesseract and the required language packs for OCR "
+    "support, or set ocr_languages=[] to silence this warning."
+)
 
 
 class SiteCrawler:
@@ -187,6 +194,8 @@ class SiteCrawler:
         self._writer = writer
         self._activity_log_size = activity_log_size
         self.content_files: list[Path] = []
+        # Tracks whether the OCR-unavailable warning has already been emitted
+        self._ocr_warned: bool = False
         # Internal writer for failed-page content (symmetrical with _writer)
         self._fail_writer: FileWriter | None = None
         if writer is not None:
@@ -508,7 +517,8 @@ class SiteCrawler:
                 progress.update(crawl_result.url, success=crawl_result.success)
 
                 if crawl_result.success and self._extractor and self._writer:
-                    progress.set_activity("Extracting PDF content")
+                    _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+                    progress.set_activity(f"Extracting PDF content{_ocr_tag}")
                     page = self._extractor._extract_page(crawl_result)
                     if page.markdown.strip():
                         self._writer.add(page)
@@ -666,6 +676,8 @@ class SiteCrawler:
                     results[-1] = pdf_result
                     crawl_result = pdf_result
                     if pdf_result.success and self._extractor and self._writer:
+                        _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+                        progress.set_activity(f"Extracting PDF content{_ocr_tag}")
                         page = self._extractor._extract_page(pdf_result)
                         if page.markdown.strip():
                             self._writer.add(page)
@@ -816,7 +828,7 @@ class SiteCrawler:
                 resp.raise_for_status()
 
             doc = pymupdf.open(stream=resp.content, filetype="pdf")
-            md = pymupdf4llm.to_markdown(doc)
+            md = self._pdf_to_markdown(doc)
             doc.close()
 
             return CrawlResult(
@@ -832,6 +844,22 @@ class SiteCrawler:
                 error=f"PDF download failed: {type(exc).__name__}: {exc}",
                 is_pdf=True,
             )
+
+    def _pdf_to_markdown(self, doc: pymupdf.Document) -> str:
+        """Convert a PyMuPDF document to Markdown, with optional OCR."""
+        langs = self.page_config.ocr_languages
+        if not langs:
+            return pymupdf4llm.to_markdown(doc)
+
+        try:
+            return pymupdf4llm.to_markdown(doc, use_ocr=True, ocr_language="+".join(langs))
+        except (RuntimeError, FileNotFoundError, TypeError):
+            # RuntimeError / FileNotFoundError: Tesseract not installed.
+            # TypeError: pymupdf4llm version too old for use_ocr kwarg.
+            if not self._ocr_warned:
+                self._ocr_warned = True
+                warnings.warn(_OCR_UNAVAILABLE_WARNING, stacklevel=3)
+            return pymupdf4llm.to_markdown(doc)
 
     # ------------------------------------------------------------------
     # Result helpers

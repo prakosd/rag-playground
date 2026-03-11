@@ -110,6 +110,7 @@ class PageConfig(BaseModel):
     js_code: list[str] = []
     scan_full_page: bool = True
     scroll_delay: float = 0.4
+    ocr_languages: list[str] = ["eng", "msa"]
 
     @field_validator("js_code", mode="before")
     @classmethod
@@ -120,7 +121,7 @@ class PageConfig(BaseModel):
             return [v] if v else []
         return v
 
-    @field_validator("exclude_tags", "include_only_tags", mode="before")
+    @field_validator("exclude_tags", "include_only_tags", "ocr_languages", mode="before")
     @classmethod
     def parse_tags(cls, v: Any) -> list[str]:
         """Accept a comma-separated string or a list of tag names."""

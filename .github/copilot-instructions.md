@@ -61,7 +61,7 @@ Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jup
 **Constraints:**
 
 - URL filtering: same-domain only (with `www.` stripping), skips boilerplate domains and static asset extensions (excluding `.pdf`), applies `include_only_paths`/`exclude_paths` regex, skips template placeholders (`{{`, `{%`).
-- PDF handling: layered detection — URL extension fast path (`.pdf`) + Content-Type HEAD-request fallback when crawl returns empty content. PDFs are downloaded via httpx (bypassing the browser) and converted to Markdown via pymupdf4llm. `CrawlResult.is_pdf` flag routes extraction through `_extract_pdf_page()` which skips HTML preprocessing.
+- PDF handling: layered detection — URL extension fast path (`.pdf`) + Content-Type HEAD-request fallback when crawl returns empty content. PDFs are downloaded via httpx (bypassing the browser) and converted to Markdown via pymupdf4llm. `CrawlResult.is_pdf` flag routes extraction through `_extract_pdf_page()` which skips HTML preprocessing. OCR for scanned/image-only PDFs is controlled by `PageConfig.ocr_languages` (default `["eng", "msa"]`); empty list disables OCR. Tesseract-not-found errors are caught once per crawl with a warning — OCR silently degrades to plain extraction.
 - WAF detection is two-stage: HTML signature check + post-extraction content-length check.
 - `_ROUND_COOLDOWN` is patched to 0 in tests via autouse fixture in `conftest.py`.
 
