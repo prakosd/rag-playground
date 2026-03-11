@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 import sys
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # Maximum number of recent activities shown in the activity log.
 _MAX_LOG_ENTRIES = 10
@@ -54,6 +56,16 @@ _ACTIVITY_ICONS: dict[str, str] = {
 }
 # Fallback icon when no keyword matches.
 _ACTIVITY_ICON_DEFAULT = "⚙️"
+
+# ---------------------------------------------------------------------------
+# Activity log disk files
+# ---------------------------------------------------------------------------
+# Filename for the human-readable activity log written to the output directory.
+_ACTIVITY_LOG_TXT_FILE = "activity_log.txt"
+# Filename for the machine-readable CSV activity log.
+_ACTIVITY_LOG_CSV_FILE = "activity_log.csv"
+# CSV header row (written once when the file is created).
+_ACTIVITY_LOG_CSV_HEADER = "timestamp,round,activity,duration_seconds"
 
 # Separator string used to join header parts (e.g. "Round 1 · Page 5 / 10")
 _HEADER_SEPARATOR = " · "
@@ -150,6 +162,7 @@ class ProgressReporter:
         prior_fail: int = 0,
         round_label: str = "",
         max_log_entries: int = _MAX_LOG_ENTRIES,
+        log_dir: Path | None = None,
     ) -> None:
         self.total = total
         self.count = 0
@@ -163,6 +176,7 @@ class ProgressReporter:
         self._round_fail = 0
         self._round_label = round_label
         self._max_log_entries = max_log_entries
+        self._log_dir = log_dir
 
         # Activity tracking
         self._current_activity: str = ""
@@ -211,11 +225,42 @@ class ProgressReporter:
         """Close the current activity and append it to the log."""
         if self._current_activity and self._activity_start > 0:
             duration = time.time() - self._activity_start
-            self._activity_log.append((datetime.now(), self._current_activity, duration))
+            ts = datetime.now()
+            self._activity_log.append((ts, self._current_activity, duration))
+            self._append_to_disk(ts, self._current_activity, duration)
             if len(self._activity_log) > self._max_log_entries:
                 self._activity_log = self._activity_log[-self._max_log_entries :]
         self._current_activity = ""
         self._activity_start = 0.0
+
+    def _append_to_disk(self, ts: datetime, label: str, duration: float) -> None:
+        """Append one activity entry to the TXT and CSV log files on disk."""
+        if self._log_dir is None:
+            return
+
+        icon = _ProgressWidget._activity_icon(label)
+        dur_str = _ProgressWidget._fmt_duration(duration)
+        round_part = f" [{self._round_label}]" if self._round_label else ""
+        txt_line = f"[{ts:%H:%M:%S}]{round_part} {icon} {label} ({dur_str})\n"
+
+        txt_path = self._log_dir / _ACTIVITY_LOG_TXT_FILE
+        with txt_path.open("a", encoding="utf-8") as fh:
+            fh.write(txt_line)
+
+        csv_path = self._log_dir / _ACTIVITY_LOG_CSV_FILE
+        write_header = not csv_path.exists() or csv_path.stat().st_size == 0
+        with csv_path.open("a", encoding="utf-8", newline="") as fh:
+            writer = csv.writer(fh)
+            if write_header:
+                writer.writerow(_ACTIVITY_LOG_CSV_HEADER.split(","))
+            writer.writerow(
+                [
+                    ts.isoformat(timespec="seconds"),
+                    self._round_label,
+                    label,
+                    f"{duration:.3f}",
+                ]
+            )
 
     def update_activity_label(self, label: str) -> None:
         """Update the label of the current activity without closing it."""

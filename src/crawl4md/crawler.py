@@ -473,6 +473,7 @@ class SiteCrawler:
             prior_fail=prior_fail,
             round_label=round_label,
             max_log_entries=self._activity_log_size,
+            log_dir=self.output_dir,
         )
 
         consecutive_blocks = 0

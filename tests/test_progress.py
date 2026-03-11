@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import csv
 import time
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from crawl4md.progress import (
+    _ACTIVITY_LOG_CSV_FILE,
+    _ACTIVITY_LOG_CSV_HEADER,
+    _ACTIVITY_LOG_TXT_FILE,
     _DARK_COLORS,
     _LIGHT_COLORS,
     _MAX_LOG_ENTRIES,
@@ -460,6 +465,113 @@ class TestProgressReporter:
         assert "c4md-log-fail" in html
         # Normal entry should NOT have fail class — check first entry is not styled
         assert html.count("c4md-log-fail") == 3  # CSS rules (light + dark) + one entry
+
+
+class TestActivityLogDisk:
+    """Tests for flushing the activity log to disk (TXT + CSV)."""
+
+    def test_activity_log_appends_txt_to_disk(self, tmp_path: Path):
+        """Closing an activity writes a human-readable line to activity_log.txt."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(5, round_label="Round 1/2", log_dir=tmp_path)
+            reporter.set_activity("Crawling https://example.com")
+            time.sleep(0.05)
+            reporter.set_activity("Extracting content")  # closes previous
+
+        txt_path = tmp_path / _ACTIVITY_LOG_TXT_FILE
+        assert txt_path.exists()
+        lines = txt_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        line = lines[0]
+        assert "[Round 1/2]" in line
+        assert "\U0001f310" in line  # 🌐 crawl icon
+        assert "Crawling https://example.com" in line
+        # Duration in parentheses at end
+        assert line.endswith(")")
+
+    def test_activity_log_appends_csv_to_disk(self, tmp_path: Path):
+        """Closing an activity writes a CSV row to activity_log.csv."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(5, round_label="Round 1/2", log_dir=tmp_path)
+            reporter.set_activity("Crawling https://example.com")
+            time.sleep(0.05)
+            reporter.set_activity("Extracting content")  # closes previous
+
+        csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
+        assert csv_path.exists()
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            reader = list(csv.reader(fh))
+        assert len(reader) == 2  # header + 1 data row
+        assert reader[0] == _ACTIVITY_LOG_CSV_HEADER.split(",")
+        row = reader[1]
+        assert row[1] == "Round 1/2"
+        assert row[2] == "Crawling https://example.com"
+        assert float(row[3]) >= 0.0  # duration is a valid float
+
+    def test_csv_header_written_once(self, tmp_path: Path):
+        """Multiple activities produce only one CSV header row."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10, log_dir=tmp_path)
+            for i in range(4):
+                reporter.set_activity(f"Activity {i}")
+            reporter._close_activity()  # close the last one
+
+        csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            reader = list(csv.reader(fh))
+        # 1 header + 4 data rows
+        assert len(reader) == 5
+        header_rows = [r for r in reader if r == _ACTIVITY_LOG_CSV_HEADER.split(",")]
+        assert len(header_rows) == 1
+
+    def test_disk_log_unlimited(self, tmp_path: Path):
+        """Disk logs capture all activities even when in-memory list is capped."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(20, max_log_entries=3, log_dir=tmp_path)
+            for i in range(5):
+                reporter.set_activity(f"Activity {i}")
+            reporter._close_activity()
+
+        # In-memory log is capped at 3
+        assert len(reporter._activity_log) == 3
+
+        # Disk has all 5
+        txt_path = tmp_path / _ACTIVITY_LOG_TXT_FILE
+        txt_lines = txt_path.read_text(encoding="utf-8").splitlines()
+        assert len(txt_lines) == 5
+
+        csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            reader = list(csv.reader(fh))
+        assert len(reader) == 6  # 1 header + 5 data rows
+
+    def test_no_files_when_log_dir_none(self, tmp_path: Path):
+        """Default (log_dir=None) creates no disk files."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(5)
+            reporter.set_activity("Crawling something")
+            time.sleep(0.01)
+            reporter.set_activity("Extracting")
+            reporter._close_activity()
+
+        # No activity log files anywhere
+        assert not (tmp_path / _ACTIVITY_LOG_TXT_FILE).exists()
+        assert not (tmp_path / _ACTIVITY_LOG_CSV_FILE).exists()
+
+    def test_csv_escapes_commas_in_labels(self, tmp_path: Path):
+        """Labels containing commas are properly CSV-escaped."""
+        label = "Crawling https://example.com/a,b,c"
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(5, log_dir=tmp_path)
+            reporter.set_activity(label)
+            time.sleep(0.01)
+            reporter._close_activity()
+
+        csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            reader = list(csv.reader(fh))
+        assert len(reader) == 2
+        assert reader[1][2] == label  # csv.reader correctly unescapes
 
 
 class TestInNotebook:
