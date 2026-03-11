@@ -1085,10 +1085,15 @@ class SiteCrawler:
         from urllib.parse import urlparse
 
         parsed = urlparse(url)
+        netloc = parsed.netloc.lower()
+        bare_netloc = netloc[4:] if netloc.startswith("www.") else netloc
 
         # Restrict to the same base domain(s) as the seed URLs
+        # Always strip www. from both sides — domain matching is www-insensitive
         if self._allowed_domains and not any(
-            parsed.netloc == d or parsed.netloc.endswith("." + d) for d in self._allowed_domains
+            bare_netloc == bare_d or bare_netloc.endswith("." + bare_d)
+            for d in self._allowed_domains
+            for bare_d in (d[4:] if d.startswith("www.") else d,)
         ):
             return False
 
