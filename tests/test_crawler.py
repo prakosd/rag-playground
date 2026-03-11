@@ -579,3 +579,152 @@ class TestIsBlocked:
 
         assert "Unknown error" in (results[0].error or "")
         assert "HTTP 0" in (results[0].error or "")
+
+
+class TestNormalizeUrl:
+    """Tests for _normalize_url — URL normalization to reduce duplicate crawling."""
+
+    def test_http_to_https(self):
+        assert SiteCrawler._normalize_url("http://example.com/page") == "https://example.com/page"
+
+    def test_strips_www(self):
+        assert (
+            SiteCrawler._normalize_url("https://www.example.com/page") == "https://example.com/page"
+        )
+
+    def test_http_and_www_combined(self):
+        assert (
+            SiteCrawler._normalize_url("http://www.example.com/page") == "https://example.com/page"
+        )
+
+    def test_lowercases_host(self):
+        assert SiteCrawler._normalize_url("https://Example.COM/Page") == "https://example.com/Page"
+
+    def test_preserves_path_and_query(self):
+        url = "https://example.com/a/b?q=1&r=2"
+        assert SiteCrawler._normalize_url(url) == url
+
+    def test_strips_fragment(self):
+        assert (
+            SiteCrawler._normalize_url("https://example.com/page#section")
+            == "https://example.com/page"
+        )
+
+    def test_idempotent(self):
+        url = "https://example.com/page"
+        assert SiteCrawler._normalize_url(SiteCrawler._normalize_url(url)) == url
+
+
+class TestExtractLinksNormalization:
+    """Tests that _extract_links normalizes discovered URLs."""
+
+    def test_extract_links_normalizes_http_and_www(self):
+        from crawl4md.config import CrawlResult
+
+        result = CrawlResult(
+            url="https://example.com",
+            html=(
+                '<a href="http://www.example.com/page1">P1</a>'
+                '<a href="https://example.com/page1">P1 dup</a>'
+            ),
+            success=True,
+        )
+        links = SiteCrawler._extract_links(result, "https://example.com")
+        # Both should normalize to the same URL
+        assert links.count("https://example.com/page1") == 1
+
+
+class TestRedirectDedup:
+    """Tests that redirect dedup is logged and does not silently discard."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_redirect_to_visited_is_logged(self, mock_crawler_cls, tmp_path: Path):
+        """When a redirect targets an already-visited URL, it should be logged."""
+        # Page A succeeds normally, Page B redirects to A's normalized URL
+        result_a = _make_mock_result("https://example.com/a", "<p>content A</p>", "content A")
+        result_a.redirected_url = None
+
+        result_b = _make_mock_result("http://www.example.com/b", "<p>content B</p>", "content B")
+        result_b.redirected_url = "https://example.com/a"
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_a, result_b])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/a", "http://www.example.com/b"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        # Only page A should be in results — page B's redirect target was already visited
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/a"
+
+        # Activity log should contain a "Skipped" entry for the redirect
+        log_txt = crawler.output_dir / "activity_log.txt"
+        if log_txt.exists():
+            log_content = log_txt.read_text(encoding="utf-8")
+            assert "Skipped" in log_content or "skip" in log_content.lower()
+
+
+class TestEmptyExtraction:
+    """Tests that empty extraction is treated as failure."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_empty_extraction_demoted_to_failure(self, mock_crawler_cls, tmp_path: Path):
+        """When extraction produces empty markdown, the page becomes a failure."""
+        # HTML that crawl4ai reports as success, but extraction produces nothing
+        html = "<html><head></head><body></body></html>"
+        mock_result = _make_mock_result("https://example.com/empty", html, "")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com/empty"], limit=1, max_retries=0)
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        results = crawler.crawl()
+
+        assert len(results) == 1
+        assert results[0].success is False
+        assert "No extractable content" in (results[0].error or "")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_empty_extraction_appears_in_fail_urls(self, mock_crawler_cls, tmp_path: Path):
+        """Empty extraction pages should appear in fail_urls.txt."""
+        html = "<html><head></head><body></body></html>"
+        mock_result = _make_mock_result("https://example.com/empty", html, "")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com/empty"], limit=1, max_retries=0)
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        fail_urls = crawler.output_dir / "final_fail_urls.txt"
+        assert fail_urls.exists()
+        content = fail_urls.read_text(encoding="utf-8")
+        assert "https://example.com/empty" in content

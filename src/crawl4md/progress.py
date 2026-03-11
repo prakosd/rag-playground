@@ -48,6 +48,8 @@ _LOG_LABEL_TRUNC = 67
 # ---------------------------------------------------------------------------
 _ACTIVITY_ICONS: dict[str, str] = {
     "failed": "❌",
+    "skip": "⏭️",
+    "empty extraction": "📭",
     "crawl": "🌐",
     "extract": "📝",
     "flush": "💾",

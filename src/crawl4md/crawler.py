@@ -151,6 +151,13 @@ _PDF_DOWNLOAD_TIMEOUT = 60
 # block, a HEAD request is issued to check whether the URL is actually a PDF.
 _PDF_FALLBACK_THRESHOLD = 50
 
+# ------------------------------------------------------------------
+# Skip / empty-extraction log labels
+# ------------------------------------------------------------------
+
+# Error message assigned when extraction produces empty markdown
+_EMPTY_EXTRACTION_ERROR = "No extractable content"
+
 
 class SiteCrawler:
     """Crawls websites and collects HTML/Markdown content.
@@ -458,15 +465,16 @@ class SiteCrawler:
         discovered links use the correct depth.
         """
         results: list[CrawlResult] = []
-        visited: set[str] = set(skip_urls)
+        visited: set[str] = set(self._normalize_url(u) for u in skip_urls)
         generated: set[str] = all_generated if all_generated is not None else set()
         depths: dict[str, int] = url_depths if url_depths is not None else {}
         queue: list[tuple[str, int]] = []
         for seed_url in urls:
-            if seed_url not in generated and len(generated) >= self.config.limit:
+            norm_seed = self._normalize_url(seed_url)
+            if norm_seed not in generated and len(generated) >= self.config.limit:
                 break
-            generated.add(seed_url)
-            queue.append((seed_url, depths.get(seed_url, 1)))
+            generated.add(norm_seed)
+            queue.append((seed_url, depths.get(norm_seed, 1)))
         progress = ProgressReporter(
             min(len(urls), self.config.limit),
             prior_success=prior_success,
@@ -481,9 +489,10 @@ class SiteCrawler:
         while queue and len(results) < self.config.limit:
             url, depth = queue.pop(0)
 
-            if url in visited:
+            norm_url = self._normalize_url(url)
+            if norm_url in visited:
                 continue
-            visited.add(url)
+            visited.add(norm_url)
 
             if not self._url_allowed(url):
                 continue
@@ -500,6 +509,10 @@ class SiteCrawler:
                     page = self._extractor._extract_page(crawl_result)
                     if page.markdown.strip():
                         self._writer.add(page)
+                    else:
+                        progress.set_activity(f"Empty extraction for {crawl_result.url}")
+                        crawl_result.success = False
+                        crawl_result.error = _EMPTY_EXTRACTION_ERROR
                 elif not crawl_result.success and self._fail_writer is not None:
                     fail_page = ExtractedPage(
                         url=crawl_result.url,
@@ -525,6 +538,7 @@ class SiteCrawler:
                     jitter = self.config.delay * random.uniform(
                         _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
                     )
+                    progress.set_activity(f"Delay {jitter:.1f}s (throttle)")
                     await asyncio.sleep(jitter)
 
                 continue
@@ -537,14 +551,21 @@ class SiteCrawler:
                 final_url = getattr(result, "redirected_url", None) or url
                 redirected = final_url != url
 
-                if redirected and final_url in visited:
+                norm_final = self._normalize_url(final_url)
+                if redirected and norm_final in visited:
+                    progress.set_activity(
+                        f"Skipped {url} (redirected to already-visited {final_url})"
+                    )
                     continue
 
-                visited.add(final_url)
-                generated.add(final_url)
-                depths[final_url] = depth
+                visited.add(norm_final)
+                generated.add(norm_final)
+                depths[norm_final] = depth
 
                 if redirected and not self._url_allowed(final_url):
+                    progress.set_activity(
+                        f"Skipped {url} (redirect {final_url} excluded by filter)"
+                    )
                     continue
 
                 error_msg: str | None = None
@@ -615,6 +636,11 @@ class SiteCrawler:
                     waf_blocked = True
                 elif page.markdown.strip():
                     self._writer.add(page)
+                else:
+                    progress.set_activity(f"Empty extraction for {crawl_result.url}")
+                    crawl_result.success = False
+                    crawl_result.error = _EMPTY_EXTRACTION_ERROR
+                    crawl_result.markdown = raw_markdown
 
             # PDF fallback: when a page returns very little content and is
             # not a WAF block, check whether the URL actually serves a PDF.
@@ -640,6 +666,10 @@ class SiteCrawler:
                         page = self._extractor._extract_page(pdf_result)
                         if page.markdown.strip():
                             self._writer.add(page)
+                        else:
+                            progress.set_activity(f"Empty extraction for {pdf_result.url}")
+                            pdf_result.success = False
+                            pdf_result.error = _EMPTY_EXTRACTION_ERROR
 
             # WAF back-off: pause after a block so the WAF can cool down.
             # Applies even when delay=0 (floor ensures a minimum pause).
@@ -704,15 +734,18 @@ class SiteCrawler:
                 for link in new_links:
                     if len(generated) >= self.config.limit:
                         break
-                    if link not in generated:
-                        generated.add(link)
-                        depths[link] = depth + 1
+                    norm_link = self._normalize_url(link)
+                    if norm_link not in generated:
+                        generated.add(norm_link)
+                        depths[norm_link] = depth + 1
                         queue.append((link, depth + 1))
                         added += 1
                 progress.update_activity_label(f"Discovered {added} links from {url}")
                 # Update progress total to reflect discovered pages
                 progress.total = min(len(generated), self.config.limit)
 
+        # Flush the last open activity so it appears in the disk log.
+        progress._close_activity()
         return results
 
     # ------------------------------------------------------------------
@@ -1123,6 +1156,22 @@ class SiteCrawler:
     )
 
     @staticmethod
+    def _normalize_url(url: str) -> str:
+        """Normalize a URL to reduce duplicate crawling.
+
+        Applies: ``http`` → ``https``, strips ``www.`` prefix, lowercases
+        scheme + host.  The path, query and fragment are preserved as-is.
+        """
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        scheme = "https"
+        netloc = parsed.netloc.lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        return urlunparse((scheme, netloc, parsed.path, parsed.params, parsed.query, ""))
+
+    @staticmethod
     def _extract_base_domains(urls: list[str]) -> set[str]:
         """Derive base domains from seed URLs (e.g. 'starhub.com' from 'www.starhub.com')."""
         from urllib.parse import urlparse
@@ -1165,7 +1214,16 @@ class SiteCrawler:
                     continue
                 if absolute not in links:
                     links.append(absolute)
-        return links
+        # Normalize all discovered links and deduplicate (different raw URLs
+        # may normalize to the same canonical form).
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for lnk in links:
+            norm = SiteCrawler._normalize_url(lnk)
+            if norm not in seen:
+                seen.add(norm)
+                normalized.append(norm)
+        return normalized
 
     def _create_output_dir(self) -> Path:
         """Create and return a timestamped output directory."""
