@@ -855,6 +855,8 @@ class SiteCrawler:
         if self.page_config.exclude_tags:
             kwargs["excluded_tags"] = self.page_config.exclude_tags
 
+        kwargs["wait_until"] = self.page_config.wait_until
+
         if self.page_config.wait_for:
             kwargs["delay_before_return_html"] = self.page_config.wait_for
 
@@ -887,6 +889,8 @@ class SiteCrawler:
 
         if self.page_config.exclude_tags:
             kwargs["excluded_tags"] = self.page_config.exclude_tags
+
+        kwargs["wait_until"] = self.page_config.wait_until
 
         if self.page_config.wait_for:
             kwargs["delay_before_return_html"] = self.page_config.wait_for

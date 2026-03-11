@@ -437,13 +437,35 @@ class TestIsBlocked:
         assert fallback.page_timeout == 20000
         assert fallback.js_code == ["alert(1)"]
 
+    def test_run_config_passes_wait_until(self):
+        """wait_until is forwarded to CrawlerRunConfig."""
+        from crawl4ai import CrawlerRunConfig
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        page_config = PageConfig(wait_until="networkidle")
+        crawler = SiteCrawler(config, page_config)
+
+        run_cfg = crawler._build_run_config(CrawlerRunConfig)
+        assert run_cfg.wait_until == "networkidle"
+
+    def test_run_config_default_wait_until(self):
+        """Default wait_until is networkidle."""
+        from crawl4ai import CrawlerRunConfig
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config)
+
+        run_cfg = crawler._build_run_config(CrawlerRunConfig)
+        assert run_cfg.wait_until == "networkidle"
+
     def test_fallback_preserves_same_base_settings_as_primary(self):
-        """Fallback config carries the same excluded_tags, timeout, js_code, wait_for."""
+        """Fallback config carries the same excluded_tags, timeout, js_code, wait_for, wait_until."""
         from crawl4ai import CrawlerRunConfig
 
         config = CrawlerConfig(urls=["https://example.com"])
         page_config = PageConfig(
             exclude_tags="nav, form",
+            wait_until="networkidle",
             wait_for=5,
             timeout=30,
             js_code="window.scrollTo(0,0)",
@@ -457,6 +479,7 @@ class TestIsBlocked:
         assert fallback.page_timeout == primary.page_timeout
         assert fallback.js_code == primary.js_code
         assert fallback.delay_before_return_html == primary.delay_before_return_html
+        assert fallback.wait_until == primary.wait_until
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_rounds_use_fallback_run_config(self, mock_crawler_cls, tmp_path: Path):

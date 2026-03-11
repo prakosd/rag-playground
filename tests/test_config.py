@@ -84,12 +84,22 @@ class TestPageConfig:
         cfg = PageConfig()
         assert cfg.exclude_tags == ["nav", "script", "form", "style"]
         assert cfg.include_only_tags == []
+        assert cfg.wait_until == "networkidle"
         assert cfg.wait_for is None
         assert cfg.timeout == 30
         assert cfg.max_file_size_mb == 15.0
         assert cfg.extract_main_content is True
         assert cfg.scan_full_page is True
         assert cfg.scroll_delay == 0.4
+
+    def test_wait_until_accepts_valid_values(self):
+        for value in ("domcontentloaded", "networkidle", "load", "commit"):
+            cfg = PageConfig(wait_until=value)
+            assert cfg.wait_until == value
+
+    def test_wait_until_rejects_invalid_value(self):
+        with pytest.raises(ValueError):
+            PageConfig(wait_until="invalid")
 
     def test_scroll_delay_negative_rejected(self):
         with pytest.raises(ValueError, match="non-negative"):

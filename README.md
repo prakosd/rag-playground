@@ -95,7 +95,8 @@ SiteCrawler.crawl()
 | `extract_main_content` | `bool` | `True` | `True` = trafilatura (main content only), `False` = markdownify (full HTML) |
 | `exclude_tags` | `list[str]` | `["nav", "script", "form", "style"]` | HTML tags to remove before extraction |
 | `include_only_tags` | `list[str]` | `[]` | Keep only these HTML tags (mutually exclusive with `exclude_tags`) |
-| `wait_for` | `float \| None` | `None` | Seconds to wait after page load (for JS-heavy sites) |
+| `wait_until` | `str` | `"networkidle"` | When to consider the page loaded: `"domcontentloaded"`, `"networkidle"`, `"load"`, or `"commit"` |
+| `wait_for` | `float \| None` | `None` | Extra delay (seconds) after page load before extracting content — gives slow JS time to render |
 | `timeout` | `float` | `30` | Page load timeout in seconds |
 | `max_file_size_mb` | `float` | `15.0` | Max size per output file in MB |
 | `output_extension` | `".txt" \| ".md"` | `".txt"` | Output file format |

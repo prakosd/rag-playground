@@ -36,7 +36,7 @@ src/crawl4md/
 Pydantic v2 models — all user-facing parameters are validated here.
 
 - **CrawlerConfig** — fields: `urls`, `exclude_paths`, `include_only_paths`, `limit`, `max_depth`, `flush_interval`, `delay`, `stealth`, `headers`, `max_retries`. Accepts CSV strings for list fields; validates regex patterns.
-- **PageConfig** — fields: `exclude_tags`, `include_only_tags`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`.
+- **PageConfig** — fields: `exclude_tags`, `include_only_tags`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`.
 - **CrawlResult** — per-page output: `url`, `html`, `markdown`, `success`, `error`, `redirected_url`.
 - **ExtractedPage** — post-extraction output: `url`, `title`, `markdown`.
 

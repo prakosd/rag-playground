@@ -85,11 +85,18 @@ class CrawlerConfig(BaseModel):
         return v
 
 
+# Valid values for the Playwright navigation wait condition.
+_WAIT_UNTIL_OPTIONS = Literal["domcontentloaded", "networkidle", "load", "commit"]
+# Default navigation wait condition — waits until no network requests for 500ms.
+_DEFAULT_WAIT_UNTIL: _WAIT_UNTIL_OPTIONS = "networkidle"
+
+
 class PageConfig(BaseModel):
     """Configuration for page extraction."""
 
     exclude_tags: list[str] = _DEFAULT_EXCLUDE_TAGS
     include_only_tags: list[str] = []
+    wait_until: _WAIT_UNTIL_OPTIONS = _DEFAULT_WAIT_UNTIL
     wait_for: float | None = None
     timeout: float = 30
     max_file_size_mb: float = 15.0
