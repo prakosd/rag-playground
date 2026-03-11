@@ -10,7 +10,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 import nest_asyncio
+import pymupdf
+import pymupdf4llm
 from bs4 import BeautifulSoup
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
@@ -133,6 +136,20 @@ _UNKNOWN_ERROR_MSG = "Unknown error"
 _ERROR_SECTION_HEADER = "**Error:**"
 # Markdown label for the raw response section
 _RAW_RESPONSE_HEADER = "**Raw response:**"
+
+# ------------------------------------------------------------------
+# PDF handling constants
+# ------------------------------------------------------------------
+
+# File extension used to detect PDF URLs by path
+_PDF_EXTENSION = ".pdf"
+# Content-Type prefix returned by servers for PDF responses
+_PDF_CONTENT_TYPE = "application/pdf"
+# Timeout (seconds) for httpx PDF downloads and HEAD requests
+_PDF_DOWNLOAD_TIMEOUT = 60
+# When a crawled page yields fewer characters than this and is not a WAF
+# block, a HEAD request is issued to check whether the URL is actually a PDF.
+_PDF_FALLBACK_THRESHOLD = 50
 
 
 class SiteCrawler:
@@ -470,6 +487,47 @@ class SiteCrawler:
             if not self._url_allowed(url):
                 continue
 
+            # Fast path: download PDFs directly (bypass the browser).
+            if self._is_pdf_url(url):
+                progress.set_activity(f"Downloading PDF {url}")
+                crawl_result = await self._download_pdf(url)
+                results.append(crawl_result)
+                progress.update(crawl_result.url, success=crawl_result.success)
+
+                if crawl_result.success and self._extractor and self._writer:
+                    progress.set_activity("Extracting PDF content")
+                    page = self._extractor._extract_page(crawl_result)
+                    if page.markdown.strip():
+                        self._writer.add(page)
+                elif not crawl_result.success and self._fail_writer is not None:
+                    fail_page = ExtractedPage(
+                        url=crawl_result.url,
+                        title=(
+                            f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
+                        ),
+                        markdown=(
+                            f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
+                        ),
+                    )
+                    self._fail_writer.add(fail_page)
+
+                # Flush periodically (same cadence as normal pages)
+                if len(results) % self.config.flush_interval == 0:
+                    if self._writer is not None:
+                        self._writer.flush()
+                    if self._fail_writer is not None:
+                        self._fail_writer.flush()
+                    success, fail = self._split_results(results)
+                    self._save_url_lists(success, fail, round_prefix)
+
+                if self.config.delay > 0:
+                    jitter = self.config.delay * random.uniform(
+                        _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
+                    )
+                    await asyncio.sleep(jitter)
+
+                continue
+
             try:
                 progress.set_activity(f"Crawling {url}")
                 result = await crawler.arun(url=url, config=run_cfg)
@@ -556,6 +614,31 @@ class SiteCrawler:
                     waf_blocked = True
                 elif page.markdown.strip():
                     self._writer.add(page)
+
+            # PDF fallback: when a page returns very little content and is
+            # not a WAF block, check whether the URL actually serves a PDF.
+            # This catches dynamic URLs (e.g. /download?id=123) that return
+            # PDF content without a .pdf extension.
+            if (
+                crawl_result.success
+                and not waf_blocked
+                and not crawl_result.is_pdf
+                and len(crawl_result.markdown.strip()) < _PDF_FALLBACK_THRESHOLD
+                and self._content_length_without_chrome(crawl_result.html) < _PDF_FALLBACK_THRESHOLD
+            ):
+                is_pdf = await self._is_pdf_response(
+                    url, dict(self.config.headers) if self.config.headers else None
+                )
+                if is_pdf:
+                    progress.set_activity(f"Re-downloading as PDF {url}")
+                    pdf_result = await self._download_pdf(url)
+                    # Replace the original result in the list
+                    results[-1] = pdf_result
+                    crawl_result = pdf_result
+                    if pdf_result.success and self._extractor and self._writer:
+                        page = self._extractor._extract_page(pdf_result)
+                        if page.markdown.strip():
+                            self._writer.add(page)
 
             # WAF back-off: pause after a block so the WAF can cool down.
             # Applies even when delay=0 (floor ensures a minimum pause).
@@ -657,6 +740,61 @@ class SiteCrawler:
         for tag in soup.find_all(_CHROME_STRIP_TAGS):
             tag.decompose()
         return len(soup.get_text(separator=" ", strip=True))
+
+    # ------------------------------------------------------------------
+    # PDF handling
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_pdf_url(url: str) -> bool:
+        """Return True if the URL path ends with ``.pdf`` (case-insensitive)."""
+        from urllib.parse import urlparse
+
+        return urlparse(url).path.lower().endswith(_PDF_EXTENSION)
+
+    @staticmethod
+    async def _is_pdf_response(url: str, headers: dict[str, str] | None = None) -> bool:
+        """Issue a HEAD request and return True if Content-Type is PDF."""
+        try:
+            async with httpx.AsyncClient(
+                headers=headers or {},
+                timeout=_PDF_DOWNLOAD_TIMEOUT,
+                follow_redirects=True,
+            ) as client:
+                resp = await client.head(url)
+                content_type = resp.headers.get("content-type", "")
+                return content_type.lower().startswith(_PDF_CONTENT_TYPE)
+        except httpx.HTTPError:
+            return False
+
+    async def _download_pdf(self, url: str) -> CrawlResult:
+        """Download a PDF and convert it to Markdown via pymupdf4llm."""
+        try:
+            async with httpx.AsyncClient(
+                headers=dict(self.config.headers) if self.config.headers else {},
+                timeout=_PDF_DOWNLOAD_TIMEOUT,
+                follow_redirects=True,
+            ) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+
+            doc = pymupdf.open(stream=resp.content, filetype="pdf")
+            md = pymupdf4llm.to_markdown(doc)
+            doc.close()
+
+            return CrawlResult(
+                url=url,
+                markdown=md,
+                success=True,
+                is_pdf=True,
+            )
+        except Exception as exc:
+            return CrawlResult(
+                url=url,
+                success=False,
+                error=f"PDF download failed: {type(exc).__name__}: {exc}",
+                is_pdf=True,
+            )
 
     # ------------------------------------------------------------------
     # Result helpers
@@ -959,7 +1097,6 @@ class SiteCrawler:
             ".mov",
             ".webm",
             ".ogg",
-            ".pdf",
             ".zip",
             ".gz",
             ".tar",

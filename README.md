@@ -5,6 +5,7 @@ A Python library for crawling websites and extracting their content as Markdown-
 ## Features
 
 - **Synchronous API** — no `async`/`await` needed; works seamlessly in Jupyter Notebooks
+- **PDF support** — automatically detects and extracts content from PDF URLs (via URL extension or Content-Type fallback), converting them to Markdown using pymupdf4llm
 - **Smart content extraction** — trafilatura for main content (with automatic fallback to markdownify when coverage is below 15%), plus supplementary section recovery for FAQs, accordions, and product metadata
 - **WAF / bot-detection handling** — two-stage detection (HTML block signatures + post-extraction content-length check) with automatic retry rounds and cooldown between rounds
 - **Size-limited output files** — pages are never split across files; oversized pages get their own file

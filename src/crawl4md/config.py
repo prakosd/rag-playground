@@ -164,6 +164,7 @@ class CrawlResult(BaseModel):
     success: bool = True
     error: str | None = None
     redirected_url: str | None = None
+    is_pdf: bool = False
 
 
 class ExtractedPage(BaseModel):

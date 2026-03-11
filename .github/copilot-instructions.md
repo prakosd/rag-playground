@@ -37,7 +37,7 @@ Pydantic v2 models — all user-facing parameters are validated here.
 
 - **CrawlerConfig** — fields: `urls`, `exclude_paths`, `include_only_paths`, `limit`, `max_depth`, `flush_interval`, `delay`, `stealth`, `headers`, `max_retries`. Accepts CSV strings for list fields; validates regex patterns.
 - **PageConfig** — fields: `exclude_tags`, `include_only_tags`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`.
-- **CrawlResult** — per-page output: `url`, `html`, `markdown`, `success`, `error`, `redirected_url`.
+- **CrawlResult** — per-page output: `url`, `html`, `markdown`, `success`, `error`, `redirected_url`, `is_pdf`.
 - **ExtractedPage** — post-extraction output: `url`, `title`, `markdown`.
 
 **Constraints:**
@@ -60,13 +60,14 @@ Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jup
 
 **Constraints:**
 
-- URL filtering: same-domain only (with `www.` stripping), skips boilerplate domains and static asset extensions, applies `include_only_paths`/`exclude_paths` regex, skips template placeholders (`{{`, `{%`).
+- URL filtering: same-domain only (with `www.` stripping), skips boilerplate domains and static asset extensions (excluding `.pdf`), applies `include_only_paths`/`exclude_paths` regex, skips template placeholders (`{{`, `{%`).
+- PDF handling: layered detection — URL extension fast path (`.pdf`) + Content-Type HEAD-request fallback when crawl returns empty content. PDFs are downloaded via httpx (bypassing the browser) and converted to Markdown via pymupdf4llm. `CrawlResult.is_pdf` flag routes extraction through `_extract_pdf_page()` which skips HTML preprocessing.
 - WAF detection is two-stage: HTML signature check + post-extraction content-length check.
 - `_ROUND_COOLDOWN` is patched to 0 in tests via autouse fixture in `conftest.py`.
 
 ### ContentExtractor (`extractor.py`)
 
-Converts crawled HTML to Markdown. Two modes: trafilatura (default, `extract_main_content=True`) with markdownify fallback, or markdownify-only (`extract_main_content=False`).
+Converts crawled HTML to Markdown. Three modes: trafilatura (default, `extract_main_content=True`) with markdownify fallback, markdownify-only (`extract_main_content=False`), or PDF mode (`is_pdf=True` — skips HTML preprocessing, derives title from URL filename).
 
 **Pipeline order:** pre-processing → extraction → supplementary section recovery (trafilatura mode) → table fixing → post-processing (`_clean_markdown`) → mdformat validation.
 
@@ -129,7 +130,7 @@ sorted_final_{success|fail}_urls.txt
 
 ## Dependencies
 
-Key deps: crawl4ai, trafilatura, markdownify, pydantic, nest-asyncio, beautifulsoup4, mdformat (with mdformat-gfm). See `pyproject.toml` for the full list.
+Key deps: crawl4ai, trafilatura, markdownify, pydantic, nest-asyncio, beautifulsoup4, mdformat (with mdformat-gfm), pymupdf4llm, httpx. See `pyproject.toml` for the full list.
 
 ## Testing
 

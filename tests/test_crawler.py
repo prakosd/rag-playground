@@ -89,7 +89,8 @@ class TestSiteCrawler:
         assert "https://example.com/app.js" not in links
         assert "https://example.com/image.png" not in links
         assert "https://example.com/font.woff2" not in links
-        assert "https://example.com/doc.pdf" not in links
+        # PDF links are now allowed through for PDF crawling support
+        assert "https://example.com/doc.pdf" in links
         assert not any("DependencyHandler.axd" in link for link in links)
         assert "https://example.com/Service.asmx" not in links
         assert not any("Handler.ashx" in link for link in links)
