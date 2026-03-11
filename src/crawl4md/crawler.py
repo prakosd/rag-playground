@@ -180,7 +180,9 @@ class SiteCrawler:
         self.page_config = page_config or PageConfig()
         self._output_base = Path(output_base) if output_base else Path.cwd()
         self.output_dir: Path | None = None
-        self._allowed_domains: set[str] = self._extract_base_domains(config.urls)
+        self._allowed_domains: set[str] = self._extract_base_domains(
+            config.urls, strip_www=config.strip_www
+        )
         self._extractor = extractor
         self._writer = writer
         self._activity_log_size = activity_log_size
@@ -465,12 +467,13 @@ class SiteCrawler:
         discovered links use the correct depth.
         """
         results: list[CrawlResult] = []
-        visited: set[str] = set(self._normalize_url(u) for u in skip_urls)
+        _sw = self.config.strip_www
+        visited: set[str] = set(self._normalize_url(u, strip_www=_sw) for u in skip_urls)
         generated: set[str] = all_generated if all_generated is not None else set()
         depths: dict[str, int] = url_depths if url_depths is not None else {}
         queue: list[tuple[str, int]] = []
         for seed_url in urls:
-            norm_seed = self._normalize_url(seed_url)
+            norm_seed = self._normalize_url(seed_url, strip_www=_sw)
             if norm_seed not in generated and len(generated) >= self.config.limit:
                 break
             generated.add(norm_seed)
@@ -489,7 +492,7 @@ class SiteCrawler:
         while queue and len(results) < self.config.limit:
             url, depth = queue.pop(0)
 
-            norm_url = self._normalize_url(url)
+            norm_url = self._normalize_url(url, strip_www=_sw)
             if norm_url in visited:
                 continue
             visited.add(norm_url)
@@ -551,7 +554,7 @@ class SiteCrawler:
                 final_url = getattr(result, "redirected_url", None) or url
                 redirected = final_url != url
 
-                norm_final = self._normalize_url(final_url)
+                norm_final = self._normalize_url(final_url, strip_www=_sw)
                 if redirected and norm_final in visited:
                     progress.set_activity(
                         f"Skipped {url} (redirected to already-visited {final_url})"
@@ -729,12 +732,12 @@ class SiteCrawler:
             # Discover links for deeper crawling
             if discover_links and depth < self.config.max_depth and crawl_result.success:
                 progress.set_activity(f"Discovering links from {url}")
-                new_links = self._extract_links(crawl_result, crawl_result.url)
+                new_links = self._extract_links(crawl_result, crawl_result.url, strip_www=_sw)
                 added = 0
                 for link in new_links:
                     if len(generated) >= self.config.limit:
                         break
-                    norm_link = self._normalize_url(link)
+                    norm_link = self._normalize_url(link, strip_www=_sw)
                     if norm_link not in generated:
                         generated.add(norm_link)
                         depths[norm_link] = depth + 1
@@ -1156,37 +1159,37 @@ class SiteCrawler:
     )
 
     @staticmethod
-    def _normalize_url(url: str) -> str:
+    def _normalize_url(url: str, *, strip_www: bool = True) -> str:
         """Normalize a URL to reduce duplicate crawling.
 
-        Applies: ``http`` → ``https``, strips ``www.`` prefix, lowercases
-        scheme + host.  The path, query and fragment are preserved as-is.
+        Applies: ``http`` → ``https``, optionally strips ``www.`` prefix,
+        lowercases scheme + host.  The path, query and fragment are
+        preserved as-is.
         """
         from urllib.parse import urlparse, urlunparse
 
         parsed = urlparse(url)
         scheme = "https"
         netloc = parsed.netloc.lower()
-        if netloc.startswith("www."):
+        if strip_www and netloc.startswith("www."):
             netloc = netloc[4:]
         return urlunparse((scheme, netloc, parsed.path, parsed.params, parsed.query, ""))
 
     @staticmethod
-    def _extract_base_domains(urls: list[str]) -> set[str]:
+    def _extract_base_domains(urls: list[str], *, strip_www: bool = True) -> set[str]:
         """Derive base domains from seed URLs (e.g. 'starhub.com' from 'www.starhub.com')."""
         from urllib.parse import urlparse
 
         domains: set[str] = set()
         for url in urls:
             netloc = urlparse(url).netloc.lower()
-            # Strip www. prefix to get the base domain
-            if netloc.startswith("www."):
+            if strip_www and netloc.startswith("www."):
                 netloc = netloc[4:]
             domains.add(netloc)
         return domains
 
     @staticmethod
-    def _extract_links(result: CrawlResult, base_url: str) -> list[str]:
+    def _extract_links(result: CrawlResult, base_url: str, *, strip_www: bool = True) -> list[str]:
         """Extract absolute http(s) links from crawled HTML."""
         from urllib.parse import urljoin, urlparse
 
@@ -1219,7 +1222,7 @@ class SiteCrawler:
         seen: set[str] = set()
         normalized: list[str] = []
         for lnk in links:
-            norm = SiteCrawler._normalize_url(lnk)
+            norm = SiteCrawler._normalize_url(lnk, strip_www=strip_www)
             if norm not in seen:
                 seen.add(norm)
                 normalized.append(norm)

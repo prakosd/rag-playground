@@ -614,6 +614,60 @@ class TestNormalizeUrl:
         url = "https://example.com/page"
         assert SiteCrawler._normalize_url(SiteCrawler._normalize_url(url)) == url
 
+    # -- strip_www=True (explicit) --
+
+    def test_strip_www_true_removes_www(self):
+        assert (
+            SiteCrawler._normalize_url("https://www.example.com/page", strip_www=True)
+            == "https://example.com/page"
+        )
+
+    def test_strip_www_true_http_and_www(self):
+        assert (
+            SiteCrawler._normalize_url("http://www.example.com/page", strip_www=True)
+            == "https://example.com/page"
+        )
+
+    # -- strip_www=False --
+
+    def test_strip_www_false_preserves_www(self):
+        assert (
+            SiteCrawler._normalize_url("https://www.example.com/page", strip_www=False)
+            == "https://www.example.com/page"
+        )
+
+    def test_strip_www_false_http_and_www(self):
+        assert (
+            SiteCrawler._normalize_url("http://www.example.com/page", strip_www=False)
+            == "https://www.example.com/page"
+        )
+
+    def test_strip_www_false_no_www_unchanged(self):
+        assert (
+            SiteCrawler._normalize_url("https://example.com/page", strip_www=False)
+            == "https://example.com/page"
+        )
+
+
+class TestExtractBaseDomains:
+    """Tests for _extract_base_domains with strip_www flag."""
+
+    def test_strip_www_true_removes_www(self):
+        domains = SiteCrawler._extract_base_domains(
+            ["https://www.example.com/page"], strip_www=True
+        )
+        assert domains == {"example.com"}
+
+    def test_strip_www_false_preserves_www(self):
+        domains = SiteCrawler._extract_base_domains(
+            ["https://www.example.com/page"], strip_www=False
+        )
+        assert domains == {"www.example.com"}
+
+    def test_strip_www_true_no_www_unchanged(self):
+        domains = SiteCrawler._extract_base_domains(["https://example.com/page"], strip_www=True)
+        assert domains == {"example.com"}
+
 
 class TestExtractLinksNormalization:
     """Tests that _extract_links normalizes discovered URLs."""
@@ -632,6 +686,36 @@ class TestExtractLinksNormalization:
         links = SiteCrawler._extract_links(result, "https://example.com")
         # Both should normalize to the same URL
         assert links.count("https://example.com/page1") == 1
+
+    def test_extract_links_strip_www_true_deduplicates(self):
+        from crawl4md.config import CrawlResult
+
+        result = CrawlResult(
+            url="https://example.com",
+            html=(
+                '<a href="http://www.example.com/page1">P1</a>'
+                '<a href="https://example.com/page1">P1 dup</a>'
+            ),
+            success=True,
+        )
+        links = SiteCrawler._extract_links(result, "https://example.com", strip_www=True)
+        assert links == ["https://example.com/page1"]
+
+    def test_extract_links_strip_www_false_keeps_both(self):
+        from crawl4md.config import CrawlResult
+
+        result = CrawlResult(
+            url="https://example.com",
+            html=(
+                '<a href="http://www.example.com/page1">P1</a>'
+                '<a href="https://example.com/page1">P1 dup</a>'
+            ),
+            success=True,
+        )
+        links = SiteCrawler._extract_links(result, "https://example.com", strip_www=False)
+        assert len(links) == 2
+        assert "https://www.example.com/page1" in links
+        assert "https://example.com/page1" in links
 
 
 class TestRedirectDedup:

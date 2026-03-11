@@ -11,6 +11,8 @@ from pydantic import BaseModel, field_validator, model_validator
 _VALID_URL_SCHEMES = ("http://", "https://")
 # Default HTML tags excluded from extraction.
 _DEFAULT_EXCLUDE_TAGS: list[str] = ["nav", "script", "form", "style"]
+# Whether to strip the "www." prefix during URL normalization.
+_DEFAULT_STRIP_WWW: bool = False
 
 
 class CrawlerConfig(BaseModel):
@@ -24,6 +26,7 @@ class CrawlerConfig(BaseModel):
     flush_interval: int = 10
     delay: float = 0
     stealth: bool = True
+    strip_www: bool = _DEFAULT_STRIP_WWW
     headers: dict[str, str] = {}
     max_retries: int = 2
 
