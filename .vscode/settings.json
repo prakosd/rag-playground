@@ -1,7 +1,3 @@
 {
-    "python.analysis.typeCheckingMode": "basic",
-    "chat.commandApproval.allowList": {
-        "*pytest*": true,
-        "*ruff*": true
-    }
+    "python.analysis.typeCheckingMode": "basic"
 }
