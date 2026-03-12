@@ -51,6 +51,10 @@ _WAF_CONSECUTIVE_THRESHOLD = 3  # Consecutive blocks before escalating
 _ROUND_COOLDOWN_JITTER_MIN = 0.8
 _ROUND_COOLDOWN_JITTER_MAX = 1.5
 
+# Retry rounds use a faster navigation condition to avoid hanging on
+# sites with continuous analytics/tracking traffic (e.g. DoubleClick).
+_FALLBACK_WAIT_UNTIL = "domcontentloaded"
+
 # Known WAF / bot-protection block signatures (matched case-insensitively)
 _BLOCK_SIGNATURES = (
     "incapsula incident",
@@ -1186,7 +1190,7 @@ class SiteCrawler:
         if self.page_config.exclude_tags:
             kwargs["excluded_tags"] = self.page_config.exclude_tags
 
-        kwargs["wait_until"] = self.page_config.wait_until
+        kwargs["wait_until"] = _FALLBACK_WAIT_UNTIL
 
         if self.page_config.wait_for:
             kwargs["delay_before_return_html"] = self.page_config.wait_for
