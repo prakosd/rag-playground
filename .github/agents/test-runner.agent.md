@@ -13,7 +13,7 @@ You are a test and lint runner for the crawl4md project. Your sole job is to exe
 ## Configurable Constants
 
 <!-- ✏️ Adjust these values to match your machine's performance -->
-- **WAIT_SECONDS = 90** — seconds to wait between completion checks
+- **WAIT_SECONDS = 120** — seconds to wait between completion checks
 - **MAX_RETRIES = 3** — maximum wait-check cycles before reporting timeout
 
 ## Terminal Command Protocol
