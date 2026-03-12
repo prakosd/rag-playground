@@ -36,7 +36,7 @@ This project has ~500 tests. Verbose output would be ~1000 lines — too large t
 ### Step 1 — pytest quick pass
 
 ```
-pytest tests/ -q
+python -m pytest tests/ -q
 ```
 
 Wait for completion using the Terminal Command Protocol above.
@@ -49,7 +49,7 @@ Wait for completion using the Terminal Command Protocol above.
 Only run this if Step 1 reported failures:
 
 ```
-pytest tests/ --lf -v --tb=long
+python -m pytest tests/ --lf -v --tb=long
 ```
 
 Wait for completion using the Terminal Command Protocol above. This re-runs only the last-failed tests with full tracebacks. Record each failure with its full traceback.
@@ -95,4 +95,5 @@ Wait for completion using the Terminal Command Protocol above.
 - DO NOT summarize away error details — include the full error message for each failure
 - ALWAYS follow the Terminal Command Protocol — wait the full WAIT_SECONDS before checking output
 - If a command times out after MAX_RETRIES cycles, report it explicitly — do NOT retry
-- NEVER run `pytest tests/ -v` without `--lf` — the full verbose output is too large
+- NEVER run `python -m pytest tests/ -v` without `--lf` — the full verbose output is too large
+- ALWAYS use `python -m pytest` instead of bare `pytest` — ensures the correct environment is used
