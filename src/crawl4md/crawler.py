@@ -158,6 +158,19 @@ _PDF_FALLBACK_THRESHOLD = 50
 
 # Error message assigned when extraction produces empty markdown
 _EMPTY_EXTRACTION_ERROR = "No extractable content"
+
+# ------------------------------------------------------------------
+# Redirect storm detection
+# ------------------------------------------------------------------
+
+# Consecutive redirects to the same already-visited target before
+# treating subsequent ones as failures (suspected anti-bot redirect).
+_REDIRECT_STORM_THRESHOLD = 3
+# Error message for pages caught in a redirect storm
+_REDIRECT_STORM_ERROR = "Suspected anti-bot redirect"
+# Error message for redirect-skipped pages that never triggered a storm
+# (queue ended or pattern broke before threshold was reached)
+_UNRESOLVED_REDIRECT_ERROR = "Redirect to already-visited URL (unresolved)"
 # Warning emitted once when Tesseract is not installed and OCR is requested
 _OCR_UNAVAILABLE_WARNING = (
     "Tesseract OCR is not installed — scanned/image-only PDFs will not be "
@@ -497,6 +510,36 @@ class SiteCrawler:
         )
 
         consecutive_blocks = 0
+        # Redirect storm tracking: count consecutive redirects to the
+        # same already-visited target.  Once the threshold is reached,
+        # subsequent pages are treated as failures instead of silent
+        # skips so they enter the retry pipeline.
+        consecutive_redirect_target: str | None = None
+        consecutive_redirect_count: int = 0
+        skipped_redirect_urls: list[str] = []
+
+        def _flush_skipped_redirects(error: str) -> None:
+            """Convert accumulated skipped-redirect URLs into failures.
+
+            A single redirect to an already-visited URL is normal
+            navigation (e.g. /old → /new).  Only flush when two or more
+            URLs have been skipped, which indicates a suspicious pattern.
+            """
+            if len(skipped_redirect_urls) < 2:
+                skipped_redirect_urls.clear()
+                return
+            for skipped_url in skipped_redirect_urls:
+                results.append(
+                    CrawlResult(
+                        url=skipped_url,
+                        html="",
+                        markdown="",
+                        success=False,
+                        error=error,
+                    )
+                )
+                progress.update(skipped_url, success=False)
+            skipped_redirect_urls.clear()
 
         while queue and len(results) < self.config.limit:
             url, depth = queue.pop(0)
@@ -566,10 +609,50 @@ class SiteCrawler:
 
                 norm_final = self._normalize_url(final_url, strip_www=_sw)
                 if redirected and norm_final in visited:
-                    progress.set_activity(
-                        f"Skipped {url} (redirected to already-visited {final_url})"
+                    # Track consecutive same-target redirects
+                    if norm_final == consecutive_redirect_target:
+                        consecutive_redirect_count += 1
+                    else:
+                        # Target changed — flush any prior skipped URLs
+                        # as unresolved before switching targets.
+                        _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
+                        consecutive_redirect_target = norm_final
+                        consecutive_redirect_count = 1
+
+                    if consecutive_redirect_count < _REDIRECT_STORM_THRESHOLD:
+                        skipped_redirect_urls.append(url)
+                        progress.set_activity(
+                            f"Skipped {url} (redirected to already-visited {final_url})"
+                        )
+                        continue
+
+                    # Storm detected — retroactively fail earlier skipped
+                    # pages, then treat the current page as failure too
+                    # so the retry pipeline can re-attempt all of them.
+                    _flush_skipped_redirects(_REDIRECT_STORM_ERROR)
+                    progress.set_activity(f"Suspected anti-bot redirect {url} → {final_url}")
+                    crawl_result = CrawlResult(
+                        url=url,
+                        html="",
+                        markdown="",
+                        success=False,
+                        error=_REDIRECT_STORM_ERROR,
                     )
+                    results.append(crawl_result)
+                    progress.update(url, success=False)
+
+                    # Apply WAF-style back-off
+                    backoff = max(
+                        _WAF_BACKOFF_FLOOR,
+                        self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
+                    )
+                    progress.set_activity(f"Anti-bot back-off {backoff:.1f}s")
+                    await asyncio.sleep(backoff)
                     continue
+
+                # Non-redirect-skip result — reset storm counter
+                consecutive_redirect_target = None
+                consecutive_redirect_count = 0
 
                 visited.add(norm_final)
                 generated.add(norm_final)
@@ -702,6 +785,12 @@ class SiteCrawler:
             else:
                 consecutive_blocks = 0
 
+            # A normal result (success or WAF block) breaks any redirect
+            # storm streak — flush skipped URLs and reset the counter.
+            _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
+            consecutive_redirect_target = None
+            consecutive_redirect_count = 0
+
             # Buffer failed-page content for the fail content file
             if not crawl_result.success and self._fail_writer is not None:
                 raw_body = raw_markdown.strip() or crawl_result.html.strip() or "(no response)"
@@ -758,6 +847,10 @@ class SiteCrawler:
                 progress.update_activity_label(f"Discovered {added} links from {url}")
                 # Update progress total to reflect discovered pages
                 progress.total = min(len(generated), self.config.limit)
+
+        # Flush any remaining skipped-redirect URLs as failures so they
+        # appear in the fail list for manual review.
+        _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
 
         # Flush the last open activity so it appears in the disk log.
         progress._close_activity()

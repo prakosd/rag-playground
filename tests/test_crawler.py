@@ -756,6 +756,286 @@ class TestRedirectDedup:
             assert "Skipped" in log_content or "skip" in log_content.lower()
 
 
+class TestRedirectStorm:
+    """Tests for anti-bot redirect storm detection."""
+
+    @staticmethod
+    def _make_redirect_side_effects(
+        target: str,
+        source_urls: list[str],
+    ) -> list:
+        """Create mock arun results where every source redirects to *target*."""
+        effects = []
+        for src in source_urls:
+            r = _make_mock_result(src, "<p>redirect page</p>", "redirect page")
+            r.redirected_url = target
+            effects.append(r)
+        return effects
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_below_threshold_flushed_as_unresolved(self, mock_crawler_cls, tmp_path: Path):
+        """Below-threshold redirects appear as unresolved failures at end-of-loop."""
+        from crawl4md.crawler import _UNRESOLVED_REDIRECT_ERROR
+
+        target = "https://example.com/home"
+        # First page succeeds (populates visited with target)
+        result_home = _make_mock_result(target, "<p>home</p>", "home")
+        # Two more pages redirect to /home (below threshold of 3)
+        redirects = self._make_redirect_side_effects(
+            target, ["https://example.com/a", "https://example.com/b"]
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_home, *redirects])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[target, "https://example.com/a", "https://example.com/b"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        successes = [r for r in results if r.success]
+        failures = [r for r in results if not r.success]
+        assert len(successes) == 1
+        assert successes[0].url == target
+        # The two redirects are flushed as unresolved failures at end-of-loop
+        assert len(failures) == 2
+        assert all(r.error == _UNRESOLVED_REDIRECT_ERROR for r in failures)
+        assert {r.url for r in failures} == {
+            "https://example.com/a",
+            "https://example.com/b",
+        }
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_at_threshold_becomes_failure(self, mock_crawler_cls, tmp_path: Path):
+        """After reaching the threshold, all redirect pages become failures.
+
+        p0 and p1 are retroactively converted when p2 triggers the storm;
+        p2 and p3 are direct storm failures.
+        """
+        from crawl4md.crawler import _REDIRECT_STORM_ERROR
+
+        target = "https://example.com/home"
+        sources = [f"https://example.com/p{i}" for i in range(4)]
+
+        result_home = _make_mock_result(target, "<p>home</p>", "home")
+        redirects = self._make_redirect_side_effects(target, sources)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_home, *redirects])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[target, *sources],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        successes = [r for r in results if r.success]
+        failures = [r for r in results if not r.success]
+        assert len(successes) == 1
+        assert successes[0].url == target
+        # All 4 redirects become failures (p0/p1 retroactive, p2/p3 direct)
+        assert len(failures) == 4
+        assert all(r.error == _REDIRECT_STORM_ERROR for r in failures)
+        # Failures carry the original URL, not the redirect target
+        failure_urls = {r.url for r in failures}
+        assert failure_urls == {f"https://example.com/p{i}" for i in range(4)}
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_counter_resets_on_successful_crawl(self, mock_crawler_cls, tmp_path: Path):
+        """A non-redirect result resets the counter and flushes skipped URLs."""
+        from crawl4md.crawler import _UNRESOLVED_REDIRECT_ERROR
+
+        target = "https://example.com/home"
+        # Sequence: home, redirect×2, normal_page, redirect×2
+        # The normal page resets the counter; both batches of 2 are
+        # flushed as unresolved failures (batch 1 on reset, batch 2
+        # at end-of-loop).
+        result_home = _make_mock_result(target, "<p>home</p>", "home")
+        redir_a = self._make_redirect_side_effects(
+            target, ["https://example.com/r1", "https://example.com/r2"]
+        )
+        result_normal = _make_mock_result("https://example.com/good", "<p>good</p>", "good")
+        redir_b = self._make_redirect_side_effects(
+            target, ["https://example.com/r3", "https://example.com/r4"]
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_home, *redir_a, result_normal, *redir_b])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[
+                target,
+                "https://example.com/r1",
+                "https://example.com/r2",
+                "https://example.com/good",
+                "https://example.com/r3",
+                "https://example.com/r4",
+            ],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        successes = [r for r in results if r.success]
+        failures = [r for r in results if not r.success]
+        assert len(successes) == 2
+        assert {r.url for r in successes} == {target, "https://example.com/good"}
+        # All 4 redirects flushed as unresolved failures
+        assert len(failures) == 4
+        assert all(r.error == _UNRESOLVED_REDIRECT_ERROR for r in failures)
+        assert {r.url for r in failures} == {f"https://example.com/r{i}" for i in range(1, 5)}
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_different_targets_flush_on_switch(self, mock_crawler_cls, tmp_path: Path):
+        """Redirects to different targets flush prior batch as unresolved."""
+        from crawl4md.crawler import _UNRESOLVED_REDIRECT_ERROR
+
+        target_a = "https://example.com/home-a"
+        target_b = "https://example.com/home-b"
+
+        result_a = _make_mock_result(target_a, "<p>a</p>", "a")
+        result_b = _make_mock_result(target_b, "<p>b</p>", "b")
+        # 2 redirects to target_a, then 2 to target_b — neither reaches 3
+        redir_a = self._make_redirect_side_effects(
+            target_a, ["https://example.com/r1", "https://example.com/r2"]
+        )
+        redir_b = self._make_redirect_side_effects(
+            target_b, ["https://example.com/r3", "https://example.com/r4"]
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_a, result_b, *redir_a, *redir_b])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[
+                target_a,
+                target_b,
+                "https://example.com/r1",
+                "https://example.com/r2",
+                "https://example.com/r3",
+                "https://example.com/r4",
+            ],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        successes = [r for r in results if r.success]
+        failures = [r for r in results if not r.success]
+        assert len(successes) == 2
+        assert {r.url for r in successes} == {target_a, target_b}
+        # r1/r2 flushed on target switch; r3/r4 flushed at end-of-loop
+        assert len(failures) == 4
+        assert all(r.error == _UNRESOLVED_REDIRECT_ERROR for r in failures)
+        assert {r.url for r in failures} == {f"https://example.com/r{i}" for i in range(1, 5)}
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_storm_retroactive_vs_direct_order(self, mock_crawler_cls, tmp_path: Path):
+        """Retroactive failures appear before the storm-triggered failure in results."""
+        from crawl4md.crawler import _REDIRECT_STORM_ERROR
+
+        target = "https://example.com/home"
+        # 3 redirects: p0 and p1 are below threshold, p2 triggers storm
+        sources = [f"https://example.com/p{i}" for i in range(3)]
+        result_home = _make_mock_result(target, "<p>home</p>", "home")
+        redirects = self._make_redirect_side_effects(target, sources)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_home, *redirects])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[target, *sources],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        failures = [r for r in results if not r.success]
+        assert len(failures) == 3
+        # Retroactive failures (p0, p1) appear before the direct one (p2)
+        assert failures[0].url == "https://example.com/p0"
+        assert failures[1].url == "https://example.com/p1"
+        assert failures[2].url == "https://example.com/p2"
+        assert all(r.error == _REDIRECT_STORM_ERROR for r in failures)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_mixed_storm_and_unresolved(self, mock_crawler_cls, tmp_path: Path):
+        """Storm batch uses STORM error; post-reset batch uses UNRESOLVED error."""
+        from crawl4md.crawler import _REDIRECT_STORM_ERROR, _UNRESOLVED_REDIRECT_ERROR
+
+        target = "https://example.com/home"
+        # Sequence: home, redirect×3 (storm), normal, redirect×2 (unresolved)
+        result_home = _make_mock_result(target, "<p>home</p>", "home")
+        storm_batch = self._make_redirect_side_effects(
+            target, [f"https://example.com/s{i}" for i in range(3)]
+        )
+        result_normal = _make_mock_result("https://example.com/good", "<p>good</p>", "good")
+        tail_batch = self._make_redirect_side_effects(
+            target, ["https://example.com/t0", "https://example.com/t1"]
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            side_effect=[result_home, *storm_batch, result_normal, *tail_batch]
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[
+                target,
+                "https://example.com/s0",
+                "https://example.com/s1",
+                "https://example.com/s2",
+                "https://example.com/good",
+                "https://example.com/t0",
+                "https://example.com/t1",
+            ],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        successes = [r for r in results if r.success]
+        failures = [r for r in results if not r.success]
+        assert len(successes) == 2
+
+        storm_failures = [r for r in failures if r.error == _REDIRECT_STORM_ERROR]
+        unresolved_failures = [r for r in failures if r.error == _UNRESOLVED_REDIRECT_ERROR]
+        # s0, s1, s2 are storm failures (retroactive + direct)
+        assert {r.url for r in storm_failures} == {f"https://example.com/s{i}" for i in range(3)}
+        # t0, t1 are unresolved (flushed at end-of-loop)
+        assert {r.url for r in unresolved_failures} == {
+            "https://example.com/t0",
+            "https://example.com/t1",
+        }
+
+
 class TestEmptyExtraction:
     """Tests that empty extraction is treated as failure."""
 
