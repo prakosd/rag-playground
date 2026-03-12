@@ -135,10 +135,9 @@ Key deps: crawl4ai, trafilatura, markdownify, pydantic, nest-asyncio, beautifuls
 ## Testing
 
 - **Every code change must include unit tests** — new features need tests for the happy path and key edge cases; bug fixes need a test that reproduces the bug.
-- **All tests must pass before a task is considered complete.** Run `pytest tests/ -v` and confirm zero failures.
+- **All tests must pass before a task is considered complete.** Run `pytest tests/ -q` and confirm zero failures.
 - **After tests pass, run linting:** `ruff check src/ tests/` and `ruff format --check src/ tests/`. Fix any errors and re-run both tests and linting until **both pass with zero errors**. A task is not complete until tests AND linting are clean.
-- **For test and lint verification, always delegate to the `test-runner` agent** instead of running commands directly. This agent runs on a smaller model optimized for parsing test/lint output.
-- **Tests run in parallel** via `pytest-xdist` (`-n auto` in `pyproject.toml`). All tests must be parallel-safe: use `tmp_path` for file I/O, no shared mutable state, no ordering dependencies. Use `pytest tests/ -n 1` for sequential execution when debugging.
+- **For test and lint verification, always delegate to the `test-runner` agent** instead of running commands directly. This agent uses a two-pass strategy: quiet run first, then verbose re-run of failures only.
 - `_ROUND_COOLDOWN` is globally patched to 0 via an autouse fixture in `conftest.py`. No per-test patching is needed.
 - When running tests in a terminal, **always wait for the command to finish and return its full output** before re-running, retrying, or drawing any conclusions. Do not start a new test run while one is still in progress.
 

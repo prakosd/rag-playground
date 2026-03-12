@@ -160,14 +160,13 @@ src/crawl4md/
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v           # runs in parallel by default (-n auto)
-pytest tests/ -v -n 1      # sequential mode (useful for debugging)
+pytest tests/ -v
 ruff check src/ tests/
 ```
 
 Test files: `test_config.py`, `test_crawler.py`, `test_crawler_output.py`, `test_crawler_retry.py`, `test_extractor.py`, `test_extractor_items.py`, `test_extractor_links.py`, `test_extractor_product.py`, `test_extractor_supplementary.py`, `test_sorter.py`, `test_writer.py`, `test_progress.py`.
 
-Tests use mocked HTTP calls — no real network requests are made. All tests are parallel-safe (isolated via `tmp_path`, no shared state).
+Tests use mocked HTTP calls — no real network requests are made.
 
 ## License
 
