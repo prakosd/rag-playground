@@ -13,7 +13,7 @@ You are a test and lint runner for the crawl4md project. Your sole job is to exe
 ## Configurable Constants (pytest only)
 
 <!-- ✏️ Adjust these values to match your machine's performance -->
-- **WAIT_SECONDS = 120** — seconds to sleep while pytest runs
+- **WAIT_SECONDS = 5** — seconds to sleep while pytest runs
 - **MAX_RETRIES = 3** — maximum sleep-then-check cycles before reporting timeout
 
 These constants apply **only to pytest commands** (Steps 1 & 2). Ruff commands are fast and do not need them.
@@ -112,5 +112,6 @@ Run using the **ruff direct strategy** above.
 - For pytest commands, ALWAYS use the pytest wait strategy — sleep the full WAIT_SECONDS before checking output
 - For ruff commands, run directly — no sleep timer needed
 - If a pytest command times out after MAX_RETRIES cycles, report it explicitly — do NOT retry
+- ALWAYS wait for pytest to fully complete (Steps 1–2) before starting any ruff commands (Steps 3–4)
 - NEVER run `python -m pytest tests/ -v` without `--lf` — the full verbose output is too large
 - ALWAYS use `python -m pytest` instead of bare `pytest` — ensures the correct environment is used
