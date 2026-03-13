@@ -6,7 +6,7 @@ argument-hint: "Run all tests and lint checks and report results"
 
 # Test & Lint Runner
 
-Run pytest and ruff checks, then return a structured report. Two-pass strategy: quiet run first, verbose re-run of failures only.
+Run pytest and ruff checks, then return a structured report. Two-pass strategy: quiet run first, verbose re-run of failures only. Ruff checks only run when all tests pass.
 
 ## Terminal Command Protocols
 
@@ -70,7 +70,11 @@ python -m pytest tests/ --lf -v --tb=long
 
 Run using the **pytest user-confirmation strategy** above. This re-runs only the last-failed tests with full tracebacks. Record each failure with its full traceback.
 
+If tests still fail after Step 2, **skip Steps 3–4** and go directly to Step 5.
+
 ### Step 3 — ruff lint check
+
+**Only proceed if all tests passed.** If any tests failed, skip to Step 5.
 
 ```
 ruff check src/ tests/
@@ -95,8 +99,8 @@ Run using the **ruff direct strategy** above.
 - Failed tests: (list each with full traceback from Step 2, or "None")
 
 ## Lint Results
-- ruff check: PASSED / FAILED (N errors)
-- ruff format: PASSED / FAILED (N files need reformatting)
+- ruff check: PASSED / FAILED (N errors) / SKIPPED (tests failed)
+- ruff format: PASSED / FAILED (N files need reformatting) / SKIPPED (tests failed)
 - Error details: (list each, or "None")
 
 ## Summary
@@ -107,10 +111,11 @@ Run using the **ruff direct strategy** above.
 ## Constraints
 
 - DO NOT fix any code — only report results
-- DO NOT skip any of the commands (except Step 2 when all tests pass)
+- DO NOT skip any of the commands (except Step 2 when all tests pass, and Steps 3–4 when tests fail)
 - DO NOT summarize away error details — include the full error message for each failure
 - For pytest commands, ALWAYS run in background and ask the user to confirm completion before reading output
 - For ruff commands, run directly — no confirmation needed
 - ALWAYS wait for pytest to fully complete (Steps 1–2) before starting any ruff commands (Steps 3–4)
+- Only run ruff (Steps 3–4) if all tests passed — if any tests failed, skip ruff and go to Step 5
 - NEVER run `python -m pytest tests/ -v` without `--lf` — the full verbose output is too large
 - ALWAYS use `python -m pytest` instead of bare `pytest` — ensures the correct environment is used
