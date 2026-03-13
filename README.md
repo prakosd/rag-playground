@@ -83,7 +83,7 @@ SiteCrawler.crawl()
 | `max_depth` | `int` | `1` | How many clicks deep to follow links |
 | `exclude_paths` | `list[str]` | `[]` | Regex patterns for URLs to skip |
 | `include_only_paths` | `list[str]` | `[]` | Regex patterns for URLs to keep (skip everything else) |
-| `delay` | `float` | `0` | Seconds between page crawls (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
+| `delay` | `float` | `0` | Seconds to wait between page crawls — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
 | `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages |
@@ -96,9 +96,9 @@ SiteCrawler.crawl()
 | `extract_main_content` | `bool` | `True` | `True` = trafilatura (main content only), `False` = markdownify (full HTML) |
 | `exclude_tags` | `list[str]` | `["nav", "script", "form", "style"]` | HTML tags to remove before extraction |
 | `include_only_tags` | `list[str]` | `[]` | Keep only these HTML tags (mutually exclusive with `exclude_tags`) |
-| `wait_until` | `str` | `"networkidle"` | When to consider the page loaded: `"domcontentloaded"`, `"networkidle"`, `"load"`, or `"commit"` |
-| `wait_for` | `float \| None` | `None` | Extra delay (seconds) after page load before extracting content — gives slow JS time to render |
-| `timeout` | `float` | `30` | Page load timeout in seconds |
+| `wait_until` | `str` | `"networkidle"` | When to consider a page loaded. `"networkidle"` waits until network traffic stops (thorough, good for JS-heavy sites). `"domcontentloaded"` returns as soon as the HTML is parsed (faster, good for simple/static sites). Capped by `timeout`. |
+| `wait_for` | `float \| None` | `None` | Extra delay (seconds) **after** `wait_until` completes, before extracting content — gives slow JavaScript time to finish rendering. Runs on top of `wait_until`, not instead of it. |
+| `timeout` | `float` | `30` | Hard limit (seconds) for the page load phase — if `wait_until` hasn't resolved within this time, the page is treated as loaded anyway. Does not include `wait_for`. |
 | `max_file_size_mb` | `float` | `15.0` | Max size per output file in MB |
 | `output_extension` | `".txt" \| ".md"` | `".txt"` | Output file format |
 | `separate_items` | `bool` | `True` | Insert `---` separators between repeated items (e.g. product cards) |
@@ -107,6 +107,25 @@ SiteCrawler.crawl()
 | `scan_full_page` | `bool` | `True` | Scroll through the full page before extraction (helps bypass lazy-load WAFs) |
 | `scroll_delay` | `float` | `0.4` | Seconds to pause between scroll steps (used when `scan_full_page` is on) |
 | `ocr_languages` | `list[str]` | `["eng", "msa"]` | Tesseract language codes for PDF OCR (e.g. `["eng", "fra"]`). Empty list disables OCR. Requires Tesseract installed. |
+
+### Page Timing
+
+The timing parameters control different phases of each page crawl:
+
+```
+For each page:
+  delay          wait_until               wait_for          extract
+  ─────── → ──────────────────── → ────────────────── → ────────────
+  pause     page load condition     extra JS pause       content
+  between   ("networkidle" or       (runs after load     extraction
+  pages     "domcontentloaded")     condition is met)
+            └─ timeout caps this ─┘
+```
+
+- **`delay`** (CrawlerConfig) — pause *between* pages. Controls crawl speed to avoid bot detection. Applied before starting the next page.
+- **`wait_until`** (PageConfig) — determines *when* a page is considered loaded. `"networkidle"` waits until all network requests finish (~500 ms of silence), which is thorough but can hang on analytics-heavy sites. `"domcontentloaded"` returns as soon as the HTML is parsed, which is faster but may miss JS-rendered content.
+- **`wait_for`** (PageConfig) — extra pause *after* `wait_until` completes. Use this when content appears slightly after the page load event (e.g., delayed AJAX calls). Runs on top of `wait_until`, not instead of it.
+- **`timeout`** (PageConfig) — hard limit on the `wait_until` phase. If the load condition hasn't been met within this time, the page is treated as loaded anyway and extraction proceeds.
 
 ## Output Structure
 
