@@ -47,6 +47,14 @@ Ruff commands finish in seconds. Run them directly — no sleep timer needed:
 
 This project has ~500 tests. Verbose output would be ~1000 lines — too large to parse. Use the two-pass strategy below.
 
+### Step 0 — collect test count
+
+```
+python -m pytest tests/ --collect-only -q
+```
+
+Run using the **ruff direct strategy** (fast, no sleep needed). The last line of output shows `N tests collected`. Record this number as **EXPECTED_TOTAL**.
+
 ### Step 1 — pytest quick pass
 
 ```
@@ -55,7 +63,7 @@ python -m pytest tests/ -q
 
 Wait for completion using the **pytest wait strategy** above.
 
-- If the summary says **all passed**: record the counts and move to Step 3 (skip Step 2).
+- If the summary says **all passed**: verify the passed count equals **EXPECTED_TOTAL**. If it doesn't, report the mismatch as a warning. Move to Step 3 (skip Step 2).
 - If there are **failures or errors**: proceed to Step 2.
 
 ### Step 2 — re-run failures only (verbose)
@@ -89,7 +97,9 @@ Run using the **ruff direct strategy** above.
 ```
 ## Test Results
 - Status: PASSED / FAILED
-- Total: X passed, Y failed, Z errors
+- Expected: EXPECTED_TOTAL tests (from --collect-only)
+- Actual: X passed, Y failed, Z errors
+- Count check: MATCH / MISMATCH (if passed ≠ EXPECTED_TOTAL, flag it)
 - Failed tests: (list each with full traceback from Step 2, or "None")
 
 ## Lint Results
@@ -113,3 +123,4 @@ Run using the **ruff direct strategy** above.
 - ALWAYS wait for pytest to fully complete (Steps 1–2) before starting any ruff commands (Steps 3–4)
 - NEVER run `python -m pytest tests/ -v` without `--lf` — the full verbose output is too large
 - ALWAYS use `python -m pytest` instead of bare `pytest` — ensures the correct environment is used
+- ALWAYS verify that total passed tests equals EXPECTED_TOTAL from Step 0 — a mismatch means tests were silently skipped or deselected
