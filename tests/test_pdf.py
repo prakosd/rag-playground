@@ -341,6 +341,22 @@ class TestExtractPdfPage:
         assert page.url == result.url
         assert "Dynamic PDF content" in page.markdown
 
+    def test_unicode_line_separators_normalised(self):
+        """U+2028/U+2029 from pymupdf4llm are normalised to newlines."""
+        result = CrawlResult(
+            url="https://example.com/report.pdf",
+            markdown="Page one\u2028Page two\u2029Page three",
+            success=True,
+            is_pdf=True,
+        )
+        extractor = ContentExtractor()
+        page = extractor._extract_pdf_page(result)
+        assert "\u2028" not in page.markdown
+        assert "\u2029" not in page.markdown
+        assert "Page one" in page.markdown
+        assert "Page two" in page.markdown
+        assert "Page three" in page.markdown
+
 
 # ------------------------------------------------------------------
 # SiteCrawler._pdf_to_markdown — OCR integration
