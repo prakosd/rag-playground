@@ -140,6 +140,23 @@ _PARAGRAPH_SPLIT_2_RE = re.compile(r"\n{2,}")
 # so downstream regex patterns (which expect only \n) work correctly.
 _UNICODE_LINE_SEP_RE = re.compile("[\u2028\u2029]")
 
+# Matches HTML data-* attribute names (e.g. data-cmp-data-layer).
+# Used to strip CMS data-layer payloads that leak as visible text.
+_DATA_ATTR_RE = re.compile(r"^data-")
+
+# Matches leaked CMS attribute debris in Markdown output, e.g.
+# ``\r\n"}}}" id="text-abc123" class="cmp-text">``
+_CMS_ATTR_JUNK_RE = re.compile(
+    r"(?:\\r\\n|\r\n|\r|\n)*"
+    r'["\'}\]\)]*\}\}["\'>]*'
+    r'(?:\s+[a-z][a-z\-]*="[^"]*")*'
+    r"\s*>",
+)
+
+# Matches literal escaped CRLF sequences (4-char ``\r\n``) that leak
+# from CMS JSON payloads embedded in HTML data attributes.
+_LITERAL_CRLF_RE = re.compile(r"\\r\\n")
+
 # ------------------------------------------------------------------
 # Fragment link resolution
 # ------------------------------------------------------------------
@@ -292,6 +309,7 @@ class ContentExtractor:
         ``_COVERAGE_THRESHOLD`` of the page's visible text.
         """
         html = result.html
+        html = self._strip_data_attributes(html)
         # Capture supplementary sections (e.g. FAQs) before trafilatura strips them.
         supplements = self._extract_supplementary_sections(html)
         html = self._filter_tags(html)
@@ -353,7 +371,8 @@ class ContentExtractor:
 
     def _extract_full_html(self, result: CrawlResult) -> ExtractedPage:
         """Use markdownify on the (optionally tag-filtered) HTML."""
-        html = self._filter_tags(result.html)
+        html = self._strip_data_attributes(result.html)
+        html = self._filter_tags(html)
         html = self._preserve_strikethrough(html)
         html = self._space_heading_children(html)
         html = self._populate_empty_links(html)
@@ -412,6 +431,29 @@ class ContentExtractor:
             return "](" + urljoin(page_url, "#" + fragment) + ")"
 
         return _FRAGMENT_LINK_RE.sub(_replacer, text)
+
+    # ------------------------------------------------------------------
+    # CMS data-attribute stripping
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _strip_data_attributes(html: str) -> str:
+        """Remove all ``data-*`` attributes from HTML elements.
+
+        CMS platforms (e.g. Adobe Experience Manager) embed JSON payloads
+        in ``data-cmp-data-layer`` and similar attributes.  When the JSON
+        contains unescaped quotes, ``html.parser`` misparses the boundary
+        and the payload leaks into the DOM as visible text — producing
+        duplicate content, literal ``\\r\\n``, and attribute debris in
+        the Markdown output.  Stripping ``data-*`` attributes prevents
+        this at source; these attributes are never browser-visible.
+        """
+        soup = BeautifulSoup(html, _HTML_PARSER)
+        for tag in soup.find_all(True):
+            names = [a for a in tag.attrs if _DATA_ATTR_RE.match(a)]
+            for name in names:
+                del tag[name]
+        return str(soup)
 
     # ------------------------------------------------------------------
     # Empty link population
@@ -931,6 +973,9 @@ class ContentExtractor:
         6. Compact runs of short standalone paragraphs into bullet lists.
         """
         text = _UNICODE_LINE_SEP_RE.sub("\n", text)
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = _LITERAL_CRLF_RE.sub("\n", text)
+        text = _CMS_ATTR_JUNK_RE.sub("", text)
         text = ContentExtractor._strip_template_variables(text)
         text = ContentExtractor._collapse_blank_lines(text)
         text = ContentExtractor._dedup_paragraphs(text)

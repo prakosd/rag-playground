@@ -247,10 +247,87 @@ class TestCleanMarkdown:
         result = ContentExtractor._clean_markdown(text)
         assert "\u2028" not in result
         assert "\u2029" not in result
-        assert "Hello\nWorld\nEnd" == result
+        assert result == "Hello\nWorld\nEnd"
+
+    def test_crlf_normalised(self):
+        """Real CRLF bytes in extracted text are normalised to LF."""
+        text = "Line one\r\nLine two\rLine three"
+        result = ContentExtractor._clean_markdown(text)
+        assert "\r" not in result
+        assert result == "Line one\nLine two\nLine three"
+
+    def test_literal_escaped_crlf_removed(self):
+        r"""Literal ``\r\n`` strings leaked from CMS JSON are cleaned."""
+        text = "Browse by category\\r\\n"
+        result = ContentExtractor._clean_markdown(text)
+        assert "\\r\\n" not in result
+        assert "Browse by category" in result
+
+    def test_cms_attribute_junk_removed(self):
+        r"""CMS data-attribute debris like ``"}}" id="..." class="...">`` is stripped."""
+        text = (
+            'Browse by category\\r\\n"}}" id="text-20f" class="cmp-text">\n\n## Browse by category'
+        )
+        result = ContentExtractor._clean_markdown(text)
+        assert 'id="text-20f"' not in result
+        assert 'class="cmp-text"' not in result
+        assert "Browse by category" in result
 
 
-class TestCoverageFallback:
+class TestStripDataAttributes:
+    """Tests for ``_strip_data_attributes`` preprocessing."""
+
+    def test_data_cmp_data_layer_removed(self):
+        """AEM data-cmp-data-layer attributes are stripped from HTML."""
+        html = (
+            '<div data-cmp-data-layer=\'{"text":"Hello\\r\\n"}\' '
+            'id="text-abc" class="cmp-text">'
+            "<h2>Hello</h2></div>"
+        )
+        result = ContentExtractor._strip_data_attributes(html)
+        assert "data-cmp-data-layer" not in result
+        assert "<h2>Hello</h2>" in result
+        assert 'id="text-abc"' in result
+        assert 'class="cmp-text"' in result
+
+    def test_multiple_data_attrs_removed(self):
+        """All data-* attributes are stripped, not just data-cmp-*."""
+        html = '<p data-foo="1" data-bar="2" class="keep">Text</p>'
+        result = ContentExtractor._strip_data_attributes(html)
+        assert "data-foo" not in result
+        assert "data-bar" not in result
+        assert 'class="keep"' in result
+        assert "Text" in result
+
+    def test_non_data_attrs_preserved(self):
+        """Standard attributes (id, class, href, itemtype) are kept."""
+        html = '<a href="/page" id="link1" class="nav" itemtype="https://schema.org/Thing">Link</a>'
+        result = ContentExtractor._strip_data_attributes(html)
+        assert 'href="/page"' in result
+        assert 'id="link1"' in result
+        assert 'class="nav"' in result
+        assert "itemtype" in result
+
+    def test_integration_no_duplicate_from_data_layer(self):
+        """Full extraction of AEM-style HTML produces no duplicated content."""
+        html = (
+            "<html><head><title>Test</title></head><body>"
+            '<div data-cmp-data-layer=\'{"text":"Emergency resources\\r\\n"}\'>'
+            "<h2>Emergency resources</h2>"
+            "<p>Contact details for emergencies.</p>"
+            "</div></body></html>"
+        )
+        config = PageConfig(extract_main_content=True)
+        extractor = ContentExtractor(config)
+        result = CrawlResult(url="https://example.com/page", html=html, success=True)
+        pages = extractor.extract([result])
+        assert len(pages) == 1
+        md = pages[0].markdown
+        assert "\\r\\n" not in md
+        assert "data-cmp-data-layer" not in md
+        count = md.count("Emergency resources")
+        assert count <= 2, f"Duplicated content: found {count} occurrences"
+
     """Tests for automatic trafilatura-to-markdownify fallback on low coverage."""
 
     def test_fallback_triggers_on_low_coverage(self):
