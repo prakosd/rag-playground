@@ -135,6 +135,11 @@ _PARAGRAPH_SPLIT_RE = re.compile(r"\n\n+")
 # Splits text on two or more newlines (variant for dedup, matches \n{2,})
 _PARAGRAPH_SPLIT_2_RE = re.compile(r"\n{2,}")
 
+# Unicode Line Separator (U+2028) and Paragraph Separator (U+2029) —
+# introduced by PDF extraction (pymupdf4llm); normalised to \n early
+# so downstream regex patterns (which expect only \n) work correctly.
+_UNICODE_LINE_SEP_RE = re.compile("[\u2028\u2029]")
+
 # ------------------------------------------------------------------
 # Fragment link resolution
 # ------------------------------------------------------------------
@@ -925,6 +930,7 @@ class ContentExtractor:
         5. Promote standalone short labels followed by content to headings.
         6. Compact runs of short standalone paragraphs into bullet lists.
         """
+        text = _UNICODE_LINE_SEP_RE.sub("\n", text)
         text = ContentExtractor._strip_template_variables(text)
         text = ContentExtractor._collapse_blank_lines(text)
         text = ContentExtractor._dedup_paragraphs(text)

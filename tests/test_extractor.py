@@ -241,6 +241,14 @@ class TestCleanMarkdown:
         assert "- Already a list" in result
         assert "- - Already" not in result
 
+    def test_unicode_line_separators_normalised(self):
+        """U+2028 / U+2029 from PDF extraction are replaced with newlines."""
+        text = "Hello\u2028World\u2029End"
+        result = ContentExtractor._clean_markdown(text)
+        assert "\u2028" not in result
+        assert "\u2029" not in result
+        assert "Hello\nWorld\nEnd" == result
+
 
 class TestCoverageFallback:
     """Tests for automatic trafilatura-to-markdownify fallback on low coverage."""
