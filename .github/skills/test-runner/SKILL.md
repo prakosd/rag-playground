@@ -50,10 +50,10 @@ This project has ~500 tests. Verbose output would be ~1000 lines — too large t
 ### Step 0 — collect test count
 
 ```
-python -m pytest tests/ --collect-only -q
+python -m pytest tests/ --collect-only -q -q
 ```
 
-Run using the **ruff direct strategy** (fast, no sleep needed). The last line of output shows `N tests collected`. Record this number as **EXPECTED_TOTAL**.
+Run using the **ruff direct strategy** (fast, no sleep needed). Double `-q` suppresses individual test names — output is just `N tests collected`. Record this number as **EXPECTED_TOTAL**.
 
 ### Step 1 — pytest quick pass
 
