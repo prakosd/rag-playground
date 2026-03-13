@@ -1,6 +1,6 @@
 ---
 description: "Run pytest and ruff lint/format checks. Use when: run tests, run lint, verify changes, check code quality, finalize code changes, validate implementation."
-tools: [execute, read]
+tools: [execute, read, 'vscode/askQuestions']
 model: "Claude Haiku 4.5 (copilot)"
 user-invocable: false
 argument-hint: "Run all tests and lint checks and report results"
