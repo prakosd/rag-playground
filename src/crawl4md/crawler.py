@@ -374,7 +374,6 @@ class SiteCrawler:
                 url_depths=url_depths,
             )
             success, fail = self._split_results(round_results)
-            self._save_url_lists(success, fail, round_prefix)
             if self._writer is not None:
                 self._writer.flush()
             if self._fail_writer is not None:
@@ -382,6 +381,8 @@ class SiteCrawler:
             all_success.extend(success)
             succeeded_urls.update(r.url for r in success)
             all_fail.extend(fail)
+            self._save_url_lists(all_success, fail, round_prefix)
+            self._write_round_success_files(round_prefix, all_success)
 
             # --- Retry rounds ---
             failed_urls = [r.url for r in all_fail]
@@ -420,7 +421,6 @@ class SiteCrawler:
                     url_depths=url_depths,
                 )
                 success, fail = self._split_results(round_results)
-                self._save_url_lists(success, fail, round_prefix)
                 if self._writer is not None:
                     self._writer.flush()
                 if self._fail_writer is not None:
@@ -435,6 +435,8 @@ class SiteCrawler:
                 existing_fail_urls = {r.url for r in all_fail}
                 all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
                 failed_urls = [r.url for r in fail]
+                self._save_url_lists(all_success, fail, round_prefix)
+                self._write_round_success_files(round_prefix, all_success)
 
         # --- Final merged files (unsorted) ---
         remaining_fail_urls = [r.url for r in all_fail]
@@ -980,6 +982,35 @@ class SiteCrawler:
         if fail:
             path = self.output_dir / f"{prefix}fail_urls.txt"
             path.write_text("\n".join(r.url for r in fail), encoding="utf-8")
+
+    def _write_round_success_files(self, round_prefix: str, success: list[CrawlResult]) -> None:
+        """Write cumulative round success content as a round-end snapshot.
+
+        ``round_N_success_urls.txt`` and ``round_N_success_content_*`` become
+        cumulative views of all successful pages discovered up to round N.
+        """
+        if not success or self._extractor is None or self.output_dir is None:
+            return
+
+        ext = self.page_config.output_extension
+        pattern = f"{round_prefix}{_SUCCESS_SUFFIX}content_*{ext}"
+        for existing in self.output_dir.glob(pattern):
+            existing.unlink()
+
+        pages = [self._extractor._extract_page(r) for r in success if r.markdown.strip()]
+        pages = [p for p in pages if p.markdown.strip()]
+        if not pages:
+            return
+
+        writer = FileWriter(
+            output_dir=self.output_dir,
+            max_file_size_mb=self.page_config.max_file_size_mb,
+            file_extension=ext,
+            prefix=f"{round_prefix}{_SUCCESS_SUFFIX}",
+        )
+        for page in pages:
+            writer.add(page)
+        writer.flush()
 
     def _write_final_files(
         self,

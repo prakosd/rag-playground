@@ -507,3 +507,54 @@ class TestFinalUnsortedContentFiles:
         # Both URLs should appear exactly once
         assert content.count(url_a) == 1
         assert content.count(url_b) == 1
+
+
+class TestRoundSuccessSnapshots:
+    """Tests for cumulative per-round success URL/content snapshots."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_round_success_files_are_cumulative(self, mock_crawler_cls, tmp_path: Path):
+        """round_2_success files include successes from round 1 and round 2."""
+        url_a = "https://example.com/a"
+        url_b = "https://example.com/b"
+
+        # Round 1: A succeeds, B is blocked
+        result_a = _make_mock_result(url_a)
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        result_b_blocked = _make_mock_result(url_b, html=blocked_html, markdown="blocked")
+        # Round 2: B succeeds
+        result_b_ok = _make_mock_result(url_b)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_a, result_b_blocked, result_b_ok])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=[url_a, url_b], limit=10, max_retries=1, flush_interval=1)
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+
+        round_1_success_urls = (crawler.output_dir / "round_1_success_urls.txt").read_text(
+            encoding="utf-8"
+        )
+        assert round_1_success_urls == url_a
+
+        round_2_success_urls = (crawler.output_dir / "round_2_success_urls.txt").read_text(
+            encoding="utf-8"
+        )
+        assert round_2_success_urls.splitlines() == [url_a, url_b]
+
+        round_2_files = list(crawler.output_dir.glob("round_2_success_content_*.txt"))
+        assert len(round_2_files) >= 1
+        round_2_content = round_2_files[0].read_text(encoding="utf-8")
+        assert round_2_content.count(url_a) == 1
+        assert round_2_content.count(url_b) == 1
