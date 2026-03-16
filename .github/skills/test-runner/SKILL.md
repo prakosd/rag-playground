@@ -77,7 +77,7 @@ If tests still fail after Step 2, **skip Steps 3–4** and go directly to Step 5
 **Only proceed if all tests passed.** If any tests failed, skip to Step 5.
 
 ```
-ruff check src/ tests/
+python -m ruff check src/ tests/
 ```
 
 Run using the **ruff direct strategy** above.
@@ -85,7 +85,7 @@ Run using the **ruff direct strategy** above.
 ### Step 4 — ruff format check
 
 ```
-ruff format --check src/ tests/
+python -m ruff format --check src/ tests/
 ```
 
 Run using the **ruff direct strategy** above.
@@ -119,3 +119,4 @@ Run using the **ruff direct strategy** above.
 - Only run ruff (Steps 3–4) if all tests passed — if any tests failed, skip ruff and go to Step 5
 - NEVER run `python -m pytest tests/ -v` without `--lf` — the full verbose output is too large
 - ALWAYS use `python -m pytest` instead of bare `pytest` — ensures the correct environment is used
+- ALWAYS prefer `python -m ruff` instead of bare `ruff` — ensures the correct environment is used
