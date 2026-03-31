@@ -183,11 +183,11 @@ class FileWriter:
             self._output_dir
             / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:0{_FILE_INDEX_WIDTH}d}{self._file_extension}"
         )
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write("".join(self._current_chunks))
+        with path.open("ab") as fh:
+            fh.write("".join(self._current_chunks).encode("utf-8"))
         if path not in self._files:
             self._files.append(path)
-        self._bytes_on_disk += self._current_size
+        self._bytes_on_disk = path.stat().st_size
         self._current_chunks = []
         self._current_size = 0
 
@@ -199,7 +199,7 @@ class FileWriter:
             self._output_dir
             / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:0{_FILE_INDEX_WIDTH}d}{self._file_extension}"
         )
-        path.write_text("".join(chunks), encoding="utf-8")
+        path.write_bytes("".join(chunks).encode("utf-8"))
         if path not in self._files:
             self._files.append(path)
 
@@ -220,5 +220,5 @@ class FileWriter:
         """Write chunks to a numbered output file (batch mode helper)."""
         filename = f"{_CONTENT_PREFIX}{index:0{_FILE_INDEX_WIDTH}d}{ext}"
         path = output_dir / filename
-        path.write_text("".join(chunks), encoding="utf-8")
+        path.write_bytes("".join(chunks).encode("utf-8"))
         return path

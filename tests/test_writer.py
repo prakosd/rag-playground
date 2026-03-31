@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from crawl4md.config import ExtractedPage
-from crawl4md.writer import FileWriter
+from crawl4md.writer import _MB, FileWriter
 
 
 class TestFileWriter:
@@ -259,3 +259,53 @@ class TestFileWriterPrefix:
         files = writer.flush()
 
         assert files[0].name == "content_001.txt"
+
+
+class TestFileWriterDiskSizeLimit:
+    """Verify that output files never exceed max_file_size_mb on disk."""
+
+    def test_incremental_files_within_limit(self, tmp_path: Path):
+        """Every file produced by add/flush respects the size limit on disk."""
+        limit_mb = 0.001
+        max_bytes = int(limit_mb * _MB)
+        writer = FileWriter(output_dir=tmp_path, max_file_size_mb=limit_mb)
+        pages = [
+            ExtractedPage(url=f"https://example.com/p{i}", markdown="x" * 300) for i in range(10)
+        ]
+        for page in pages:
+            writer.add(page)
+        files = writer.flush()
+
+        assert len(files) > 1
+        for f in files:
+            assert f.stat().st_size <= max_bytes
+
+    def test_batch_files_within_limit(self, tmp_path: Path):
+        """Every file produced by write() respects the size limit on disk."""
+        limit_mb = 0.001
+        max_bytes = int(limit_mb * _MB)
+        pages = [
+            ExtractedPage(url=f"https://example.com/p{i}", markdown="y" * 300) for i in range(10)
+        ]
+        writer = FileWriter()
+        files = writer.write(pages, tmp_path, max_file_size_mb=limit_mb)
+
+        assert len(files) > 1
+        for f in files:
+            assert f.stat().st_size <= max_bytes
+
+    def test_multi_flush_append_within_limit(self, tmp_path: Path):
+        """Repeated flush-then-add cycles keep files within the limit on disk."""
+        limit_mb = 0.002
+        max_bytes = int(limit_mb * _MB)
+        writer = FileWriter(output_dir=tmp_path, max_file_size_mb=limit_mb)
+
+        for i in range(8):
+            page = ExtractedPage(url=f"https://example.com/p{i}", markdown="z" * 200)
+            writer.add(page)
+            writer.flush()
+
+        files = writer.flush()
+        assert len(files) >= 1
+        for f in files:
+            assert f.stat().st_size <= max_bytes
