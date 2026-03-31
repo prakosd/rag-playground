@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
 
 from crawl4md.config import ExtractedPage
@@ -222,3 +223,31 @@ class FileWriter:
         path = output_dir / filename
         path.write_bytes("".join(chunks).encode("utf-8"))
         return path
+
+
+class PageSidecar:
+    """Append/read ``ExtractedPage`` objects as JSONL for memory-efficient crawls.
+
+    Each line is a self-contained JSON object produced by Pydantic's
+    ``model_dump_json()``, so the file is trivially round-trippable
+    without parsing the formatted Markdown content files.
+    """
+
+    @staticmethod
+    def append(page: ExtractedPage, path: Path) -> None:
+        """Serialize *page* and append it as one JSONL line."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(page.model_dump_json())
+            fh.write("\n")
+
+    @staticmethod
+    def read_pages(path: Path) -> Iterator[ExtractedPage]:
+        """Yield ``ExtractedPage`` objects from a JSONL sidecar file."""
+        if not path.exists():
+            return
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    yield ExtractedPage.model_validate_json(line)

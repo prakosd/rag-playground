@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from crawl4md.config import CrawlerConfig, PageConfig
 from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
-from crawl4md.writer import FileWriter
+from crawl4md.writer import FileWriter, PageSidecar
 from tests.conftest import _make_mock_result
 
 
@@ -850,3 +850,153 @@ class TestInterruptHandling:
 
         out = capsys.readouterr().out
         assert "Interrupted" in out
+
+
+class TestSidecarFiles:
+    """Tests for JSONL sidecar files and memory-efficient field stripping."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sidecar_files_created(self, mock_crawler_cls, tmp_path: Path):
+        """Crawl creates success and fail JSONL sidecar files."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 123</body></html>"
+        ok_result = _make_mock_result(
+            "https://example.com/ok",
+            "<html><body><p>Good content here is long enough to pass</p></body></html>",
+            "Good content here is long enough to pass",
+        )
+        blocked_result = _make_mock_result("https://example.com/blocked", blocked_html, "short")
+
+        call_count = 0
+
+        async def mock_arun(url, config=None):
+            nonlocal call_count
+            call_count += 1
+            if "blocked" in url:
+                return blocked_result
+            return ok_result
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/ok", "https://example.com/blocked"],
+            limit=2,
+            max_retries=0,
+            flush_interval=1,
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        # Success sidecar exists with at least 1 page
+        success_sidecars = list(crawler.output_dir.glob("round_*_success_pages.jsonl"))
+        assert len(success_sidecars) >= 1
+        success_pages = list(PageSidecar.read_pages(success_sidecars[0]))
+        assert len(success_pages) >= 1
+        assert any(p.url == "https://example.com/ok" for p in success_pages)
+
+        # Fail sidecar exists
+        fail_sidecars = list(crawler.output_dir.glob("round_*_fail_pages.jsonl"))
+        assert len(fail_sidecars) >= 1
+        fail_pages = list(PageSidecar.read_pages(fail_sidecars[0]))
+        assert len(fail_pages) >= 1
+        assert any(p.url == "https://example.com/blocked" for p in fail_pages)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_crawl_results_have_stripped_fields(self, mock_crawler_cls, tmp_path: Path):
+        """Returned CrawlResult objects have empty html and markdown after crawl."""
+        ok_result = _make_mock_result(
+            "https://example.com/page",
+            "<html><body><p>Real content</p></body></html>",
+            "Real content",
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=ok_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/page"], limit=1, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        results = crawler.crawl()
+
+        assert len(results) == 1
+        # Heavy fields are stripped after content is persisted to disk
+        assert results[0].html == ""
+        assert results[0].markdown == ""
+        # Lightweight metadata is preserved
+        assert results[0].url == "https://example.com/page"
+        assert results[0].success is True
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_final_files_built_from_sidecars(self, mock_crawler_cls, tmp_path: Path):
+        """Final sorted content files contain correct content from sidecars."""
+        pages_data = [
+            ("https://example.com/b/page", "Page B content is real text"),
+            ("https://example.com/a/page", "Page A content is real text"),
+        ]
+        results_iter = iter(
+            [
+                _make_mock_result(
+                    url,
+                    f"<html><body><p>{md}</p></body></html>",
+                    md,
+                )
+                for url, md in pages_data
+            ]
+        )
+
+        async def mock_arun(url, config=None):
+            return next(results_iter)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/b/page", "https://example.com/a/page"],
+            limit=2,
+            max_retries=0,
+            flush_interval=10,
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        # Sorted final files should exist and contain both URLs
+        sorted_files = list(crawler.output_dir.glob("sorted_final_success_content_*"))
+        assert len(sorted_files) >= 1
+        content = sorted_files[0].read_text(encoding="utf-8")
+        assert "https://example.com/a/page" in content
+        assert "https://example.com/b/page" in content
+
+        # In sorted output, /a/ should come before /b/
+        pos_a = content.index("example.com/a/page")
+        pos_b = content.index("example.com/b/page")
+        assert pos_a < pos_b

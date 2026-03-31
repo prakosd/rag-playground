@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from crawl4md.config import ExtractedPage
-from crawl4md.writer import _MB, FileWriter
+from crawl4md.writer import _MB, FileWriter, PageSidecar
 
 
 class TestFileWriter:
@@ -309,3 +309,74 @@ class TestFileWriterDiskSizeLimit:
         assert len(files) >= 1
         for f in files:
             assert f.stat().st_size <= max_bytes
+
+
+class TestPageSidecar:
+    def test_round_trip(self, tmp_path: Path):
+        """append + read_pages produces identical ExtractedPage objects."""
+        path = tmp_path / "pages.jsonl"
+        pages = [
+            ExtractedPage(url="https://a.com/1", title="A", markdown="# A"),
+            ExtractedPage(url="https://b.com/2", title="B", markdown="# B"),
+        ]
+        for p in pages:
+            PageSidecar.append(p, path)
+        result = list(PageSidecar.read_pages(path))
+        assert len(result) == 2
+        assert result[0].url == "https://a.com/1"
+        assert result[0].title == "A"
+        assert result[0].markdown == "# A"
+        assert result[1].url == "https://b.com/2"
+
+    def test_empty_file(self, tmp_path: Path):
+        """read_pages yields nothing for a non-existent file."""
+        path = tmp_path / "missing.jsonl"
+        assert list(PageSidecar.read_pages(path)) == []
+
+    def test_unicode_content(self, tmp_path: Path):
+        """Non-ASCII text survives serialization round-trip."""
+        path = tmp_path / "unicode.jsonl"
+        page = ExtractedPage(
+            url="https://example.com/日本語",
+            title="日本語タイトル",
+            markdown="# こんにちは\n\n内容です。",
+        )
+        PageSidecar.append(page, path)
+        result = list(PageSidecar.read_pages(path))
+        assert len(result) == 1
+        assert result[0].url == page.url
+        assert result[0].title == page.title
+        assert result[0].markdown == page.markdown
+
+    def test_newlines_in_markdown(self, tmp_path: Path):
+        """Markdown with embedded newlines round-trips correctly."""
+        path = tmp_path / "newlines.jsonl"
+        page = ExtractedPage(
+            url="https://example.com/multi",
+            title="Multi",
+            markdown="Line 1\nLine 2\n\n## Heading\n\nParagraph.",
+        )
+        PageSidecar.append(page, path)
+        result = list(PageSidecar.read_pages(path))
+        assert result[0].markdown == page.markdown
+
+    def test_creates_parent_dirs(self, tmp_path: Path):
+        """append creates intermediate directories if needed."""
+        path = tmp_path / "sub" / "dir" / "pages.jsonl"
+        page = ExtractedPage(url="https://example.com", markdown="text")
+        PageSidecar.append(page, path)
+        assert path.exists()
+        result = list(PageSidecar.read_pages(path))
+        assert len(result) == 1
+
+    def test_blank_lines_skipped(self, tmp_path: Path):
+        """Blank lines in the JSONL file are silently skipped."""
+        path = tmp_path / "blanks.jsonl"
+        page = ExtractedPage(url="https://example.com", markdown="ok")
+        PageSidecar.append(page, path)
+        # Inject a blank line
+        with path.open("a") as fh:
+            fh.write("\n")
+        PageSidecar.append(page, path)
+        result = list(PageSidecar.read_pages(path))
+        assert len(result) == 2
