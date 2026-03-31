@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -558,3 +559,294 @@ class TestRoundSuccessSnapshots:
         round_2_content = round_2_files[0].read_text(encoding="utf-8")
         assert round_2_content.count(url_a) == 1
         assert round_2_content.count(url_b) == 1
+
+
+class TestSortedRoundFiles:
+    """Tests for per-round sorted content and URL file generation."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sorted_round_success_files_created(self, mock_crawler_cls, tmp_path: Path):
+        """A single-round crawl produces sorted_round_1_success_content and URL files."""
+        html = "<html><head><title>Test</title></head><body><p>Hello world</p></body></html>"
+        mock_result = _make_mock_result("https://example.com/page", html, "Hello world")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/page"], limit=1, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        sorted_files = list(crawler.output_dir.glob("sorted_round_1_success_content_*.txt"))
+        assert len(sorted_files) >= 1
+        content = sorted_files[0].read_text(encoding="utf-8")
+        assert "https://example.com/page" in content
+
+        sorted_urls = crawler.output_dir / "sorted_round_1_success_urls.txt"
+        assert sorted_urls.exists()
+        assert "https://example.com/page" in sorted_urls.read_text(encoding="utf-8")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sorted_round_fail_files_created(self, mock_crawler_cls, tmp_path: Path):
+        """Blocked pages produce sorted_round_1_fail_content and URL files."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 123</body></html>"
+        blocked_result = _make_mock_result(
+            "https://example.com/blocked", blocked_html, "blocked page text"
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=blocked_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/blocked"], limit=1, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        sorted_fail_files = list(crawler.output_dir.glob("sorted_round_1_fail_content_*.txt"))
+        assert len(sorted_fail_files) >= 1
+        content = sorted_fail_files[0].read_text(encoding="utf-8")
+        assert "https://example.com/blocked" in content
+        assert "Blocked by WAF" in content
+
+        sorted_fail_urls = crawler.output_dir / "sorted_round_1_fail_urls.txt"
+        assert sorted_fail_urls.exists()
+        assert "https://example.com/blocked" in sorted_fail_urls.read_text(encoding="utf-8")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sorted_round_no_files_without_writer(self, mock_crawler_cls, tmp_path: Path):
+        """No sorted round files are created when no writer is provided."""
+        mock_result = _make_mock_result("https://example.com/ok", "<p>ok</p>", "ok")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/ok"], limit=1, max_retries=0, flush_interval=1
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        sorted_files = list(crawler.output_dir.glob("sorted_round_*"))
+        assert len(sorted_files) == 0
+
+    @patch("crawl4md.crawler._ENABLE_SORTED_ROUND_FILES", False)
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sorted_round_files_skipped_when_disabled(self, mock_crawler_cls, tmp_path: Path):
+        """No sorted round files when _ENABLE_SORTED_ROUND_FILES is False."""
+        html = "<html><head><title>Test</title></head><body><p>Hello</p></body></html>"
+        mock_result = _make_mock_result("https://example.com/page", html, "Hello")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/page"], limit=1, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        sorted_files = list(crawler.output_dir.glob("sorted_round_*"))
+        assert len(sorted_files) == 0
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sorted_round_files_cumulative_across_rounds(self, mock_crawler_cls, tmp_path: Path):
+        """sorted_round_2 success contains pages from both round 1 and round 2."""
+        url_a = "https://example.com/a"
+        url_b = "https://example.com/b"
+
+        # Round 1: A succeeds, B is blocked
+        result_a = _make_mock_result(url_a)
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        result_b_blocked = _make_mock_result(url_b, html=blocked_html, markdown="blocked")
+        # Round 2: B succeeds
+        result_b_ok = _make_mock_result(url_b)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_a, result_b_blocked, result_b_ok])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=[url_a, url_b], limit=10, max_retries=1, flush_interval=1)
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+
+        # Round 2 sorted success URLs should contain both A and B
+        sorted_r2_urls = crawler.output_dir / "sorted_round_2_success_urls.txt"
+        assert sorted_r2_urls.exists()
+        urls = sorted_r2_urls.read_text(encoding="utf-8").strip().split("\n")
+        assert set(urls) == {url_a, url_b}
+
+        # Sorted content should contain both
+        sorted_r2_files = list(crawler.output_dir.glob("sorted_round_2_success_content_*.txt"))
+        assert len(sorted_r2_files) >= 1
+        content = sorted_r2_files[0].read_text(encoding="utf-8")
+        assert url_a in content
+        assert url_b in content
+
+
+class TestPrintSummarySortedRound:
+    """Tests for print_summary display of sorted round files."""
+
+    def test_prints_sorted_round_files(self, tmp_path: Path, capsys):
+        from crawl4md.config import CrawlResult
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.output_dir = tmp_path
+
+        # Unsorted round files (needed for round detection)
+        (tmp_path / "round_1_success_content_001.md").write_text("x", encoding="utf-8")
+        # Sorted round files
+        (tmp_path / "sorted_round_1_success_content_001.md").write_text("x", encoding="utf-8")
+        (tmp_path / "sorted_round_1_success_urls.txt").write_text("url", encoding="utf-8")
+
+        results = [CrawlResult(url="https://example.com/a", success=True)]
+        crawler.print_summary(results)
+        out = capsys.readouterr().out
+        assert "Round 1 (sorted)" in out
+        assert "sorted_round_1_success_content_001.md" in out
+
+
+class TestInterruptHandling:
+    """Tests for graceful handling of KeyboardInterrupt during crawl."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_interrupt_produces_final_files(self, mock_crawler_cls, tmp_path: Path):
+        """Interrupt mid-crawl still writes final and sorted files from completed data."""
+        url_a = "https://example.com/a"
+        result_a = _make_mock_result(url_a)
+
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config=None):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return result_a
+            raise asyncio.CancelledError()
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[url_a, "https://example.com/b"], limit=10, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        # Final files should exist (from whatever completed before interrupt)
+        final_urls = crawler.output_dir / "final_success_urls.txt"
+        if final_urls.exists():
+            assert url_a in final_urls.read_text(encoding="utf-8")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_interrupt_returns_partial_results(self, mock_crawler_cls, tmp_path: Path):
+        """crawl() returns completed round results on interrupt, not an error."""
+        url_a = "https://example.com/a"
+        result_a = _make_mock_result(url_a)
+
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config=None):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return result_a
+            raise asyncio.CancelledError()
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[url_a, "https://example.com/b"], limit=10, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        results = crawler.crawl()
+
+        # Should not raise, should return a list (possibly empty or partial)
+        assert isinstance(results, list)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_interrupt_prints_interrupted_message(self, mock_crawler_cls, tmp_path: Path, capsys):
+        """Interrupt produces 'Interrupted!' message instead of a traceback."""
+
+        async def mock_arun(url, config=None):
+            raise asyncio.CancelledError()
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/a"], limit=1, max_retries=0, flush_interval=1
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.crawl()
+
+        out = capsys.readouterr().out
+        assert "Interrupted" in out

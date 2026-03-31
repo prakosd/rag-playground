@@ -101,6 +101,12 @@ _SORTED_FINAL_FAIL_URLS_FILE = "sorted_final_fail_urls.txt"
 # Round file naming components
 # ------------------------------------------------------------------
 
+# Set to False to skip per-round sorted file generation (saves extraction time)
+_ENABLE_SORTED_ROUND_FILES = True
+
+# Prefix for per-round sorted output files (combined with round number)
+_SORTED_ROUND_PREFIX = "sorted_round_"
+
 # Prefix for per-round output files (combined with round number)
 _ROUND_PREFIX = "round_"
 # Suffix appended to round prefix for successful pages
@@ -238,11 +244,16 @@ class SiteCrawler:
             self._writer._output_dir = self.output_dir
         if self._fail_writer is not None:
             self._fail_writer._output_dir = self.output_dir
-        if sys.platform == "win32":
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                all_results = pool.submit(self._run_rounds_in_proactor_loop).result()
-        else:
-            all_results = asyncio.run(self._run_rounds_async())
+        try:
+            if sys.platform == "win32":
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    all_results = pool.submit(self._run_rounds_in_proactor_loop).result()
+            else:
+                all_results = asyncio.run(self._run_rounds_async())
+        except KeyboardInterrupt:
+            # _run_rounds_async already flushed and wrote final files;
+            # this catches any residual interrupt from asyncio teardown.
+            all_results = []
         return all_results
 
     def print_summary(self, results: list[CrawlResult]) -> None:
@@ -283,6 +294,16 @@ class SiteCrawler:
             _print_files("Success content", content)
             _print_files("Fail content", fail_content)
             _print_files("URL lists", url_files)
+
+            sorted_prefix = f"sorted_round_{rn}_"
+            sorted_content = sorted(self.output_dir.glob(f"{sorted_prefix}success_content_*"))
+            sorted_fail_content = sorted(self.output_dir.glob(f"{sorted_prefix}fail_content_*"))
+            sorted_url_files = sorted(self.output_dir.glob(f"{sorted_prefix}*urls*.txt"))
+            if sorted_content or sorted_fail_content:
+                print(f"--- Round {rn} (sorted) ---")
+                _print_files("Success content", sorted_content)
+                _print_files("Fail content", sorted_fail_content)
+                _print_files("URL lists", sorted_url_files)
 
         # --- Unsorted final files (merged across rounds) ---
         final_success = sorted(self.output_dir.glob("final_success_content_*"))
@@ -360,63 +381,18 @@ class SiteCrawler:
 
         # Use a single browser instance across all rounds so that
         # cookies (including WAF challenge tokens) persist through retries.
-        async with AsyncWebCrawler(config=browser_cfg) as crawler:
-            round_results = await self._crawl_urls_async(
-                urls=self.config.urls,
-                crawler=crawler,
-                run_cfg=run_cfg,
-                discover_links=True,
-                round_prefix=round_prefix,
-                prior_success=0,
-                prior_fail=0,
-                round_label=f"Round 1/{total_rounds}",
-                all_generated=all_generated,
-                url_depths=url_depths,
-            )
-            success, fail = self._split_results(round_results)
-            if self._writer is not None:
-                self._writer.flush()
-            if self._fail_writer is not None:
-                self._fail_writer.flush()
-            all_success.extend(success)
-            succeeded_urls.update(r.url for r in success)
-            all_fail.extend(fail)
-            self._save_url_lists(all_success, fail, round_prefix)
-            self._write_round_success_files(round_prefix, all_success)
-
-            # --- Retry rounds ---
-            failed_urls = [r.url for r in all_fail]
-            for retry_num in range(1, self.config.max_retries + 1):
-                if not failed_urls:
-                    print("\nAll pages succeeded — skipping remaining retries.")
-                    break
-
-                round_num = retry_num + 1
-                round_prefix = f"{_ROUND_PREFIX}{round_num}_"
-                if self._writer is not None:
-                    self._writer.reset(f"{round_prefix}{_SUCCESS_SUFFIX}")
-                if self._fail_writer is not None:
-                    self._fail_writer.reset(f"{round_prefix}{_FAIL_SUFFIX}")
-
-                cooldown = _ROUND_COOLDOWN * random.uniform(
-                    _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
-                )
-                print(
-                    f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {cooldown:.0f}s cooldown) ---"
-                )
-                await asyncio.sleep(cooldown)
-
+        interrupted = False
+        try:
+            async with AsyncWebCrawler(config=browser_cfg) as crawler:
                 round_results = await self._crawl_urls_async(
-                    urls=failed_urls,
+                    urls=self.config.urls,
                     crawler=crawler,
-                    run_cfg=fallback_run_cfg,
+                    run_cfg=run_cfg,
                     discover_links=True,
-                    is_retry=True,
                     round_prefix=round_prefix,
-                    prior_success=len(all_success),
-                    prior_fail=len(all_fail),
-                    skip_urls=frozenset(succeeded_urls),
-                    round_label=f"Round {round_num}/{total_rounds}",
+                    prior_success=0,
+                    prior_fail=0,
+                    round_label=f"Round 1/{total_rounds}",
                     all_generated=all_generated,
                     url_depths=url_depths,
                 )
@@ -425,18 +401,76 @@ class SiteCrawler:
                     self._writer.flush()
                 if self._fail_writer is not None:
                     self._fail_writer.flush()
-                # Deduplicate: only add genuinely new successes
-                new_success = [r for r in success if r.url not in succeeded_urls]
-                all_success.extend(new_success)
-                succeeded_urls.update(r.url for r in new_success)
-                # Remove newly-succeeded URLs from all_fail; add new failures (skip dupes)
-                new_success_urls = {r.url for r in new_success}
-                all_fail = [r for r in all_fail if r.url not in new_success_urls]
-                existing_fail_urls = {r.url for r in all_fail}
-                all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
-                failed_urls = [r.url for r in fail]
+                all_success.extend(success)
+                succeeded_urls.update(r.url for r in success)
+                all_fail.extend(fail)
                 self._save_url_lists(all_success, fail, round_prefix)
                 self._write_round_success_files(round_prefix, all_success)
+                self._write_sorted_round_files(round_prefix, all_success, fail)
+
+                # --- Retry rounds ---
+                failed_urls = [r.url for r in all_fail]
+                for retry_num in range(1, self.config.max_retries + 1):
+                    if not failed_urls:
+                        print("\nAll pages succeeded — skipping remaining retries.")
+                        break
+
+                    round_num = retry_num + 1
+                    round_prefix = f"{_ROUND_PREFIX}{round_num}_"
+                    if self._writer is not None:
+                        self._writer.reset(f"{round_prefix}{_SUCCESS_SUFFIX}")
+                    if self._fail_writer is not None:
+                        self._fail_writer.reset(f"{round_prefix}{_FAIL_SUFFIX}")
+
+                    cooldown = _ROUND_COOLDOWN * random.uniform(
+                        _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
+                    )
+                    print(
+                        f"\n--- Round {round_num}/{total_rounds}: Retrying {len(failed_urls)} failed URL(s) (waiting {cooldown:.0f}s cooldown) ---"
+                    )
+                    await asyncio.sleep(cooldown)
+
+                    round_results = await self._crawl_urls_async(
+                        urls=failed_urls,
+                        crawler=crawler,
+                        run_cfg=fallback_run_cfg,
+                        discover_links=True,
+                        is_retry=True,
+                        round_prefix=round_prefix,
+                        prior_success=len(all_success),
+                        prior_fail=len(all_fail),
+                        skip_urls=frozenset(succeeded_urls),
+                        round_label=f"Round {round_num}/{total_rounds}",
+                        all_generated=all_generated,
+                        url_depths=url_depths,
+                    )
+                    success, fail = self._split_results(round_results)
+                    if self._writer is not None:
+                        self._writer.flush()
+                    if self._fail_writer is not None:
+                        self._fail_writer.flush()
+                    # Deduplicate: only add genuinely new successes
+                    new_success = [r for r in success if r.url not in succeeded_urls]
+                    all_success.extend(new_success)
+                    succeeded_urls.update(r.url for r in new_success)
+                    # Remove newly-succeeded URLs from all_fail; add new failures (skip dupes)
+                    new_success_urls = {r.url for r in new_success}
+                    all_fail = [r for r in all_fail if r.url not in new_success_urls]
+                    existing_fail_urls = {r.url for r in all_fail}
+                    all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
+                    failed_urls = [r.url for r in fail]
+                    self._save_url_lists(all_success, fail, round_prefix)
+                    self._write_round_success_files(round_prefix, all_success)
+                    self._write_sorted_round_files(round_prefix, all_success, fail)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            interrupted = True
+            print("\n\nCrawl interrupted! Saving progress...")
+
+        # --- Flush any remaining buffered content ---
+        if self._writer is not None:
+            self._writer.flush()
+        if self._fail_writer is not None:
+            self._fail_writer.flush()
 
         # --- Final merged files (unsorted) ---
         remaining_fail_urls = [r.url for r in all_fail]
@@ -447,11 +481,12 @@ class SiteCrawler:
         self.content_files = self._get_final_content_files()
 
         total_crawled = len(all_success) + len(all_fail)
+        label = "Interrupted" if interrupted else "Done"
         print(
-            f"\nDone! {len(all_success)} succeeded, {len(all_fail)} failed out of {total_crawled} total."
+            f"\n{label}! {len(all_success)} succeeded, {len(all_fail)} failed out of {total_crawled} total."
         )
-        assert self.output_dir is not None
-        print(f"Output folder: {self.output_dir}")
+        if self.output_dir is not None:
+            print(f"Output folder: {self.output_dir}")
 
         # Return all results (success + remaining failures) for API consumers
         return all_success + all_fail
@@ -1011,6 +1046,88 @@ class SiteCrawler:
         for page in pages:
             writer.add(page)
         writer.flush()
+
+    def _write_sorted_round_files(
+        self,
+        round_prefix: str,
+        all_success: list[CrawlResult],
+        round_fail: list[CrawlResult],
+    ) -> None:
+        """Write sorted content and URL files for one round.
+
+        Success files are cumulative (all pages up to this round, deduplicated).
+        Fail files contain only this round's failures (deduplicated).
+        Controlled by the ``_ENABLE_SORTED_ROUND_FILES`` module flag.
+        """
+        if not _ENABLE_SORTED_ROUND_FILES:
+            return
+        if self._writer is None or self.output_dir is None:
+            return
+        ext = self.page_config.output_extension
+        # "round_1_" → "sorted_round_1_"
+        sorted_prefix = _SORTED_ROUND_PREFIX + round_prefix[len(_ROUND_PREFIX) :]
+
+        # --- Sorted success (cumulative, deduplicated) ---
+        if all_success and self._extractor is not None:
+            seen: set[str] = set()
+            unique: list[CrawlResult] = []
+            for r in all_success:
+                if r.url not in seen:
+                    seen.add(r.url)
+                    unique.append(r)
+            pages = [self._extractor._extract_page(r) for r in unique if r.markdown.strip()]
+            pages = [p for p in pages if p.markdown.strip()]
+            sorted_pages = ContentSorter.sort(pages)
+            if sorted_pages:
+                # Remove stale files from prior writes
+                for f in self.output_dir.glob(f"{sorted_prefix}{_SUCCESS_SUFFIX}content_*{ext}"):
+                    f.unlink()
+                w = FileWriter(
+                    output_dir=self.output_dir,
+                    max_file_size_mb=self.page_config.max_file_size_mb,
+                    file_extension=ext,
+                    prefix=f"{sorted_prefix}{_SUCCESS_SUFFIX}",
+                )
+                for page in sorted_pages:
+                    w.add(page)
+                w.flush()
+                path = self.output_dir / f"{sorted_prefix}success_urls.txt"
+                path.write_text("\n".join(p.url for p in sorted_pages), encoding="utf-8")
+
+        # --- Sorted fail (this round only, deduplicated) ---
+        if round_fail:
+            seen_fail: set[str] = set()
+            unique_fail: list[CrawlResult] = []
+            for r in round_fail:
+                if r.url not in seen_fail:
+                    seen_fail.add(r.url)
+                    unique_fail.append(r)
+            fail_pages = []
+            for r in unique_fail:
+                raw_body = r.markdown.strip() or r.html.strip() or "(no response)"
+                fail_pages.append(
+                    ExtractedPage(
+                        url=r.url,
+                        title=f"{_FAILED_TITLE_PREFIX} {r.error or _UNKNOWN_ERROR_MSG}",
+                        markdown=(
+                            f"{_ERROR_SECTION_HEADER} {r.error or _UNKNOWN_ERROR_MSG}\n\n"
+                            f"{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
+                        ),
+                    )
+                )
+            sorted_fail = ContentSorter.sort(fail_pages)
+            if sorted_fail:
+                w = FileWriter(
+                    output_dir=self.output_dir,
+                    max_file_size_mb=self.page_config.max_file_size_mb,
+                    file_extension=ext,
+                    prefix=f"{sorted_prefix}{_FAIL_SUFFIX}",
+                )
+                for page in sorted_fail:
+                    w.add(page)
+                w.flush()
+                path = self.output_dir / f"{sorted_prefix}fail_urls.txt"
+                path.write_text("\n".join(p.url for p in sorted_fail), encoding="utf-8")
 
     def _write_final_files(
         self,
