@@ -13,9 +13,11 @@ from crawl4md.progress import (
     _ACTIVITY_LOG_CSV_HEADER,
     _ACTIVITY_LOG_TXT_FILE,
     _DARK_COLORS,
+    _EXPLAINER_TEXT,
     _LIGHT_COLORS,
     _MAX_LOG_ENTRIES,
     _NOTEBOOK_SHELL_NAMES,
+    _RATE_MIN_PAGES,
     ProgressReporter,
     _colab_is_dark,
     _in_colab,
@@ -43,21 +45,19 @@ class TestProgressWidget:
         assert "0%" in html
 
     def test_repr_html_includes_round_label(self):
-        widget = _ProgressWidget(current=1, total=5, round_label="Round 2/3")
+        widget = _ProgressWidget(current=1, total=5, round_label="Retry 1 of 2")
         html = widget._repr_html_()
-        assert "Round 2/3" in html
+        assert "Retry 1 of 2" in html
 
     def test_repr_html_includes_activity(self):
         widget = _ProgressWidget(
             current=2,
             total=10,
-            activity="Crawling https://example.com/page",
-            activity_start_time="14:23:05",
+            activity="Reading page example.com/page",
         )
         html = widget._repr_html_()
-        assert "Crawling https://example.com/page" in html
-        assert "since 14:23:05" in html
-        # Should have the crawling icon
+        assert "Reading page example.com/page" in html
+        # Should have the reading page icon
         assert "🌐" in html
 
     def test_repr_html_includes_activity_log(self):
@@ -66,54 +66,53 @@ class TestProgressWidget:
             current=3,
             total=10,
             activity_log=[
-                (now, "Crawling https://example.com/a", 2.1),
-                (now, "Extracting content", 0.4),
+                (now, "Reading page example.com/a", 2.1),
+                (now, "Saving page content", 0.4),
             ],
         )
         html = widget._repr_html_()
-        assert "Crawling https://example.com/a" in html
-        assert "Extracting content" in html
+        assert "Reading page example.com/a" in html
+        assert "Saving page content" in html
         assert "2.1s" in html
         assert "0.4s" in html
 
     def test_repr_html_no_activity_still_valid(self):
         """Widget without activity data still produces valid HTML."""
-        widget = _ProgressWidget(current=1, total=5, eta="~02:00 left", stats="1 crawled")
+        widget = _ProgressWidget(current=1, total=5, eta="About 2 minutes left", stats="\u2705 1")
         html = widget._repr_html_()
         assert "Page 1 / 5" in html
         assert "🕷️" in html
-        assert "~02:00 left" in html
+        assert "About 2 minutes left" in html
 
     def test_repr_html_includes_stats_and_eta(self):
         widget = _ProgressWidget(
             current=3,
             total=10,
-            eta="~05:00 left, done ~12:30:00",
-            stats="3 crawled, 2 succeeded, 1 failed",
+            eta="About 5 minutes left",
+            stats="\u2705 2 &nbsp; \u274c 1 &nbsp; \U0001f4c4 3 total",
         )
         html = widget._repr_html_()
-        assert "3 crawled" in html
-        assert "~05:00 left" in html
+        assert "\u2705 2" in html
+        assert "About 5 minutes left" in html
 
     def test_repr_html_long_activity_truncated(self):
         long_url = "https://example.com/" + "a" * 100
         widget = _ProgressWidget(
             current=1,
             total=5,
-            activity=f"Crawling {long_url}",
-            activity_start_time="14:23:05",
+            activity=f"Reading page {long_url}",
         )
         html = widget._repr_html_()
         assert "…" in html
 
     def test_activity_icons(self):
-        assert _ProgressWidget._activity_icon("Crawling x") == "🌐"
-        assert _ProgressWidget._activity_icon("Extracting content") == "📝"
-        assert _ProgressWidget._activity_icon("Flushing to disk (5 pages processed)") == "💾"
-        assert _ProgressWidget._activity_icon("Delay 5.0s") == "⏳"
-        assert _ProgressWidget._activity_icon("Discovered 10 links from x") == "🔗"
+        assert _ProgressWidget._activity_icon("Reading page x") == "🌐"
+        assert _ProgressWidget._activity_icon("Saving page content") == "📝"
+        assert _ProgressWidget._activity_icon("Saving progress (5 pages)") == "📝"
+        assert _ProgressWidget._activity_icon("Pausing to avoid blocks (5.0s)") == "⏳"
+        assert _ProgressWidget._activity_icon("Finding more pages on x") == "🔗"
         assert _ProgressWidget._activity_icon("Something else") == "⚙️"
-        assert _ProgressWidget._activity_icon("❌ FAILED \u2014 Crawling x") == "❌"
+        assert _ProgressWidget._activity_icon("❌ FAILED \u2014 Reading page x") == "❌"
 
     def test_fmt_duration_ranges(self):
         assert _ProgressWidget._fmt_duration(0.01) == "<0.1s"
@@ -154,17 +153,17 @@ class TestProgressReporter:
             reporter = ProgressReporter(5)
             reporter._use_notebook = False
 
-            reporter.set_activity("Crawling page A")
+            reporter.set_activity("Reading page A")
             time.sleep(0.05)
-            reporter.set_activity("Extracting content")
+            reporter.set_activity("Saving page content")
 
             assert len(reporter._activity_log) == 1
             ts, label, dur = reporter._activity_log[0]
             assert isinstance(ts, datetime)
-            assert label == "Crawling page A"
+            assert label == "Reading page A"
             assert dur >= 0.04  # Should have captured the sleep
 
-            assert reporter._current_activity == "Extracting content"
+            assert reporter._current_activity == "Saving page content"
             assert reporter._activity_start > 0
 
     def test_activity_log_capped(self):
@@ -186,12 +185,12 @@ class TestProgressReporter:
             reporter = ProgressReporter(5)
             reporter._use_notebook = False
 
-            reporter.set_activity("Crawling page X")
+            reporter.set_activity("Reading page X")
             reporter.update("https://example.com/x", success=True)
 
             assert reporter._current_activity == ""
             assert len(reporter._activity_log) == 1
-            assert reporter._activity_log[0][1] == "Crawling page X"
+            assert reporter._activity_log[0][1] == "Reading page X"
 
     def test_update_increments_counts(self):
         with patch("crawl4md.progress._in_notebook", return_value=False):
@@ -210,15 +209,15 @@ class TestProgressReporter:
             reporter = ProgressReporter(2)
             reporter._use_notebook = False
 
-            reporter.set_activity("Crawling something")
+            reporter.set_activity("Reading page something")
             reporter.finish()
 
             assert reporter._current_activity == ""
             assert len(reporter._activity_log) == 1
 
     def test_round_label_stored(self):
-        reporter = ProgressReporter(5, round_label="Round 1/3")
-        assert reporter._round_label == "Round 1/3"
+        reporter = ProgressReporter(5, round_label="First pass")
+        assert reporter._round_label == "First pass"
 
     def test_no_activity_calls_still_works(self):
         """Reporter without any set_activity calls should still function."""
@@ -251,7 +250,7 @@ class TestProgressReporter:
         widget = _ProgressWidget(
             current=2,
             total=10,
-            activity_log=[(now, "Crawling https://example.com/a", 1.0)],
+            activity_log=[(now, "Reading page example.com/a", 1.0)],
         )
         html = widget._repr_html_()
         assert "Activity Log" in html
@@ -262,7 +261,7 @@ class TestProgressReporter:
         widget = _ProgressWidget(
             current=2,
             total=10,
-            activity_log=[(now, "Crawling https://example.com/a", 1.0)],
+            activity_log=[(now, "Reading page example.com/a", 1.0)],
         )
         html = widget._repr_html_()
         assert now.strftime("%H:%M:%S") in html
@@ -273,14 +272,14 @@ class TestProgressReporter:
             reporter = ProgressReporter(5)
             reporter._use_notebook = False
 
-            reporter.set_activity("Discovering links from https://example.com")
+            reporter.set_activity("Finding more pages on example.com")
             start = reporter._activity_start
             time.sleep(0.05)
 
-            reporter.update_activity_label("Discovered 5 links from https://example.com")
+            reporter.update_activity_label("Found 5 new pages on example.com")
 
             # Label changed but timer was NOT reset
-            assert reporter._current_activity == "Discovered 5 links from https://example.com"
+            assert reporter._current_activity == "Found 5 new pages on example.com"
             assert reporter._activity_start == start
             # No new log entry created
             assert len(reporter._activity_log) == 0
@@ -292,7 +291,7 @@ class TestProgressReporter:
     def test_build_widget_returns_widget(self):
         """_build_widget should return a _ProgressWidget with correct state."""
         with patch("crawl4md.progress._in_notebook", return_value=False):
-            reporter = ProgressReporter(10, round_label="Round 2/4")
+            reporter = ProgressReporter(10, round_label="Retry 1 of 3")
             reporter._use_notebook = False
             reporter.count = 3
             reporter._round_success = 2
@@ -302,8 +301,8 @@ class TestProgressReporter:
             assert isinstance(widget, _ProgressWidget)
             assert widget.current == 3
             assert widget.total == 10
-            assert widget.round_label == "Round 2/4"
-            assert "3 crawled" in widget.stats
+            assert widget.round_label == "Retry 1 of 3"
+            assert "\u2705" in widget.stats
 
     def test_set_activity_without_previous(self):
         """First set_activity should not crash (no previous to close)."""
@@ -325,28 +324,12 @@ class TestProgressReporter:
             assert reporter._activity_log == []
             assert reporter._current_activity == ""
 
-    def test_repr_html_activity_with_eta(self):
-        """Widget shows both start time and ETA when available."""
-        widget = _ProgressWidget(
-            current=5,
-            total=10,
-            activity="Crawling https://example.com/page",
-            activity_start_time="14:23:05",
-            activity_eta="14:23:18",
-        )
-        html = widget._repr_html_()
-        assert "since 14:23:05" in html
-        assert "~14:23:18" in html
-        assert "\u2192" in html
-
     def test_repr_html_activity_with_est_duration(self):
         """Widget shows estimated duration when provided."""
         widget = _ProgressWidget(
             current=5,
             total=10,
-            activity="Crawling https://example.com/page",
-            activity_start_time="14:23:05",
-            activity_eta="14:23:18",
+            activity="Reading page example.com/page",
             activity_est_duration="13.0s",
         )
         html = widget._repr_html_()
@@ -357,34 +340,29 @@ class TestProgressReporter:
         widget = _ProgressWidget(
             current=1,
             total=10,
-            activity="Crawling https://example.com/page",
-            activity_start_time="14:23:05",
+            activity="Reading page example.com/page",
         )
         html = widget._repr_html_()
         assert "(~" not in html
 
-    def test_repr_html_activity_no_eta(self):
-        """Widget shows only start time when no ETA is available."""
-        widget = _ProgressWidget(
-            current=1,
-            total=10,
-            activity="Crawling https://example.com/page",
-            activity_start_time="14:23:05",
-        )
-        html = widget._repr_html_()
-        assert "since 14:23:05" in html
-        assert "\u2192" not in html
-
     def test_activity_category(self):
         """_activity_category returns correct categories."""
-        assert _ProgressWidget._activity_category("Crawling https://x.com") == "crawl"
-        assert _ProgressWidget._activity_category("Extracting content") == "extract"
-        assert _ProgressWidget._activity_category("Flushing to disk") == "flush"
-        assert _ProgressWidget._activity_category("Delay 5.0s") == "delay"
-        assert _ProgressWidget._activity_category("Discovering links from x") == "discover"
+        assert _ProgressWidget._activity_category("Reading page example.com") == "crawl"
+        assert _ProgressWidget._activity_category("Downloading PDF example.com/f.pdf") == "crawl"
+        assert _ProgressWidget._activity_category("Saving page content") == "extract"
+        assert _ProgressWidget._activity_category("Saving PDF content") == "extract"
+        assert _ProgressWidget._activity_category("Saving progress") == "flush"
+        assert _ProgressWidget._activity_category("Pausing to avoid blocks (5.0s)") == "delay"
+        assert _ProgressWidget._activity_category("Waiting before retry (3s)") == "delay"
+        assert (
+            _ProgressWidget._activity_category("Website is blocking us \u2014 waiting 30s")
+            == "delay"
+        )
+        assert _ProgressWidget._activity_category("Finding more pages on x") == "discover"
+        assert _ProgressWidget._activity_category("Found 5 new pages on x") == "discover"
         assert _ProgressWidget._activity_category("Something else") == "other"
         # Failed activities keep their category based on the underlying label
-        assert _ProgressWidget._activity_category("\u274c FAILED \u2014 Crawling x") == "crawl"
+        assert _ProgressWidget._activity_category("\u274c FAILED \u2014 Reading page x") == "crawl"
 
     def test_build_widget_computes_activity_eta(self):
         """_build_widget computes ETA from same-category log entries."""
@@ -395,17 +373,15 @@ class TestProgressReporter:
             # Simulate a few completed crawling activities (10s each)
             now = datetime.now()
             reporter._activity_log = [
-                (now, "Crawling https://example.com/a", 10.0),
-                (now, "Extracting content", 0.5),
-                (now, "Crawling https://example.com/b", 10.0),
+                (now, "Reading page example.com/a", 10.0),
+                (now, "Saving page content", 0.5),
+                (now, "Reading page example.com/b", 10.0),
             ]
             # Start a new crawling activity
-            reporter._current_activity = "Crawling https://example.com/c"
+            reporter._current_activity = "Reading page example.com/c"
             reporter._activity_start = time.time()
 
             widget = reporter._build_widget()
-            assert widget.activity_start_time != ""
-            assert widget.activity_eta != ""
             assert widget.activity_est_duration != ""
 
     def test_build_widget_no_eta_without_history(self):
@@ -415,12 +391,10 @@ class TestProgressReporter:
             reporter._use_notebook = False
 
             # Start a crawling activity with no prior log
-            reporter._current_activity = "Crawling https://example.com/a"
+            reporter._current_activity = "Reading page example.com/a"
             reporter._activity_start = time.time()
 
             widget = reporter._build_widget()
-            assert widget.activity_start_time != ""
-            assert widget.activity_eta == ""
             assert widget.activity_est_duration == ""
 
     def test_update_marks_failed_activity(self):
@@ -429,13 +403,13 @@ class TestProgressReporter:
             reporter = ProgressReporter(5)
             reporter._use_notebook = False
 
-            reporter.set_activity("Crawling https://example.com/blocked")
+            reporter.set_activity("Reading page example.com/blocked")
             reporter.update("https://example.com/blocked", success=False)
 
             assert len(reporter._activity_log) == 1
             label = reporter._activity_log[0][1]
             assert label.startswith("\u274c FAILED")
-            assert "Crawling https://example.com/blocked" in label
+            assert "Reading page example.com/blocked" in label
 
     def test_update_success_no_fail_marker(self):
         """update() with success=True does NOT add fail marker."""
@@ -443,7 +417,7 @@ class TestProgressReporter:
             reporter = ProgressReporter(5)
             reporter._use_notebook = False
 
-            reporter.set_activity("Crawling https://example.com/ok")
+            reporter.set_activity("Reading page example.com/ok")
             reporter.update("https://example.com/ok", success=True)
 
             assert len(reporter._activity_log) == 1
@@ -457,8 +431,8 @@ class TestProgressReporter:
             current=3,
             total=10,
             activity_log=[
-                (now, "Crawling https://example.com/ok", 5.0),
-                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+                (now, "Reading page example.com/ok", 5.0),
+                (now, "\u274c FAILED \u2014 Reading page example.com/blocked", 8.0),
             ],
         )
         html = widget._repr_html_()
@@ -473,29 +447,29 @@ class TestActivityLogDisk:
     def test_activity_log_appends_txt_to_disk(self, tmp_path: Path):
         """Closing an activity writes a human-readable line to activity_log.txt."""
         with patch("crawl4md.progress._in_notebook", return_value=False):
-            reporter = ProgressReporter(5, round_label="Round 1/2", log_dir=tmp_path)
-            reporter.set_activity("Crawling https://example.com")
+            reporter = ProgressReporter(5, round_label="First pass", log_dir=tmp_path)
+            reporter.set_activity("Reading page example.com")
             time.sleep(0.05)
-            reporter.set_activity("Extracting content")  # closes previous
+            reporter.set_activity("Saving page content")  # closes previous
 
         txt_path = tmp_path / _ACTIVITY_LOG_TXT_FILE
         assert txt_path.exists()
         lines = txt_path.read_text(encoding="utf-8").splitlines()
         assert len(lines) == 1
         line = lines[0]
-        assert "[Round 1/2]" in line
+        assert "[First pass]" in line
         assert "\U0001f310" in line  # 🌐 crawl icon
-        assert "Crawling https://example.com" in line
+        assert "Reading page example.com" in line
         # Duration in parentheses at end
         assert line.endswith(")")
 
     def test_activity_log_appends_csv_to_disk(self, tmp_path: Path):
         """Closing an activity writes a CSV row to activity_log.csv."""
         with patch("crawl4md.progress._in_notebook", return_value=False):
-            reporter = ProgressReporter(5, round_label="Round 1/2", log_dir=tmp_path)
-            reporter.set_activity("Crawling https://example.com")
+            reporter = ProgressReporter(5, round_label="First pass", log_dir=tmp_path)
+            reporter.set_activity("Reading page example.com")
             time.sleep(0.05)
-            reporter.set_activity("Extracting content")  # closes previous
+            reporter.set_activity("Saving page content")  # closes previous
 
         csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
         assert csv_path.exists()
@@ -504,8 +478,8 @@ class TestActivityLogDisk:
         assert len(reader) == 2  # header + 1 data row
         assert reader[0] == _ACTIVITY_LOG_CSV_HEADER.split(",")
         row = reader[1]
-        assert row[1] == "Round 1/2"
-        assert row[2] == "Crawling https://example.com"
+        assert row[1] == "First pass"
+        assert row[2] == "Reading page example.com"
         assert float(row[3]) >= 0.0  # duration is a valid float
 
     def test_csv_header_written_once(self, tmp_path: Path):
@@ -549,9 +523,9 @@ class TestActivityLogDisk:
         """Default (log_dir=None) creates no disk files."""
         with patch("crawl4md.progress._in_notebook", return_value=False):
             reporter = ProgressReporter(5)
-            reporter.set_activity("Crawling something")
+            reporter.set_activity("Reading page something")
             time.sleep(0.01)
-            reporter.set_activity("Extracting")
+            reporter.set_activity("Saving page content")
             reporter._close_activity()
 
         # No activity log files anywhere
@@ -560,7 +534,7 @@ class TestActivityLogDisk:
 
     def test_csv_escapes_commas_in_labels(self, tmp_path: Path):
         """Labels containing commas are properly CSV-escaped."""
-        label = "Crawling https://example.com/a,b,c"
+        label = "Reading page example.com/a,b,c"
         with patch("crawl4md.progress._in_notebook", return_value=False):
             reporter = ProgressReporter(5, log_dir=tmp_path)
             reporter.set_activity(label)
@@ -685,13 +659,11 @@ class TestProgressWidgetColab:
         widget = _ProgressWidget(
             current=3,
             total=10,
-            activity="Crawling https://example.com",
-            activity_start_time="12:30:00",
+            activity="Reading page example.com",
             colab=True,
         )
         html = widget._repr_html_()
-        assert "Crawling https://example.com" in html
-        assert "12:30:00" in html
+        assert "Reading page example.com" in html
 
     def test_colab_html_contains_log(self):
         """Colab rendering shows the activity log."""
@@ -699,7 +671,7 @@ class TestProgressWidgetColab:
         widget = _ProgressWidget(
             current=3,
             total=10,
-            activity_log=[(now, "Crawling https://example.com/a", 2.5)],
+            activity_log=[(now, "Reading page example.com/a", 2.5)],
             colab=True,
         )
         html = widget._repr_html_()
@@ -708,22 +680,22 @@ class TestProgressWidgetColab:
 
     def test_colab_html_contains_round_label(self):
         """Colab rendering shows the round label."""
-        widget = _ProgressWidget(current=1, total=5, round_label="Round 2/3", colab=True)
+        widget = _ProgressWidget(current=1, total=5, round_label="Retry 1 of 2", colab=True)
         html = widget._repr_html_()
-        assert "Round 2/3" in html
+        assert "Retry 1 of 2" in html
 
     def test_colab_html_contains_stats_and_eta(self):
         """Colab rendering shows stats and ETA."""
         widget = _ProgressWidget(
             current=2,
             total=10,
-            stats="5 crawled, 3 succeeded, 2 failed",
-            eta="~02:30 left",
+            stats="\u2705 3 &nbsp; \u274c 2 &nbsp; \U0001f4c4 5 total",
+            eta="About 2 minutes left",
             colab=True,
         )
         html = widget._repr_html_()
-        assert "5 crawled" in html
-        assert "~02:30 left" in html
+        assert "\u2705 3" in html
+        assert "About 2 minutes left" in html
 
     def test_colab_html_failed_log_entry_red(self):
         """Failed entries in Colab log are styled red."""
@@ -732,7 +704,7 @@ class TestProgressWidgetColab:
             current=3,
             total=10,
             activity_log=[
-                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+                (now, "\u274c FAILED \u2014 Reading page example.com/blocked", 8.0),
             ],
             colab=True,
         )
@@ -926,8 +898,7 @@ class TestColabDarkModeRendering:
         widget = _ProgressWidget(
             current=3,
             total=10,
-            activity="Crawling https://example.com",
-            activity_start_time="12:30:00",
+            activity="Reading page example.com",
             colab=True,
             dark=True,
         )
@@ -941,7 +912,7 @@ class TestColabDarkModeRendering:
         widget = _ProgressWidget(
             current=3,
             total=10,
-            activity_log=[(now, "Crawling https://example.com/a", 2.5)],
+            activity_log=[(now, "Reading page example.com/a", 2.5)],
             colab=True,
             dark=True,
         )
@@ -956,7 +927,7 @@ class TestColabDarkModeRendering:
             current=3,
             total=10,
             activity_log=[
-                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+                (now, "\u274c FAILED \u2014 Reading page example.com/blocked", 8.0),
             ],
             colab=True,
             dark=True,
@@ -980,7 +951,7 @@ class TestColabDarkModeRendering:
             current=3,
             total=10,
             activity_log=[
-                (now, "\u274c FAILED \u2014 Crawling https://example.com/blocked", 8.0),
+                (now, "\u274c FAILED \u2014 Reading page example.com/blocked", 8.0),
             ],
             colab=True,
             dark=False,
@@ -1019,3 +990,143 @@ class TestColorPalettes:
         assert _DARK_COLORS["header"] in html
         assert _DARK_COLORS["bar_bg"] in html
         assert _DARK_COLORS["pct"] in html
+
+
+class TestShortenUrl:
+    """Tests for the _shorten_url() helper in crawler.py."""
+
+    def test_short_url_unchanged(self):
+        from crawl4md.crawler import _shorten_url
+
+        url = "https://example.com/page"
+        assert _shorten_url(url) == url
+
+    def test_long_url_truncated(self):
+        from crawl4md.crawler import _shorten_url
+
+        url = "https://example.com/" + "a" * 80
+        result = _shorten_url(url)
+        assert len(result) <= 60
+        assert "\u2026" in result  # ellipsis
+
+    def test_scheme_stripped_before_truncation(self):
+        from crawl4md.crawler import _shorten_url
+
+        # Just over threshold with scheme, under without
+        url = "https://" + "x" * 55
+        result = _shorten_url(url)
+        assert not result.startswith("https://")
+
+
+class TestFriendlyEta:
+    """Tests for _eta_remaining_friendly()."""
+
+    def test_no_pages_returns_placeholder(self):
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+            result = reporter._eta_remaining_friendly()
+            assert result == "estimating..."
+
+    def test_less_than_a_minute(self):
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+            reporter.count = 9
+            reporter._start_time = time.time() - 9  # 1s per page, ~1s left
+            result = reporter._eta_remaining_friendly()
+            assert result == "Less than a minute left"
+
+    def test_minutes_pluralised(self):
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+            reporter.count = 2
+            reporter._start_time = time.time() - 120  # 60s per page, ~4 min left
+            result = reporter._eta_remaining_friendly()
+            assert "minutes" in result
+            assert result.startswith("About")
+
+    def test_hours_included(self):
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(100)
+            reporter._use_notebook = False
+            reporter.count = 1
+            reporter._start_time = time.time() - 3600  # 1h per page, 99h left
+            result = reporter._eta_remaining_friendly()
+            assert "hour" in result
+
+
+class TestCollapsibleLog:
+    """Tests for the collapsible <details> activity log in Jupyter."""
+
+    def test_jupyter_log_has_details_element(self):
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[(now, "Reading page example.com/a", 1.0)],
+        )
+        html = widget._repr_html_()
+        assert "<details>" in html
+        assert "<summary" in html
+        assert "Activity Log (1 entries)" in html
+
+    def test_colab_log_no_details_element(self):
+        now = datetime.now()
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            activity_log=[(now, "Reading page example.com/a", 1.0)],
+            colab=True,
+        )
+        html = widget._repr_html_()
+        assert "<details>" not in html
+        assert "Activity Log" in html  # still has heading
+
+
+class TestExplainerText:
+    """Tests for the one-line explainer shown on first render."""
+
+    def test_explainer_shown_at_zero(self):
+        widget = _ProgressWidget(current=0, total=10)
+        html = widget._repr_html_()
+        assert _EXPLAINER_TEXT in html
+        assert "c4md-explainer" in html
+
+    def test_explainer_hidden_after_first_page(self):
+        widget = _ProgressWidget(current=1, total=10)
+        html = widget._repr_html_()
+        assert _EXPLAINER_TEXT not in html
+
+    def test_colab_explainer_shown_at_zero(self):
+        widget = _ProgressWidget(current=0, total=10, colab=True)
+        html = widget._repr_html_()
+        assert _EXPLAINER_TEXT in html
+
+    def test_colab_explainer_hidden_after_first_page(self):
+        widget = _ProgressWidget(current=1, total=10, colab=True)
+        html = widget._repr_html_()
+        assert _EXPLAINER_TEXT not in html
+
+
+class TestPagesPerMinute:
+    """Tests for the pages-per-minute rate display."""
+
+    def test_rate_shown_after_min_pages(self):
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+            reporter.count = _RATE_MIN_PAGES
+            reporter._start_time = time.time() - 60  # 60s elapsed
+            widget = reporter._build_widget()
+            assert "pages/min" in widget.pages_per_min
+
+    def test_rate_not_shown_before_min_pages(self):
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+            reporter.count = 1
+            reporter._start_time = time.time() - 60
+            widget = reporter._build_widget()
+            assert widget.pages_per_min == ""

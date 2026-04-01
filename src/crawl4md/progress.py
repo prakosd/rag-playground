@@ -49,12 +49,15 @@ _LOG_LABEL_TRUNC = 67
 _ACTIVITY_ICONS: dict[str, str] = {
     "failed": "❌",
     "skip": "⏭️",
-    "empty extraction": "📭",
-    "crawl": "🌐",
-    "extract": "📝",
-    "flush": "💾",
-    "delay": "⏳",
-    "discover": "🔗",
+    "no content": "📭",
+    "reading page": "🌐",
+    "downloading": "🌐",
+    "saving": "📝",
+    "pausing": "⏳",
+    "waiting": "⏳",
+    "blocking": "⏳",
+    "finding": "🔗",
+    "found": "🔗",
 }
 # Fallback icon when no keyword matches.
 _ACTIVITY_ICON_DEFAULT = "⚙️"
@@ -73,6 +76,12 @@ _ACTIVITY_LOG_CSV_HEADER = "timestamp,round,activity,duration_seconds"
 _HEADER_SEPARATOR = " · "
 # Minimum spider column width percentage to keep it visible at 0% progress
 _SPIDER_MIN_WIDTH_PCT = 2
+# Minimum completed pages before showing pages-per-minute rate
+_RATE_MIN_PAGES = 2
+# Explainer text shown on the first render (before any page completes)
+_EXPLAINER_TEXT = (
+    "Pages are being read and saved automatically. This may take a while for large sites."
+)
 
 # ---------------------------------------------------------------------------
 # Color palettes for light and dark themes
@@ -211,6 +220,22 @@ class ProgressReporter:
         finish = datetime.now() + timedelta(seconds=remaining)
         return finish.strftime("%H:%M:%S")
 
+    def _eta_remaining_friendly(self) -> str:
+        """Estimated time remaining as natural language (e.g. 'About 3 minutes left')."""
+        if self.count == 0:
+            return _ETA_PLACEHOLDER
+        elapsed = time.time() - self._start_time
+        remaining = int(elapsed / self.count * (self.total - self.count))
+        if remaining < 60:
+            return "Less than a minute left"
+        hours, mins = divmod(remaining // 60, 60)
+        if hours > 0:
+            parts = [f"{hours} hour{'s' if hours != 1 else ''}"]
+            if mins > 0:
+                parts.append(f"{mins} minute{'s' if mins != 1 else ''}")
+            return f"About {' '.join(parts)} left"
+        return f"About {mins} minute{'s' if mins != 1 else ''} left"
+
     # ------------------------------------------------------------------
     # Activity tracking
     # ------------------------------------------------------------------
@@ -289,19 +314,23 @@ class ProgressReporter:
 
     def _build_widget(self) -> _ProgressWidget:
         """Construct the widget with current state."""
-        eta = f"~{self._eta_remaining()} left, done ~{self._eta_finish_time()}"
+        eta = self._eta_remaining_friendly()
         total_crawled = (
             self._prior_success + self._prior_fail + self._round_success + self._round_fail
         )
         total_success = self._prior_success + self._round_success
         total_fail = self._prior_fail + self._round_fail
-        stats = f"{total_crawled} crawled, {total_success} succeeded, {total_fail} failed"
+        stats = f"\u2705 {total_success} &nbsp; \u274c {total_fail} &nbsp; \U0001f4c4 {total_crawled} total"
 
-        activity_start_time = ""
-        activity_eta = ""
+        # Pages-per-minute rate (shown after enough data)
+        pages_per_min = ""
+        elapsed = time.time() - self._start_time
+        if self.count >= _RATE_MIN_PAGES and elapsed > 0:
+            rate = self.count / elapsed * 60
+            pages_per_min = f"~{rate:.0f} pages/min"
+
         activity_est_duration = ""
         if self._current_activity and self._activity_start > 0:
-            activity_start_time = datetime.fromtimestamp(self._activity_start).strftime("%H:%M:%S")
             # Estimate finish from avg duration of same-category activities
             cat = _ProgressWidget._activity_category(self._current_activity)
             durations = [
@@ -311,8 +340,6 @@ class ProgressReporter:
             ]
             if durations:
                 avg = sum(durations) / len(durations)
-                est_finish = datetime.fromtimestamp(self._activity_start) + timedelta(seconds=avg)
-                activity_eta = est_finish.strftime("%H:%M:%S")
                 activity_est_duration = _ProgressWidget._fmt_duration(avg)
 
         return _ProgressWidget(
@@ -320,10 +347,9 @@ class ProgressReporter:
             total=self.total,
             eta=eta,
             stats=stats,
+            pages_per_min=pages_per_min,
             round_label=self._round_label,
             activity=self._current_activity,
-            activity_start_time=activity_start_time,
-            activity_eta=activity_eta,
             activity_est_duration=activity_est_duration,
             activity_log=list(self._activity_log),
             colab=self._use_colab,
@@ -344,15 +370,21 @@ class ProgressReporter:
         if self._use_notebook:
             self._refresh_display()
         else:
-            eta = f"~{self._eta_remaining()} left, done ~{self._eta_finish_time()}"
+            eta = self._eta_remaining_friendly()
             msg = f"[{self.count}/{self.total}] ({self._elapsed()}) {self.action}: {url}"
             total_crawled = (
                 self._prior_success + self._prior_fail + self._round_success + self._round_fail
             )
             total_success = self._prior_success + self._round_success
             total_fail = self._prior_fail + self._round_fail
+            rate_info = ""
+            elapsed = time.time() - self._start_time
+            if self.count >= _RATE_MIN_PAGES and elapsed > 0:
+                rate = self.count / elapsed * 60
+                rate_info = f" (~{rate:.0f} pages/min)"
             stats = (
-                f"Total: {total_crawled} crawled, {total_success} succeeded, {total_fail} failed"
+                f"\u2705 {total_success}  \u274c {total_fail}"
+                f"  \U0001f4c4 {total_crawled} total{rate_info}"
             )
             print(f"{msg}  |  {eta}")
             print(stats)
@@ -381,10 +413,9 @@ class _ProgressWidget:
         total: int,
         eta: str = "",
         stats: str = "",
+        pages_per_min: str = "",
         round_label: str = "",
         activity: str = "",
-        activity_start_time: str = "",
-        activity_eta: str = "",
         activity_est_duration: str = "",
         activity_log: list[tuple[datetime, str, float]] | None = None,
         *,
@@ -395,10 +426,9 @@ class _ProgressWidget:
         self.total = total
         self.eta = eta
         self.stats = stats
+        self.pages_per_min = pages_per_min
         self.round_label = round_label
         self.activity = activity
-        self.activity_start_time = activity_start_time
-        self.activity_eta = activity_eta
         self.activity_est_duration = activity_est_duration
         self.activity_log = activity_log or []
         self.colab = colab
@@ -418,15 +448,15 @@ class _ProgressWidget:
     def _activity_category(label: str) -> str:
         """Categorise an activity label for ETA averaging."""
         low = label.lower()
-        if "crawl" in low:
+        if "reading page" in low or "downloading" in low:
             return "crawl"
-        if "extract" in low:
+        if "saving page" in low or "saving pdf" in low:
             return "extract"
-        if "flush" in low:
+        if "saving progress" in low:
             return "flush"
-        if "delay" in low:
+        if "pausing" in low or "waiting" in low or "blocking" in low:
             return "delay"
-        if "discover" in low:
+        if "finding" in low or "found" in low:
             return "discover"
         return "other"
 
@@ -451,6 +481,11 @@ class _ProgressWidget:
         header_parts.append(f"Page {self.current} / {self.total}")
         header = _HEADER_SEPARATOR.join(header_parts)
 
+        # --- Explainer (first render only) ---
+        explainer_html = ""
+        if self.current == 0:
+            explainer_html = f'<div class="c4md-explainer">{_EXPLAINER_TEXT}</div>'
+
         # --- Activity row ---
         activity_html = ""
         if self.activity:
@@ -459,12 +494,9 @@ class _ProgressWidget:
             display_label = self.activity
             if len(display_label) > _ACTIVITY_LABEL_MAX_LEN:
                 display_label = display_label[:_ACTIVITY_LABEL_TRUNC] + "…"
-            time_info = f"since {self.activity_start_time}" if self.activity_start_time else ""
-            if self.activity_eta:
-                time_info += f" \u2192 ~{self.activity_eta}"
+            time_span = ""
             if self.activity_est_duration:
-                time_info += f" (~{self.activity_est_duration})"
-            time_span = f'<span class="c4md-dur"> \u2014 {time_info}</span>' if time_info else ""
+                time_span = f'<span class="c4md-dur"> (~{self.activity_est_duration})</span>'
             activity_html = (
                 f'<div class="c4md-activity">'
                 f'<span class="c4md-pulse"></span>'
@@ -473,7 +505,7 @@ class _ProgressWidget:
                 f"</div>"
             )
 
-        # --- Activity log ---
+        # --- Activity log (collapsible) ---
         log_html = ""
         if self.activity_log:
             rows = ""
@@ -495,15 +527,21 @@ class _ProgressWidget:
                 )
             log_html = (
                 f'<div class="c4md-log">'
-                f'<div class="c4md-log-heading">Activity Log</div>'
+                f"<details>"
+                f'<summary class="c4md-log-heading">'
+                f"Activity Log ({len(self.activity_log)} entries)</summary>"
                 f'<table class="c4md-log-table">{rows}</table>'
+                f"</details>"
                 f"</div>"
             )
 
         # --- Stats + ETA ---
-        footer = f"{self.stats}"
+        footer_parts = [self.stats]
+        if self.pages_per_min:
+            footer_parts.append(self.pages_per_min)
         if self.eta:
-            footer += f" &nbsp;·&nbsp; {self.eta}"
+            footer_parts.append(self.eta)
+        footer = " &nbsp;·&nbsp; ".join(footer_parts)
 
         lt = _LIGHT_COLORS
         dk = _DARK_COLORS
@@ -617,6 +655,11 @@ class _ProgressWidget:
             f".c4md-pct {{"
             f"  float: right; font-weight: 600; color: {lt['pct']};"
             f"}}"
+            # Explainer subtitle
+            f".c4md-explainer {{"
+            f"  font-size: 11.5px; color: {lt['duration']}; margin-bottom: 6px;"
+            f"  font-style: italic;"
+            f"}}"
             # Dark-mode overrides
             f"@media (prefers-color-scheme: dark) {{"
             f"  .c4md-widget {{ color: {dk['text']}; }}"
@@ -635,11 +678,14 @@ class _ProgressWidget:
             f"  .c4md-log-fail {{ color: {dk['log_fail']}; }}"
             f"  .c4md-footer {{ color: {dk['footer']}; }}"
             f"  .c4md-pct {{ color: {dk['pct']}; }}"
+            f"  .c4md-explainer {{ color: {dk['duration']}; }}"
             f"}}"
             f"</style>"
             # Header
             f'<div class="c4md-header">{header}'
             f'<span class="c4md-pct">{pct}%</span></div>'
+            # Explainer (first render only)
+            f"{explainer_html}"
             # Bar + spider + thread + web decoration
             f'<div class="c4md-bar-wrap">'
             f'<div class="c4md-web">'
@@ -681,6 +727,14 @@ class _ProgressWidget:
         header_parts.append(f"Page {self.current} / {self.total}")
         header = _HEADER_SEPARATOR.join(header_parts)
 
+        # --- Explainer (first render only) ---
+        explainer_html = ""
+        if self.current == 0:
+            explainer_html = (
+                f'<div style="font-size:11.5px;color:{c["duration"]};'
+                f'margin-bottom:6px;font-style:italic">{_EXPLAINER_TEXT}</div>'
+            )
+
         # --- Activity row ---
         activity_html = ""
         if self.activity:
@@ -688,16 +742,11 @@ class _ProgressWidget:
             display_label = self.activity
             if len(display_label) > _ACTIVITY_LABEL_MAX_LEN:
                 display_label = display_label[:_ACTIVITY_LABEL_TRUNC] + "\u2026"
-            time_info = f"since {self.activity_start_time}" if self.activity_start_time else ""
-            if self.activity_eta:
-                time_info += f" \u2192 ~{self.activity_eta}"
+            time_span = ""
             if self.activity_est_duration:
-                time_info += f" (~{self.activity_est_duration})"
-            time_span = (
-                f'<span style="color:{c["duration"]}"> \u2014 {time_info}</span>'
-                if time_info
-                else ""
-            )
+                time_span = (
+                    f'<span style="color:{c["duration"]}"> (~{self.activity_est_duration})</span>'
+                )
             activity_html = (
                 f'<div style="margin:6px 0;color:{c["activity"]};font-size:12.5px;{font}">'
                 f'<span style="display:inline-block;width:8px;height:8px;'
@@ -708,7 +757,7 @@ class _ProgressWidget:
                 f"</div>"
             )
 
-        # --- Activity log ---
+        # --- Activity log (always visible in Colab — no <details>) ---
         log_html = ""
         if self.activity_log:
             rows = ""
@@ -737,16 +786,19 @@ class _ProgressWidget:
             log_html = (
                 f'<div style="margin-top:4px;max-height:200px;overflow-y:auto">'
                 f'<div style="font-size:11.5px;font-weight:600;color:{c["log_heading"]};'
-                f'margin-bottom:2px">Activity Log</div>'
+                f'margin-bottom:2px">Activity Log ({len(self.activity_log)} entries)</div>'
                 f'<table style="width:100%;font-size:11.5px;border-collapse:collapse;'
                 f'color:{c["log_text"]}">{rows}</table>'
                 f"</div>"
             )
 
         # --- Stats + ETA ---
-        footer = f"{self.stats}"
+        footer_parts = [self.stats]
+        if self.pages_per_min:
+            footer_parts.append(self.pages_per_min)
         if self.eta:
-            footer += f" &nbsp;\u00b7&nbsp; {self.eta}"
+            footer_parts.append(self.eta)
+        footer = " &nbsp;\u00b7&nbsp; ".join(footer_parts)
 
         # Spider + thread: use a table so the spider sits at the leading edge
         # of the filled portion, mimicking the VS Code animated spider.
@@ -774,6 +826,8 @@ class _ProgressWidget:
             f"{header}"
             f'<span style="float:right;font-weight:600;color:{c["pct"]}">{pct}%</span>'
             f"</div>"
+            # Explainer (first render only)
+            f"{explainer_html}"
             # Spider row (table layout: spider tracks progress)
             f'<table style="width:100%;border-collapse:collapse;margin-bottom:0;'
             f'table-layout:fixed"><tr>'

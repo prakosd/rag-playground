@@ -194,6 +194,21 @@ _OCR_UNAVAILABLE_WARNING = (
     "support, or set ocr_languages=[] to silence this warning."
 )
 
+# Maximum character length for shortened URLs displayed in activity labels
+_SHORT_URL_MAX_LEN = 60
+
+
+def _shorten_url(url: str) -> str:
+    """Shorten a URL for display, keeping domain + trailing path segments."""
+    if len(url) <= _SHORT_URL_MAX_LEN:
+        return url
+    # Strip scheme
+    display = re.sub(r"^https?://", "", url)
+    if len(display) <= _SHORT_URL_MAX_LEN:
+        return display
+    # Keep first 25 chars (domain) + … + last 30 chars (path tail)
+    return display[:25] + "…" + display[-(_SHORT_URL_MAX_LEN - 26) :]
+
 
 class SiteCrawler:
     """Crawls websites and collects HTML/Markdown content.
@@ -413,7 +428,7 @@ class SiteCrawler:
                     round_prefix=round_prefix,
                     prior_success=0,
                     prior_fail=0,
-                    round_label=f"Round 1/{total_rounds}",
+                    round_label="First pass" if total_rounds > 1 else "",
                     all_generated=all_generated,
                     url_depths=url_depths,
                 )
@@ -465,7 +480,7 @@ class SiteCrawler:
                         prior_success=len(all_success),
                         prior_fail=len(all_fail),
                         skip_urls=frozenset(succeeded_urls),
-                        round_label=f"Round {round_num}/{total_rounds}",
+                        round_label=f"Retry {round_num - 1} of {total_rounds - 1}",
                         all_generated=all_generated,
                         url_depths=url_depths,
                     )
@@ -616,21 +631,23 @@ class SiteCrawler:
 
             # Fast path: download PDFs directly (bypass the browser).
             if self._is_pdf_url(url):
-                progress.set_activity(f"Downloading PDF {url}")
+                progress.set_activity(f"Downloading PDF {_shorten_url(url)}")
                 crawl_result = await self._download_pdf(url)
                 results.append(crawl_result)
                 progress.update(crawl_result.url, success=crawl_result.success)
 
                 if crawl_result.success and self._extractor and self._writer:
                     _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-                    progress.set_activity(f"Extracting PDF content{_ocr_tag}")
+                    progress.set_activity(f"Saving PDF content{_ocr_tag}")
                     page = self._extractor._extract_page(crawl_result)
                     if page.markdown.strip():
                         self._writer.add(page)
                         if self._success_sidecar is not None:
                             PageSidecar.append(page, self._success_sidecar)
                     else:
-                        progress.set_activity(f"Empty extraction for {crawl_result.url}")
+                        progress.set_activity(
+                            f"No content found on {_shorten_url(crawl_result.url)}"
+                        )
                         crawl_result.success = False
                         crawl_result.error = _EMPTY_EXTRACTION_ERROR
                 elif not crawl_result.success and self._fail_writer is not None:
@@ -664,13 +681,13 @@ class SiteCrawler:
                     jitter = self.config.delay * random.uniform(
                         _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
                     )
-                    progress.set_activity(f"Delay {jitter:.1f}s (throttle)")
+                    progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
                     await asyncio.sleep(jitter)
 
                 continue
 
             try:
-                progress.set_activity(f"Crawling {url}")
+                progress.set_activity(f"Reading page {_shorten_url(url)}")
                 result = await crawler.arun(url=url, config=run_cfg)
 
                 # Use the final URL after any redirects
@@ -691,16 +708,16 @@ class SiteCrawler:
 
                     if consecutive_redirect_count < _REDIRECT_STORM_THRESHOLD:
                         skipped_redirect_urls.append(url)
-                        progress.set_activity(
-                            f"Skipped {url} (redirected to already-visited {final_url})"
-                        )
+                        progress.set_activity(f"Skipped {_shorten_url(url)} (already visited)")
                         continue
 
                     # Storm detected — retroactively fail earlier skipped
                     # pages, then treat the current page as failure too
                     # so the retry pipeline can re-attempt all of them.
                     _flush_skipped_redirects(_REDIRECT_STORM_ERROR)
-                    progress.set_activity(f"Suspected anti-bot redirect {url} → {final_url}")
+                    progress.set_activity(
+                        f"Possible block detected \u2014 skipping {_shorten_url(url)}"
+                    )
                     crawl_result = CrawlResult(
                         url=url,
                         html="",
@@ -716,7 +733,7 @@ class SiteCrawler:
                         _WAF_BACKOFF_FLOOR,
                         self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
                     )
-                    progress.set_activity(f"Anti-bot back-off {backoff:.1f}s")
+                    progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
                     await asyncio.sleep(backoff)
                     continue
 
@@ -729,9 +746,7 @@ class SiteCrawler:
                 depths[norm_final] = depth
 
                 if redirected and not self._url_allowed(final_url):
-                    progress.set_activity(
-                        f"Skipped {url} (redirect {final_url} excluded by filter)"
-                    )
+                    progress.set_activity(f"Skipped {_shorten_url(url)} (redirect outside filter)")
                     continue
 
                 error_msg: str | None = None
@@ -787,7 +802,7 @@ class SiteCrawler:
 
             # Extract and buffer content incrementally
             if crawl_result.success and self._extractor and self._writer:
-                progress.set_activity("Extracting content")
+                progress.set_activity("Saving page content")
                 page = self._extractor._extract_page(crawl_result)
                 # Post-extraction quality gate: if a block signature is
                 # present and the *extracted* content is still thin,
@@ -805,7 +820,7 @@ class SiteCrawler:
                     if self._success_sidecar is not None:
                         PageSidecar.append(page, self._success_sidecar)
                 else:
-                    progress.set_activity(f"Empty extraction for {crawl_result.url}")
+                    progress.set_activity(f"No content found on {_shorten_url(crawl_result.url)}")
                     crawl_result.success = False
                     crawl_result.error = _EMPTY_EXTRACTION_ERROR
                     crawl_result.markdown = raw_markdown
@@ -825,21 +840,23 @@ class SiteCrawler:
                     url, dict(self.config.headers) if self.config.headers else None
                 )
                 if is_pdf:
-                    progress.set_activity(f"Re-downloading as PDF {url}")
+                    progress.set_activity(f"Re-downloading as PDF {_shorten_url(url)}")
                     pdf_result = await self._download_pdf(url)
                     # Replace the original result in the list
                     results[-1] = pdf_result
                     crawl_result = pdf_result
                     if pdf_result.success and self._extractor and self._writer:
                         _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-                        progress.set_activity(f"Extracting PDF content{_ocr_tag}")
+                        progress.set_activity(f"Saving PDF content{_ocr_tag}")
                         page = self._extractor._extract_page(pdf_result)
                         if page.markdown.strip():
                             self._writer.add(page)
                             if self._success_sidecar is not None:
                                 PageSidecar.append(page, self._success_sidecar)
                         else:
-                            progress.set_activity(f"Empty extraction for {pdf_result.url}")
+                            progress.set_activity(
+                                f"No content found on {_shorten_url(pdf_result.url)}"
+                            )
                             pdf_result.success = False
                             pdf_result.error = _EMPTY_EXTRACTION_ERROR
 
@@ -854,7 +871,7 @@ class SiteCrawler:
                         _WAF_BACKOFF_FLOOR,
                         self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
                     )
-                progress.set_activity(f"WAF back-off {backoff:.1f}s")
+                progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
                 await asyncio.sleep(backoff)
             else:
                 consecutive_blocks = 0
@@ -882,7 +899,7 @@ class SiteCrawler:
 
             # Flush content and URL lists periodically
             if len(results) % self.config.flush_interval == 0:
-                progress.set_activity(f"Flushing to disk ({len(results)} pages processed)")
+                progress.set_activity(f"Saving progress ({len(results)} pages)")
                 if self._writer is not None:
                     self._writer.flush()
                 if self._fail_writer is not None:
@@ -898,17 +915,17 @@ class SiteCrawler:
                     jitter = self.config.delay * random.uniform(
                         _JITTER_RETRY_MIN, _JITTER_RETRY_MAX
                     )
-                    progress.set_activity(f"Delay {jitter:.1f}s (retry cooldown)")
+                    progress.set_activity(f"Waiting before retry ({jitter:.1f}s)")
                 else:
                     jitter = self.config.delay * random.uniform(
                         _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
                     )
-                    progress.set_activity(f"Delay {jitter:.1f}s (throttle)")
+                    progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
                 await asyncio.sleep(jitter)
 
             # Discover links for deeper crawling
             if discover_links and depth < self.config.max_depth and crawl_result.success:
-                progress.set_activity(f"Discovering links from {url}")
+                progress.set_activity(f"Finding more pages on {_shorten_url(url)}")
                 new_links = self._extract_links(crawl_result, crawl_result.url, strip_www=_sw)
                 added = 0
                 for link in new_links:
@@ -920,7 +937,7 @@ class SiteCrawler:
                         depths[norm_link] = depth + 1
                         queue.append((link, depth + 1))
                         added += 1
-                progress.update_activity_label(f"Discovered {added} links from {url}")
+                progress.update_activity_label(f"Found {added} new pages on {_shorten_url(url)}")
                 # Update progress total to reflect discovered pages
                 progress.total = min(len(generated), self.config.limit)
 
