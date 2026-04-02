@@ -164,6 +164,9 @@ _LITERAL_CRLF_RE = re.compile(r"\\r\\n")
 # Matches Markdown fragment-only links like ](#section-name)
 _FRAGMENT_LINK_RE = re.compile(r"\]\(#([^)]*)\)")
 
+# Matches Markdown links with relative hrefs (not absolute, mailto, tel, or fragment-only)
+_RELATIVE_LINK_RE = re.compile(r"\]\((?!https?://|mailto:|tel:|#)([^)]+)\)")
+
 # ------------------------------------------------------------------
 # HTML title / metadata extraction regexes
 # ------------------------------------------------------------------
@@ -361,6 +364,8 @@ class ContentExtractor:
                 md = "\n\n".join(header_parts) + "\n\n" + md
 
         md = self._resolve_fragment_links(md, result.url)
+        if self.page_config.absolute_links:
+            md = self._resolve_relative_links(md, result.url)
         md = self._validate_markdown(md)
 
         return ExtractedPage(
@@ -405,6 +410,8 @@ class ContentExtractor:
                 md = "\n\n".join(header_parts) + "\n\n" + md
 
         md = self._resolve_fragment_links(md, result.url)
+        if self.page_config.absolute_links:
+            md = self._resolve_relative_links(md, result.url)
         md = self._validate_markdown(md)
 
         return ExtractedPage(
@@ -431,6 +438,24 @@ class ContentExtractor:
             return "](" + urljoin(page_url, "#" + fragment) + ")"
 
         return _FRAGMENT_LINK_RE.sub(_replacer, text)
+
+    @staticmethod
+    def _resolve_relative_links(text: str, page_url: str) -> str:
+        """Resolve relative links to absolute URLs.
+
+        Replaces ``](relative/path)`` with ``](https://host/resolved/path)``
+        using ``urljoin`` against the page's own URL.  Skips links that
+        are already absolute (``http(s)://``), ``mailto:``, ``tel:``, or
+        fragment-only (``#``).
+        """
+        if not page_url:
+            return text
+
+        def _replacer(m: re.Match[str]) -> str:
+            relative = m.group(1)
+            return "](" + urljoin(page_url, relative) + ")"
+
+        return _RELATIVE_LINK_RE.sub(_replacer, text)
 
     # ------------------------------------------------------------------
     # CMS data-attribute stripping

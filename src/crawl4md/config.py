@@ -111,6 +111,7 @@ class PageConfig(BaseModel):
     scan_full_page: bool = True
     scroll_delay: float = 0.4
     ocr_languages: list[str] = ["eng", "msa"]
+    absolute_links: bool = True
 
     @field_validator("js_code", mode="before")
     @classmethod

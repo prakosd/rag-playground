@@ -524,3 +524,124 @@ class TestResolveFragmentLinks:
         assert "https://example.com/test-page#details" in page.markdown
         # External link unchanged
         assert "https://other.com" in page.markdown
+
+
+class TestResolveRelativeLinks:
+    """Tests for ContentExtractor._resolve_relative_links."""
+
+    def test_root_relative_resolved(self):
+        md = "[About](/about-us)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/page")
+        assert result == "[About](https://example.com/about-us)"
+
+    def test_path_relative_resolved(self):
+        md = "[Sibling](../sibling/page)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/dir/sub/page")
+        assert result == "[Sibling](https://example.com/dir/sibling/page)"
+
+    def test_absolute_link_unchanged(self):
+        md = "[Visit](https://other.com/page)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/page")
+        assert result == md
+
+    def test_fragment_only_unchanged(self):
+        """Fragment-only links are handled by _resolve_fragment_links."""
+        md = "[Section](#section)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/page")
+        assert result == md
+
+    def test_mailto_unchanged(self):
+        md = "[Email](mailto:user@example.com)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/page")
+        assert result == md
+
+    def test_tel_unchanged(self):
+        md = "[Call](tel:+61-2-1234-5678)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/page")
+        assert result == md
+
+    def test_multiple_relative_links(self):
+        md = "[A](/path/a) and [B](/path/b)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/page")
+        assert "https://example.com/path/a" in result
+        assert "https://example.com/path/b" in result
+
+    def test_empty_page_url_unchanged(self):
+        md = "[About](/about)"
+        result = ContentExtractor._resolve_relative_links(md, "")
+        assert result == md
+
+    def test_mixed_absolute_and_relative(self):
+        md = "[Rel](/rel) and [Abs](https://other.com/abs)"
+        result = ContentExtractor._resolve_relative_links(md, "https://example.com/page")
+        assert "https://example.com/rel" in result
+        assert "https://other.com/abs" in result
+
+    def test_integration_trafilatura_path(self):
+        """Full pipeline with absolute_links=True resolves relative links."""
+        html = """
+        <!DOCTYPE html>
+        <html><head><title>Test Page</title></head>
+        <body><main>
+        <article>
+            <h1>Welcome to the Test Page Title</h1>
+            <p>This is a paragraph with a <a href="/about">about us link</a> to learn more about the team.</p>
+            <p>Another paragraph with a <a href="/contact">contact page</a> link for users who want help.</p>
+            <p>And a normal <a href="https://other.com">external link</a> that stays unchanged.</p>
+        </article>
+        </main></body></html>
+        """
+        config = PageConfig(extract_main_content=True, absolute_links=True)
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(
+            url="https://example.com/test-page",
+            html=html,
+            success=True,
+        )
+        page = extractor._extract_page(result_obj)
+        assert "https://example.com/about" in page.markdown
+        assert "https://other.com" in page.markdown
+
+    def test_integration_markdownify_path(self):
+        """Full pipeline (markdownify) with absolute_links=True."""
+        html = """
+        <!DOCTYPE html>
+        <html><head><title>Test Page</title></head>
+        <body>
+            <h1>Welcome</h1>
+            <p>Visit <a href="/contact">contact us</a> for help.</p>
+        </body></html>
+        """
+        config = PageConfig(extract_main_content=False, absolute_links=True)
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(
+            url="https://example.com/info",
+            html=html,
+            success=True,
+        )
+        page = extractor._extract_page(result_obj)
+        assert "https://example.com/contact" in page.markdown
+
+    def test_default_off_leaves_relative(self):
+        """Default absolute_links=False leaves relative links as-is."""
+        html = """
+        <!DOCTYPE html>
+        <html><head><title>Test Page</title></head>
+        <body><main>
+        <article>
+            <h1>Welcome to the Test Page Title</h1>
+            <p>This is a paragraph with a <a href="/about">about us link</a> to learn more about the team.</p>
+            <p>Another paragraph with a <a href="/contact">contact page</a> link for users who want help.</p>
+            <p>And a normal <a href="https://other.com">external link</a> that stays unchanged.</p>
+        </article>
+        </main></body></html>
+        """
+        config = PageConfig(extract_main_content=True, absolute_links=False)
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(
+            url="https://example.com/test-page",
+            html=html,
+            success=True,
+        )
+        page = extractor._extract_page(result_obj)
+        assert "](/about)" in page.markdown or "(/about)" in page.markdown
