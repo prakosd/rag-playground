@@ -12,11 +12,17 @@ from crawl4md.progress import (
     _ACTIVITY_LOG_CSV_FILE,
     _ACTIVITY_LOG_CSV_HEADER,
     _ACTIVITY_LOG_TXT_FILE,
+    _BAR_GRADIENTS,
     _DARK_COLORS,
     _EXPLAINER_TEXT,
     _LIGHT_COLORS,
     _MAX_LOG_ENTRIES,
+    _MILESTONE_MESSAGES,
+    _MILESTONES,
     _NOTEBOOK_SHELL_NAMES,
+    _PCT_PHASE_COLORS,
+    _PULSE_COLOR_DEFAULT,
+    _PULSE_COLORS,
     _RATE_MIN_PAGES,
     ProgressReporter,
     _colab_is_dark,
@@ -78,7 +84,15 @@ class TestProgressWidget:
 
     def test_repr_html_no_activity_still_valid(self):
         """Widget without activity data still produces valid HTML."""
-        widget = _ProgressWidget(current=1, total=5, eta="About 2 minutes left", stats="\u2705 1")
+        widget = _ProgressWidget(
+            current=1,
+            total=5,
+            eta="About 2 minutes left",
+            stats="\u2705 1",
+            success_count=1,
+            fail_count=0,
+            total_count=1,
+        )
         html = widget._repr_html_()
         assert "Page 1 / 5" in html
         assert "🕷️" in html
@@ -90,6 +104,9 @@ class TestProgressWidget:
             total=10,
             eta="About 5 minutes left",
             stats="\u2705 2 &nbsp; \u274c 1 &nbsp; \U0001f4c4 3 total",
+            success_count=2,
+            fail_count=1,
+            total_count=3,
         )
         html = widget._repr_html_()
         assert "\u2705 2" in html
@@ -142,12 +159,12 @@ class TestProgressWidget:
         assert "c4md-bar::after" in html
 
     def test_repr_html_spider_crawl_animation(self):
-        """Standard Jupyter HTML includes the spider crawl animation."""
+        """Standard Jupyter HTML includes the spider wander animation."""
         widget = _ProgressWidget(current=5, total=10)
         html = widget._repr_html_()
         assert "c4md-crawl" in html
-        assert "translateX(-35px)" in html
-        assert "translateY(-3px)" in html
+        assert "scaleX(-1)" in html
+        assert "calc(100% - 20px)" in html
 
 
 class TestProgressReporter:
@@ -638,14 +655,19 @@ class TestProgressWidgetColab:
         assert "\U0001f577" in html
 
     def test_colab_spider_in_table_layout(self):
-        """Spider is positioned inside a table so it tracks the progress bar."""
+        """Spider is positioned inside a table and wanders within the filled portion."""
         widget = _ProgressWidget(current=5, total=10, colab=True)
         html = widget._repr_html_()
         # Spider should be inside a <table> layout, not a standalone div
         assert "<table" in html
-        # The table cell with the spider should have a width based on progress
-        assert "width:50%" in html
         assert "text-align:right" in html
+        # Spider position should be somewhere within [0%, 50%]
+        import re
+
+        m = re.search(r'<td style="width:([\d.]+)%.*?text-align:right', html)
+        assert m is not None
+        pos = float(m.group(1))
+        assert 0 <= pos <= 50
 
     def test_colab_web_thread_present(self):
         """Colab rendering includes a dashed web thread line."""
@@ -697,6 +719,9 @@ class TestProgressWidgetColab:
             total=10,
             stats="\u2705 3 &nbsp; \u274c 2 &nbsp; \U0001f4c4 5 total",
             eta="About 2 minutes left",
+            success_count=3,
+            fail_count=2,
+            total_count=5,
             colab=True,
         )
         html = widget._repr_html_()
@@ -743,6 +768,69 @@ class TestProgressWidgetColab:
         html = widget._repr_html_()
         assert "c4md-crawl" not in html
         assert "animation" not in html.lower()
+
+
+class TestSpiderWander:
+    """Tests for the spider wander-across-bar feature."""
+
+    def test_spider_track_width_matches_progress(self):
+        """Jupyter spider track container spans the filled portion of the bar."""
+        for current, total, expected_pct in [(0, 10, 0), (5, 10, 50), (10, 10, 100)]:
+            widget = _ProgressWidget(current=current, total=total)
+            html = widget._repr_html_()
+            assert 'class="c4md-spider-track"' in html
+            assert f"width:{expected_pct}%" in html
+
+    def test_spider_wander_duration_scales_with_progress(self):
+        """Animation duration scales with progress (longer bar = slower animation)."""
+        widget_low = _ProgressWidget(current=1, total=10)
+        widget_high = _ProgressWidget(current=10, total=10)
+        html_low = widget_low._repr_html_()
+        html_high = widget_high._repr_html_()
+        import re
+
+        dur_low = float(re.search(r"c4md-crawl ([\d.]+)s", html_low).group(1))
+        dur_high = float(re.search(r"c4md-crawl ([\d.]+)s", html_high).group(1))
+        assert dur_high > dur_low
+
+    def test_spider_at_zero_progress_no_track_width(self):
+        """At 0% progress the spider track has 0% width."""
+        widget = _ProgressWidget(current=0, total=10)
+        html = widget._repr_html_()
+        assert 'class="c4md-spider-track"' in html
+
+    def test_colab_spider_wander_within_bounds(self):
+        """Colab spider position stays within [0, pct] across different time phases."""
+        import re
+
+        pct = 60  # 60% progress
+        for fake_time in [0.0, 1.5, 3.0, 4.5, 5.9]:
+            with patch("crawl4md.progress.time") as mock_time:
+                mock_time.time.return_value = fake_time
+                widget = _ProgressWidget(current=6, total=10, colab=True)
+                html = widget._repr_html_()
+            m = re.search(r'<td style="width:([\d.]+)%.*?text-align:right', html)
+            assert m is not None
+            pos = float(m.group(1))
+            assert 0 <= pos <= pct, f"Spider at {pos}% exceeds progress {pct}% (time={fake_time})"
+
+    def test_colab_spider_flips_direction(self):
+        """Colab spider flips horizontally when heading left in the sine cycle."""
+        # At phase where cos < 0 (heading left), scaleX(-1) should appear
+        # At phase where cos > 0 (heading right), scaleX(-1) should NOT appear
+        found_flip = False
+        found_no_flip = False
+        for fake_time in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]:
+            with patch("crawl4md.progress.time") as mock_time:
+                mock_time.time.return_value = fake_time
+                widget = _ProgressWidget(current=5, total=10, colab=True)
+                html = widget._repr_html_()
+            if "scaleX(-1)" in html:
+                found_flip = True
+            else:
+                found_no_flip = True
+        assert found_flip, "Spider never flips direction"
+        assert found_no_flip, "Spider always flips — never faces right"
 
 
 class TestColabDisplayPath:
@@ -996,6 +1084,247 @@ class TestColorPalettes:
         assert _DARK_COLORS["header"] in html
         assert _DARK_COLORS["bar_bg"] in html
         assert _DARK_COLORS["pct"] in html
+
+
+class TestPhaseBasedGradient:
+    """Tests for Phase 1: bar gradient changes with progress."""
+
+    def test_bar_gradient_blue_at_zero(self):
+        assert "42a5f5" in _ProgressWidget._bar_gradient(0)
+
+    def test_bar_gradient_cyan_at_30(self):
+        assert "26c6da" in _ProgressWidget._bar_gradient(30)
+
+    def test_bar_gradient_green_at_55(self):
+        assert "43a047" in _ProgressWidget._bar_gradient(55)
+
+    def test_bar_gradient_amber_at_80(self):
+        assert "ffa726" in _ProgressWidget._bar_gradient(80)
+
+    def test_bar_gradient_gold_at_100(self):
+        assert "ffd54f" in _ProgressWidget._bar_gradient(100)
+
+    def test_bar_gradient_dark_mode(self):
+        assert "42a5f5" in _ProgressWidget._bar_gradient(0, dark=True)
+
+    def test_pct_color_matches_phase(self):
+        assert _ProgressWidget._pct_color(10) == "#1e88e5"
+        assert _ProgressWidget._pct_color(30) == "#00acc1"
+        assert _ProgressWidget._pct_color(55) == "#43a047"
+        assert _ProgressWidget._pct_color(80) == "#f57c00"
+        assert _ProgressWidget._pct_color(100) == "#ffa726"
+
+    def test_jupyter_html_uses_phase_gradient(self):
+        """Jupyter bar uses phase-dependent gradient, not static palette value."""
+        widget = _ProgressWidget(current=8, total=10)
+        html = widget._repr_html_()
+        assert "ffa726" in html  # 80% → amber
+
+    def test_colab_html_uses_phase_gradient(self):
+        """Colab bar uses phase-dependent gradient."""
+        widget = _ProgressWidget(current=8, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "ffa726" in html
+
+    def test_gradients_constant_has_all_phases(self):
+        assert len(_BAR_GRADIENTS) == 5
+        assert len(_PCT_PHASE_COLORS) == 5
+
+
+class TestCandyStripes:
+    """Tests for Phase 2: animated candy stripes on the progress bar."""
+
+    def test_jupyter_has_stripe_animation(self):
+        widget = _ProgressWidget(current=5, total=10)
+        html = widget._repr_html_()
+        assert "c4md-stripe" in html
+        assert "c4md-bar::before" in html
+        assert "repeating-linear-gradient" in html
+
+    def test_colab_has_static_stripes(self):
+        widget = _ProgressWidget(current=5, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "repeating-linear-gradient" in html
+        # No animation in Colab
+        assert "c4md-stripe" not in html
+
+
+class TestMilestoneMarkers:
+    """Tests for Phase 3: tick marks at 25/50/75% on the bar track."""
+
+    def test_milestones_constant(self):
+        assert _MILESTONES == [25, 50, 75]
+
+    def test_jupyter_has_milestone_marks(self):
+        widget = _ProgressWidget(current=6, total=10)  # 60%
+        html = widget._repr_html_()
+        assert "c4md-mark" in html
+
+    def test_jupyter_done_marks_at_60_pct(self):
+        """At 60%, the 25% and 50% marks should show ✓."""
+        widget = _ProgressWidget(current=6, total=10)
+        html = widget._repr_html_()
+        assert "c4md-mark-done" in html
+
+    def test_colab_has_milestone_row(self):
+        widget = _ProgressWidget(current=6, total=10, colab=True)
+        html = widget._repr_html_()
+        # Colab uses flex row with ✓ markers
+        assert "✓" in html
+
+    def test_colab_no_position_absolute_for_milestones(self):
+        widget = _ProgressWidget(current=6, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "position" not in html.lower() or "absolute" not in html.lower()
+
+
+class TestActivityAwarePulse:
+    """Tests for Phase 4: pulse color changes by activity category."""
+
+    def test_pulse_color_crawl(self):
+        assert _ProgressWidget._pulse_color("crawl") == "#1a73e8"
+        assert _ProgressWidget._pulse_color("crawl", dark=True) == "#64b5f6"
+
+    def test_pulse_color_extract(self):
+        assert _ProgressWidget._pulse_color("extract") == "#43a047"
+
+    def test_pulse_color_delay(self):
+        assert _ProgressWidget._pulse_color("delay") == "#f9a825"
+
+    def test_pulse_color_fail(self):
+        assert _ProgressWidget._pulse_color("fail") == "#d32f2f"
+
+    def test_pulse_color_default(self):
+        assert _ProgressWidget._pulse_color("other") == _PULSE_COLOR_DEFAULT[0]
+        assert _ProgressWidget._pulse_color("unknown") == _PULSE_COLOR_DEFAULT[0]
+
+    def test_jupyter_pulse_uses_category_color(self):
+        widget = _ProgressWidget(
+            current=5,
+            total=10,
+            activity="Reading page example.com",
+            activity_category="crawl",
+        )
+        html = widget._repr_html_()
+        assert "#1a73e8" in html  # crawl pulse color inline
+
+    def test_colab_pulse_uses_category_color(self):
+        widget = _ProgressWidget(
+            current=5,
+            total=10,
+            activity="Saving page content",
+            activity_category="extract",
+            colab=True,
+        )
+        html = widget._repr_html_()
+        assert "#43a047" in html  # extract pulse color
+
+    def test_pulse_colors_constant_has_known_categories(self):
+        assert "crawl" in _PULSE_COLORS
+        assert "extract" in _PULSE_COLORS
+        assert "delay" in _PULSE_COLORS
+        assert "fail" in _PULSE_COLORS
+
+
+class TestMilestoneMessages:
+    """Tests for Phase 5: celebratory messages at milestones."""
+
+    def test_message_at_zero(self):
+        assert "Spinning up" in _ProgressWidget._milestone_message(0)
+
+    def test_message_at_10(self):
+        assert "Crawling" in _ProgressWidget._milestone_message(10)
+
+    def test_message_at_30(self):
+        assert "Making good progress" in _ProgressWidget._milestone_message(30)
+
+    def test_message_at_55(self):
+        assert "Halfway" in _ProgressWidget._milestone_message(55)
+
+    def test_message_at_80(self):
+        assert "Almost done" in _ProgressWidget._milestone_message(80)
+
+    def test_message_at_100(self):
+        assert "Web complete" in _ProgressWidget._milestone_message(100)
+
+    def test_messages_constant(self):
+        assert len(_MILESTONE_MESSAGES) == 6
+
+    def test_jupyter_html_shows_milestone_message(self):
+        widget = _ProgressWidget(current=5, total=10)  # 50%
+        html = widget._repr_html_()
+        assert "Halfway there" in html
+        assert "c4md-milestone-msg" in html
+
+    def test_colab_html_shows_milestone_message(self):
+        widget = _ProgressWidget(current=5, total=10, colab=True)
+        html = widget._repr_html_()
+        assert "Halfway there" in html
+
+
+class TestStatsPills:
+    """Tests for Phase 6: rounded pill badges for stats."""
+
+    def test_jupyter_has_pill_classes(self):
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            success_count=2,
+            fail_count=1,
+            total_count=3,
+        )
+        html = widget._repr_html_()
+        assert "c4md-pill" in html
+        assert "c4md-pill-success" in html
+        assert "c4md-pill-fail" in html
+        assert "c4md-pill-total" in html
+
+    def test_jupyter_pills_show_counts(self):
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            success_count=7,
+            fail_count=2,
+            total_count=9,
+        )
+        html = widget._repr_html_()
+        assert "\u2705 7" in html
+        assert "\u274c 2" in html
+        assert "9 total" in html
+
+    def test_colab_pills_inline_style(self):
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            success_count=5,
+            fail_count=1,
+            total_count=6,
+            colab=True,
+        )
+        html = widget._repr_html_()
+        assert "\u2705 5" in html
+        assert "\u274c 1" in html
+        assert "6 total" in html
+        assert _LIGHT_COLORS["pill_success_bg"] in html
+
+    def test_colab_dark_pills(self):
+        widget = _ProgressWidget(
+            current=3,
+            total=10,
+            success_count=5,
+            fail_count=1,
+            total_count=6,
+            colab=True,
+            dark=True,
+        )
+        html = widget._repr_html_()
+        assert _DARK_COLORS["pill_success_bg"] in html
+
+    def test_pill_palette_keys_present(self):
+        assert "pill_success_bg" in _LIGHT_COLORS
+        assert "pill_fail_bg" in _LIGHT_COLORS
+        assert "pill_total_bg" in _LIGHT_COLORS
+        assert "pill_success_bg" in _DARK_COLORS
 
 
 class TestShortenUrl:

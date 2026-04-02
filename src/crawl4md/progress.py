@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import sys
 import time
 from datetime import datetime, timedelta
@@ -76,12 +77,74 @@ _ACTIVITY_LOG_CSV_HEADER = "timestamp,round,activity,duration_seconds"
 _HEADER_SEPARATOR = " · "
 # Minimum spider column width percentage to keep it visible at 0% progress
 _SPIDER_MIN_WIDTH_PCT = 2
+
+# ---------------------------------------------------------------------------
+# Spider wander animation — spider walks back and forth across the filled bar
+# ---------------------------------------------------------------------------
+# Minimum animation cycle duration (seconds) for small progress values.
+_SPIDER_WANDER_MIN_DURATION_S = 3
+# Maximum animation cycle duration (seconds) at 100% progress.
+_SPIDER_WANDER_MAX_DURATION_S = 8
+# Colab: sine-wave cycle period (seconds) for deterministic spider positioning.
+_SPIDER_WANDER_CYCLE_S = 6
+# Vertical bob amplitude in pixels during spider walk animation.
+_SPIDER_BOB_PX = 3
 # Minimum completed pages before showing pages-per-minute rate
 _RATE_MIN_PAGES = 2
 # Explainer text shown on the first render (before any page completes)
 _EXPLAINER_TEXT = (
     "Pages are being read and saved automatically. This may take a while for large sites."
 )
+
+# ---------------------------------------------------------------------------
+# Phase-based bar gradients (threshold, light_gradient, dark_gradient)
+# Bar color shifts through phases as progress increases for a "leveling up" feel.
+# ---------------------------------------------------------------------------
+_BAR_GRADIENTS: list[tuple[int, str, str]] = [
+    (100, "linear-gradient(90deg,#ffd54f,#ffe082)", "linear-gradient(90deg,#ffd54f,#ffe082)"),
+    (75, "linear-gradient(90deg,#ffa726,#ffb74d)", "linear-gradient(90deg,#ffa726,#ffb74d)"),
+    (50, "linear-gradient(90deg,#43a047,#66bb6a)", "linear-gradient(90deg,#43a047,#66bb6a)"),
+    (25, "linear-gradient(90deg,#26c6da,#4dd0e1)", "linear-gradient(90deg,#26c6da,#4dd0e1)"),
+    (0, "linear-gradient(90deg,#42a5f5,#64b5f6)", "linear-gradient(90deg,#42a5f5,#64b5f6)"),
+]
+
+# Percentage label color matching each bar phase (light, dark).
+_PCT_PHASE_COLORS: list[tuple[int, str, str]] = [
+    (100, "#ffa726", "#ffe082"),
+    (75, "#f57c00", "#ffb74d"),
+    (50, "#43a047", "#81c784"),
+    (25, "#00acc1", "#4dd0e1"),
+    (0, "#1e88e5", "#64b5f6"),
+]
+
+# ---------------------------------------------------------------------------
+# Milestone markers on the progress bar track.
+# ---------------------------------------------------------------------------
+_MILESTONES: list[int] = [25, 50, 75]
+
+# ---------------------------------------------------------------------------
+# Activity-aware pulse colors by category (light, dark).
+# ---------------------------------------------------------------------------
+_PULSE_COLORS: dict[str, tuple[str, str]] = {
+    "crawl": ("#1a73e8", "#64b5f6"),
+    "extract": ("#43a047", "#81c784"),
+    "delay": ("#f9a825", "#fdd835"),
+    "fail": ("#d32f2f", "#ef5350"),
+}
+# Default pulse color when category is unknown.
+_PULSE_COLOR_DEFAULT: tuple[str, str] = ("#1a73e8", "#64b5f6")
+
+# ---------------------------------------------------------------------------
+# Celebratory milestone messages (checked descending; first match wins).
+# ---------------------------------------------------------------------------
+_MILESTONE_MESSAGES: list[tuple[int, str]] = [
+    (100, "✨ Web complete!"),
+    (75, "🔥 Almost done!"),
+    (50, "🎯 Halfway there!"),
+    (25, "🕷️ Making good progress!"),
+    (1, "🕷️ Crawling..."),
+    (0, "🕸️ Spinning up..."),
+]
 
 # ---------------------------------------------------------------------------
 # Color palettes for light and dark themes
@@ -104,6 +167,11 @@ _LIGHT_COLORS: dict[str, str] = {
     "thread": "#999",
     "web": "#bbb",
     "bar_glow": "rgba(255,255,255,0.2)",
+    "pill_success_bg": "rgba(76,175,80,0.10)",
+    "pill_fail_bg": "rgba(244,67,54,0.08)",
+    "pill_total_bg": "rgba(0,0,0,0.04)",
+    "milestone": "#bbb",
+    "milestone_done": "#43a047",
 }
 
 _DARK_COLORS: dict[str, str] = {
@@ -124,6 +192,11 @@ _DARK_COLORS: dict[str, str] = {
     "thread": "#888",
     "web": "#666",
     "bar_glow": "rgba(255,255,255,0.12)",
+    "pill_success_bg": "rgba(129,199,132,0.12)",
+    "pill_fail_bg": "rgba(239,83,80,0.12)",
+    "pill_total_bg": "rgba(255,255,255,0.06)",
+    "milestone": "#666",
+    "milestone_done": "#81c784",
 }
 
 
@@ -330,9 +403,11 @@ class ProgressReporter:
             pages_per_min = f"~{rate:.0f} pages/min"
 
         activity_est_duration = ""
+        activity_category = ""
         if self._current_activity and self._activity_start > 0:
             # Estimate finish from avg duration of same-category activities
             cat = _ProgressWidget._activity_category(self._current_activity)
+            activity_category = cat
             durations = [
                 d
                 for _, lbl, d in self._activity_log
@@ -351,7 +426,11 @@ class ProgressReporter:
             round_label=self._round_label,
             activity=self._current_activity,
             activity_est_duration=activity_est_duration,
+            activity_category=activity_category,
             activity_log=list(self._activity_log),
+            success_count=total_success,
+            fail_count=total_fail,
+            total_count=total_crawled,
             colab=self._use_colab,
             dark=self._use_colab and _colab_is_dark(),
         )
@@ -417,7 +496,11 @@ class _ProgressWidget:
         round_label: str = "",
         activity: str = "",
         activity_est_duration: str = "",
+        activity_category: str = "",
         activity_log: list[tuple[datetime, str, float]] | None = None,
+        success_count: int = 0,
+        fail_count: int = 0,
+        total_count: int = 0,
         *,
         colab: bool = False,
         dark: bool = False,
@@ -430,7 +513,11 @@ class _ProgressWidget:
         self.round_label = round_label
         self.activity = activity
         self.activity_est_duration = activity_est_duration
+        self.activity_category = activity_category
         self.activity_log = activity_log or []
+        self.success_count = success_count
+        self.fail_count = fail_count
+        self.total_count = total_count
         self.colab = colab
         self.dark = dark
 
@@ -469,10 +556,53 @@ class _ProgressWidget:
                 return icon
         return _ACTIVITY_ICON_DEFAULT
 
+    @staticmethod
+    def _bar_gradient(pct: int, *, dark: bool = False) -> str:
+        """Return the bar gradient string for a given progress percentage."""
+        idx = 1 if dark else 0  # _BAR_GRADIENTS stores (threshold, light, dark)
+        for threshold, light, dark_g in _BAR_GRADIENTS:
+            if pct >= threshold:
+                return dark_g if dark else light
+        return _BAR_GRADIENTS[-1][1 + idx]
+
+    @staticmethod
+    def _pct_color(pct: int, *, dark: bool = False) -> str:
+        """Return the percentage label color matching the current bar phase."""
+        for threshold, light, dark_c in _PCT_PHASE_COLORS:
+            if pct >= threshold:
+                return dark_c if dark else light
+        return _PCT_PHASE_COLORS[-1][2 if dark else 1]
+
+    @staticmethod
+    def _milestone_message(pct: int) -> str:
+        """Return a celebratory message for the current progress level."""
+        for threshold, msg in _MILESTONE_MESSAGES:
+            if pct >= threshold:
+                return msg
+        return ""
+
+    @staticmethod
+    def _pulse_color(category: str, *, dark: bool = False) -> str:
+        """Return the pulse dot color for a given activity category."""
+        pair = _PULSE_COLORS.get(category, _PULSE_COLOR_DEFAULT)
+        return pair[1] if dark else pair[0]
+
     def _repr_html_(self) -> str:
         if self.colab:
             return self._repr_html_colab()
         pct = int(self.current / self.total * 100) if self.total else 0
+
+        # --- Phase-based gradient + pct color ---
+        bar_grad = self._bar_gradient(pct)
+        bar_grad_dark = self._bar_gradient(pct, dark=True)
+        pct_color = self._pct_color(pct)
+        pct_color_dark = self._pct_color(pct, dark=True)
+
+        # --- Milestone message ---
+        milestone_msg = self._milestone_message(pct)
+        milestone_span = ""
+        if milestone_msg:
+            milestone_span = f'<span class="c4md-milestone-msg">{milestone_msg}</span>'
 
         # --- Header ---
         header_parts = []
@@ -486,20 +616,20 @@ class _ProgressWidget:
         if self.current == 0:
             explainer_html = f'<div class="c4md-explainer">{_EXPLAINER_TEXT}</div>'
 
-        # --- Activity row ---
+        # --- Activity row (with activity-aware pulse color) ---
         activity_html = ""
         if self.activity:
             icon = self._activity_icon(self.activity)
-            # Truncate long URLs in the label for display
             display_label = self.activity
             if len(display_label) > _ACTIVITY_LABEL_MAX_LEN:
                 display_label = display_label[:_ACTIVITY_LABEL_TRUNC] + "…"
             time_span = ""
             if self.activity_est_duration:
                 time_span = f'<span class="c4md-dur"> (~{self.activity_est_duration})</span>'
+            pulse_col = self._pulse_color(self.activity_category)
             activity_html = (
                 f'<div class="c4md-activity">'
-                f'<span class="c4md-pulse"></span>'
+                f'<span class="c4md-pulse" style="background:{pulse_col}"></span>'
                 f" {icon} {display_label}"
                 f"{time_span}"
                 f"</div>"
@@ -535,13 +665,24 @@ class _ProgressWidget:
                 f"</div>"
             )
 
-        # --- Stats + ETA ---
-        footer_parts = [self.stats]
+        # --- Stats pills ---
+        pills_html = self._pills_html(pct=pct, colab=False, dark=False)
+
+        # --- Footer (pills + rate + eta) ---
+        footer_parts = [pills_html]
         if self.pages_per_min:
             footer_parts.append(self.pages_per_min)
         if self.eta:
             footer_parts.append(self.eta)
         footer = " &nbsp;·&nbsp; ".join(footer_parts)
+
+        # --- Milestone markers (tick marks at 25/50/75%) ---
+        milestone_marks = ""
+        for m in _MILESTONES:
+            done = pct >= m
+            cls = "c4md-mark c4md-mark-done" if done else "c4md-mark"
+            label = "✓" if done else ""
+            milestone_marks += f'<div class="{cls}" style="left:{m}%">{label}</div>'
 
         lt = _LIGHT_COLORS
         dk = _DARK_COLORS
@@ -556,6 +697,11 @@ class _ProgressWidget:
             f".c4md-header {{"
             f"  font-weight: 600; font-size: 14px; margin-bottom: 8px; color: {lt['header']};"
             f"}}"
+            # Milestone message next to header
+            f".c4md-milestone-msg {{"
+            f"  font-weight: 400; font-size: 12px; margin-left: 8px;"
+            f"  color: {lt['duration']}; font-style: italic;"
+            f"}}"
             # Progress bar container
             f".c4md-bar-wrap {{"
             f"  position: relative; background: {lt['bar_bg']}; border-radius: 10px;"
@@ -563,10 +709,24 @@ class _ProgressWidget:
             f"}}"
             f".c4md-bar {{"
             f"  position: relative;"
-            f"  background: {lt['bar_gradient']};"
+            f"  background: {bar_grad};"
             f"  height: 100%; border-radius: 10px;"
-            f"  transition: width 0.4s ease;"
+            f"  transition: width 0.4s ease, background 0.6s ease;"
             f"  overflow: hidden;"
+            f"}}"
+            # Candy stripes on filled bar
+            f".c4md-bar::before {{"
+            f"  content: ''; position: absolute; inset: 0;"
+            f"  border-radius: 10px;"
+            f"  background: repeating-linear-gradient("
+            f"    45deg,"
+            f"    rgba(255,255,255,0.12) 0px,"
+            f"    rgba(255,255,255,0.12) 10px,"
+            f"    transparent 10px,"
+            f"    transparent 20px"
+            f"  );"
+            f"  background-size: 28px 28px;"
+            f"  animation: c4md-stripe 0.8s linear infinite;"
             f"}}"
             # Pulsating glow overlay on the filled bar
             f".c4md-bar::after {{"
@@ -581,13 +741,17 @@ class _ProgressWidget:
             f"  opacity: 0.18; pointer-events: none;"
             f"}}"
             f".c4md-web svg {{ display: block; }}"
-            # Spider sitting at the leading edge of the bar
+            # Spider track: spans the filled portion of the bar for wander range
+            f".c4md-spider-track {{"
+            f"  position: absolute; top: -10px; left: 0; height: 20px;"
+            f"  pointer-events: none;"
+            f"}}"
+            # Spider walks back and forth inside the track
             f".c4md-spider {{"
-            f"  position: absolute; top: -10px;"
+            f"  position: absolute; top: 0;"
             f"  font-size: 20px; line-height: 1;"
-            f"  transition: left 0.4s ease;"
             f"  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"
-            f"  animation: c4md-crawl 3s ease-in-out infinite;"
+            f"  animation: c4md-crawl {max(_SPIDER_WANDER_MIN_DURATION_S, pct / 100 * _SPIDER_WANDER_MAX_DURATION_S):.1f}s ease-in-out infinite;"
             f"}}"
             # Web thread (dashed line from left edge to spider)
             f".c4md-thread {{"
@@ -595,17 +759,38 @@ class _ProgressWidget:
             f"  border-top: 1.5px dashed {lt['thread']};"
             f"  transition: width 0.4s ease;"
             f"}}"
-            # Spider crawl animation: combines horizontal patrol + vertical bob
+            # Milestone tick marks on bar track
+            f".c4md-mark {{"
+            f"  position: absolute; top: 0; width: 2px; height: 100%;"
+            f"  background: {lt['milestone']}; transform: translateX(-1px);"
+            f"  font-size: 0; border-radius: 1px; opacity: 0.5;"
+            f"  transition: background 0.3s ease, opacity 0.3s ease;"
+            f"}}"
+            f".c4md-mark-done {{"
+            f"  background: {lt['milestone_done']}; opacity: 0.9;"
+            f"  font-size: 9px; color: #fff; text-align: center;"
+            f"  line-height: 22px; width: 16px; border-radius: 8px;"
+            f"  transform: translateX(-8px);"
+            f"}}"
+            # Spider crawl animation: walks right then flips and walks left
             f"@keyframes c4md-crawl {{"
-            f"  0% {{ transform: translateX(0) translateY(0); }}"
-            f"  25% {{ transform: translateX(-18px) translateY(-3px); }}"
-            f"  50% {{ transform: translateX(-35px) translateY(0); }}"
-            f"  75% {{ transform: translateX(-18px) translateY(-3px); }}"
-            f"  100% {{ transform: translateX(0) translateY(0); }}"
+            f"  0% {{ left: 0; transform: scaleX(1) translateY(0); }}"
+            f"  24% {{ left: calc(100% - 20px); transform: scaleX(1) translateY(-{_SPIDER_BOB_PX}px); }}"
+            f"  25% {{ left: calc(100% - 20px); transform: scaleX(-1) translateY(0); }}"
+            f"  49% {{ left: calc(100% - 20px); transform: scaleX(-1) translateY(0); }}"
+            f"  50% {{ left: calc(100% - 20px); transform: scaleX(-1) translateY(0); }}"
+            f"  74% {{ left: 0; transform: scaleX(-1) translateY(-{_SPIDER_BOB_PX}px); }}"
+            f"  75% {{ left: 0; transform: scaleX(1) translateY(0); }}"
+            f"  100% {{ left: 0; transform: scaleX(1) translateY(0); }}"
             f"}}"
             f"@keyframes c4md-glow {{"
             f"  0%, 100% {{ opacity: 0; }}"
             f"  50% {{ opacity: 1; }}"
+            f"}}"
+            # Candy stripe scrolling animation
+            f"@keyframes c4md-stripe {{"
+            f"  0% {{ background-position: 0 0; }}"
+            f"  100% {{ background-position: 28px 0; }}"
             f"}}"
             # Pulsing dot for current activity
             f".c4md-activity {{"
@@ -648,13 +833,20 @@ class _ProgressWidget:
             f".c4md-log-dur {{ text-align: right; color: {lt['log_dur']};"
             f"  white-space: nowrap; }}"
             f".c4md-log-fail {{ color: {lt['log_fail']}; }}"
-            # Footer
+            # Footer + pills
             f".c4md-footer {{"
             f"  margin-top: 6px; font-size: 12px; color: {lt['footer']};"
             f"}}"
             f".c4md-pct {{"
-            f"  float: right; font-weight: 600; color: {lt['pct']};"
+            f"  float: right; font-weight: 600; color: {pct_color};"
             f"}}"
+            f".c4md-pill {{"
+            f"  display: inline-block; padding: 1px 8px; border-radius: 10px;"
+            f"  font-size: 11.5px; font-weight: 500; margin-right: 4px;"
+            f"}}"
+            f".c4md-pill-success {{ background: {lt['pill_success_bg']}; }}"
+            f".c4md-pill-fail {{ background: {lt['pill_fail_bg']}; }}"
+            f".c4md-pill-total {{ background: {lt['pill_total_bg']}; }}"
             # Explainer subtitle
             f".c4md-explainer {{"
             f"  font-size: 11.5px; color: {lt['duration']}; margin-bottom: 6px;"
@@ -665,6 +857,7 @@ class _ProgressWidget:
             f"  .c4md-widget {{ color: {dk['text']}; }}"
             f"  .c4md-header {{ color: {dk['header']}; }}"
             f"  .c4md-bar-wrap {{ background: {dk['bar_bg']}; }}"
+            f"  .c4md-bar {{ background: {bar_grad_dark}; }}"
             f"  .c4md-thread {{ border-color: {dk['thread']}; }}"
             f"  .c4md-web svg {{ stroke: {dk['web']}; }}"
             f"  .c4md-bar::after {{ background: {dk['bar_glow']}; }}"
@@ -677,16 +870,22 @@ class _ProgressWidget:
             f"  .c4md-log-dur {{ color: {dk['log_dur']}; }}"
             f"  .c4md-log-fail {{ color: {dk['log_fail']}; }}"
             f"  .c4md-footer {{ color: {dk['footer']}; }}"
-            f"  .c4md-pct {{ color: {dk['pct']}; }}"
+            f"  .c4md-pct {{ color: {pct_color_dark}; }}"
             f"  .c4md-explainer {{ color: {dk['duration']}; }}"
+            f"  .c4md-milestone-msg {{ color: {dk['duration']}; }}"
+            f"  .c4md-mark {{ background: {dk['milestone']}; }}"
+            f"  .c4md-mark-done {{ background: {dk['milestone_done']}; }}"
+            f"  .c4md-pill-success {{ background: {dk['pill_success_bg']}; }}"
+            f"  .c4md-pill-fail {{ background: {dk['pill_fail_bg']}; }}"
+            f"  .c4md-pill-total {{ background: {dk['pill_total_bg']}; }}"
             f"}}"
             f"</style>"
-            # Header
-            f'<div class="c4md-header">{header}'
+            # Header + milestone message
+            f'<div class="c4md-header">{header} {milestone_span}'
             f'<span class="c4md-pct">{pct}%</span></div>'
             # Explainer (first render only)
             f"{explainer_html}"
-            # Bar + spider + thread + web decoration
+            # Bar + spider + thread + web decoration + milestone marks
             f'<div class="c4md-bar-wrap">'
             f'<div class="c4md-web">'
             f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
@@ -700,9 +899,12 @@ class _ProgressWidget:
             f'<line x1="0" y1="0" x2="4" y2="13" stroke="{lt["web"]}" stroke-width="0.8"/>'
             f'<line x1="0" y1="0" x2="13" y2="4" stroke="{lt["web"]}" stroke-width="0.8"/>'
             f"</svg></div>"
+            f"{milestone_marks}"
             f'<div class="c4md-thread" style="width:{max(pct, 0)}%;"></div>'
             f'<div class="c4md-bar" style="width:{pct}%;"></div>'
-            f'<div class="c4md-spider" style="left:calc({pct}% - 10px);">🕷️</div>'
+            f'<div class="c4md-spider-track" style="width:{max(pct, 0)}%;">'
+            f'<div class="c4md-spider">🕷️</div>'
+            f"</div>"
             f"</div>"
             # Activity + log
             f"{activity_html}"
@@ -712,10 +914,48 @@ class _ProgressWidget:
             f"</div>"
         )
 
+    def _pills_html(self, *, pct: int, colab: bool, dark: bool) -> str:
+        """Render stats as rounded pill badges."""
+        c = _DARK_COLORS if dark else _LIGHT_COLORS
+        if colab:
+            pill = (
+                "display:inline-block;padding:1px 8px;border-radius:10px;"
+                "font-size:11.5px;font-weight:500;margin-right:4px"
+            )
+            return (
+                f'<span style="{pill};background:{c["pill_success_bg"]}">'
+                f"\u2705 {self.success_count}</span>"
+                f'<span style="{pill};background:{c["pill_fail_bg"]}">'
+                f"\u274c {self.fail_count}</span>"
+                f'<span style="{pill};background:{c["pill_total_bg"]}">'
+                f"\U0001f4c4 {self.total_count} total</span>"
+            )
+        return (
+            f'<span class="c4md-pill c4md-pill-success">'
+            f"\u2705 {self.success_count}</span>"
+            f'<span class="c4md-pill c4md-pill-fail">'
+            f"\u274c {self.fail_count}</span>"
+            f'<span class="c4md-pill c4md-pill-total">'
+            f"\U0001f4c4 {self.total_count} total</span>"
+        )
+
     def _repr_html_colab(self) -> str:
         """Colab-safe HTML rendering using only inline styles (no <style> block)."""
         pct = int(self.current / self.total * 100) if self.total else 0
         c = _DARK_COLORS if self.dark else _LIGHT_COLORS
+
+        # Phase-based gradient + pct color
+        bar_grad = self._bar_gradient(pct, dark=self.dark)
+        pct_color = self._pct_color(pct, dark=self.dark)
+
+        # Milestone message
+        milestone_msg = self._milestone_message(pct)
+        milestone_span = ""
+        if milestone_msg:
+            milestone_span = (
+                f'<span style="font-weight:400;font-size:12px;margin-left:8px;'
+                f'color:{c["duration"]};font-style:italic">{milestone_msg}</span>'
+            )
 
         # Shared inline style fragments
         font = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"
@@ -735,7 +975,7 @@ class _ProgressWidget:
                 f'margin-bottom:6px;font-style:italic">{_EXPLAINER_TEXT}</div>'
             )
 
-        # --- Activity row ---
+        # --- Activity row (with activity-aware pulse color) ---
         activity_html = ""
         if self.activity:
             icon = self._activity_icon(self.activity)
@@ -747,10 +987,11 @@ class _ProgressWidget:
                 time_span = (
                     f'<span style="color:{c["duration"]}"> (~{self.activity_est_duration})</span>'
                 )
+            pulse_col = self._pulse_color(self.activity_category, dark=self.dark)
             activity_html = (
                 f'<div style="margin:6px 0;color:{c["activity"]};font-size:12.5px;{font}">'
                 f'<span style="display:inline-block;width:8px;height:8px;'
-                f"background:{c['pulse']};border-radius:50%;vertical-align:middle;"
+                f"background:{pulse_col};border-radius:50%;vertical-align:middle;"
                 f'margin-right:5px"></span>'
                 f" {icon} {display_label}"
                 f"{time_span}"
@@ -792,17 +1033,27 @@ class _ProgressWidget:
                 f"</div>"
             )
 
-        # --- Stats + ETA ---
-        footer_parts = [self.stats]
+        # --- Stats pills + ETA ---
+        pills = self._pills_html(pct=pct, colab=True, dark=self.dark)
+        footer_parts = [pills]
         if self.pages_per_min:
             footer_parts.append(self.pages_per_min)
         if self.eta:
             footer_parts.append(self.eta)
         footer = " &nbsp;\u00b7&nbsp; ".join(footer_parts)
 
-        # Spider + thread: use a table so the spider sits at the leading edge
-        # of the filled portion, mimicking the VS Code animated spider.
-        spider_pct = max(pct, _SPIDER_MIN_WIDTH_PCT)  # ensure spider column is visible even at 0%
+        # Spider wander: deterministic sine-wave position within [0, pct].
+        # Each re-render places the spider at a different spot in the filled region.
+        if pct > 0:
+            phase = (time.time() % _SPIDER_WANDER_CYCLE_S) / _SPIDER_WANDER_CYCLE_S
+            sine_val = 0.5 + 0.5 * math.sin(2 * math.pi * phase - math.pi / 2)
+            spider_pos = max(_SPIDER_MIN_WIDTH_PCT, pct * sine_val)
+            # Flip spider when heading left (negative derivative of sine)
+            heading_left = math.cos(2 * math.pi * phase - math.pi / 2) < 0
+        else:
+            spider_pos = _SPIDER_MIN_WIDTH_PCT
+            heading_left = False
+        spider_flip = "display:inline-block;transform:scaleX(-1)" if heading_left else ""
         # Spider web SVG (inline, overlaps bar via negative margin)
         web_svg = (
             f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
@@ -818,37 +1069,73 @@ class _ProgressWidget:
             f'<line x1="0" y1="0" x2="13" y2="4" stroke="{c["web"]}" stroke-width="0.8"/>'
             f"</svg>"
         )
+
+        # Milestone markers below bar (flex row — Colab-safe, no position:absolute)
+        milestone_row = ""
+        if _MILESTONES:
+            cells = ""
+            prev = 0
+            for m in _MILESTONES:
+                spacer_w = m - prev
+                done = pct >= m
+                marker_color = c["milestone_done"] if done else c["milestone"]
+                marker_label = "✓" if done else "┊"
+                cells += (
+                    f'<div style="width:{spacer_w}%;text-align:right;font-size:9px;'
+                    f"color:{marker_color};font-weight:{'600' if done else '400'}"
+                    f'">{marker_label}</div>'
+                )
+                prev = m
+            milestone_row = (
+                f'<div style="display:flex;margin-top:-4px;margin-bottom:2px">{cells}</div>'
+            )
+
+        # Static candy stripes overlay (Colab-safe, no animation)
+        stripe_bg = (
+            "repeating-linear-gradient("
+            "45deg,"
+            "rgba(255,255,255,0.10) 0px,"
+            "rgba(255,255,255,0.10) 10px,"
+            "transparent 10px,"
+            "transparent 20px)"
+        )
+
         return (
             f'<div style="{font};font-size:13px;color:{c["text"]};max-width:680px">'
-            # Header
+            # Header + milestone message
             f'<div style="font-weight:600;font-size:14px;margin-bottom:8px;'
             f'color:{c["header"]}">'
-            f"{header}"
-            f'<span style="float:right;font-weight:600;color:{c["pct"]}">{pct}%</span>'
+            f"{header} {milestone_span}"
+            f'<span style="float:right;font-weight:600;color:{pct_color}">{pct}%</span>'
             f"</div>"
             # Explainer (first render only)
             f"{explainer_html}"
-            # Spider row (table layout: spider tracks progress)
+            # Spider row (table layout: spider wanders within filled portion)
             f'<table style="width:100%;border-collapse:collapse;margin-bottom:0;'
             f'table-layout:fixed"><tr>'
-            f'<td style="width:{spider_pct}%;text-align:right;padding:0;'
+            f'<td style="width:{spider_pos:.1f}%;text-align:right;padding:0;'
             f'vertical-align:bottom;line-height:1">'
-            f'<span style="font-size:18px">\U0001f577\ufe0f</span></td>'
+            f'<span style="font-size:18px;{spider_flip}">\U0001f577\ufe0f</span></td>'
             f'<td style="padding:0"></td>'
             f"</tr></table>"
-            # Web thread (dashed line from left to spider)
-            f'<div style="width:{spider_pct}%;border-top:1.5px dashed {c["thread"]};'
+            # Web thread (dashed line from left to progress edge)
+            f'<div style="width:{max(pct, _SPIDER_MIN_WIDTH_PCT)}%;border-top:1.5px dashed {c["thread"]};'
             f'margin-bottom:2px"></div>'
             # Spider web decoration (overlaps bar via negative margin)
             f'<div style="opacity:0.18;margin-bottom:-22px;pointer-events:none">'
             f"{web_svg}</div>"
-            # Progress bar (with static glow via box-shadow)
+            # Progress bar (with static glow + static candy stripes)
             f'<div style="background:{c["bar_bg"]};border-radius:10px;height:22px;'
             f'margin-bottom:6px;overflow:hidden">'
-            f'<div style="background:{c["bar_gradient"]};'
+            f'<div style="background:{bar_grad};'
             f"height:100%;border-radius:10px;width:{pct}%;"
-            f'box-shadow:inset 0 1px 3px {c["bar_glow"]}"></div>'
+            f'box-shadow:inset 0 1px 3px {c["bar_glow"]}">'
+            f'<div style="width:100%;height:100%;border-radius:10px;'
+            f'background:{stripe_bg};opacity:0.8"></div>'
             f"</div>"
+            f"</div>"
+            # Milestone markers
+            f"{milestone_row}"
             # Activity + log
             f"{activity_html}"
             f"{log_html}"
