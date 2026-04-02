@@ -163,8 +163,8 @@ class TestProgressWidget:
         widget = _ProgressWidget(current=5, total=10)
         html = widget._repr_html_()
         assert "c4md-crawl" in html
-        assert "scaleX(-1)" in html
-        assert "calc(100% - 20px)" in html
+        assert "rotate(90deg)" in html
+        assert "calc(100% - 30px)" in html
 
 
 class TestProgressReporter:
@@ -815,22 +815,22 @@ class TestSpiderWander:
             assert 0 <= pos <= pct, f"Spider at {pos}% exceeds progress {pct}% (time={fake_time})"
 
     def test_colab_spider_flips_direction(self):
-        """Colab spider flips horizontally when heading left in the sine cycle."""
-        # At phase where cos < 0 (heading left), scaleX(-1) should appear
-        # At phase where cos > 0 (heading right), scaleX(-1) should NOT appear
-        found_flip = False
-        found_no_flip = False
+        """Colab spider tilts toward its travel direction in the sine cycle."""
+        # At phase where cos < 0 (heading left), rotate(45deg) should appear
+        # At phase where cos > 0 (heading right), rotate(-45deg) should appear
+        found_left_tilt = False
+        found_right_tilt = False
         for fake_time in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]:
             with patch("crawl4md.progress.time") as mock_time:
                 mock_time.time.return_value = fake_time
                 widget = _ProgressWidget(current=5, total=10, colab=True)
                 html = widget._repr_html_()
-            if "scaleX(-1)" in html:
-                found_flip = True
-            else:
-                found_no_flip = True
-        assert found_flip, "Spider never flips direction"
-        assert found_no_flip, "Spider always flips — never faces right"
+            if "rotate(90deg)" in html:
+                found_left_tilt = True
+            if "rotate(-90deg)" in html:
+                found_right_tilt = True
+        assert found_left_tilt, "Spider never tilts left"
+        assert found_right_tilt, "Spider never tilts right"
 
 
 class TestColabDisplayPath:

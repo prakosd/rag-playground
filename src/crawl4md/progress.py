@@ -89,6 +89,10 @@ _SPIDER_WANDER_MAX_DURATION_S = 8
 _SPIDER_WANDER_CYCLE_S = 6
 # Vertical bob amplitude in pixels during spider walk animation.
 _SPIDER_BOB_PX = 3
+# Spider emoji font size in pixels.
+_SPIDER_FONT_SIZE_PX = 30
+# Tilt angle (degrees) so the spider faces its direction of travel.
+_SPIDER_TILT_DEG = 90
 # Minimum completed pages before showing pages-per-minute rate
 _RATE_MIN_PAGES = 2
 # Explainer text shown on the first render (before any page completes)
@@ -743,13 +747,13 @@ class _ProgressWidget:
             f".c4md-web svg {{ display: block; }}"
             # Spider track: spans the filled portion of the bar for wander range
             f".c4md-spider-track {{"
-            f"  position: absolute; top: -10px; left: 0; height: 20px;"
+            f"  position: absolute; top: -{_SPIDER_FONT_SIZE_PX // 2}px; left: 0; height: {_SPIDER_FONT_SIZE_PX}px;"
             f"  pointer-events: none;"
             f"}}"
             # Spider walks back and forth inside the track
             f".c4md-spider {{"
             f"  position: absolute; top: 0;"
-            f"  font-size: 20px; line-height: 1;"
+            f"  font-size: {_SPIDER_FONT_SIZE_PX}px; line-height: 1;"
             f"  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"
             f"  animation: c4md-crawl {max(_SPIDER_WANDER_MIN_DURATION_S, pct / 100 * _SPIDER_WANDER_MAX_DURATION_S):.1f}s ease-in-out infinite;"
             f"}}"
@@ -772,16 +776,16 @@ class _ProgressWidget:
             f"  line-height: 22px; width: 16px; border-radius: 8px;"
             f"  transform: translateX(-8px);"
             f"}}"
-            # Spider crawl animation: walks right then flips and walks left
+            # Spider crawl animation: walks right (tilted right) then walks left (tilted left)
             f"@keyframes c4md-crawl {{"
-            f"  0% {{ left: 0; transform: scaleX(1) translateY(0); }}"
-            f"  24% {{ left: calc(100% - 20px); transform: scaleX(1) translateY(-{_SPIDER_BOB_PX}px); }}"
-            f"  25% {{ left: calc(100% - 20px); transform: scaleX(-1) translateY(0); }}"
-            f"  49% {{ left: calc(100% - 20px); transform: scaleX(-1) translateY(0); }}"
-            f"  50% {{ left: calc(100% - 20px); transform: scaleX(-1) translateY(0); }}"
-            f"  74% {{ left: 0; transform: scaleX(-1) translateY(-{_SPIDER_BOB_PX}px); }}"
-            f"  75% {{ left: 0; transform: scaleX(1) translateY(0); }}"
-            f"  100% {{ left: 0; transform: scaleX(1) translateY(0); }}"
+            f"  0% {{ left: 0; transform: rotate(-{_SPIDER_TILT_DEG}deg) translateY(0); }}"
+            f"  24% {{ left: calc(100% - {_SPIDER_FONT_SIZE_PX}px); transform: rotate(-{_SPIDER_TILT_DEG}deg) translateY(-{_SPIDER_BOB_PX}px); }}"
+            f"  25% {{ left: calc(100% - {_SPIDER_FONT_SIZE_PX}px); transform: rotate({_SPIDER_TILT_DEG}deg) translateY(0); }}"
+            f"  49% {{ left: calc(100% - {_SPIDER_FONT_SIZE_PX}px); transform: rotate({_SPIDER_TILT_DEG}deg) translateY(0); }}"
+            f"  50% {{ left: calc(100% - {_SPIDER_FONT_SIZE_PX}px); transform: rotate({_SPIDER_TILT_DEG}deg) translateY(0); }}"
+            f"  74% {{ left: 0; transform: rotate({_SPIDER_TILT_DEG}deg) translateY(-{_SPIDER_BOB_PX}px); }}"
+            f"  75% {{ left: 0; transform: rotate(-{_SPIDER_TILT_DEG}deg) translateY(0); }}"
+            f"  100% {{ left: 0; transform: rotate(-{_SPIDER_TILT_DEG}deg) translateY(0); }}"
             f"}}"
             f"@keyframes c4md-glow {{"
             f"  0%, 100% {{ opacity: 0; }}"
@@ -1053,7 +1057,11 @@ class _ProgressWidget:
         else:
             spider_pos = _SPIDER_MIN_WIDTH_PCT
             heading_left = False
-        spider_flip = "display:inline-block;transform:scaleX(-1)" if heading_left else ""
+        spider_flip = (
+            f"display:inline-block;transform:rotate({_SPIDER_TILT_DEG}deg)"
+            if heading_left
+            else f"display:inline-block;transform:rotate(-{_SPIDER_TILT_DEG}deg)"
+        )
         # Spider web SVG (inline, overlaps bar via negative margin)
         web_svg = (
             f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
@@ -1115,7 +1123,7 @@ class _ProgressWidget:
             f'table-layout:fixed"><tr>'
             f'<td style="width:{spider_pos:.1f}%;text-align:right;padding:0;'
             f'vertical-align:bottom;line-height:1">'
-            f'<span style="font-size:18px;{spider_flip}">\U0001f577\ufe0f</span></td>'
+            f'<span style="font-size:{_SPIDER_FONT_SIZE_PX}px;{spider_flip}">\U0001f577\ufe0f</span></td>'
             f'<td style="padding:0"></td>'
             f"</tr></table>"
             # Web thread (dashed line from left to progress edge)
