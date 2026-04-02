@@ -51,12 +51,12 @@ _ACTIVITY_ICONS: dict[str, str] = {
     "skip": "⏭️",
     "no content": "📭",
     "reading page": "🌐",
-    "downloading": "🌐",
-    "saving": "📝",
-    "pausing": "⏳",
+    "downloading": "📥",
+    "saving": "💾",
+    "pausing": "⏸️",
     "waiting": "⏳",
-    "blocking": "⏳",
-    "finding": "🔗",
+    "blocking": "🛡️",
+    "finding": "🔍",
     "found": "🔗",
 }
 # Fallback icon when no keyword matches.

@@ -107,10 +107,16 @@ class TestProgressWidget:
 
     def test_activity_icons(self):
         assert _ProgressWidget._activity_icon("Reading page x") == "🌐"
-        assert _ProgressWidget._activity_icon("Saving page content") == "📝"
-        assert _ProgressWidget._activity_icon("Saving progress (5 pages)") == "📝"
-        assert _ProgressWidget._activity_icon("Pausing to avoid blocks (5.0s)") == "⏳"
-        assert _ProgressWidget._activity_icon("Finding more pages on x") == "🔗"
+        assert _ProgressWidget._activity_icon("Downloading PDF example.pdf") == "📥"
+        assert _ProgressWidget._activity_icon("Saving page content") == "💾"
+        assert _ProgressWidget._activity_icon("Saving progress (5 pages)") == "💾"
+        assert _ProgressWidget._activity_icon("Pausing to avoid blocks (5.0s)") == "⏸️"
+        assert _ProgressWidget._activity_icon("Waiting before retry (3.0s)") == "⏳"
+        assert _ProgressWidget._activity_icon("Website is blocking us") == "🛡️"
+        assert _ProgressWidget._activity_icon("Finding more pages on x") == "🔍"
+        assert _ProgressWidget._activity_icon("Found 5 new pages on x") == "🔗"
+        assert _ProgressWidget._activity_icon("Skipped example.com (redirect)") == "⏭️"
+        assert _ProgressWidget._activity_icon("No content found on x") == "📭"
         assert _ProgressWidget._activity_icon("Something else") == "⚙️"
         assert _ProgressWidget._activity_icon("❌ FAILED \u2014 Reading page x") == "❌"
 
