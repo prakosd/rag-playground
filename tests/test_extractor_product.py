@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from crawl4md.config import CrawlResult, PageConfig
-from crawl4md.extractor import ContentExtractor
+from crawl4md.extractor import _WRAPPER_LINK_LABEL, ContentExtractor
 
 
 class TestMultiPriceProductListings:
@@ -790,20 +790,23 @@ class TestMoreLinkPreserved:
             "---\n\n"
             "New\n\nSamsung Galaxy S26 Ultra 5G\n\nfrom $78.00/mth\n\n"
             "12 offers available\n\n"
-            "[more...](https://example.com/devices/samsung/galaxy-s26-ultra-5g)\n\n"
+            f"[{_WRAPPER_LINK_LABEL}](https://example.com/devices/samsung/galaxy-s26-ultra-5g)\n\n"
             "---\n\n"
             "iPhone 17 Pro\n\nfrom $72.87/mth\n\n"
             "12 offers available\n\n"
-            "[more...](https://example.com/devices/apple/iphone-17-pro)\n\n"
+            f"[{_WRAPPER_LINK_LABEL}](https://example.com/devices/apple/iphone-17-pro)\n\n"
             "---\n\n"
             "Pixel 10 Pro\n\nfrom $65.00/mth\n\n"
             "10 offers available\n\n"
-            "[more...](https://example.com/devices/google/pixel-10-pro)\n\n"
+            f"[{_WRAPPER_LINK_LABEL}](https://example.com/devices/google/pixel-10-pro)\n\n"
             "---"
         )
         result = ContentExtractor._reformat_separated_items(text)
         assert "- **Samsung Galaxy S26 Ultra 5G**" in result
-        assert "[more...](https://example.com/devices/samsung/galaxy-s26-ultra-5g)" in result
+        assert (
+            f"[{_WRAPPER_LINK_LABEL}](https://example.com/devices/samsung/galaxy-s26-ultra-5g)"
+            in result
+        )
         # more link should appear after the product name
         lines = result.strip().split("\n")
         more_line = [ln for ln in lines if "galaxy-s26-ultra-5g" in ln][0]
@@ -814,19 +817,19 @@ class TestMoreLinkPreserved:
         """[more...](url) should never become the product name."""
         text = (
             "---\n\n"
-            "[more...](https://example.com/devices/phone)\n\n"
+            f"[{_WRAPPER_LINK_LABEL}](https://example.com/devices/phone)\n\n"
             "from $78.00/mth\n\n"
             "---\n\n"
             "iPhone 17 Pro\n\nfrom $72.87/mth\n\n"
-            "[more...](https://example.com/devices/iphone)\n\n"
+            f"[{_WRAPPER_LINK_LABEL}](https://example.com/devices/iphone)\n\n"
             "---\n\n"
             "Pixel 10\n\nfrom $55.00/mth\n\n"
-            "[more...](https://example.com/devices/pixel)\n\n"
+            f"[{_WRAPPER_LINK_LABEL}](https://example.com/devices/pixel)\n\n"
             "---"
         )
         result = ContentExtractor._reformat_separated_items(text)
         # The more link should not be the bolded name
-        assert "- **[more...]" not in result
+        assert f"- **[{_WRAPPER_LINK_LABEL}]" not in result
 
 
 class TestNewBadgeKeywords:

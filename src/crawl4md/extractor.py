@@ -86,6 +86,8 @@ _MIN_WRAPPER_TEXT_LEN = 20
 _MIN_OVERLAY_SIBLING_LEN = 30
 # Default text for empty links when no label can be recovered
 _LINK_FALLBACK_TEXT = "Link"
+# Text injected for wrapper-link references (e.g. product cards)
+_WRAPPER_LINK_LABEL = "Learn more"
 
 # ------------------------------------------------------------------
 # Product parsing thresholds
@@ -536,7 +538,7 @@ class ContentExtractor:
             # preserved.
             if had_children and child_text and len(child_text) >= _MIN_WRAPPER_TEXT_LEN:
                 ref = soup.new_tag("a", href=href)
-                ref.string = "more..."
+                ref.string = _WRAPPER_LINK_LABEL
                 a.insert_after(ref)
                 ref.insert_before(" ")
                 a.unwrap()
@@ -1082,7 +1084,7 @@ class ContentExtractor:
         r"Add\s+to\s+bag|Buy\s+now|Select\s+options|View\s+details|Shop\s+now)$",
         re.IGNORECASE,
     )
-    _MORE_LINK_RE = re.compile(r"^\[more\.{3}\]\((.+)\)$")
+    _MORE_LINK_RE = re.compile(rf"^\[{re.escape(_WRAPPER_LINK_LABEL)}\]\((.+)\)$")
 
     @staticmethod
     def _reformat_separated_items(text: str) -> str:
@@ -1208,7 +1210,7 @@ class ContentExtractor:
         if badge_parts:
             result_lines.append("  " + " · ".join(badge_parts))
 
-        # Append [more...](url) reference link if present
+        # Append wrapper-link reference (_WRAPPER_LINK_LABEL) if present
         if more_link:
             result_lines.append("  " + more_link)
 
@@ -1333,7 +1335,7 @@ class ContentExtractor:
                 continue
             if price_re.match(line) or heading_re.match(line) or hr_re.match(line):
                 break
-            # Skip UI action labels and [more...](url) reference links.
+            # Skip UI action labels and wrapper-link references (_WRAPPER_LINK_LABEL).
             if ContentExtractor._UI_ACTION_RE.match(line):
                 j += 1
                 continue
