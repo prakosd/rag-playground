@@ -1583,11 +1583,14 @@ class SiteCrawler:
                     if len(generated) >= self.config.limit:
                         break
                     norm_link = self._normalize_url(link, strip_www=_sw)
-                    if norm_link not in generated:
-                        generated.add(norm_link)
-                        depths[norm_link] = depth + 1
-                        queue.append((link, depth + 1))
-                        added += 1
+                    if norm_link in generated:
+                        continue
+                    if not self._url_allowed(link):
+                        continue
+                    generated.add(norm_link)
+                    depths[norm_link] = depth + 1
+                    queue.append((link, depth + 1))
+                    added += 1
                 progress.update_activity_label(f"Found {added} new pages on {_shorten_url(url)}")
                 # Update progress total to reflect discovered pages
                 progress.total = min(len(generated), self.config.limit)

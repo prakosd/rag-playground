@@ -560,6 +560,51 @@ class TestRetryRounds:
         # limit=2: /start + at most 1 discovered link
         assert len(results) <= 2
 
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_non_crawlable_links_do_not_consume_limit(self, mock_crawler_cls, tmp_path: Path):
+        """Non-crawlable URLs (wrong domain, etc.) must not count toward limit."""
+        # Seed discovers 3 same-domain + 5 other-domain links.
+        # With limit=4, all 3 same-domain links should be crawled (seed + 3).
+        seed_html = (
+            "<html><body><p>Seed</p>"
+            '<a href="/a">A</a><a href="/b">B</a><a href="/c">C</a>'
+            '<a href="https://other.com/1">O1</a>'
+            '<a href="https://other.com/2">O2</a>'
+            '<a href="https://other.com/3">O3</a>'
+            '<a href="https://other.com/4">O4</a>'
+            '<a href="https://other.com/5">O5</a>'
+            "</body></html>"
+        )
+
+        async def mock_arun(url, config):
+            if url == "https://example.com/start":
+                return _make_mock_result(url, seed_html, "Seed")
+            return _make_mock_result(url, "<p>page</p>", "page")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/start"],
+            limit=4,
+            max_depth=2,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        succeeded = [r for r in results if r.success]
+        crawled_urls = {r.url for r in results}
+        # All 4 slots used: seed + /a + /b + /c
+        assert len(succeeded) == 4
+        assert "https://example.com/a" in crawled_urls
+        assert "https://example.com/b" in crawled_urls
+        assert "https://example.com/c" in crawled_urls
+        # Other-domain links must not appear
+        assert not any("other.com" in u for u in crawled_urls)
+
 
 class TestRetryWaitUntilDowngrade:
     """Retry rounds should downgrade wait_until to domcontentloaded."""
