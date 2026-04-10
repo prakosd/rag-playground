@@ -18,7 +18,13 @@ import pymupdf4llm
 from bs4 import BeautifulSoup
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
-from crawl4md.config import CrawlerConfig, CrawlResult, ExtractedPage, PageConfig
+from crawl4md.config import (
+    _FALLBACK_WAIT_UNTIL,
+    CrawlerConfig,
+    CrawlResult,
+    ExtractedPage,
+    PageConfig,
+)
 from crawl4md.extractor import ContentExtractor
 from crawl4md.progress import ProgressReporter
 from crawl4md.sorter import ContentSorter
@@ -1379,15 +1385,16 @@ class SiteCrawler:
         Disables ``scan_full_page`` and stealth run-flags (``magic``,
         ``simulate_user``, ``override_navigator``) to avoid browser
         context destruction on pages that perform JS redirects during
-        page evaluation.  All other settings (including the user's
-        ``wait_until`` choice) are preserved.
+        page evaluation.  Also downgrades ``wait_until`` to
+        ``domcontentloaded`` to avoid repeated timeouts on
+        analytics-heavy sites where ``networkidle`` never resolves.
         """
         kwargs: dict = {}
 
         if self.page_config.exclude_tags:
             kwargs["excluded_tags"] = self.page_config.exclude_tags
 
-        kwargs["wait_until"] = self.page_config.wait_until
+        kwargs["wait_until"] = _FALLBACK_WAIT_UNTIL
 
         if self.page_config.wait_for:
             kwargs["delay_before_return_html"] = self.page_config.wait_for

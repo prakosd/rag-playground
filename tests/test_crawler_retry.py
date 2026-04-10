@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from crawl4md.config import CrawlerConfig
+from crawl4md.config import CrawlerConfig, PageConfig
 from crawl4md.crawler import SiteCrawler
 from tests.conftest import _make_mock_result
 
@@ -589,3 +589,76 @@ class TestRetryRounds:
 
         # limit=2: /start + at most 1 discovered link
         assert len(results) <= 2
+
+
+class TestRetryWaitUntilDowngrade:
+    """Retry rounds should downgrade wait_until to domcontentloaded."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_fallback_uses_domcontentloaded(self, mock_crawler_cls, tmp_path: Path):
+        """Round 1 uses networkidle; retry rounds downgrade to domcontentloaded."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        ok_result = _make_mock_result("https://example.com/a", "<p>ok</p>", "ok")
+        blocked_result = _make_mock_result("https://example.com/a", blocked_html, "blocked")
+
+        configs_seen: list[object] = []
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config):
+            configs_seen.append(config)
+            call_count["n"] += 1
+            if call_count["n"] <= 1:
+                return blocked_result
+            return ok_result
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com/a"], limit=10, max_retries=1)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.crawl()
+
+        assert len(configs_seen) >= 2
+        # Round 1 uses the default (networkidle)
+        assert configs_seen[0].wait_until == "networkidle"
+        # Retry round uses the fallback (domcontentloaded)
+        assert configs_seen[1].wait_until == "domcontentloaded"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_user_override_respected_round1_overridden_retry(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """User's custom wait_until is used in round 1 but overridden on retry."""
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
+        ok_result = _make_mock_result("https://example.com/b", "<p>ok</p>", "ok")
+        blocked_result = _make_mock_result("https://example.com/b", blocked_html, "blocked")
+
+        configs_seen: list[object] = []
+        call_count = {"n": 0}
+
+        async def mock_arun(url, config):
+            configs_seen.append(config)
+            call_count["n"] += 1
+            if call_count["n"] <= 1:
+                return blocked_result
+            return ok_result
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=["https://example.com/b"], limit=10, max_retries=1)
+        page_config = PageConfig(wait_until="load")
+        crawler = SiteCrawler(config, page_config, output_base=tmp_path)
+        crawler.crawl()
+
+        assert len(configs_seen) >= 2
+        # Round 1 respects the user's override
+        assert configs_seen[0].wait_until == "load"
+        # Retry round still uses the fallback
+        assert configs_seen[1].wait_until == "domcontentloaded"

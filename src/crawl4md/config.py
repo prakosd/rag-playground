@@ -92,6 +92,8 @@ class CrawlerConfig(BaseModel):
 _WAIT_UNTIL_OPTIONS = Literal["domcontentloaded", "networkidle", "load", "commit"]
 # Default navigation wait condition — waits until no network requests for 500ms.
 _DEFAULT_WAIT_UNTIL: _WAIT_UNTIL_OPTIONS = "networkidle"
+# Retry-round wait condition — faster, avoids networkidle timeout on analytics-heavy sites.
+_FALLBACK_WAIT_UNTIL: _WAIT_UNTIL_OPTIONS = "domcontentloaded"
 
 
 class PageConfig(BaseModel):

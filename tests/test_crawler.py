@@ -438,8 +438,8 @@ class TestIsBlocked:
         assert fallback.page_timeout == 20000
         assert fallback.js_code == ["alert(1)"]
 
-    def test_fallback_run_config_preserves_wait_until(self):
-        """Fallback config preserves the user's wait_until value."""
+    def test_fallback_run_config_downgrades_wait_until(self):
+        """Fallback config downgrades wait_until to domcontentloaded."""
         from crawl4ai import CrawlerRunConfig
 
         config = CrawlerConfig(urls=["https://example.com"])
@@ -447,7 +447,7 @@ class TestIsBlocked:
         crawler = SiteCrawler(config, page_config)
 
         fallback = crawler._build_fallback_run_config(CrawlerRunConfig)
-        assert fallback.wait_until == "networkidle"
+        assert fallback.wait_until == "domcontentloaded"
 
     def test_run_config_passes_wait_until(self):
         """wait_until is forwarded to CrawlerRunConfig."""
@@ -491,7 +491,8 @@ class TestIsBlocked:
         assert fallback.page_timeout == primary.page_timeout
         assert fallback.js_code == primary.js_code
         assert fallback.delay_before_return_html == primary.delay_before_return_html
-        assert fallback.wait_until == primary.wait_until
+        # wait_until is intentionally downgraded in fallback
+        assert fallback.wait_until == "domcontentloaded"
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_rounds_use_fallback_run_config(self, mock_crawler_cls, tmp_path: Path):
@@ -527,10 +528,10 @@ class TestIsBlocked:
         retry_cfg = mock_instance.arun.call_args_list[1][1].get("config")
         assert retry_cfg.scan_full_page is False
         assert retry_cfg.magic is False
-        assert retry_cfg.wait_until == "networkidle"
+        assert retry_cfg.wait_until == "domcontentloaded"
 
-    def test_fallback_run_config_propagates_domcontentloaded(self):
-        """Fallback config propagates domcontentloaded when user selects it."""
+    def test_fallback_run_config_always_domcontentloaded(self):
+        """Fallback config uses domcontentloaded even when user sets domcontentloaded."""
         from crawl4ai import CrawlerRunConfig
 
         config = CrawlerConfig(urls=["https://example.com"])
