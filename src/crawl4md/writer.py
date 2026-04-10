@@ -225,6 +225,25 @@ class FileWriter:
         return path
 
 
+def rename_files_with_total(files: list[Path]) -> list[Path]:
+    """Rename numbered content files to include the total file count.
+
+    ``content_001.md`` → ``content_001_of_003.md`` (when *files* has 3 items).
+
+    Returns the list of new ``Path`` objects after renaming.
+    """
+    total = len(files)
+    if not total:
+        return []
+    suffix = f"_of_{total:0{_FILE_INDEX_WIDTH}d}"
+    renamed: list[Path] = []
+    for path in files:
+        new_name = f"{path.stem}{suffix}{path.suffix}"
+        new_path = path.rename(path.parent / new_name)
+        renamed.append(new_path)
+    return renamed
+
+
 class PageSidecar:
     """Append/read ``ExtractedPage`` objects as JSONL for memory-efficient crawls.
 

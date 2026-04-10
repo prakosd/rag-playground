@@ -1000,3 +1000,52 @@ class TestSidecarFiles:
         pos_a = content.index("example.com/a/page")
         pos_b = content.index("example.com/b/page")
         assert pos_a < pos_b
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sorted_final_files_have_of_total_suffix(self, mock_crawler_cls, tmp_path: Path):
+        """Sorted final content files are renamed to include _of_NNN suffix."""
+        pages_data = [
+            ("https://example.com/a", "Page A"),
+            ("https://example.com/b", "Page B"),
+        ]
+        results_iter = iter(
+            [
+                _make_mock_result(
+                    url,
+                    f"<html><body><p>{md}</p></body></html>",
+                    md,
+                )
+                for url, md in pages_data
+            ]
+        )
+
+        async def mock_arun(url, config=None):
+            return next(results_iter)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/a", "https://example.com/b"],
+            limit=2,
+            max_retries=0,
+            flush_interval=10,
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        sorted_files = sorted(crawler.output_dir.glob("sorted_final_success_content_*"))
+        assert len(sorted_files) >= 1
+        # Every sorted final file should contain the _of_ suffix
+        for f in sorted_files:
+            assert "_of_" in f.stem

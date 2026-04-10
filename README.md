@@ -150,8 +150,8 @@ Each crawl creates a timestamped folder with three tiers of output:
 ├── final_fail_urls.txt                # URLs that never succeeded
 │
 │  # Sorted final files (grouped by URL path)
-├── sorted_final_success_content_001.md
-├── sorted_final_fail_content_001.md
+├── sorted_final_success_content_001_of_001.md
+├── sorted_final_fail_content_001_of_001.md
 ├── sorted_final_success_urls.txt
 └── sorted_final_fail_urls.txt
 ```

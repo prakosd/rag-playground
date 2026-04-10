@@ -33,7 +33,7 @@ from crawl4md.config import (
 from crawl4md.extractor import ContentExtractor
 from crawl4md.progress import ProgressReporter
 from crawl4md.sorter import ContentSorter
-from crawl4md.writer import FileWriter, PageSidecar
+from crawl4md.writer import FileWriter, PageSidecar, rename_files_with_total
 
 # Allow asyncio.run() inside Jupyter's already-running event loop
 nest_asyncio.apply()
@@ -1662,7 +1662,7 @@ class SiteCrawler:
             )
             for page in sorted_pages:
                 w.add(page)
-            w.flush()
+            rename_files_with_total(w.flush())
             # Sorted success URLs
             path = self.output_dir / _SORTED_FINAL_SUCCESS_URLS_FILE
             path.write_text(
@@ -1682,7 +1682,7 @@ class SiteCrawler:
             )
             for page in sorted_fail:
                 w.add(page)
-            w.flush()
+            rename_files_with_total(w.flush())
             # Sorted fail URLs
             path = self.output_dir / _SORTED_FINAL_FAIL_URLS_FILE
             path.write_text(

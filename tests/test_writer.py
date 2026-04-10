@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from crawl4md.config import ExtractedPage
-from crawl4md.writer import _MB, FileWriter, PageSidecar
+from crawl4md.writer import _MB, FileWriter, PageSidecar, rename_files_with_total
 
 
 class TestFileWriter:
@@ -368,6 +368,48 @@ class TestPageSidecar:
         assert path.exists()
         result = list(PageSidecar.read_pages(path))
         assert len(result) == 1
+
+
+class TestRenameFilesWithTotal:
+    """Tests for the rename_files_with_total utility function."""
+
+    def test_empty_list(self):
+        assert rename_files_with_total([]) == []
+
+    def test_single_file(self, tmp_path: Path):
+        f = tmp_path / "content_001.md"
+        f.write_text("data", encoding="utf-8")
+        result = rename_files_with_total([f])
+        assert len(result) == 1
+        assert result[0].name == "content_001_of_001.md"
+        assert result[0].exists()
+        assert not f.exists()
+
+    def test_multiple_files(self, tmp_path: Path):
+        files = []
+        for i in range(1, 4):
+            f = tmp_path / f"content_{i:03d}.txt"
+            f.write_text(f"data {i}", encoding="utf-8")
+            files.append(f)
+        result = rename_files_with_total(files)
+        assert len(result) == 3
+        assert result[0].name == "content_001_of_003.txt"
+        assert result[1].name == "content_002_of_003.txt"
+        assert result[2].name == "content_003_of_003.txt"
+        for r in result:
+            assert r.exists()
+        for f in files:
+            assert not f.exists()
+
+    def test_preserves_prefix_and_extension(self, tmp_path: Path):
+        files = []
+        for i in range(1, 6):
+            f = tmp_path / f"sorted_final_success_content_{i:03d}.md"
+            f.write_text(f"page {i}", encoding="utf-8")
+            files.append(f)
+        result = rename_files_with_total(files)
+        assert result[1].name == "sorted_final_success_content_002_of_005.md"
+        assert result[4].name == "sorted_final_success_content_005_of_005.md"
 
     def test_blank_lines_skipped(self, tmp_path: Path):
         """Blank lines in the JSONL file are silently skipped."""

@@ -113,7 +113,7 @@ round_{N}_{success|fail}_content_{NNN}.ext   # Per-round
 round_{N}_{success|fail}_urls.txt
 final_{success|fail}_content_{NNN}.ext       # Merged after all rounds
 final_{success|fail}_urls.txt
-sorted_final_{success|fail}_content_{NNN}.ext  # Sorted final
+sorted_final_{success|fail}_content_{NNN}_of_{TTT}.ext  # Sorted final
 sorted_final_{success|fail}_urls.txt
 ```
 
