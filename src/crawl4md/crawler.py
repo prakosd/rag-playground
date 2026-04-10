@@ -659,7 +659,7 @@ class SiteCrawler:
             else:
                 print(f"  {field + ':':<24}{val}")
         # Show remaining CrawlerConfig fields only when they differ from defaults
-        for field in sorted(saved_cc.model_fields):
+        for field in sorted(CrawlerConfig.model_fields):
             if field in _cc_always or field == "urls":
                 continue
             val = getattr(saved_cc, field)
@@ -676,7 +676,7 @@ class SiteCrawler:
             else:
                 print(f"  {field + ':':<24}{val}")
         # Show remaining PageConfig fields only when they differ from defaults
-        for field in sorted(saved_pc.model_fields):
+        for field in sorted(PageConfig.model_fields):
             if field in _pc_always:
                 continue
             val = getattr(saved_pc, field)
