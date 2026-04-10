@@ -189,6 +189,17 @@ _SESSION_FILE = "session.jsonl"
 _SESSION_CHECKPOINT_FILE = "session_checkpoint.json"
 
 # ------------------------------------------------------------------
+# Resume: overridable config fields (behavioral, not content-affecting)
+# ------------------------------------------------------------------
+
+# CrawlerConfig fields that can be overridden via resume() kwargs
+_OVERRIDABLE_CRAWLER_FIELDS = frozenset(
+    {"limit", "max_depth", "max_retries", "delay", "stealth", "headers", "flush_interval"}
+)
+# PageConfig fields that can be overridden via resume() kwargs
+_OVERRIDABLE_PAGE_FIELDS = frozenset({"wait_until", "wait_for", "timeout", "max_file_size_mb"})
+
+# ------------------------------------------------------------------
 # Skip / empty-extraction log labels
 # ------------------------------------------------------------------
 
@@ -535,61 +546,283 @@ class SiteCrawler:
         )
 
     # ------------------------------------------------------------------
-    # Resume
+    # Session resolution and inspection
     # ------------------------------------------------------------------
 
-    def resume(self, session: int | str | Path) -> list[CrawlResult]:
-        """Resume a previously interrupted crawl or add new URLs to a completed session.
+    @staticmethod
+    def _resolve_session_dir(output_base: Path, session: int | str | Path) -> Path:
+        """Resolve a session identifier to an absolute directory path.
 
         Parameters
         ----------
+        output_base
+            Root directory that contains session folders.
         session
             An index from ``list_sessions()`` (int), a directory name
             (str), or a ``Path`` to the session directory.
 
         Returns
         -------
+        Path
+            Absolute path to the session directory.
+
+        Raises
+        ------
+        ValueError
+            If the int index is out of range or no sessions exist.
+        FileNotFoundError
+            If the resolved directory does not exist.
+        """
+        if isinstance(session, int):
+            # Same ordering as list_sessions: scan for dirs with session.jsonl,
+            # sort descending, index by number.  No table printing.
+            candidates: list[Path] = []
+            if output_base.exists():
+                for d in sorted(output_base.iterdir(), reverse=True):
+                    if d.is_dir() and (d / _SESSION_FILE).exists():
+                        candidates.append(d)
+            if not candidates:
+                raise ValueError("No saved sessions found.")
+            if session < 1 or session > len(candidates):
+                raise ValueError(f"Session #{session} not found. Valid range: 1–{len(candidates)}.")
+            return candidates[session - 1]
+
+        session_dir = Path(session)
+        if not session_dir.is_absolute():
+            session_dir = output_base / session_dir
+        if not session_dir.exists():
+            raise FileNotFoundError(f"Session directory not found: {session_dir}")
+        return session_dir
+
+    @classmethod
+    def show_session(cls, output_base: Path | str, session: int | str | Path) -> None:
+        """Print a human-readable summary of a saved session's settings.
+
+        Parameters
+        ----------
+        output_base
+            Root directory that contains session folders.
+        session
+            An index from ``list_sessions()`` (int), a directory name
+            (str), or a ``Path`` to the session directory.
+        """
+        output_base = Path(output_base)
+        session_dir = cls._resolve_session_dir(output_base, session)
+        snapshot = cls._load_session(session_dir)
+
+        # Determine session index for display
+        idx_label = ""
+        if isinstance(session, int):
+            idx_label = f"#{session}"
+        else:
+            # Try to find the index
+            candidates: list[Path] = []
+            if output_base.exists():
+                for d in sorted(output_base.iterdir(), reverse=True):
+                    if d.is_dir() and (d / _SESSION_FILE).exists():
+                        candidates.append(d)
+            for i, c in enumerate(candidates, 1):
+                if c == session_dir:
+                    idx_label = f"#{i}"
+                    break
+
+        page_count = len(snapshot.succeeded_urls) + len(snapshot.failed_urls)
+        status = "complete" if snapshot.is_complete else "interrupted"
+        print(f"Session {idx_label}: {session_dir.name}  ({status}, {page_count} pages)\n")
+
+        # Restore config models to compare against defaults
+        saved_cc = CrawlerConfig.model_validate(snapshot.header.crawler_config)
+        saved_pc = PageConfig.model_validate(snapshot.header.page_config)
+        default_cc = CrawlerConfig(urls=["https://placeholder.test"])
+        default_pc = PageConfig()
+
+        # Key CrawlerConfig fields (always shown)
+        _cc_always = ["urls", "limit", "max_depth", "delay", "max_retries"]
+        # Key PageConfig fields (always shown)
+        _pc_always = [
+            "extract_main_content",
+            "exclude_tags",
+            "output_extension",
+            "max_file_size_mb",
+            "timeout",
+        ]
+
+        print("Crawl settings:")
+        for field in _cc_always:
+            val = getattr(saved_cc, field)
+            if field == "urls":
+                for i, u in enumerate(val):
+                    label = "urls:" if i == 0 else ""
+                    print(f"  {label:<24}{u}")
+            elif field == "exclude_tags":
+                print(f"  {field + ':':<24}{', '.join(val) if val else '(none)'}")
+            else:
+                print(f"  {field + ':':<24}{val}")
+        # Show remaining CrawlerConfig fields only when they differ from defaults
+        for field in sorted(saved_cc.model_fields):
+            if field in _cc_always or field == "urls":
+                continue
+            val = getattr(saved_cc, field)
+            default_val = getattr(default_cc, field)
+            if val != default_val:
+                display = ", ".join(val) if isinstance(val, list) else val
+                print(f"  {field + ':':<24}{display}")
+
+        print("\nPage settings:")
+        for field in _pc_always:
+            val = getattr(saved_pc, field)
+            if isinstance(val, list):
+                print(f"  {field + ':':<24}{', '.join(val) if val else '(none)'}")
+            else:
+                print(f"  {field + ':':<24}{val}")
+        # Show remaining PageConfig fields only when they differ from defaults
+        for field in sorted(saved_pc.model_fields):
+            if field in _pc_always:
+                continue
+            val = getattr(saved_pc, field)
+            default_val = getattr(default_pc, field)
+            if val != default_val:
+                display = ", ".join(val) if isinstance(val, list) else val
+                print(f"  {field + ':':<24}{display}")
+
+        overridable = sorted(_OVERRIDABLE_CRAWLER_FIELDS | _OVERRIDABLE_PAGE_FIELDS)
+        print(f"\nOverridable on resume: {', '.join(overridable)}")
+
+    # ------------------------------------------------------------------
+    # Resume
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def resume(
+        cls,
+        output_base: Path | str,
+        session: int | str | Path,
+        *,
+        extra_urls: list[str] | str | None = None,
+        limit: int | None = None,
+        max_depth: int | None = None,
+        max_retries: int | None = None,
+        delay: float | None = None,
+        stealth: bool | None = None,
+        headers: dict[str, str] | None = None,
+        flush_interval: int | None = None,
+        wait_until: str | None = None,
+        wait_for: float | None = None,
+        timeout: float | None = None,
+        max_file_size_mb: float | None = None,
+        activity_log_size: int = 10,
+    ) -> list[CrawlResult]:
+        """Resume a previously interrupted crawl or add new URLs to a completed session.
+
+        Content/extraction settings are restored from the saved session.
+        Only behavioral settings can be overridden via keyword arguments.
+
+        Parameters
+        ----------
+        output_base
+            Root directory that contains session folders.
+        session
+            An index from ``list_sessions()`` (int), a directory name
+            (str), or a ``Path`` to the session directory.
+        extra_urls
+            Additional URLs to crawl (comma-separated string or list).
+        limit, max_depth, max_retries, delay, stealth, headers, flush_interval
+            Behavioral CrawlerConfig overrides (None = use saved value).
+        wait_until, wait_for, timeout, max_file_size_mb
+            Behavioral PageConfig overrides (None = use saved value).
+        activity_log_size
+            Number of recent activity entries to show in progress display.
+
+        Returns
+        -------
         list[CrawlResult]
             Combined results from resumed rounds.
         """
-        if isinstance(session, int):
-            sessions = self.list_sessions(self._output_base)
-            if not sessions:
-                raise ValueError("No saved sessions found.")
-            match = [path for idx, path in sessions if idx == session]
-            if not match:
-                raise ValueError(
-                    f"Session #{session} not found. Use list_sessions() to see available sessions."
+        output_base = Path(output_base)
+        session_dir = cls._resolve_session_dir(output_base, session)
+        snapshot = cls._load_session(session_dir)
+
+        # Restore configs from saved session
+        saved_crawler_cfg = CrawlerConfig.model_validate(snapshot.header.crawler_config)
+        saved_page_cfg = PageConfig.model_validate(snapshot.header.page_config)
+
+        # Apply behavioral overrides to CrawlerConfig
+        cc_overrides: dict[str, object] = {}
+        if limit is not None:
+            cc_overrides["limit"] = limit
+        if max_depth is not None:
+            cc_overrides["max_depth"] = max_depth
+        if max_retries is not None:
+            cc_overrides["max_retries"] = max_retries
+        if delay is not None:
+            cc_overrides["delay"] = delay
+        if stealth is not None:
+            cc_overrides["stealth"] = stealth
+        if headers is not None:
+            cc_overrides["headers"] = headers
+        if flush_interval is not None:
+            cc_overrides["flush_interval"] = flush_interval
+        if cc_overrides:
+            saved_crawler_cfg = saved_crawler_cfg.model_copy(update=cc_overrides)
+
+        # Apply behavioral overrides to PageConfig
+        pc_overrides: dict[str, object] = {}
+        if wait_until is not None:
+            pc_overrides["wait_until"] = wait_until
+        if wait_for is not None:
+            pc_overrides["wait_for"] = wait_for
+        if timeout is not None:
+            pc_overrides["timeout"] = timeout
+        if max_file_size_mb is not None:
+            pc_overrides["max_file_size_mb"] = max_file_size_mb
+        if pc_overrides:
+            saved_page_cfg = saved_page_cfg.model_copy(update=pc_overrides)
+
+        # Merge URLs: saved + extra_urls (deduplicated by normalized URL)
+        if extra_urls is not None:
+            if isinstance(extra_urls, str):
+                extra_urls = [u.strip() for u in extra_urls.split(",") if u.strip()]
+            existing_norms = {
+                cls._normalize_url(u, strip_www=saved_crawler_cfg.strip_www)
+                for u in saved_crawler_cfg.urls
+            }
+            new_urls: list[str] = []
+            for u in extra_urls:
+                norm = cls._normalize_url(u, strip_www=saved_crawler_cfg.strip_www)
+                if norm not in existing_norms:
+                    existing_norms.add(norm)
+                    new_urls.append(u)
+            if new_urls:
+                saved_crawler_cfg = saved_crawler_cfg.model_copy(
+                    update={"urls": saved_crawler_cfg.urls + new_urls}
                 )
-            session_dir = match[0]
-        else:
-            session_dir = Path(session)
-            if not session_dir.is_absolute():
-                session_dir = self._output_base / session_dir
 
-        snapshot = self._load_session(session_dir)
-
-        # Warn if output extension differs
-        saved_ext = snapshot.header.page_config.get("output_extension", ".txt")
-        if saved_ext != self.page_config.output_extension:
-            warnings.warn(
-                f"Output extension changed from '{saved_ext}' to "
-                f"'{self.page_config.output_extension}'. Resumed output will "
-                f"use the new extension.",
-                stacklevel=2,
-            )
+        # Build internal components
+        extractor = ContentExtractor(saved_page_cfg)
+        writer = FileWriter(
+            max_file_size_mb=saved_page_cfg.max_file_size_mb,
+            file_extension=saved_page_cfg.output_extension,
+        )
+        instance = cls(
+            saved_crawler_cfg,
+            saved_page_cfg,
+            output_base=output_base,
+            extractor=extractor,
+            writer=writer,
+            activity_log_size=activity_log_size,
+        )
 
         # Reuse the existing output directory
-        self.output_dir = session_dir
-        if self._writer is not None:
-            self._writer._output_dir = self.output_dir
-        if self._fail_writer is not None:
-            self._fail_writer._output_dir = self.output_dir
+        instance.output_dir = session_dir
+        if instance._writer is not None:
+            instance._writer._output_dir = session_dir
+        if instance._fail_writer is not None:
+            instance._fail_writer._output_dir = session_dir
 
         # Build resume URLs: failed URLs + new seed URLs not already succeeded
         resume_urls = list(snapshot.failed_urls)
-        for url in self.config.urls:
-            norm = self._normalize_url(url, strip_www=self.config.strip_www)
+        for url in saved_crawler_cfg.urls:
+            norm = cls._normalize_url(url, strip_www=saved_crawler_cfg.strip_www)
             if norm not in snapshot.succeeded_urls and url not in resume_urls:
                 resume_urls.append(url)
 
@@ -609,10 +842,10 @@ class SiteCrawler:
             if sys.platform == "win32":
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     all_results = pool.submit(
-                        self._run_rounds_in_proactor_loop, resume_state
+                        instance._run_rounds_in_proactor_loop, resume_state
                     ).result()
             else:
-                all_results = asyncio.run(self._run_rounds_async(resume=resume_state))
+                all_results = asyncio.run(instance._run_rounds_async(resume=resume_state))
         except KeyboardInterrupt:
             all_results = []
         return all_results

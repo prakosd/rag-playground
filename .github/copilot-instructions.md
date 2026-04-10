@@ -64,6 +64,7 @@ Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jup
 - PDF handling: layered detection — URL extension fast path (`.pdf`) + Content-Type HEAD-request fallback when crawl returns empty content. PDFs are downloaded via httpx (bypassing the browser) and converted to Markdown via pymupdf4llm. `CrawlResult.is_pdf` flag routes extraction through `_extract_pdf_page()` which skips HTML preprocessing. OCR for scanned/image-only PDFs is controlled by `PageConfig.ocr_languages` (default `["eng", "msa"]`); empty list disables OCR. Tesseract-not-found errors are caught once per crawl with a warning — OCR silently degrades to plain extraction.
 - WAF detection is two-stage: HTML signature check + post-extraction content-length check.
 - `_ROUND_COOLDOWN` is patched to 0 in tests via autouse fixture in `conftest.py`.
+- On resume, content/extraction settings are restored from the saved session. Only behavioral settings (`limit`, `max_depth`, `max_retries`, `delay`, `stealth`, `headers`, `flush_interval`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`) can be overridden via kwargs. `resume()` is a classmethod — it constructs the crawler internally.
 
 ### ContentExtractor (`extractor.py`)
 
