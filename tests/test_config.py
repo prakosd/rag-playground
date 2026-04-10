@@ -99,6 +99,11 @@ class TestPageConfig:
         assert cfg.extract_main_content is True
         assert cfg.scan_full_page is True
         assert cfg.scroll_delay == 0.4
+        assert cfg.flatten_shadow_dom is True
+
+    def test_flatten_shadow_dom_can_be_disabled(self):
+        cfg = PageConfig(flatten_shadow_dom=False)
+        assert cfg.flatten_shadow_dom is False
 
     def test_wait_until_accepts_valid_values(self):
         for value in ("domcontentloaded", "networkidle", "load", "commit"):

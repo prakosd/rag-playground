@@ -116,6 +116,7 @@ class PageConfig(BaseModel):
     scroll_delay: float = 0.4
     ocr_languages: list[str] = ["eng", "msa"]
     absolute_links: bool = True
+    flatten_shadow_dom: bool = True
 
     @field_validator("js_code", mode="before")
     @classmethod

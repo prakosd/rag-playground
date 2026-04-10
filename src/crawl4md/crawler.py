@@ -2032,6 +2032,9 @@ class SiteCrawler:
             kwargs["scan_full_page"] = True
             kwargs["scroll_delay"] = self.page_config.scroll_delay
 
+        if self.page_config.flatten_shadow_dom:
+            kwargs["flatten_shadow_dom"] = True
+
         if self.config.stealth:
             kwargs["simulate_user"] = True
             kwargs["override_navigator"] = True
@@ -2064,6 +2067,9 @@ class SiteCrawler:
 
         if self.page_config.timeout:
             kwargs["page_timeout"] = int(self.page_config.timeout * 1000)
+
+        if self.page_config.flatten_shadow_dom:
+            kwargs["flatten_shadow_dom"] = True
 
         # scan_full_page and stealth run-flags intentionally omitted
 

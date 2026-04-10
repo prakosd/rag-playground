@@ -245,6 +245,37 @@ class TestSiteCrawler:
         run_cfg = crawler._build_run_config(CrawlerRunConfig)
         assert run_cfg.page_timeout == 15000
 
+    def test_flatten_shadow_dom_passed_to_run_config(self):
+        """flatten_shadow_dom=True is forwarded to CrawlerRunConfig."""
+        from crawl4ai import CrawlerRunConfig
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config)
+
+        run_cfg = crawler._build_run_config(CrawlerRunConfig)
+        assert run_cfg.flatten_shadow_dom is True
+
+    def test_flatten_shadow_dom_false_not_passed(self):
+        """flatten_shadow_dom=False is not forwarded (avoids init script injection)."""
+        from crawl4ai import CrawlerRunConfig
+
+        page_config = PageConfig(flatten_shadow_dom=False)
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config, page_config)
+
+        run_cfg = crawler._build_run_config(CrawlerRunConfig)
+        assert run_cfg.flatten_shadow_dom is False
+
+    def test_flatten_shadow_dom_in_fallback_run_config(self):
+        """flatten_shadow_dom=True is also forwarded to the fallback CrawlerRunConfig."""
+        from crawl4ai import CrawlerRunConfig
+
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config)
+
+        run_cfg = crawler._build_fallback_run_config(CrawlerRunConfig)
+        assert run_cfg.flatten_shadow_dom is True
+
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_crawl_with_extractor_and_writer(self, mock_crawler_cls, tmp_path: Path):
         """Content files are written incrementally when extractor/writer are provided."""
