@@ -13,6 +13,8 @@ _VALID_URL_SCHEMES = ("http://", "https://")
 _DEFAULT_EXCLUDE_TAGS: list[str] = ["nav", "script", "form", "style"]
 # Whether to strip the "www." prefix during URL normalization.
 _DEFAULT_STRIP_WWW: bool = False
+# Minimum retry rounds — ensures at least 3 total attempts (1 initial + 2 retries).
+_MIN_RETRIES = 2
 
 
 class CrawlerConfig(BaseModel):
@@ -83,8 +85,8 @@ class CrawlerConfig(BaseModel):
     @field_validator("max_retries")
     @classmethod
     def validate_max_retries(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("max_retries must be non-negative.")
+        if v < _MIN_RETRIES:
+            return _MIN_RETRIES
         return v
 
 

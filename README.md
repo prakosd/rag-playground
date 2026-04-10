@@ -86,7 +86,7 @@ SiteCrawler.crawl()
 | `delay` | `float` | `0` | Seconds to wait between page crawls — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
 | `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
-| `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages |
+| `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages (minimum 2) |
 | `flush_interval` | `int` | `10` | Save progress to disk every N pages |
 
 ### PageConfig

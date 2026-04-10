@@ -93,36 +93,6 @@ class TestRetryRounds:
         assert not (crawler.output_dir / "final_fail_urls.txt").exists()
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
-    def test_max_retries_zero_no_retries(self, mock_crawler_cls, tmp_path: Path):
-        """max_retries=0 means no retry rounds."""
-        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
-        blocked_result = _make_mock_result("https://example.com/x", blocked_html, "blocked")
-
-        mock_instance = AsyncMock()
-        mock_instance.arun = AsyncMock(return_value=blocked_result)
-        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-        mock_instance.__aexit__ = AsyncMock(return_value=False)
-        mock_crawler_cls.return_value = mock_instance
-
-        config = CrawlerConfig(
-            urls=["https://example.com/x"],
-            limit=10,
-            max_retries=0,
-        )
-        crawler = SiteCrawler(config, output_base=tmp_path)
-        crawler.crawl()
-
-        assert crawler.output_dir is not None
-        # Only round 1
-        assert (crawler.output_dir / "round_1_fail_urls.txt").exists()
-        assert not (crawler.output_dir / "round_2_fail_urls.txt").exists()
-        # Final fail
-        assert (crawler.output_dir / "final_fail_urls.txt").exists()
-        assert not (crawler.output_dir / "final_success_urls.txt").exists()
-        # No content files since everything was blocked
-        assert len(crawler.content_files) == 0
-
-    @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_redirect_updates_result_url(self, mock_crawler_cls, tmp_path: Path):
         """CrawlResult.url should be the final URL after a redirect."""
         mock_result = _make_mock_result(
