@@ -14,7 +14,7 @@ SiteCrawler.crawl()
   └─ ContentSorter      → sorted final files grouped by URL path
 ```
 
-Each crawl creates a timestamped output directory. Results pass through multiple rounds (initial + retries), then are merged, deduplicated, and sorted.
+Each crawl creates a timestamped output directory. Results pass through multiple rounds (initial + retries), then merged, deduplicated, and sorted.
 
 ## File Layout
 
@@ -33,124 +33,91 @@ src/crawl4md/
 
 ### Config models (`config.py`)
 
-Pydantic v2 models — all user-facing parameters are validated here.
+Pydantic v2 models — all user-facing parameters validated here.
 
-- **CrawlerConfig** — fields: `urls`, `exclude_paths`, `include_only_paths`, `limit`, `max_depth`, `flush_interval`, `delay`, `stealth`, `headers`, `max_retries`. Accepts CSV strings for list fields; validates regex patterns.
-- **PageConfig** — fields: `exclude_tags`, `include_only_tags`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`, `ocr_languages`, `flatten_shadow_dom`.
-- **CrawlResult** — per-page output: `url`, `html`, `markdown`, `success`, `error`, `redirected_url`, `is_pdf`.
-- **ExtractedPage** — post-extraction output: `url`, `title`, `markdown`.
-
-**Constraints:**
-
-- Cannot set both `exclude_tags` and `include_only_tags` on PageConfig.
+- **CrawlerConfig** — `urls`, `exclude_paths`, `include_only_paths`, `limit`, `max_depth`, `flush_interval`, `delay`, `stealth`, `headers`, `max_retries`. Accepts CSV strings for list fields; validates regex patterns.
+- **PageConfig** — `exclude_tags`, `include_only_tags`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`, `extract_main_content`, `output_extension`, `separate_items`, `item_selector`, `js_code`, `scan_full_page`, `scroll_delay`, `ocr_languages`, `flatten_shadow_dom`. Cannot set both `exclude_tags` and `include_only_tags`.
+- **CrawlResult** — `url`, `html`, `markdown`, `success`, `error`, `redirected_url`, `is_pdf`.
+- **ExtractedPage** — `url`, `title`, `markdown`.
 - `headers` is a free-form `dict[str, str]` forwarded to Crawl4AI's `BrowserConfig`.
 
 ### SiteCrawler (`crawler.py`)
 
-Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jupyter compatibility; on Windows uses `ProactorEventLoop` in a `ThreadPoolExecutor`.
-
-**Multi-round strategy:**
-
-1. Round 1 — crawl seed URLs with link discovery (respects `max_depth` and `limit`). Per-page jitter applied only when `delay > 0`.
-2. Rounds 2+ — retry failed URLs with link discovery. Cooldown pause between rounds. Escalating delay with jitter. `wait_until` is downgraded to `domcontentloaded` (via `_FALLBACK_WAIT_UNTIL`) to avoid repeated `networkidle` timeouts.
-3. WAF back-off — immediate back-off on WAF detection; escalates after consecutive blocks.
-4. Cross-round state — `all_generated` and `url_depths` shared across rounds for dedup and depth tracking.
-5. Session persistence — single `AsyncWebCrawler` instance shared across all rounds (cookies persist).
-6. Early exit — skip remaining retries if all pages succeed.
+Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jupyter; Windows uses `ProactorEventLoop` in a `ThreadPoolExecutor`.
 
 **Constraints:**
 
-- URL filtering: same-domain only (with `www.` stripping), skips boilerplate domains and static asset extensions (excluding `.pdf`), applies `include_only_paths`/`exclude_paths` regex, skips template placeholders (`{{`, `{%`).
-- PDF handling: layered detection — URL extension fast path (`.pdf`) + Content-Type HEAD-request fallback when crawl returns empty content. PDFs are downloaded via httpx (bypassing the browser) and converted to Markdown via pymupdf4llm. `CrawlResult.is_pdf` flag routes extraction through `_extract_pdf_page()` which skips HTML preprocessing. OCR for scanned/image-only PDFs is controlled by `PageConfig.ocr_languages` (default `["eng", "msa"]`); empty list disables OCR. Tesseract-not-found errors are caught once per crawl with a warning — OCR silently degrades to plain extraction.
-- WAF detection is two-stage: HTML signature check + post-extraction content-length check.
+- URL filtering: same-domain only (`www.` stripped), skips static asset extensions (except `.pdf`), applies path regex filters, skips template placeholders (`{{`, `{%`).
+- PDF: URL extension fast path + Content-Type HEAD fallback. Fetched via httpx, converted via pymupdf4llm. `CrawlResult.is_pdf` routes to `_extract_pdf_page()` (skips HTML preprocessing). OCR via `PageConfig.ocr_languages` (default `["eng", "msa"]`); empty list disables. Tesseract errors caught once with warning.
+- WAF detection: HTML signature check + post-extraction content-length check.
+- Retry rounds downgrade `wait_until` to `domcontentloaded` via `_FALLBACK_WAIT_UNTIL`.
 - `_ROUND_COOLDOWN` is patched to 0 in tests via autouse fixture in `conftest.py`.
-- On resume, content/extraction settings are restored from the saved session. Only behavioral settings (`limit`, `max_depth`, `max_retries`, `delay`, `stealth`, `headers`, `flush_interval`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`) can be overridden via kwargs. `resume()` is a classmethod — it constructs the crawler internally.
+- `resume()` is a classmethod. Restores content/extraction settings from saved session; only behavioral settings can be overridden via kwargs: `limit`, `max_depth`, `max_retries`, `delay`, `stealth`, `headers`, `flush_interval`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`.
 
 ### ContentExtractor (`extractor.py`)
 
-Converts crawled HTML to Markdown. Three modes: trafilatura (default, `extract_main_content=True`) with markdownify fallback, markdownify-only (`extract_main_content=False`), or PDF mode (`is_pdf=True` — skips HTML preprocessing, derives title from URL filename).
-
-**Pipeline order:** pre-processing → extraction → supplementary section recovery (trafilatura mode) → table fixing → post-processing (`_clean_markdown`) → mdformat validation.
+Converts HTML to Markdown. Modes: trafilatura (default, `extract_main_content=True`) with markdownify fallback; markdownify-only; PDF mode (`is_pdf=True`).
 
 **Constraints:**
 
-- Pre-processing is always-on (tag filtering, strikethrough preservation, heading spacing, empty link population, item separation, table fixing) — read the function docstrings for details.
-- `_populate_empty_links()` is always-on with no config flag.
-- `_insert_item_separators()` uses `_ITEM_SENTINEL` marker that must survive trafilatura extraction.
-- mdformat validation has a content-preservation guard — falls back to original text if any content is lost.
-- Supplementary sections (FAQs, accordions) and product metadata are recovered in trafilatura mode only.
-
-### ContentSorter (`sorter.py`)
-
-Groups extracted pages by URL path for natural display order. Stable sort preserves crawl order for identical paths.
+- Pre-processing always runs (tag filtering, strikethrough preservation, heading spacing, empty link population, item separation, table fixing).
+- `_populate_empty_links()` has no config flag.
+- `_insert_item_separators()` uses `_ITEM_SENTINEL` that must survive trafilatura extraction.
+- Supplementary section and product metadata recovery in trafilatura mode only.
+- mdformat validation falls back to original if any content is lost.
 
 ### FileWriter (`writer.py`)
 
-Combines extracted pages into size-limited output files. Never splits a single page across files. Oversized pages get their own file with a `UserWarning`.
-
-**Constraints:**
-
-- Batch mode (`write()`) and incremental mode (`add()`/`flush()`/`reset()`) — both must be maintained.
-- A symmetric `_fail_writer` handles failed-page output.
-- Output extension is configurable via `PageConfig.output_extension`.
+**Constraints:** Both batch (`write()`) and incremental (`add()`/`flush()`/`reset()`) modes must be maintained. Oversized pages get their own file with `UserWarning`. Symmetric `_fail_writer` for failed pages. Extension via `PageConfig.output_extension`.
 
 ### ProgressReporter (`progress.py`)
 
-Real-time progress display. Auto-detects Jupyter vs terminal.
+Auto-detects Jupyter vs terminal. Jupyter widget uses `_repr_html_()` — all CSS classes prefixed `c4md-`. Colors in `_LIGHT_COLORS`/`_DARK_COLORS` with dark-mode media queries.
 
-**Constraints:**
-
-- Jupyter widget uses `_repr_html_()` — all CSS classes must be prefixed with `c4md-`.
-- Colors are centralised in `_LIGHT_COLORS` and `_DARK_COLORS` module-level dicts. Standard CSS uses `_LIGHT_COLORS` as defaults with `@media (prefers-color-scheme: dark)` overrides.
-- **Colab compatibility:** `_repr_html_colab()` uses only inline `style="..."` attributes — no `<style>` blocks, no `@keyframes`, no `position: absolute`, no `filter`, no `animation`. Colab's HTML sanitizer strips all of these.
-- `set_activity()` / `update_activity_label()` are optional — reporters that don't call them still produce a valid widget.
+**Colab:** `_repr_html_colab()` uses inline `style="..."` only — no `<style>` blocks, `@keyframes`, `position: absolute`, `filter`, or `animation` (stripped by Colab's sanitizer).
 
 ## Output File Naming
 
-Timestamped folder (`YYYY-MM-DD_HH-MM-SS`) with three tiers:
+Timestamped folder (`YYYY-MM-DD_HH-MM-SS`):
 
 ```
 round_{N}_{success|fail}_content_{NNN}.ext   # Per-round
 round_{N}_{success|fail}_urls.txt
-final_{success|fail}_content_{NNN}.ext       # Merged after all rounds
+final_{success|fail}_content_{NNN}.ext       # Merged
 final_{success|fail}_urls.txt
-sorted_final_{success|fail}_content_{NNN}_of_{TTT}.ext  # Sorted final
+sorted_final_{success|fail}_content_{NNN}_of_{TTT}.ext  # Sorted
 sorted_final_{success|fail}_urls.txt
 ```
 
-`{N}` = round number (1-based), `{NNN}` = file index (001, 002, …), `ext` = `PageConfig.output_extension`.
+`{N}` = round (1-based), `{NNN}` = file index (001…), `ext` = `PageConfig.output_extension`.
 
 ## Coding Conventions
 
-- Python 3.10+, type hints on all public APIs.
-- Pydantic v2 for data models (use `model_validator`, `field_validator`).
-- Linting via ruff (config in `pyproject.toml`).
-- Tests use pytest with mocked HTTP calls — never make real network requests in tests.
-- Keep the notebook UX simple: plain language, no jargon, no code explanations.
-- **No inline magic values:** All behavioral thresholds, tag lists, regex patterns, and repeated string literals must be defined as module-level `_UPPER_SNAKE_CASE` constants with a descriptive comment. Group constants categorically at the top of the file (after imports). Regex patterns should be `re.compile()`d at module level for clarity and performance. **Exempt:** Pydantic field defaults, standard Python idioms (e.g. `divmod(x, 60)`, `stacklevel=2`), spec-defined keys used once (JSON-LD properties, HTML attribute names in BeautifulSoup calls), and trivial markdown formatting strings (`"- "`, `"### "`).
+- Python 3.10+, type hints on all public APIs. Pydantic v2 (`model_validator`, `field_validator`). Linting via ruff (`pyproject.toml`).
+- Tests use mocked HTTP — never real network requests. Keep notebook UX simple: plain language, no jargon.
+- **No inline magic values:** Thresholds, tag lists, regex patterns, repeated string literals → `_UPPER_SNAKE_CASE` constants (grouped after imports). Regex `re.compile()`d at module level. **Exempt:** Pydantic field defaults, standard Python idioms, spec-defined keys used once, trivial markdown strings (`"- "`, `"### "`).
+
+## Dev Environment
+
+Defined in `.devcontainer/devcontainer.json` (Python 3.12 + Chromium via Playwright + Tesseract OCR).
+
+- `--shm-size=2g` is required — Chromium crashes with Docker's default 64 MB `/dev/shm`.
+- Tesseract `eng` + `msa` are pre-installed to match `PageConfig.ocr_languages` defaults.
+- The yarn apt source is removed before `apt-get update` (expired GPG key in the base image).
+- Setup order: `pip install -e '.[dev]'` → `playwright install --with-deps chromium` → `crawl4ai-setup`.
 
 ## Dependencies
 
-Key deps: crawl4ai, trafilatura, markdownify, pydantic, nest-asyncio, beautifulsoup4, mdformat (with mdformat-gfm), pymupdf4llm, httpx. See `pyproject.toml` for the full list.
+crawl4ai, trafilatura, markdownify, pydantic, nest-asyncio, beautifulsoup4, mdformat + mdformat-gfm, pymupdf4llm, httpx. Full list in `pyproject.toml`.
 
 ## Testing
 
-- **Every code change must include unit tests** — new features need tests for the happy path and key edge cases; bug fixes need a test that reproduces the bug.
-- **Before making changes or implementing a plan, always start with a TODO list** — write the planned steps first, then execute and update the list as work progresses.
-- **All tests must pass before a task is considered complete.** Run `python -m pytest tests/ -q` and confirm zero failures.
-- **After tests pass, run linting:** `ruff check src/ tests/` and `ruff format --check src/ tests/`. Fix any errors and re-run both tests and linting until **both pass with zero errors**. A task is not complete until tests AND linting are clean.
-- **For test and lint verification, always delegate to the `test-runner` agent** instead of running commands directly. This agent uses a two-pass strategy: quiet run first, then verbose re-run of failures only.
-- `_ROUND_COOLDOWN` is globally patched to 0 via an autouse fixture in `conftest.py`. No per-test patching is needed.
-- When running tests in a terminal, **always wait for the command to finish and return its full output** before re-running, retrying, or drawing any conclusions. Do not start a new test run while one is still in progress.
+- Every code change needs unit tests (happy path + key edge cases; bug fixes need a reproducing test).
+- Start with a TODO list before implementing. Task is complete only when tests AND linting are both clean.
+- Tests: `python -m pytest tests/ -q`. Lint: `ruff check src/ tests/` and `ruff format --check src/ tests/`.
+- **Delegate test/lint runs to the `test-runner` agent** (two-pass: quiet first, then verbose re-run of failures only).
+- Wait for full test output before re-running or drawing conclusions.
 
 ## Maintaining This File
 
-**Target size:** This file must stay under 250 lines. If an update would exceed that, condense or remove existing content to make room.
-
-**What belongs here:** Constraints the agent can't discover from source code — conventions, gotchas, cross-module rules, validation constraints, testing policy. Structural overview (file layout, data flow, output naming patterns).
-
-**What does NOT belong here:** Implementation details discoverable by reading source — function behavior, algorithm steps, constant values, CSS specifics, rendering logic, fallback chains. If the agent needs those details, it can read the relevant file.
-
-**When to update this file:** Only when a change introduces a new *constraint* or *convention*, removes one, or makes existing content factually wrong. Do NOT add descriptions of new features — only add rules about how to work with them correctly.
-
-**When to update README.md:** When user-facing behavior changes (new config params, changed defaults, new features, installation steps). README describes *what the tool does for users*; this file describes *how to work on the code correctly*.
+Target: under 250 lines. **Keep:** constraints not discoverable from source — conventions, gotchas, cross-module rules, testing policy, output naming. **Omit:** implementation details readable from source. Update only when a constraint or convention changes. Update README.md for user-facing behavior changes. When adding/removing Python dependencies or system packages, also review `.devcontainer/devcontainer.json`.
