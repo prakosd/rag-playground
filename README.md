@@ -1,5 +1,7 @@
 # crawl4md
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/crawl4md)
+
 A Python library for crawling websites and extracting their content as Markdown-formatted text files. Wraps [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous API designed for non-technical Jupyter Notebook users.
 
 ## Features
@@ -14,6 +16,20 @@ A Python library for crawling websites and extracting their content as Markdown-
 - **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) via DOM analysis and inserts `---` separators; supports custom CSS selectors
 - **Markdown validation** — every extracted page is auto-fixed via mdformat (with GFM support) to ensure structurally correct, renderable Markdown; a content-preservation guard prevents any words, numbers, or punctuation from being lost
 - **Sorted output** — final files are sorted by URL path for natural reading order
+
+## Run Without Installing Anything
+
+The easiest way to use crawl4md is via a pre-configured environment — no Python, Chromium, or Tesseract setup required.
+
+**GitHub Codespaces (browser, zero local install)**
+Click the badge above. GitHub spins up a fully configured VS Code environment in your browser. Free tier: 120 core-hours/month.
+
+**VS Code Dev Container (local Docker)**
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension.
+2. Open this folder in VS Code.
+3. Click **Reopen in Container** in the notification, or run `Cmd/Ctrl+Shift+P` → **Dev Containers: Reopen in Container**.
+4. First start takes ~5 minutes (pulls base image, installs Tesseract, Chromium, and Python packages). Subsequent opens are fast.
+5. Open `notebooks/crawl4md.ipynb`, select the in-container Python 3.12 kernel, and run the cells.
 
 ## Installation
 
