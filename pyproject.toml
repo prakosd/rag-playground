@@ -27,7 +27,6 @@ dependencies = [
     "markdownify>=0.11.0",
     "pydantic>=2.0",
     "nest-asyncio>=1.5.0",
-    "chardet>=5.2.0,<6",
     "beautifulsoup4>=4.12.0",
     "mdformat>=0.7.19",
     "mdformat-gfm>=0.3.6",
