@@ -110,12 +110,21 @@ Defined in `.devcontainer/devcontainer.json` (Python 3.12 + Chromium via Playwri
 
 crawl4ai, trafilatura, markdownify, pydantic, nest-asyncio, beautifulsoup4, mdformat + mdformat-gfm, pymupdf4llm, httpx. Full list in `pyproject.toml`.
 
+## Planning
+
+For any non-trivial task, write a plan **before** implementing. Every plan must:
+
+- Be **understandable by Claude Sonnet 4.6** — clear, simple, short steps; no jargon; each step independently executable. Sonnet 4.6 is a smaller model, so prefer many narrow steps over a few broad ones.
+- **Use AI agent orchestration** — explicitly call out which steps delegate to a subagent (`Explore`, `test-runner`, `code-reviewer`) and which run inline. Break large work into small subtasks and combine results in a named integration step. End with verification via `test-runner`.
+- See the [`agent-orchestration`](./skills/agent-orchestration/SKILL.md) skill for patterns and decision rules.
+
 ## Testing
 
 - Every code change needs unit tests (happy path + key edge cases; bug fixes need a reproducing test).
 - Start with a TODO list before implementing. Task is complete only when tests AND linting are both clean.
 - Tests: `python -m pytest tests/ -q`. Lint: `ruff check src/ tests/` and `ruff format --check src/ tests/`.
 - **Delegate test/lint runs to the `test-runner` agent** (two-pass: quiet first, then verbose re-run of failures only).
+- **Delegate diff review to the `code-reviewer` agent** before declaring a task complete — it enforces the "clean, lightweight, not bloated" bar.
 - Wait for full test output before re-running or drawing conclusions.
 
 ## Maintaining This File
