@@ -479,9 +479,7 @@ class ProgressReporter:
         if output_dir:
             msg += f"\nOutput folder: {output_dir}"
         if self._use_notebook:
-            from IPython.display import clear_output  # type: ignore[import-untyped]
-
-            clear_output(wait=True)
+            self._refresh_display()
             print(msg)
         else:
             print(msg)

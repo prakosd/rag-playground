@@ -1172,6 +1172,18 @@ class SiteCrawler:
 
         total_crawled = len(all_success) + len(all_fail)
         label = "Interrupted" if interrupted else "Done"
+        # Clear any lingering progress widget from the final round so the
+        # summary text below isn't shown beneath a stale (partial-percent)
+        # bar in Jupyter / Colab.
+        try:
+            from IPython import get_ipython  # type: ignore[import-untyped]
+
+            if get_ipython() is not None:
+                from IPython.display import clear_output  # type: ignore[import-untyped]
+
+                clear_output(wait=True)
+        except ImportError:
+            pass
         print(
             f"\n{label}! {len(all_success)} succeeded, {len(all_fail)} failed out of {total_crawled} total."
         )
@@ -1605,6 +1617,16 @@ class SiteCrawler:
 
         # Flush the last open activity so it appears in the disk log.
         progress._close_activity()
+
+        # Snap the bar to 100%: silently-skipped URLs (e.g. redirects to
+        # already-visited targets, redirects outside the include filter)
+        # were counted into ``progress.total`` via ``generated`` but never
+        # call ``progress.update``, so the bar would otherwise end below
+        # 100%.  Sync ``total`` to the actual number processed.
+        progress.total = max(progress.count, 1)
+        if progress._use_notebook:
+            progress._refresh_display()
+
         return results
 
     # ------------------------------------------------------------------
