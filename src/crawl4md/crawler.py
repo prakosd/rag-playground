@@ -33,7 +33,7 @@ from crawl4md.config import (
 from crawl4md.extractor import ContentExtractor
 from crawl4md.progress import ProgressReporter
 from crawl4md.sorter import ContentSorter
-from crawl4md.writer import FileWriter, PageSidecar, rename_files_with_total
+from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar, rename_files_with_total
 
 # Allow asyncio.run() inside Jupyter's already-running event loop
 nest_asyncio.apply()
@@ -1734,8 +1734,8 @@ class SiteCrawler:
     def _write_round_success_files(self, round_num: int) -> None:
         """Write cumulative round success content as a round-end snapshot.
 
-        Reads extracted pages from JSONL sidecar files for rounds 1..N,
-        deduplicates by URL, and writes content files.
+        Streams extracted pages from JSONL sidecar files for rounds
+        1..N, deduplicating by URL, and writes content files.
         """
         if self._writer is None or self.output_dir is None:
             return
@@ -1746,26 +1746,20 @@ class SiteCrawler:
         for existing in self.output_dir.glob(pattern):
             existing.unlink()
 
-        pages = self._read_all_success_sidecars(round_num)
-        if not pages:
+        entries = self._index_success(round_num)
+        if not entries:
             return
 
-        writer = FileWriter(
-            output_dir=self.output_dir,
-            max_file_size_mb=self.page_config.max_file_size_mb,
-            file_extension=ext,
-            prefix=f"{round_prefix}{_SUCCESS_SUFFIX}",
-        )
-        for page in pages:
-            writer.add(page)
-        writer.flush()
+        self._stream_entries_to_writer(entries, prefix=f"{round_prefix}{_SUCCESS_SUFFIX}")
 
     def _write_sorted_round_files(self, round_num: int) -> None:
         """Write sorted content and URL files for one round.
 
-        Reads extracted pages from JSONL sidecar files.  Success files
-        are cumulative (rounds 1..N); fail files are current round only.
-        Controlled by the ``_ENABLE_SORTED_ROUND_FILES`` module flag.
+        Streams pages from JSONL sidecar files via lightweight indexes:
+        the index list is sorted, then each page is loaded one at a
+        time and fed to the writer.  Success files are cumulative
+        (rounds 1..N); fail files are current round only.  Controlled
+        by the ``_ENABLE_SORTED_ROUND_FILES`` module flag.
         """
         if not _ENABLE_SORTED_ROUND_FILES:
             return
@@ -1776,40 +1770,30 @@ class SiteCrawler:
         sorted_prefix = _SORTED_ROUND_PREFIX + f"{round_num}_"
 
         # --- Sorted success (cumulative, deduplicated) ---
-        pages = self._read_all_success_sidecars(round_num)
-        sorted_pages = ContentSorter.sort(pages)
-        if sorted_pages:
+        success_entries = ContentSorter.sort_keys(self._index_success(round_num))
+        if success_entries:
             # Remove stale files from prior writes
             for f in self.output_dir.glob(f"{sorted_prefix}{_SUCCESS_SUFFIX}content_*{ext}"):
                 f.unlink()
-            w = FileWriter(
-                output_dir=self.output_dir,
-                max_file_size_mb=self.page_config.max_file_size_mb,
-                file_extension=ext,
-                prefix=f"{sorted_prefix}{_SUCCESS_SUFFIX}",
+            self._stream_entries_to_writer(
+                success_entries, prefix=f"{sorted_prefix}{_SUCCESS_SUFFIX}"
             )
-            for page in sorted_pages:
-                w.add(page)
-            w.flush()
             path = self.output_dir / f"{sorted_prefix}success_urls.txt"
-            path.write_text("\n".join(p.url for p in sorted_pages), encoding="utf-8")
+            path.write_text("\n".join(e.url for e in success_entries), encoding="utf-8")
 
         # --- Sorted fail (this round only, deduplicated) ---
         fail_sidecar = self.output_dir / f"{round_prefix}{_FAIL_SIDECAR_SUFFIX}"
-        fail_pages = self._read_sidecar_deduped(fail_sidecar)
-        sorted_fail = ContentSorter.sort(fail_pages)
-        if sorted_fail:
-            w = FileWriter(
-                output_dir=self.output_dir,
-                max_file_size_mb=self.page_config.max_file_size_mb,
-                file_extension=ext,
-                prefix=f"{sorted_prefix}{_FAIL_SUFFIX}",
-            )
-            for page in sorted_fail:
-                w.add(page)
-            w.flush()
+        fail_seen: set[str] = set()
+        fail_entries: list[PageIndexEntry] = []
+        for entry in PageSidecar.iter_index(fail_sidecar):
+            if entry.url not in fail_seen:
+                fail_seen.add(entry.url)
+                fail_entries.append(entry)
+        fail_entries = ContentSorter.sort_keys(fail_entries)
+        if fail_entries:
+            self._stream_entries_to_writer(fail_entries, prefix=f"{sorted_prefix}{_FAIL_SUFFIX}")
             path = self.output_dir / f"{sorted_prefix}fail_urls.txt"
-            path.write_text("\n".join(p.url for p in sorted_fail), encoding="utf-8")
+            path.write_text("\n".join(e.url for e in fail_entries), encoding="utf-8")
 
     def _write_final_files(
         self,
@@ -1823,7 +1807,6 @@ class SiteCrawler:
         sidecar files written during each round — no re-extraction needed.
         """
         assert self.output_dir is not None
-        ext = self.page_config.output_extension
 
         # final_success_urls.txt — all successful URLs across all rounds (deduplicated)
         if all_success:
@@ -1845,31 +1828,15 @@ class SiteCrawler:
 
         # final_success_content_*.ext — unsorted merged content from sidecars
         if self._writer is not None:
-            pages = self._read_all_success_sidecars()
-            if pages:
-                w = FileWriter(
-                    output_dir=self.output_dir,
-                    max_file_size_mb=self.page_config.max_file_size_mb,
-                    file_extension=ext,
-                    prefix=_FINAL_SUCCESS_PREFIX,
-                )
-                for page in pages:
-                    w.add(page)
-                w.flush()
+            success_entries = self._index_success()
+            if success_entries:
+                self._stream_entries_to_writer(success_entries, prefix=_FINAL_SUCCESS_PREFIX)
 
         # final_fail_content_*.ext — unsorted fail content from sidecars
         if self._writer is not None:
-            fail_pages = self._read_all_fail_sidecars()
-            if fail_pages:
-                w = FileWriter(
-                    output_dir=self.output_dir,
-                    max_file_size_mb=self.page_config.max_file_size_mb,
-                    file_extension=ext,
-                    prefix=_FINAL_FAIL_PREFIX,
-                )
-                for page in fail_pages:
-                    w.add(page)
-                w.flush()
+            fail_entries = self._index_fail()
+            if fail_entries:
+                self._stream_entries_to_writer(fail_entries, prefix=_FINAL_FAIL_PREFIX)
 
     def _write_sorted_files(
         self,
@@ -1878,51 +1845,38 @@ class SiteCrawler:
     ) -> None:
         """Sort by URL path and write sorted final files.
 
-        Reads extracted pages from JSONL sidecar files written during
-        each round — no re-extraction needed.
+        Streams pages from JSONL sidecar files via lightweight indexes:
+        the index list is sorted, then each page is loaded one at a
+        time and fed to the writer — the full corpus never lives in
+        RAM at once.
         """
         if self._writer is None:
             return
         assert self.output_dir is not None
-        ext = self.page_config.output_extension
 
         # Sorted success content (deduplicated by URL, keeping first occurrence)
-        pages = self._read_all_success_sidecars()
-        sorted_pages = ContentSorter.sort(pages)
-        if sorted_pages:
-            w = FileWriter(
-                output_dir=self.output_dir,
-                max_file_size_mb=self.page_config.max_file_size_mb,
-                file_extension=ext,
-                prefix=_SORTED_FINAL_SUCCESS_PREFIX,
+        success_entries = ContentSorter.sort_keys(self._index_success())
+        if success_entries:
+            files = self._stream_entries_to_writer(
+                success_entries, prefix=_SORTED_FINAL_SUCCESS_PREFIX
             )
-            for page in sorted_pages:
-                w.add(page)
-            rename_files_with_total(w.flush())
+            rename_files_with_total(files)
             # Sorted success URLs
             path = self.output_dir / _SORTED_FINAL_SUCCESS_URLS_FILE
             path.write_text(
-                "\n".join(p.url for p in sorted_pages),
+                "\n".join(e.url for e in success_entries),
                 encoding="utf-8",
             )
 
         # Sorted fail content (deduplicated by URL, keeping first occurrence)
-        fail_pages = self._read_all_fail_sidecars()
-        sorted_fail = ContentSorter.sort(fail_pages)
-        if sorted_fail:
-            w = FileWriter(
-                output_dir=self.output_dir,
-                max_file_size_mb=self.page_config.max_file_size_mb,
-                file_extension=ext,
-                prefix=_SORTED_FINAL_FAIL_PREFIX,
-            )
-            for page in sorted_fail:
-                w.add(page)
-            rename_files_with_total(w.flush())
+        fail_entries = ContentSorter.sort_keys(self._index_fail())
+        if fail_entries:
+            files = self._stream_entries_to_writer(fail_entries, prefix=_SORTED_FINAL_FAIL_PREFIX)
+            rename_files_with_total(files)
             # Sorted fail URLs
             path = self.output_dir / _SORTED_FINAL_FAIL_URLS_FILE
             path.write_text(
-                "\n".join(p.url for p in sorted_fail),
+                "\n".join(e.url for e in fail_entries),
                 encoding="utf-8",
             )
 
@@ -1933,82 +1887,91 @@ class SiteCrawler:
         return sorted(self.output_dir.glob(pattern))
 
     # ------------------------------------------------------------------
-    # Sidecar helpers — read extracted pages back from JSONL files
+    # Sidecar helpers — build lightweight indexes for streaming sort
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _read_sidecar_deduped(path: Path) -> list[ExtractedPage]:
-        """Read pages from a single JSONL sidecar, deduplicated by URL."""
-        seen: set[str] = set()
-        pages: list[ExtractedPage] = []
-        for page in PageSidecar.read_pages(path):
-            if page.url not in seen and page.markdown.strip():
-                seen.add(page.url)
-                pages.append(page)
-        return pages
+    def _index_success(self, up_to_round: int | None = None) -> list[PageIndexEntry]:
+        """Build a deduplicated success index across rounds.
 
-    def _read_all_success_sidecars(self, up_to_round: int | None = None) -> list[ExtractedPage]:
-        """Read and deduplicate success pages from sidecar files.
-
-        When *up_to_round* is given, only reads rounds 1..N (for
-        cumulative round snapshots).  Otherwise reads all rounds.
+        When *up_to_round* is given, only includes rounds 1..N (for
+        cumulative round snapshots).  Otherwise includes all rounds.
         """
         assert self.output_dir is not None
         sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_PREFIX}*{_SUCCESS_SIDECAR_SUFFIX}"))
         seen: set[str] = set()
-        pages: list[ExtractedPage] = []
+        entries: list[PageIndexEntry] = []
         for sf in sidecar_files:
             if up_to_round is not None:
                 # Extract round number from filename like "round_2_success_pages.jsonl"
-                name = sf.name
                 try:
-                    rn = int(name.split("_")[1])
+                    rn = int(sf.name.split("_")[1])
                 except (IndexError, ValueError):
                     continue
                 if rn > up_to_round:
                     continue
-            for page in PageSidecar.read_pages(sf):
-                if page.url not in seen and page.markdown.strip():
-                    seen.add(page.url)
-                    pages.append(page)
-        return pages
+            for entry in PageSidecar.iter_index(sf):
+                if entry.url not in seen:
+                    seen.add(entry.url)
+                    entries.append(entry)
+        return entries
 
-    def _read_all_fail_sidecars(self, up_to_round: int | None = None) -> list[ExtractedPage]:
-        """Read and deduplicate fail pages from sidecar files.
+    def _index_fail(self, up_to_round: int | None = None) -> list[PageIndexEntry]:
+        """Build a deduplicated fail index, excluding any URL that succeeded.
 
-        When *up_to_round* is given, only reads rounds 1..N.
-        Otherwise reads all rounds.  Pages whose URL appears in any
-        success sidecar are excluded (handles resume scenarios where a
-        URL failed in an earlier round but succeeded later).
+        When *up_to_round* is given, only includes rounds 1..N.
         """
         assert self.output_dir is not None
 
-        # Collect success URLs so we can filter them out of fail pages
+        # Collect success URLs so we can filter them out of fail entries
         success_urls: set[str] = set()
         success_sidecars = sorted(
             self.output_dir.glob(f"{_ROUND_PREFIX}*{_SUCCESS_SIDECAR_SUFFIX}")
         )
         for sf in success_sidecars:
-            for page in PageSidecar.read_pages(sf):
-                success_urls.add(page.url)
+            for entry in PageSidecar.iter_index(sf):
+                success_urls.add(entry.url)
 
         sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_PREFIX}*{_FAIL_SIDECAR_SUFFIX}"))
         seen: set[str] = set()
-        pages: list[ExtractedPage] = []
+        entries: list[PageIndexEntry] = []
         for sf in sidecar_files:
             if up_to_round is not None:
-                name = sf.name
                 try:
-                    rn = int(name.split("_")[1])
+                    rn = int(sf.name.split("_")[1])
                 except (IndexError, ValueError):
                     continue
                 if rn > up_to_round:
                     continue
-            for page in PageSidecar.read_pages(sf):
-                if page.url not in seen and page.url not in success_urls and page.markdown.strip():
-                    seen.add(page.url)
-                    pages.append(page)
-        return pages
+            for entry in PageSidecar.iter_index(sf):
+                if entry.url not in seen and entry.url not in success_urls:
+                    seen.add(entry.url)
+                    entries.append(entry)
+        return entries
+
+    def _stream_entries_to_writer(
+        self,
+        entries: list[PageIndexEntry],
+        prefix: str,
+    ) -> list[Path]:
+        """Stream pages from *entries* through a fresh ``FileWriter``.
+
+        Pages are loaded one at a time via :meth:`PageSidecar.read_page_at`,
+        so the full corpus never lives in RAM.
+        """
+        assert self.output_dir is not None
+        ext = self.page_config.output_extension
+        writer = FileWriter(
+            output_dir=self.output_dir,
+            max_file_size_mb=self.page_config.max_file_size_mb,
+            file_extension=ext,
+            prefix=prefix,
+        )
+        for entry in entries:
+            page = PageSidecar.read_page_at(
+                entry.sidecar_path, entry.byte_offset, entry.byte_length
+            )
+            writer.add(page)
+        return writer.flush()
 
     def _build_run_config(self, run_config_cls: type) -> object:
         """Map PageConfig to a Crawl4AI CrawlerRunConfig."""

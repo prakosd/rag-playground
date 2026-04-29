@@ -5,6 +5,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from crawl4md.config import ExtractedPage
+from crawl4md.writer import PageIndexEntry
 
 
 class ContentSorter:
@@ -22,8 +23,25 @@ class ContentSorter:
         return sorted(pages, key=ContentSorter._sort_key)
 
     @staticmethod
+    def sort_keys(entries: list[PageIndexEntry]) -> list[PageIndexEntry]:
+        """Return a new list of index entries sorted by URL path segments.
+
+        Used by streaming sort to avoid materialising every page in RAM.
+        """
+        return sorted(entries, key=ContentSorter._sort_key_url)
+
+    @staticmethod
     def _sort_key(page: ExtractedPage) -> tuple[str, ...]:
         """Generate a sort key from URL path segments."""
-        parsed = urlparse(page.url)
+        return ContentSorter._sort_key_url(page)
+
+    @staticmethod
+    def _sort_key_url(item: ExtractedPage | PageIndexEntry) -> tuple[str, ...]:
+        """Generate a sort key from the URL of *item*.
+
+        Works for both ``ExtractedPage`` and ``PageIndexEntry`` since
+        they expose ``.url`` identically.
+        """
+        parsed = urlparse(item.url)
         segments = [s for s in parsed.path.split("/") if s]
         return tuple(segments)

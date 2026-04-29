@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import warnings
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from crawl4md.config import ExtractedPage
@@ -15,6 +17,22 @@ _MB = 1024 * 1024
 _CONTENT_PREFIX = "content_"
 # Zero-padding width for file index numbers (e.g. 3 → 001, 002, …)
 _FILE_INDEX_WIDTH = 3
+
+
+@dataclass(frozen=True)
+class PageIndexEntry:
+    """Lightweight pointer to a page stored in a JSONL sidecar.
+
+    Used by streaming sort: we sort lists of these entries (cheap —
+    only short strings and ints) and then read each ``ExtractedPage``
+    back from disk via :meth:`PageSidecar.read_page_at` in sorted
+    order, so the full corpus never lives in RAM at once.
+    """
+
+    url: str
+    sidecar_path: Path
+    byte_offset: int
+    byte_length: int
 
 
 class FileWriter:
@@ -250,6 +268,10 @@ class PageSidecar:
     Each line is a self-contained JSON object produced by Pydantic's
     ``model_dump_json()``, so the file is trivially round-trippable
     without parsing the formatted Markdown content files.
+
+    The file is **append-only**.  Streaming sort relies on byte offsets
+    captured by :meth:`iter_index` remaining valid for the lifetime of
+    the file — never rewrite or truncate sidecars after the fact.
     """
 
     @staticmethod
@@ -270,3 +292,44 @@ class PageSidecar:
                 line = line.strip()
                 if line:
                     yield ExtractedPage.model_validate_json(line)
+
+    @staticmethod
+    def iter_index(path: Path) -> Iterator[PageIndexEntry]:
+        """Yield one lightweight ``PageIndexEntry`` per record in *path*.
+
+        Streams the file once and parses each JSON line only to extract
+        the ``url`` field — the heavy ``markdown`` string is allocated
+        briefly during JSON parsing, then discarded.  Memory cost stays
+        O(1) per record, which lets sort steps handle large corpora
+        without materialising every page at once.
+
+        Records with missing ``url`` or empty ``markdown`` are skipped,
+        matching the historical behaviour of dedup helpers.
+        """
+        if not path.exists():
+            return
+        offset = 0
+        with path.open("rb") as fh:
+            for raw_line in fh:
+                length = len(raw_line)
+                stripped = raw_line.strip()
+                if stripped:
+                    obj = json.loads(stripped)
+                    url = obj.get("url", "")
+                    markdown = obj.get("markdown", "")
+                    if url and markdown.strip():
+                        yield PageIndexEntry(
+                            url=url,
+                            sidecar_path=path,
+                            byte_offset=offset,
+                            byte_length=length,
+                        )
+                offset += length
+
+    @staticmethod
+    def read_page_at(path: Path, byte_offset: int, byte_length: int) -> ExtractedPage:
+        """Read a single ``ExtractedPage`` at the given byte offset."""
+        with path.open("rb") as fh:
+            fh.seek(byte_offset)
+            raw = fh.read(byte_length)
+        return ExtractedPage.model_validate_json(raw)

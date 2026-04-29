@@ -80,3 +80,49 @@ class TestContentSorter:
         original_urls = [p.url for p in pages]
         ContentSorter.sort(pages)
         assert [p.url for p in pages] == original_urls
+
+
+class TestContentSorterSortKeys:
+    """Tests for the streaming-sort variant: sort_keys on PageIndexEntry."""
+
+    @staticmethod
+    def _entry(url: str):
+        from pathlib import Path
+
+        from crawl4md.writer import PageIndexEntry
+
+        return PageIndexEntry(
+            url=url, sidecar_path=Path("/tmp/x.jsonl"), byte_offset=0, byte_length=1
+        )
+
+    def test_sorts_by_url_path(self) -> None:
+        entries = [
+            self._entry("https://example.com/b/page"),
+            self._entry("https://example.com/a/page"),
+            self._entry("https://example.com/c/page"),
+        ]
+        result = ContentSorter.sort_keys(entries)
+        assert [e.url for e in result] == [
+            "https://example.com/a/page",
+            "https://example.com/b/page",
+            "https://example.com/c/page",
+        ]
+
+    def test_matches_sort_pages_order(self) -> None:
+        """sort_keys must produce the same URL order as sort() on equivalent pages."""
+        urls = [
+            "https://example.com/personal/broadband/plan-a",
+            "https://example.com/personal/mobile/plan-x",
+            "https://example.com/personal/broadband/plan-b",
+            "https://example.com/business/connect",
+            "https://example.com/",
+        ]
+        pages_sorted = ContentSorter.sort([_page(u) for u in urls])
+        entries_sorted = ContentSorter.sort_keys([self._entry(u) for u in urls])
+        assert [p.url for p in pages_sorted] == [e.url for e in entries_sorted]
+
+    def test_does_not_mutate_original(self) -> None:
+        entries = [self._entry("https://example.com/b"), self._entry("https://example.com/a")]
+        original_urls = [e.url for e in entries]
+        ContentSorter.sort_keys(entries)
+        assert [e.url for e in entries] == original_urls

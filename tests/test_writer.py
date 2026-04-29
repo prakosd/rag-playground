@@ -370,6 +370,77 @@ class TestPageSidecar:
         assert len(result) == 1
 
 
+class TestPageSidecarIndex:
+    """Tests for streaming-sort primitives: iter_index + read_page_at."""
+
+    def test_iter_index_yields_one_entry_per_record(self, tmp_path: Path):
+        path = tmp_path / "pages.jsonl"
+        pages = [
+            ExtractedPage(url="https://a.com/1", title="A", markdown="# A"),
+            ExtractedPage(url="https://b.com/2", title="B", markdown="# B"),
+            ExtractedPage(url="https://c.com/3", title="C", markdown="# C"),
+        ]
+        for p in pages:
+            PageSidecar.append(p, path)
+
+        entries = list(PageSidecar.iter_index(path))
+        assert [e.url for e in entries] == [p.url for p in pages]
+        assert all(e.sidecar_path == path for e in entries)
+        assert all(e.byte_length > 0 for e in entries)
+        # Offsets are strictly increasing
+        offsets = [e.byte_offset for e in entries]
+        assert offsets == sorted(offsets)
+        assert offsets[0] == 0
+
+    def test_iter_index_skips_empty_markdown(self, tmp_path: Path):
+        """Records with empty markdown are filtered (defensive parity with old dedup)."""
+        path = tmp_path / "pages.jsonl"
+        good = ExtractedPage(url="https://a.com", markdown="text")
+        empty = ExtractedPage(url="https://b.com", markdown="   ")
+        PageSidecar.append(good, path)
+        PageSidecar.append(empty, path)
+
+        entries = list(PageSidecar.iter_index(path))
+        assert [e.url for e in entries] == ["https://a.com"]
+
+    def test_iter_index_missing_file(self, tmp_path: Path):
+        assert list(PageSidecar.iter_index(tmp_path / "nope.jsonl")) == []
+
+    def test_read_page_at_round_trip(self, tmp_path: Path):
+        """read_page_at returns the exact ExtractedPage recorded at that offset."""
+        path = tmp_path / "pages.jsonl"
+        pages = [
+            ExtractedPage(url="https://a.com/1", title="A", markdown="# A\nbody"),
+            ExtractedPage(url="https://b.com/2", title="B", markdown="# B\n日本語"),
+            ExtractedPage(url="https://c.com/3", title="C", markdown="# C\n\n## sec"),
+        ]
+        for p in pages:
+            PageSidecar.append(p, path)
+
+        entries = list(PageSidecar.iter_index(path))
+        for entry, original in zip(entries, pages, strict=True):
+            loaded = PageSidecar.read_page_at(path, entry.byte_offset, entry.byte_length)
+            assert loaded.url == original.url
+            assert loaded.title == original.title
+            assert loaded.markdown == original.markdown
+
+    def test_read_page_at_random_order(self, tmp_path: Path):
+        """Pages can be read back in arbitrary order via byte offsets."""
+        path = tmp_path / "pages.jsonl"
+        pages = [
+            ExtractedPage(url=f"https://example.com/p{i}", markdown=f"page {i}") for i in range(5)
+        ]
+        for p in pages:
+            PageSidecar.append(p, path)
+
+        entries = list(PageSidecar.iter_index(path))
+        # Read in reverse order
+        for entry, original in zip(reversed(entries), reversed(pages), strict=True):
+            loaded = PageSidecar.read_page_at(path, entry.byte_offset, entry.byte_length)
+            assert loaded.url == original.url
+            assert loaded.markdown == original.markdown
+
+
 class TestRenameFilesWithTotal:
     """Tests for the rename_files_with_total utility function."""
 
