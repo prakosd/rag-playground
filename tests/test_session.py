@@ -396,7 +396,7 @@ class TestResumeFlow:
             rounds=[record],
         )
         # Write success sidecar for round 1 (existing content)
-        sidecar_path = session_dir / "round_1_success_pages.jsonl"
+        sidecar_path = session_dir / "round_1" / "success_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(url="https://example.com/a", title="A", markdown="# A\n\ncontent a"),
             sidecar_path,
@@ -427,7 +427,7 @@ class TestResumeFlow:
         )
         _write_session_file(session_dir, urls=["https://example.com/a"], rounds=[record])
         # Write sidecar
-        sidecar_path = session_dir / "round_1_success_pages.jsonl"
+        sidecar_path = session_dir / "round_1" / "success_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(url="https://example.com/a", title="A", markdown="# A\n\ncontent"),
             sidecar_path,
@@ -472,7 +472,7 @@ class TestResumeFlow:
         )
         _write_session_file(session_dir, rounds=[record])
         # Write sidecar
-        sidecar_path = session_dir / "round_1_success_pages.jsonl"
+        sidecar_path = session_dir / "round_1" / "success_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(url="https://example.com/a", title="A", markdown="# A\n\ncontent a"),
             sidecar_path,
@@ -505,12 +505,12 @@ class TestResumeFlow:
         _write_session_file(session_dir, rounds=[record])
 
         # Pre-populate sidecars from round 1
-        sidecar_path = session_dir / "round_1_success_pages.jsonl"
+        sidecar_path = session_dir / "round_1" / "success_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(url="https://example.com/a", title="A", markdown="# A\n\ncontent a"),
             sidecar_path,
         )
-        fail_sidecar = session_dir / "round_1_fail_pages.jsonl"
+        fail_sidecar = session_dir / "round_1" / "fail_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(
                 url="https://example.com/b",
@@ -523,7 +523,7 @@ class TestResumeFlow:
         SiteCrawler.resume(tmp_path, session_dir)
 
         # Check that sorted_final_fail doesn't contain /b (it succeeded on resume)
-        fail_files = list(session_dir.glob("sorted_final_fail_content_*"))
+        fail_files = list(session_dir.glob("final/sorted_fail_content_*"))
         if fail_files:
             content = fail_files[0].read_text(encoding="utf-8")
             assert "https://example.com/b" not in content
@@ -554,7 +554,7 @@ class TestResumeFlow:
                 )
             ],
         )
-        sidecar_path = session_dir / "round_1_success_pages.jsonl"
+        sidecar_path = session_dir / "round_1" / "success_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(url="https://example.com/a", title="A", markdown="# A\n\ncontent a"),
             sidecar_path,
@@ -588,7 +588,7 @@ class TestResumeFlow:
             urls=["https://example.com/a", "https://example.com/b"],
             rounds=[record],
         )
-        sidecar_path = session_dir / "round_1_success_pages.jsonl"
+        sidecar_path = session_dir / "round_1" / "success_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(url="https://example.com/a", title="A", markdown="# A\n\ncontent a"),
             sidecar_path,
@@ -618,7 +618,7 @@ class TestResumeFlow:
             failed_urls=[],
         )
         _write_session_file(session_dir, urls=["https://example.com/a"], rounds=[record])
-        sidecar_path = session_dir / "round_1_success_pages.jsonl"
+        sidecar_path = session_dir / "round_1" / "success_pages.jsonl"
         PageSidecar.append(
             ExtractedPage(url="https://example.com/a", title="A", markdown="# A\n\ncontent"),
             sidecar_path,

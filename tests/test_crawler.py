@@ -150,7 +150,7 @@ class TestSiteCrawler:
         assert results[0].url == "https://example.com"
         assert results[0].success is True
         assert crawler.output_dir is not None
-        assert (crawler.output_dir / "final_success_urls.txt").exists()
+        assert (crawler.output_dir / "final" / "success_urls.txt").exists()
 
     def test_stealth_enables_browser_and_run_flags(self):
         """Stealth mode sets enable_stealth, simulate_user, override_navigator, magic, scan_full_page."""
@@ -1143,7 +1143,7 @@ class TestEmptyExtraction:
         )
         crawler.crawl()
 
-        fail_urls = crawler.output_dir / "final_fail_urls.txt"
+        fail_urls = crawler.output_dir / "final" / "fail_urls.txt"
         assert fail_urls.exists()
         content = fail_urls.read_text(encoding="utf-8")
         assert "https://example.com/empty" in content

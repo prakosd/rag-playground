@@ -53,12 +53,12 @@ class TestRetryRounds:
 
         assert crawler.output_dir is not None
         # Round 1 files
-        assert (crawler.output_dir / "round_1_success_urls.txt").exists()
-        assert (crawler.output_dir / "round_1_fail_urls.txt").exists()
+        assert (crawler.output_dir / "round_1" / "success_urls.txt").exists()
+        assert (crawler.output_dir / "round_1" / "fail_urls.txt").exists()
         # Round 2 files
-        assert (crawler.output_dir / "round_2_success_urls.txt").exists()
+        assert (crawler.output_dir / "round_2" / "success_urls.txt").exists()
         # Final files
-        assert (crawler.output_dir / "final_success_urls.txt").exists()
+        assert (crawler.output_dir / "final" / "success_urls.txt").exists()
         # All pages should succeed after retry
         success = [r for r in results if r.success]
         assert len(success) == 2
@@ -84,13 +84,13 @@ class TestRetryRounds:
 
         assert crawler.output_dir is not None
         # Round 1 exists
-        assert (crawler.output_dir / "round_1_success_urls.txt").exists()
+        assert (crawler.output_dir / "round_1" / "success_urls.txt").exists()
         # Round 2 should NOT exist (early exit)
-        assert not (crawler.output_dir / "round_2_success_urls.txt").exists()
-        assert not (crawler.output_dir / "round_2_fail_urls.txt").exists()
+        assert not (crawler.output_dir / "round_2" / "success_urls.txt").exists()
+        assert not (crawler.output_dir / "round_2" / "fail_urls.txt").exists()
         # Final success
-        assert (crawler.output_dir / "final_success_urls.txt").exists()
-        assert not (crawler.output_dir / "final_fail_urls.txt").exists()
+        assert (crawler.output_dir / "final" / "success_urls.txt").exists()
+        assert not (crawler.output_dir / "final" / "fail_urls.txt").exists()
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_redirect_updates_result_url(self, mock_crawler_cls, tmp_path: Path):
@@ -185,7 +185,7 @@ class TestRetryRounds:
         crawler.crawl()
 
         # The relative link "sibling" should resolve against /section/new
-        urls_file = (crawler.output_dir / "final_success_urls.txt").read_text(encoding="utf-8")
+        urls_file = (crawler.output_dir / "final" / "success_urls.txt").read_text(encoding="utf-8")
         assert "https://example.com/section/new" in urls_file
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
@@ -475,7 +475,7 @@ class TestRetryRounds:
         assert "https://example.com/start" in result_urls
         assert "https://example.com/linked" in result_urls
 
-        urls_file = (crawler.output_dir / "final_success_urls.txt").read_text(encoding="utf-8")
+        urls_file = (crawler.output_dir / "final" / "success_urls.txt").read_text(encoding="utf-8")
         assert "https://example.com/start" in urls_file
         assert "https://example.com/linked" in urls_file
 

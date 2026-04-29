@@ -93,20 +93,19 @@ _USER_AGENT_PLATFORMS = ["desktop"]
 _USER_AGENT_BROWSERS = ["Chrome", "Edge"]
 
 # ------------------------------------------------------------------
-# Output file naming
+# Output directory and file naming
 # ------------------------------------------------------------------
 
-# Prefixes for merged content files (unsorted and sorted)
-_FINAL_SUCCESS_PREFIX = "final_success_"
-_FINAL_FAIL_PREFIX = "final_fail_"
-_SORTED_FINAL_SUCCESS_PREFIX = "sorted_final_success_"
-_SORTED_FINAL_FAIL_PREFIX = "sorted_final_fail_"
+# Subdirectory name for final merged output files
+_FINAL_DIR_NAME = "final"
 
-# URL list filenames
-_FINAL_SUCCESS_URLS_FILE = "final_success_urls.txt"
-_FINAL_FAIL_URLS_FILE = "final_fail_urls.txt"
-_SORTED_FINAL_SUCCESS_URLS_FILE = "sorted_final_success_urls.txt"
-_SORTED_FINAL_FAIL_URLS_FILE = "sorted_final_fail_urls.txt"
+# Prefix for per-round subdirectory names (e.g. "round_1")
+_ROUND_DIR_PREFIX = "round_"
+
+# Suffix for successful-page file names (e.g. "success_content_001.txt")
+_SUCCESS_SUFFIX = "success_"
+# Suffix for failed-page file names (e.g. "fail_content_001.txt")
+_FAIL_SUFFIX = "fail_"
 
 # ------------------------------------------------------------------
 # Round file naming components
@@ -115,15 +114,9 @@ _SORTED_FINAL_FAIL_URLS_FILE = "sorted_final_fail_urls.txt"
 # Set to False to skip per-round sorted file generation (saves extraction time)
 _ENABLE_SORTED_ROUND_FILES = True
 
-# Prefix for per-round sorted output files (combined with round number)
-_SORTED_ROUND_PREFIX = "sorted_round_"
-
-# Prefix for per-round output files (combined with round number)
-_ROUND_PREFIX = "round_"
-# Suffix appended to round prefix for successful pages
-_SUCCESS_SUFFIX = "success_"
-# Suffix appended to round prefix for failed pages
-_FAIL_SUFFIX = "fail_"
+# Prefix for sorted output files within a round or final folder
+_SORTED_SUCCESS_PREFIX = "sorted_success_"
+_SORTED_FAIL_PREFIX = "sorted_fail_"
 
 # ------------------------------------------------------------------
 # JSONL sidecar file naming (memory-efficient extracted-page storage)
@@ -377,44 +370,42 @@ class SiteCrawler:
         round_nums = sorted(
             {
                 int(m.group(1))
-                for f in self.output_dir.iterdir()
-                if (m := re.match(r"round_(\d+)_", f.name))
+                for d in self.output_dir.iterdir()
+                if d.is_dir() and (m := re.match(r"round_(\d+)$", d.name))
             }
         )
         for rn in round_nums:
-            prefix = f"round_{rn}_"
-            content = sorted(self.output_dir.glob(f"{prefix}success_content_*"))
-            fail_content = sorted(self.output_dir.glob(f"{prefix}fail_content_*"))
-            url_files = sorted(self.output_dir.glob(f"{prefix}*urls*.txt"))
+            rd = self.output_dir / f"{_ROUND_DIR_PREFIX}{rn}"
+            content = sorted(rd.glob(f"{_SUCCESS_SUFFIX}content_*"))
+            fail_content = sorted(rd.glob(f"{_FAIL_SUFFIX}content_*"))
+            url_files = sorted(rd.glob("*urls*.txt"))
             print(f"--- Round {rn} ---")
             _print_files("Success content", content)
             _print_files("Fail content", fail_content)
             _print_files("URL lists", url_files)
 
-            sorted_prefix = f"sorted_round_{rn}_"
-            sorted_content = sorted(self.output_dir.glob(f"{sorted_prefix}success_content_*"))
-            sorted_fail_content = sorted(self.output_dir.glob(f"{sorted_prefix}fail_content_*"))
-            sorted_url_files = sorted(self.output_dir.glob(f"{sorted_prefix}*urls*.txt"))
+            sorted_content = sorted(rd.glob(f"{_SORTED_SUCCESS_PREFIX}content_*"))
+            sorted_fail_content = sorted(rd.glob(f"{_SORTED_FAIL_PREFIX}content_*"))
+            sorted_url_files = sorted(rd.glob("sorted_*urls*.txt"))
             if sorted_content or sorted_fail_content:
                 print(f"--- Round {rn} (sorted) ---")
                 _print_files("Success content", sorted_content)
                 _print_files("Fail content", sorted_fail_content)
                 _print_files("URL lists", sorted_url_files)
 
-        # --- Unsorted final files (merged across rounds) ---
-        final_success = sorted(self.output_dir.glob("final_success_content_*"))
-        final_fail = sorted(self.output_dir.glob("final_fail_content_*"))
+        # --- Final folder ---
+        final_dir = self.output_dir / _FINAL_DIR_NAME
+        final_success = sorted(final_dir.glob(f"{_SUCCESS_SUFFIX}content_*")) if final_dir.exists() else []
+        final_fail = sorted(final_dir.glob(f"{_FAIL_SUFFIX}content_*")) if final_dir.exists() else []
         if final_success or final_fail:
             print("--- Final (unsorted, merged across rounds) ---")
             _print_files("Success content", final_success)
             _print_files("Fail content", final_fail)
 
-        # --- Sorted files (primary output) ---
-        sorted_success = sorted(self.output_dir.glob("sorted_final_success_content_*"))
-        sorted_fail = sorted(self.output_dir.glob("sorted_final_fail_content_*"))
-        sorted_urls = sorted(self.output_dir.glob("sorted_final_*_urls.txt"))
-        final_urls = sorted(self.output_dir.glob("final_*_urls.txt"))
-        all_urls = sorted(set(sorted_urls) | set(final_urls), key=lambda p: p.name)
+        # --- Sorted files in final/ (primary output) ---
+        sorted_success = sorted(final_dir.glob(f"{_SORTED_SUCCESS_PREFIX}content_*")) if final_dir.exists() else []
+        sorted_fail = sorted(final_dir.glob(f"{_SORTED_FAIL_PREFIX}content_*")) if final_dir.exists() else []
+        all_urls = sorted(final_dir.glob("*urls*.txt")) if final_dir.exists() else []
         if sorted_success or sorted_fail:
             print("--- Sorted by URL path (primary output) ---")
             _print_files("Success content", sorted_success)
@@ -423,7 +414,7 @@ class SiteCrawler:
 
         if fail_count > 0:
             print(
-                f"See sorted_final_fail_urls.txt for the "
+                f"See final/sorted_fail_urls.txt for the "
                 f"{fail_count} URL(s) that could not be crawled."
             )
 
@@ -946,6 +937,13 @@ class SiteCrawler:
             result.append((i, path))
         return result
 
+    def _round_dir(self, round_num: int) -> Path:
+        """Return the round subdirectory for *round_num*, creating it if needed."""
+        assert self.output_dir is not None
+        d = self.output_dir / f"{_ROUND_DIR_PREFIX}{round_num}"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
     def _run_rounds_in_proactor_loop(self, resume: _ResumeState | None = None) -> list[CrawlResult]:
         loop = asyncio.ProactorEventLoop()
         asyncio.set_event_loop(loop)
@@ -1004,15 +1002,15 @@ class SiteCrawler:
                     failed_urls = resume.resume_urls
                     self._current_round_num = resume.start_round
                 else:
-                    round_prefix = f"{_ROUND_PREFIX}1_"
+                    round_dir = self._round_dir(1)
                     if self._writer is not None:
-                        self._writer.reset(f"{round_prefix}{_SUCCESS_SUFFIX}")
+                        self._writer._output_dir = round_dir
+                        self._writer.reset(_SUCCESS_SUFFIX)
                     if self._fail_writer is not None:
-                        self._fail_writer.reset(f"{round_prefix}{_FAIL_SUFFIX}")
-                    self._success_sidecar = (
-                        self.output_dir / f"{round_prefix}{_SUCCESS_SIDECAR_SUFFIX}"
-                    )
-                    self._fail_sidecar = self.output_dir / f"{round_prefix}{_FAIL_SIDECAR_SUFFIX}"
+                        self._fail_writer._output_dir = round_dir
+                        self._fail_writer.reset(_FAIL_SUFFIX)
+                    self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
+                    self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
                     print(
                         f"--- Round 1/{total_rounds}: "
                         f"Crawling {len(self.config.urls)} seed URL(s) ---"
@@ -1022,7 +1020,7 @@ class SiteCrawler:
                         crawler=crawler,
                         run_cfg=run_cfg,
                         discover_links=True,
-                        round_prefix=round_prefix,
+                        round_dir=round_dir,
                         prior_success=0,
                         prior_fail=0,
                         round_label="First pass" if total_rounds > 1 else "",
@@ -1037,9 +1035,9 @@ class SiteCrawler:
                     all_success.extend(success)
                     succeeded_urls.update(r.url for r in success)
                     all_fail.extend(fail)
-                    self._save_url_lists(all_success, fail, round_prefix)
-                    self._write_round_success_files(1)
-                    self._write_sorted_round_files(1)
+                    self._save_url_lists(all_success, fail, round_dir)
+                    self._write_round_success_files(1, round_dir)
+                    self._write_sorted_round_files(1, round_dir)
 
                     # Save round 1 state to session file
                     self._write_session_line(
@@ -1069,15 +1067,15 @@ class SiteCrawler:
                         break
 
                     self._current_round_num = round_num
-                    round_prefix = f"{_ROUND_PREFIX}{round_num}_"
+                    round_dir = self._round_dir(round_num)
                     if self._writer is not None:
-                        self._writer.reset(f"{round_prefix}{_SUCCESS_SUFFIX}")
+                        self._writer._output_dir = round_dir
+                        self._writer.reset(_SUCCESS_SUFFIX)
                     if self._fail_writer is not None:
-                        self._fail_writer.reset(f"{round_prefix}{_FAIL_SUFFIX}")
-                    self._success_sidecar = (
-                        self.output_dir / f"{round_prefix}{_SUCCESS_SIDECAR_SUFFIX}"
-                    )
-                    self._fail_sidecar = self.output_dir / f"{round_prefix}{_FAIL_SIDECAR_SUFFIX}"
+                        self._fail_writer._output_dir = round_dir
+                        self._fail_writer.reset(_FAIL_SUFFIX)
+                    self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
+                    self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
 
                     cooldown = _ROUND_COOLDOWN * random.uniform(
                         _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
@@ -1095,7 +1093,7 @@ class SiteCrawler:
                         run_cfg=fallback_run_cfg,
                         discover_links=True,
                         is_retry=True,
-                        round_prefix=round_prefix,
+                        round_dir=round_dir,
                         prior_success=len(all_success),
                         prior_fail=len(all_fail),
                         skip_urls=frozenset(succeeded_urls),
@@ -1118,9 +1116,9 @@ class SiteCrawler:
                     existing_fail_urls = {r.url for r in all_fail}
                     all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
                     failed_urls = [r.url for r in fail]
-                    self._save_url_lists(all_success, fail, round_prefix)
-                    self._write_round_success_files(round_num)
-                    self._write_sorted_round_files(round_num)
+                    self._save_url_lists(all_success, fail, round_dir)
+                    self._write_round_success_files(round_num, round_dir)
+                    self._write_sorted_round_files(round_num, round_dir)
 
                     # Save round state to session file
                     self._write_session_line(
@@ -1205,7 +1203,7 @@ class SiteCrawler:
         *,
         discover_links: bool = True,
         is_retry: bool = False,
-        round_prefix: str = "",
+        round_dir: Path | None = None,
         prior_success: int = 0,
         prior_fail: int = 0,
         skip_urls: frozenset[str] = frozenset(),
@@ -1333,8 +1331,9 @@ class SiteCrawler:
                         self._writer.flush()
                     if self._fail_writer is not None:
                         self._fail_writer.flush()
-                    success, fail = self._split_results(results)
-                    self._save_url_lists(success, fail, round_prefix)
+                    if round_dir is not None:
+                        success, fail = self._split_results(results)
+                        self._save_url_lists(success, fail, round_dir)
 
                 # Free heavy payload — content is persisted in sidecar / writer
                 crawl_result.html = ""
@@ -1567,8 +1566,9 @@ class SiteCrawler:
                     self._writer.flush()
                 if self._fail_writer is not None:
                     self._fail_writer.flush()
-                success, fail = self._split_results(results)
-                self._save_url_lists(success, fail, round_prefix)
+                if round_dir is not None:
+                    success, fail = self._split_results(results)
+                    self._save_url_lists(success, fail, round_dir)
 
             # Throttle between pages — jitter mimics human browsing.
             # Round 1 applies a light delay; retries apply a heavier one.
@@ -1742,18 +1742,19 @@ class SiteCrawler:
         self,
         success: list[CrawlResult],
         fail: list[CrawlResult],
-        prefix: str = "",
+        dir: Path,
     ) -> None:
-        """Write per-round success and fail URL lists."""
-        assert self.output_dir is not None
+        """Write per-round success and fail URL lists to *dir*."""
         if success:
-            path = self.output_dir / f"{prefix}success_urls.txt"
-            path.write_text("\n".join(r.url for r in success), encoding="utf-8")
+            (dir / "success_urls.txt").write_text(
+                "\n".join(r.url for r in success), encoding="utf-8"
+            )
         if fail:
-            path = self.output_dir / f"{prefix}fail_urls.txt"
-            path.write_text("\n".join(r.url for r in fail), encoding="utf-8")
+            (dir / "fail_urls.txt").write_text(
+                "\n".join(r.url for r in fail), encoding="utf-8"
+            )
 
-    def _write_round_success_files(self, round_num: int) -> None:
+    def _write_round_success_files(self, round_num: int, round_dir: Path) -> None:
         """Write cumulative round success content as a round-end snapshot.
 
         Streams extracted pages from JSONL sidecar files for rounds
@@ -1763,18 +1764,17 @@ class SiteCrawler:
             return
 
         ext = self.page_config.output_extension
-        round_prefix = f"{_ROUND_PREFIX}{round_num}_"
-        pattern = f"{round_prefix}{_SUCCESS_SUFFIX}content_*{ext}"
-        for existing in self.output_dir.glob(pattern):
+        pattern = f"{_SUCCESS_SUFFIX}content_*{ext}"
+        for existing in round_dir.glob(pattern):
             existing.unlink()
 
         entries = self._index_success(round_num)
         if not entries:
             return
 
-        self._stream_entries_to_writer(entries, prefix=f"{round_prefix}{_SUCCESS_SUFFIX}")
+        self._stream_entries_to_writer(entries, prefix=_SUCCESS_SUFFIX, output_dir=round_dir)
 
-    def _write_sorted_round_files(self, round_num: int) -> None:
+    def _write_sorted_round_files(self, round_num: int, round_dir: Path) -> None:
         """Write sorted content and URL files for one round.
 
         Streams pages from JSONL sidecar files via lightweight indexes:
@@ -1788,23 +1788,21 @@ class SiteCrawler:
         if self._writer is None or self.output_dir is None:
             return
         ext = self.page_config.output_extension
-        round_prefix = f"{_ROUND_PREFIX}{round_num}_"
-        sorted_prefix = _SORTED_ROUND_PREFIX + f"{round_num}_"
 
         # --- Sorted success (cumulative, deduplicated) ---
         success_entries = ContentSorter.sort_keys(self._index_success(round_num))
         if success_entries:
             # Remove stale files from prior writes
-            for f in self.output_dir.glob(f"{sorted_prefix}{_SUCCESS_SUFFIX}content_*{ext}"):
+            for f in round_dir.glob(f"{_SORTED_SUCCESS_PREFIX}content_*{ext}"):
                 f.unlink()
             self._stream_entries_to_writer(
-                success_entries, prefix=f"{sorted_prefix}{_SUCCESS_SUFFIX}"
+                success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=round_dir
             )
-            path = self.output_dir / f"{sorted_prefix}success_urls.txt"
+            path = round_dir / "sorted_success_urls.txt"
             path.write_text("\n".join(e.url for e in success_entries), encoding="utf-8")
 
         # --- Sorted fail (this round only, deduplicated) ---
-        fail_sidecar = self.output_dir / f"{round_prefix}{_FAIL_SIDECAR_SUFFIX}"
+        fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
         fail_seen: set[str] = set()
         fail_entries: list[PageIndexEntry] = []
         for entry in PageSidecar.iter_index(fail_sidecar):
@@ -1813,8 +1811,10 @@ class SiteCrawler:
                 fail_entries.append(entry)
         fail_entries = ContentSorter.sort_keys(fail_entries)
         if fail_entries:
-            self._stream_entries_to_writer(fail_entries, prefix=f"{sorted_prefix}{_FAIL_SUFFIX}")
-            path = self.output_dir / f"{sorted_prefix}fail_urls.txt"
+            self._stream_entries_to_writer(
+                fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=round_dir
+            )
+            path = round_dir / "sorted_fail_urls.txt"
             path.write_text("\n".join(e.url for e in fail_entries), encoding="utf-8")
 
     def _write_final_files(
@@ -1829,8 +1829,10 @@ class SiteCrawler:
         sidecar files written during each round — no re-extraction needed.
         """
         assert self.output_dir is not None
+        final_dir = self.output_dir / _FINAL_DIR_NAME
+        final_dir.mkdir(parents=True, exist_ok=True)
 
-        # final_success_urls.txt — all successful URLs across all rounds (deduplicated)
+        # success_urls.txt — all successful URLs across all rounds (deduplicated)
         if all_success:
             seen: set[str] = set()
             unique_urls: list[str] = []
@@ -1838,27 +1840,29 @@ class SiteCrawler:
                 if r.url not in seen:
                     seen.add(r.url)
                     unique_urls.append(r.url)
-            path = self.output_dir / _FINAL_SUCCESS_URLS_FILE
-            path.write_text("\n".join(unique_urls), encoding="utf-8")
+            (final_dir / "success_urls.txt").write_text("\n".join(unique_urls), encoding="utf-8")
 
-        # final_fail_urls.txt — URLs that still failed after all retries (deduplicated)
+        # fail_urls.txt — URLs that still failed after all retries (deduplicated)
         remaining_fail_urls = [r.url for r in all_fail]
         if remaining_fail_urls:
             unique_fail = list(dict.fromkeys(remaining_fail_urls))
-            path = self.output_dir / _FINAL_FAIL_URLS_FILE
-            path.write_text("\n".join(unique_fail), encoding="utf-8")
+            (final_dir / "fail_urls.txt").write_text("\n".join(unique_fail), encoding="utf-8")
 
-        # final_success_content_*.ext — unsorted merged content from sidecars
+        # success_content_*.ext — unsorted merged content from sidecars
         if self._writer is not None:
             success_entries = self._index_success()
             if success_entries:
-                self._stream_entries_to_writer(success_entries, prefix=_FINAL_SUCCESS_PREFIX)
+                self._stream_entries_to_writer(
+                    success_entries, prefix=_SUCCESS_SUFFIX, output_dir=final_dir
+                )
 
-        # final_fail_content_*.ext — unsorted fail content from sidecars
+        # fail_content_*.ext — unsorted fail content from sidecars
         if self._writer is not None:
             fail_entries = self._index_fail()
             if fail_entries:
-                self._stream_entries_to_writer(fail_entries, prefix=_FINAL_FAIL_PREFIX)
+                self._stream_entries_to_writer(
+                    fail_entries, prefix=_FAIL_SUFFIX, output_dir=final_dir
+                )
 
     def _write_sorted_files(
         self,
@@ -1875,17 +1879,18 @@ class SiteCrawler:
         if self._writer is None:
             return
         assert self.output_dir is not None
+        final_dir = self.output_dir / _FINAL_DIR_NAME
+        final_dir.mkdir(parents=True, exist_ok=True)
 
         # Sorted success content (deduplicated by URL, keeping first occurrence)
         success_entries = ContentSorter.sort_keys(self._index_success())
         if success_entries:
             files = self._stream_entries_to_writer(
-                success_entries, prefix=_SORTED_FINAL_SUCCESS_PREFIX
+                success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=final_dir
             )
             rename_files_with_total(files)
             # Sorted success URLs
-            path = self.output_dir / _SORTED_FINAL_SUCCESS_URLS_FILE
-            path.write_text(
+            (final_dir / "sorted_success_urls.txt").write_text(
                 "\n".join(e.url for e in success_entries),
                 encoding="utf-8",
             )
@@ -1893,11 +1898,12 @@ class SiteCrawler:
         # Sorted fail content (deduplicated by URL, keeping first occurrence)
         fail_entries = ContentSorter.sort_keys(self._index_fail())
         if fail_entries:
-            files = self._stream_entries_to_writer(fail_entries, prefix=_SORTED_FINAL_FAIL_PREFIX)
+            files = self._stream_entries_to_writer(
+                fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=final_dir
+            )
             rename_files_with_total(files)
             # Sorted fail URLs
-            path = self.output_dir / _SORTED_FINAL_FAIL_URLS_FILE
-            path.write_text(
+            (final_dir / "sorted_fail_urls.txt").write_text(
                 "\n".join(e.url for e in fail_entries),
                 encoding="utf-8",
             )
@@ -1905,8 +1911,9 @@ class SiteCrawler:
     def _get_final_content_files(self) -> list[Path]:
         """Return sorted list of final content files."""
         assert self.output_dir is not None
-        pattern = f"sorted_final_success_content_*{self.page_config.output_extension}"
-        return sorted(self.output_dir.glob(pattern))
+        final_dir = self.output_dir / _FINAL_DIR_NAME
+        pattern = f"{_SORTED_SUCCESS_PREFIX}content_*{self.page_config.output_extension}"
+        return sorted(final_dir.glob(pattern)) if final_dir.exists() else []
 
     # ------------------------------------------------------------------
     # Sidecar helpers — build lightweight indexes for streaming sort
@@ -1919,14 +1926,14 @@ class SiteCrawler:
         cumulative round snapshots).  Otherwise includes all rounds.
         """
         assert self.output_dir is not None
-        sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_PREFIX}*{_SUCCESS_SIDECAR_SUFFIX}"))
+        sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}"))
         seen: set[str] = set()
         entries: list[PageIndexEntry] = []
         for sf in sidecar_files:
             if up_to_round is not None:
-                # Extract round number from filename like "round_2_success_pages.jsonl"
+                # Extract round number from parent directory name like "round_2"
                 try:
-                    rn = int(sf.name.split("_")[1])
+                    rn = int(sf.parent.name.split("_")[1])
                 except (IndexError, ValueError):
                     continue
                 if rn > up_to_round:
@@ -1946,20 +1953,17 @@ class SiteCrawler:
 
         # Collect success URLs so we can filter them out of fail entries
         success_urls: set[str] = set()
-        success_sidecars = sorted(
-            self.output_dir.glob(f"{_ROUND_PREFIX}*{_SUCCESS_SIDECAR_SUFFIX}")
-        )
-        for sf in success_sidecars:
+        for sf in self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}"):
             for entry in PageSidecar.iter_index(sf):
                 success_urls.add(entry.url)
 
-        sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_PREFIX}*{_FAIL_SIDECAR_SUFFIX}"))
+        sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_FAIL_SIDECAR_SUFFIX}"))
         seen: set[str] = set()
         entries: list[PageIndexEntry] = []
         for sf in sidecar_files:
             if up_to_round is not None:
                 try:
-                    rn = int(sf.name.split("_")[1])
+                    rn = int(sf.parent.name.split("_")[1])
                 except (IndexError, ValueError):
                     continue
                 if rn > up_to_round:
@@ -1974,6 +1978,7 @@ class SiteCrawler:
         self,
         entries: list[PageIndexEntry],
         prefix: str,
+        output_dir: Path | None = None,
     ) -> list[Path]:
         """Stream pages from *entries* through a fresh ``FileWriter``.
 
@@ -1981,9 +1986,10 @@ class SiteCrawler:
         so the full corpus never lives in RAM.
         """
         assert self.output_dir is not None
+        target_dir = output_dir if output_dir is not None else self.output_dir
         ext = self.page_config.output_extension
         writer = FileWriter(
-            output_dir=self.output_dir,
+            output_dir=target_dir,
             max_file_size_mb=self.page_config.max_file_size_mb,
             file_extension=ext,
             prefix=prefix,
