@@ -20,3 +20,4 @@ htmlcov/
 
 # Crawl output directories (timestamped folders created by crawl4md)
 notebooks/*/
+outputs/

@@ -1,0 +1,26 @@
+---
+description: "Use when editing the Streamlit app, Streamlit support helpers, or their tests. Covers session isolation, background crawl jobs, progress/cancel events, downloads, and container startup."
+applyTo: "streamlit_app.py, src/crawl4md/streamlit_support.py, tests/test_streamlit_support.py"
+---
+
+# Streamlit App
+
+Browser UI for users who prefer a form-based crawl workflow instead of the notebook.
+
+## Related Skills
+
+- Before Streamlit app work, read `.agents/skills/developing-with-streamlit/SKILL.md`.
+- Load the relevant Streamlit sub-skill from `.agents/skills/` for the specific task, such as layout, session state, performance, CLI, markdown, or design work.
+
+## Constraints
+
+- `streamlit_app.py` owns UI rendering and Streamlit session state. Keep crawl/job helpers in `src/crawl4md/streamlit_support.py`.
+- `streamlit_support.py` must not import Streamlit. Keep it pure Python so it stays unit-testable.
+- Keep `session_id` and `crawl_id` separate. Browser sessions write under `outputs/streamlit_sessions/session_<id>/crawl_<id>/`.
+- All file access for generated outputs must stay inside the session root. Use the existing path validation helpers instead of manual string checks.
+- Background crawls should use `start_crawl_job()` and communicate through queue events. Do not block Streamlit reruns while a crawl is active.
+- Cancellation must stay cooperative through `SiteCrawler.should_cancel`; do not terminate threads forcibly.
+- Progress UI should consume crawler event mappings and helper estimates. Keep event keys stable unless tests and Streamlit consumers are updated together.
+- Downloads should come from the generated-file listing helper and respect the app download-size guard.
+- The dev container starts Streamlit on attach at `0.0.0.0:8501`. If the port or startup command changes, update `.devcontainer/devcontainer.json`, `README.md`, and `devcontainer.instructions.md` together.
+- Tests must use `tmp_path` and mocked/stubbed crawl jobs. Never make real network requests from Streamlit tests.

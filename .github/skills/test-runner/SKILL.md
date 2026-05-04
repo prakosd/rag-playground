@@ -77,7 +77,7 @@ If tests still fail after Step 2, **skip Steps 3–4** and go directly to Step 5
 **Only proceed if all tests passed.** If any tests failed, skip to Step 5.
 
 ```
-python -m ruff check src/ tests/
+python -m ruff check src/ tests/ streamlit_app.py
 ```
 
 Run using the **ruff direct strategy** above.
@@ -85,7 +85,7 @@ Run using the **ruff direct strategy** above.
 ### Step 4 — ruff format check
 
 ```
-python -m ruff format --check src/ tests/
+python -m ruff format --check src/ tests/ streamlit_app.py
 ```
 
 Run using the **ruff direct strategy** above.

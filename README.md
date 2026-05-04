@@ -2,7 +2,7 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/crawl4md)
 
-A Python library for crawling websites and extracting their content as Markdown-formatted text files. Wraps [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous API designed for non-technical Jupyter Notebook users.
+A Python library for crawling websites and extracting their content as Markdown-formatted text files. Wraps [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API, a technical-user Jupyter Notebook, and a browser-based Streamlit app for non-technical users.
 
 ## Features
 
@@ -11,7 +11,7 @@ A Python library for crawling websites and extracting their content as Markdown-
 - **Smart content extraction** — trafilatura for main content (with automatic fallback to markdownify when coverage is below 15%), plus supplementary section recovery for FAQs, accordions, and product metadata
 - **WAF / bot-detection handling** — two-stage detection (HTML block signatures + post-extraction content-length check) with automatic retry rounds and cooldown between rounds
 - **Size-limited output files** — pages are never split across files; oversized pages get their own file
-- **Real-time progress** — animated spider progress widget in Jupyter (with live activity tracking and duration log), plain-text ETA in terminal
+- **Real-time progress** — browser progress in Streamlit, animated spider progress widget in Jupyter, and plain-text ETA in terminal
 - **Configurable filtering** — include/exclude URL paths and HTML tags via regex
 - **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) via DOM analysis and inserts `---` separators; supports custom CSS selectors
 - **Markdown validation** — every extracted page is auto-fixed via mdformat (with GFM support) to ensure structurally correct, renderable Markdown; a content-preservation guard prevents any words, numbers, or punctuation from being lost
@@ -29,7 +29,33 @@ Click the badge above. GitHub spins up a fully configured VS Code environment in
 2. Open this folder in VS Code.
 3. Click **Reopen in Container** in the notification, or run `Cmd/Ctrl+Shift+P` → **Dev Containers: Reopen in Container**.
 4. First start takes ~5 minutes (pulls base image, installs Tesseract, Chromium, and Python packages). Subsequent opens are fast.
-5. Open `notebooks/crawl4md.ipynb`, select the in-container Python 3.12 kernel, and run the cells.
+5. For non-technical users, open the Streamlit web app at `http://localhost:8501`; it starts automatically when VS Code attaches to the container. Technical users can also open `notebooks/crawl4md.ipynb`, select the in-container Python 3.12 kernel, and run the cells.
+
+## Streamlit Web App
+
+A browser-based UI is included for non-technical users who prefer not to use a Jupyter Notebook. It provides the normal crawl settings as a form, runs the crawl in the background, and lets users download the generated files from the browser.
+
+**Start the app:**
+
+```bash
+pip install streamlit          # if not already installed
+streamlit run streamlit_app.py --server.address=0.0.0.0 --server.port=8501
+```
+
+Then open `http://localhost:8501` in your browser.
+
+When using the Dev Container or GitHub Codespaces, the app starts automatically on attach — no manual command needed.
+
+**What it does:**
+
+- Fill in the crawl URL, page limit, depth, and optional filters via a form
+- Click **Start Crawl** to run the crawl in the background
+- Watch live progress (pages crawled, estimated completion)
+- Download the generated Markdown/text files directly from the browser
+
+Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run).
+
+The Streamlit agent skill and sub-skills used for development guidance in this repository come from the external Streamlit skills source: [Developing with Streamlit](https://skills.sh/streamlit/agent-skills/developing-with-streamlit).
 
 ## Installation
 
@@ -190,6 +216,8 @@ Each crawl creates a timestamped folder with three tiers of output:
 
 ## Notebook Usage
 
+The Jupyter Notebook is still available for technical users who want to inspect or adjust the Python workflow step by step. Non-technical users should use the Streamlit app instead.
+
 See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook. You can also run it directly in Google Colab:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prakosd/crawl4md/blob/master/notebooks/crawl4md.ipynb)
@@ -197,12 +225,14 @@ See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook. You can also
 ## Architecture
 
 ```
+streamlit_app.py      # Browser UI for non-technical users
 src/crawl4md/
 ├── __init__.py       # Public API exports
 ├── config.py         # Pydantic v2 config models (CrawlerConfig, PageConfig, CrawlResult, ExtractedPage)
 ├── crawler.py        # SiteCrawler — synchronous wrapper around Crawl4AI
 ├── extractor.py      # ContentExtractor — HTML → Markdown via trafilatura or markdownify, validated with mdformat
 ├── sorter.py         # ContentSorter — sorts pages by URL path for natural display order
+├── streamlit_support.py # Pure-Python Streamlit job/session helpers
 ├── writer.py         # FileWriter — size-limited output files (batch & incremental modes)
 └── progress.py       # ProgressReporter — real-time progress with ETA (Jupyter & terminal)
 ```
@@ -212,7 +242,7 @@ src/crawl4md/
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
-ruff check src/ tests/
+ruff check src/ tests/ streamlit_app.py
 ```
 
 Test files: `test_config.py`, `test_crawler.py`, `test_crawler_output.py`, `test_crawler_retry.py`, `test_extractor.py`, `test_extractor_items.py`, `test_extractor_links.py`, `test_extractor_product.py`, `test_extractor_supplementary.py`, `test_sorter.py`, `test_writer.py`, `test_progress.py`.

@@ -163,9 +163,7 @@ class TestPrintSummary:
         round_1_dir = tmp_path / "round_1"
         round_1_dir.mkdir()
         (round_1_dir / "success_content_001.md").write_text("x" * 100, encoding="utf-8")
-        (round_1_dir / "success_urls.txt").write_text(
-            "https://example.com/a", encoding="utf-8"
-        )
+        (round_1_dir / "success_urls.txt").write_text("https://example.com/a", encoding="utf-8")
 
         results = [CrawlResult(url="https://example.com/a", success=True)]
         crawler.print_summary(results)

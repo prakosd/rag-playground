@@ -9,6 +9,7 @@ import random
 import re
 import sys
 import warnings
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
@@ -221,6 +222,16 @@ _OCR_UNAVAILABLE_WARNING = (
 # Maximum character length for shortened URLs displayed in activity labels
 _SHORT_URL_MAX_LEN = 60
 
+# Seconds between cancellation checks during long sleeps.
+_CANCEL_POLL_INTERVAL = 0.2
+
+# Progress event names emitted for optional UI integrations.
+_PROGRESS_EVENT_COMPLETED = "crawl_completed"
+_PROGRESS_EVENT_DISCOVERED = "urls_discovered"
+_PROGRESS_EVENT_INTERRUPTED = "crawl_interrupted"
+_PROGRESS_EVENT_PAGE = "page_processed"
+_PROGRESS_EVENT_STARTED = "crawl_started"
+
 
 def _shorten_url(url: str) -> str:
     """Shorten a URL for display, keeping domain + trailing path segments."""
@@ -277,6 +288,8 @@ class SiteCrawler:
         extractor: ContentExtractor | None = None,
         writer: FileWriter | None = None,
         activity_log_size: int = 10,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> None:
         self.config = config
         self.page_config = page_config or PageConfig()
@@ -288,6 +301,8 @@ class SiteCrawler:
         self._extractor = extractor
         self._writer = writer
         self._activity_log_size = activity_log_size
+        self._progress_callback = progress_callback
+        self._should_cancel = should_cancel
         self.content_files: list[Path] = []
         # Tracks whether the OCR-unavailable warning has already been emitted
         self._ocr_warned: bool = False
@@ -326,6 +341,13 @@ class SiteCrawler:
         ``html`` and ``markdown`` are empty strings.
         """
         self.output_dir = self._create_output_dir()
+        self._emit_progress(
+            {
+                "event": _PROGRESS_EVENT_STARTED,
+                "output_dir": str(self.output_dir),
+                "limit": self.config.limit,
+            }
+        )
         # Attach output_dir to writer so incremental flushes land there
         if self._writer is not None:
             self._writer._output_dir = self.output_dir
@@ -395,16 +417,26 @@ class SiteCrawler:
 
         # --- Final folder ---
         final_dir = self.output_dir / _FINAL_DIR_NAME
-        final_success = sorted(final_dir.glob(f"{_SUCCESS_SUFFIX}content_*")) if final_dir.exists() else []
-        final_fail = sorted(final_dir.glob(f"{_FAIL_SUFFIX}content_*")) if final_dir.exists() else []
+        final_success = (
+            sorted(final_dir.glob(f"{_SUCCESS_SUFFIX}content_*")) if final_dir.exists() else []
+        )
+        final_fail = (
+            sorted(final_dir.glob(f"{_FAIL_SUFFIX}content_*")) if final_dir.exists() else []
+        )
         if final_success or final_fail:
             print("--- Final (unsorted, merged across rounds) ---")
             _print_files("Success content", final_success)
             _print_files("Fail content", final_fail)
 
         # --- Sorted files in final/ (primary output) ---
-        sorted_success = sorted(final_dir.glob(f"{_SORTED_SUCCESS_PREFIX}content_*")) if final_dir.exists() else []
-        sorted_fail = sorted(final_dir.glob(f"{_SORTED_FAIL_PREFIX}content_*")) if final_dir.exists() else []
+        sorted_success = (
+            sorted(final_dir.glob(f"{_SORTED_SUCCESS_PREFIX}content_*"))
+            if final_dir.exists()
+            else []
+        )
+        sorted_fail = (
+            sorted(final_dir.glob(f"{_SORTED_FAIL_PREFIX}content_*")) if final_dir.exists() else []
+        )
         all_urls = sorted(final_dir.glob("*urls*.txt")) if final_dir.exists() else []
         if sorted_success or sorted_fail:
             print("--- Sorted by URL path (primary output) ---")
@@ -1062,6 +1094,7 @@ class SiteCrawler:
                     retry_range = range(2, total_rounds + 1)
 
                 for round_num in retry_range:
+                    self._raise_if_cancelled()
                     if not failed_urls:
                         print("\nAll pages succeeded — skipping remaining retries.")
                         break
@@ -1085,7 +1118,7 @@ class SiteCrawler:
                         f"{len(failed_urls)} failed URL(s) "
                         f"(waiting {cooldown:.0f}s cooldown) ---"
                     )
-                    await asyncio.sleep(cooldown)
+                    await self._sleep_with_cancel(cooldown)
 
                     round_results = await self._crawl_urls_async(
                         urls=failed_urls,
@@ -1135,6 +1168,16 @@ class SiteCrawler:
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True
             print("\n\nCrawl interrupted! Saving progress...")
+            self._emit_progress(
+                {
+                    "event": _PROGRESS_EVENT_INTERRUPTED,
+                    "output_dir": str(self.output_dir) if self.output_dir else "",
+                    "successful_pages": len(all_success),
+                    "failed_pages": len(all_fail),
+                    "processed_pages": len(all_success) + len(all_fail),
+                    "limit": self.config.limit,
+                }
+            )
             # Save checkpoint so the session can be resumed
             self._save_session_checkpoint(
                 round_num=getattr(self, "_current_round_num", 1),
@@ -1185,11 +1228,72 @@ class SiteCrawler:
         print(
             f"\n{label}! {len(all_success)} succeeded, {len(all_fail)} failed out of {total_crawled} total."
         )
+        self._emit_progress(
+            {
+                "event": _PROGRESS_EVENT_COMPLETED,
+                "output_dir": str(self.output_dir) if self.output_dir else "",
+                "successful_pages": len(all_success),
+                "failed_pages": len(all_fail),
+                "processed_pages": total_crawled,
+                "limit": self.config.limit,
+            }
+        )
         if self.output_dir is not None:
             print(f"Output folder: {self.output_dir}")
 
         # Return all results (success + remaining failures) for API consumers
         return all_success + all_fail
+
+    def _emit_progress(self, event: Mapping[str, object]) -> None:
+        """Send a progress event to an optional UI integration."""
+        if self._progress_callback is None:
+            return
+        self._progress_callback(event)
+
+    def _emit_page_progress(
+        self,
+        results: list[CrawlResult],
+        *,
+        generated: set[str],
+        prior_success: int,
+        prior_fail: int,
+        current_url: str,
+    ) -> None:
+        """Emit a compact page-progress event."""
+        success_count = sum(1 for result in results if result.success)
+        fail_count = len(results) - success_count
+        self._emit_progress(
+            {
+                "event": _PROGRESS_EVENT_PAGE,
+                "processed_pages": prior_success + prior_fail + len(results),
+                "successful_pages": prior_success + success_count,
+                "failed_pages": prior_fail + fail_count,
+                "queued_discovered_urls": len(generated),
+                "current_url": current_url,
+                "output_dir": str(self.output_dir) if self.output_dir else "",
+                "limit": self.config.limit,
+            }
+        )
+
+    def _cancel_requested(self) -> bool:
+        return bool(self._should_cancel is not None and self._should_cancel())
+
+    def _raise_if_cancelled(self) -> None:
+        if self._cancel_requested():
+            raise asyncio.CancelledError
+
+    async def _sleep_with_cancel(self, seconds: float) -> None:
+        """Sleep in short chunks so cooperative cancellation stays responsive."""
+        if self._should_cancel is None:
+            await asyncio.sleep(seconds)
+            return
+        remaining = seconds
+        while remaining > 0:
+            self._raise_if_cancelled()
+            interval = min(_CANCEL_POLL_INTERVAL, remaining)
+            await asyncio.sleep(interval)
+            remaining -= interval
+        self._raise_if_cancelled()
 
     # ------------------------------------------------------------------
     # Internals
@@ -1280,6 +1384,7 @@ class SiteCrawler:
             skipped_redirect_urls.clear()
 
         while queue and len(results) < self.config.limit:
+            self._raise_if_cancelled()
             url, depth = queue.pop(0)
 
             norm_url = self._normalize_url(url, strip_www=_sw)
@@ -1296,6 +1401,13 @@ class SiteCrawler:
                 crawl_result = await self._download_pdf(url)
                 results.append(crawl_result)
                 progress.update(crawl_result.url, success=crawl_result.success)
+                self._emit_page_progress(
+                    results,
+                    generated=generated,
+                    prior_success=prior_success,
+                    prior_fail=prior_fail,
+                    current_url=crawl_result.url,
+                )
 
                 if crawl_result.success and self._extractor and self._writer:
                     _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
@@ -1344,10 +1456,9 @@ class SiteCrawler:
                         _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
                     )
                     progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
-                    await asyncio.sleep(jitter)
+                    await self._sleep_with_cancel(jitter)
 
                 continue
-
             try:
                 progress.set_activity(f"Reading page {_shorten_url(url)}")
                 result = await crawler.arun(url=url, config=run_cfg)
@@ -1461,6 +1572,13 @@ class SiteCrawler:
 
             results.append(crawl_result)
             progress.update(crawl_result.url, success=crawl_result.success)
+            self._emit_page_progress(
+                results,
+                generated=generated,
+                prior_success=prior_success,
+                prior_fail=prior_fail,
+                current_url=crawl_result.url,
+            )
 
             # Extract and buffer content incrementally
             if crawl_result.success and self._extractor and self._writer:
@@ -1534,7 +1652,7 @@ class SiteCrawler:
                         self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
                     )
                 progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
-                await asyncio.sleep(backoff)
+                await self._sleep_with_cancel(backoff)
             else:
                 consecutive_blocks = 0
 
@@ -1584,7 +1702,7 @@ class SiteCrawler:
                         _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
                     )
                     progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
-                await asyncio.sleep(jitter)
+                await self._sleep_with_cancel(jitter)
 
             # Discover links for deeper crawling
             if discover_links and depth < self.config.max_depth and crawl_result.success:
@@ -1604,6 +1722,14 @@ class SiteCrawler:
                     queue.append((link, depth + 1))
                     added += 1
                 progress.update_activity_label(f"Found {added} new pages on {_shorten_url(url)}")
+                self._emit_progress(
+                    {
+                        "event": _PROGRESS_EVENT_DISCOVERED,
+                        "queued_discovered_urls": len(generated),
+                        "current_url": url,
+                        "limit": self.config.limit,
+                    }
+                )
                 # Update progress total to reflect discovered pages
                 progress.total = min(len(generated), self.config.limit)
 
@@ -1750,9 +1876,7 @@ class SiteCrawler:
                 "\n".join(r.url for r in success), encoding="utf-8"
             )
         if fail:
-            (dir / "fail_urls.txt").write_text(
-                "\n".join(r.url for r in fail), encoding="utf-8"
-            )
+            (dir / "fail_urls.txt").write_text("\n".join(r.url for r in fail), encoding="utf-8")
 
     def _write_round_success_files(self, round_num: int, round_dir: Path) -> None:
         """Write cumulative round success content as a round-end snapshot.
@@ -1926,7 +2050,9 @@ class SiteCrawler:
         cumulative round snapshots).  Otherwise includes all rounds.
         """
         assert self.output_dir is not None
-        sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}"))
+        sidecar_files = sorted(
+            self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}")
+        )
         seen: set[str] = set()
         entries: list[PageIndexEntry] = []
         for sf in sidecar_files:
