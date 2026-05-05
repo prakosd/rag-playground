@@ -25,7 +25,6 @@ from crawl4md.streamlit_support import (
     start_crawl_job,
 )
 
-_ACTIVITY_LOG_LINES = 12
 _DEFAULT_ACTIVITY_LOG_SIZE = 10
 _DEFAULT_DELAY = 3.0
 _DEFAULT_EXCLUDE_PATHS = "ato.gov.au/api/"
@@ -50,7 +49,7 @@ _STATE_RUNNING = "running"
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, "cancelled"}
 
 
-st.set_page_config(page_title="crawl4md", page_icon=":material/travel_explore:", layout="wide")
+st.set_page_config(page_title="crawl4md — Website to Markdown Crawler", page_icon=":material/travel_explore:", layout="wide")
 
 
 @st.cache_resource(show_spinner=False)
@@ -67,6 +66,7 @@ def _init_state() -> None:
     st.session_state.setdefault("latest_event", {})
     st.session_state.setdefault("active_output_dir", "")
     st.session_state.setdefault("started_at", None)
+    st.session_state.setdefault("activity_log_size", _DEFAULT_ACTIVITY_LOG_SIZE)
 
 
 def _drain_job_events(job: CrawlJob | None) -> None:
@@ -88,20 +88,24 @@ def _session_root() -> Path:
 
 def _form_values() -> dict[str, Any]:
     with st.form("crawl_settings"):
-        st.subheader("Crawl settings")
+        st.subheader("Set up your crawl")
+        st.caption("Configure the starting URLs, filtering rules, and crawl behaviour before starting.")
         urls = st.text_area(
             "Website URLs",
             value=_DEFAULT_URLS,
+            height=68,
             help="Paste one or more starting pages. Use one line per site or separate with commas.",
         )
         include_only_paths = st.text_area(
             "Only include URL patterns",
             value=_DEFAULT_INCLUDE_ONLY_PATHS,
+            height=68,
             help="Leave blank to allow all pages on the same site. Use regex patterns to stay inside a section.",
         )
         exclude_paths = st.text_area(
             "Skip URL patterns",
             value=_DEFAULT_EXCLUDE_PATHS,
+            height=68,
             help="Pages matching these regex patterns will be skipped.",
         )
         basic_cols = st.columns(3)
@@ -180,8 +184,8 @@ def _form_values() -> dict[str, Any]:
                 activity_log_size = st.number_input(
                     "Activity log entries",
                     min_value=1,
-                    value=_DEFAULT_ACTIVITY_LOG_SIZE,
-                    help="Controls how many recent actions are shown in the live activity view.",
+                    value=int(st.session_state.activity_log_size),
+                    help="Controls how many newest entries are shown in the Activity log panel.",
                 )
             exclude_tags = st.text_input(
                 "HTML tags to remove",
@@ -240,6 +244,7 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.events = []
     st.session_state.latest_event = {"limit": crawler_config.limit}
     st.session_state.active_output_dir = ""
+    st.session_state.activity_log_size = activity_log_size
     st.rerun()
 
 
@@ -297,17 +302,13 @@ def _active_file_root() -> Path:
 
 
 def _render_activity_log() -> None:
-    recent_events = st.session_state.events[-_ACTIVITY_LOG_LINES:]
-    if recent_events:
-        st.markdown("**Live activity**")
-        for event in reversed(recent_events):
-            label = event.get("current_url") or event.get("event")
-            st.caption(str(label))
     log_path = activity_log_path(_active_file_root())
-    lines = read_recent_lines(log_path, max_lines=_ACTIVITY_LOG_LINES) if log_path else []
+    max_lines = int(st.session_state.activity_log_size or _DEFAULT_ACTIVITY_LOG_SIZE)
+    lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
     if lines:
-        st.markdown("**Saved activity log**")
-        st.code("\n".join(lines), language="text")
+        st.markdown("**Activity log**")
+        with st.container(height=200):
+            st.code("\n".join(reversed(lines)), language="text")
 
 
 def _render_files() -> None:
@@ -360,8 +361,8 @@ def _render_live_area() -> None:
 _run_startup_cleanup()
 _init_state()
 
-st.title("crawl4md")
-st.write("Crawl websites and save clean Markdown files without editing the notebook.")
+st.title(":material/travel_explore: crawl4md — Website to Markdown Crawler")
+st.write("Point it at any website and crawl4md will follow links, extract the main content from each page, and save everything as clean, readable Markdown files — ready to use in notebooks, RAG pipelines, or documentation.")
 st.caption(f"Session: {st.session_state.session_id}")
 
 values = _form_values()

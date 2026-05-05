@@ -215,14 +215,17 @@ def list_generated_files(
     return files
 
 
-def read_recent_lines(path: Path | str, *, max_lines: int) -> list[str]:
-    """Read the last *max_lines* lines from a UTF-8 text file."""
-    if max_lines < 1:
-        return []
+def read_recent_lines(path: Path | str, *, max_lines: int | None) -> list[str]:
+    """Read UTF-8 text file lines, optionally limited to the last *max_lines*."""
     log_path = Path(path)
     if not log_path.exists() or not log_path.is_file():
         return []
-    return log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-max_lines:]
+    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    if max_lines is None:
+        return lines
+    if max_lines < 1:
+        return []
+    return lines[-max_lines:]
 
 
 def find_latest_crawl_dir(crawl_base: Path | str) -> Path | None:

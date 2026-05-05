@@ -117,6 +117,13 @@ def test_read_recent_lines_returns_tail(tmp_path: Path) -> None:
     assert read_recent_lines(log_path, max_lines=2) == ["two", "three"]
 
 
+def test_read_recent_lines_returns_all_when_unlimited(tmp_path: Path) -> None:
+    log_path = tmp_path / "activity.log"
+    log_path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    assert read_recent_lines(log_path, max_lines=None) == ["one", "two", "three"]
+
+
 def test_cleanup_old_sessions_removes_only_expired_safe_sessions(tmp_path: Path) -> None:
     now = datetime(2026, 5, 4, tzinfo=timezone.utc)
     old_session = prepare_session_dir(tmp_path, "old123")
