@@ -87,7 +87,7 @@ def _session_root() -> Path:
 
 
 def _form_values() -> dict[str, Any]:
-    with st.form("crawl_settings"):
+    with st.form("crawl_settings", enter_to_submit=False):
         st.subheader("Set up your crawl")
         st.caption("Configure the starting URLs, filtering rules, and crawl behaviour before starting.")
         urls = st.text_area(
