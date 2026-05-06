@@ -47,9 +47,9 @@ Ruff commands finish in seconds. Run them directly — no confirmation needed:
 
 ## Workflow
 
-This project has ~500 tests. Verbose output would be ~1000 lines — too large to parse. Use the two-pass strategy below.
+This project has core library tests plus a separated Streamlit app test suite. Verbose output would be too large to parse. Use the two-pass strategy below.
 
-### Step 1 — pytest quick pass
+### Step 1 — core pytest quick pass
 
 ```
 python -m pytest tests/ -q
@@ -60,7 +60,7 @@ Run using the **pytest user-confirmation strategy** above.
 - If the summary says **all passed**: move to Step 3 (skip Step 2).
 - If there are **failures or errors**: proceed to Step 2.
 
-### Step 2 — re-run failures only (verbose)
+### Step 2 — re-run core failures only (verbose)
 
 Only run this if Step 1 reported failures:
 
@@ -70,37 +70,79 @@ python -m pytest tests/ --lf -v --tb=long
 
 Run using the **pytest user-confirmation strategy** above. This re-runs only the last-failed tests with full tracebacks. Record each failure with its full traceback.
 
-If tests still fail after Step 2, **skip Steps 3–4** and go directly to Step 5.
+If tests still fail after Step 2, **skip Steps 3–8** and go directly to Step 9.
 
-### Step 3 — ruff lint check
-
-**Only proceed if all tests passed.** If any tests failed, skip to Step 5.
+### Step 3 — app pytest quick pass
 
 ```
-python -m ruff check src/ tests/ streamlit_app.py
+python -m pytest apps/streamlit/tests/ -q
+```
+
+Run using the **pytest user-confirmation strategy** above.
+
+- If the summary says **all passed**: move to Step 5 (skip Step 4).
+- If there are **failures or errors**: proceed to Step 4.
+
+### Step 4 — re-run app failures only (verbose)
+
+Only run this if Step 3 reported failures:
+
+```
+python -m pytest apps/streamlit/tests/ --lf -v --tb=long
+```
+
+Run using the **pytest user-confirmation strategy** above. Record each failure with its full traceback.
+
+If tests still fail after Step 4, **skip Steps 5–8** and go directly to Step 9.
+
+### Step 5 — core ruff lint check
+
+**Only proceed if all tests passed.** If any tests failed, skip to Step 9.
+
+```
+python -m ruff check src/ tests/
 ```
 
 Run using the **ruff direct strategy** above.
 
-### Step 4 — ruff format check
+### Step 6 — core ruff format check
 
 ```
-python -m ruff format --check src/ tests/ streamlit_app.py
+python -m ruff format --check src/ tests/
 ```
 
 Run using the **ruff direct strategy** above.
 
-### Step 5 — Return structured report
+### Step 7 — app ruff lint check
+
+```
+python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/src/ apps/streamlit/tests/
+```
+
+Run using the **ruff direct strategy** above.
+
+### Step 8 — app ruff format check
+
+```
+python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/src/ apps/streamlit/tests/
+```
+
+Run using the **ruff direct strategy** above.
+
+### Step 9 — Return structured report
 
 ```
 ## Test Results
 - Status: PASSED / FAILED
-- Actual: X passed, Y failed, Z errors
-- Failed tests: (list each with full traceback from Step 2, or "None")
+- Core actual: X passed, Y failed, Z errors
+- App actual: X passed, Y failed, Z errors
+- Failed tests: (list each with full traceback from Step 2 or Step 4, or "None")
 
 ## Lint Results
-- ruff check: PASSED / FAILED (N errors) / SKIPPED (tests failed)
-- ruff format: PASSED / FAILED (N files need reformatting) / SKIPPED (tests failed)
+- core ruff check: PASSED / FAILED (N errors) / SKIPPED (tests failed)
+- core ruff format: PASSED / FAILED (N files need reformatting) / SKIPPED (tests failed)
+- app ruff check: PASSED / FAILED (N errors) / SKIPPED (tests failed)
+- app ruff format: PASSED / FAILED (N files need reformatting) / SKIPPED (tests failed)
 - Error details: (list each, or "None")
 
 ## Summary
@@ -111,12 +153,12 @@ Run using the **ruff direct strategy** above.
 ## Constraints
 
 - DO NOT fix any code — only report results
-- DO NOT skip any of the commands (except Step 2 when all tests pass, and Steps 3–4 when tests fail)
+- DO NOT skip any of the commands except failure reruns when the matching quick pass succeeds, and ruff commands when tests fail
 - DO NOT summarize away error details — include the full error message for each failure
 - For pytest commands, ALWAYS run in background and ask the user to confirm completion before reading output
 - For ruff commands, run directly — no confirmation needed
-- ALWAYS wait for pytest to fully complete (Steps 1–2) before starting any ruff commands (Steps 3–4)
-- Only run ruff (Steps 3–4) if all tests passed — if any tests failed, skip ruff and go to Step 5
+- ALWAYS wait for pytest to fully complete before starting any ruff commands
+- Only run ruff if all tests passed — if any tests failed, skip ruff and go to Step 9
 - NEVER run `python -m pytest tests/ -v` without `--lf` — the full verbose output is too large
 - ALWAYS use `python -m pytest` instead of bare `pytest` — ensures the correct environment is used
 - ALWAYS prefer `python -m ruff` instead of bare `ruff` — ensures the correct environment is used

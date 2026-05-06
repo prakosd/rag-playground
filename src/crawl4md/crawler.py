@@ -734,6 +734,8 @@ class SiteCrawler:
         timeout: float | None = None,
         max_file_size_mb: float | None = None,
         activity_log_size: int = 10,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[CrawlResult]:
         """Resume a previously interrupted crawl or add new URLs to a completed session.
 
@@ -755,6 +757,10 @@ class SiteCrawler:
             Behavioral PageConfig overrides (None = use saved value).
         activity_log_size
             Number of recent activity entries to show in progress display.
+        progress_callback
+            Optional callback for UI progress events.
+        should_cancel
+            Optional cooperative cancellation hook.
 
         Returns
         -------
@@ -833,6 +839,8 @@ class SiteCrawler:
             extractor=extractor,
             writer=writer,
             activity_log_size=activity_log_size,
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
         )
 
         # Reuse the existing output directory

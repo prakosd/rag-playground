@@ -10,7 +10,7 @@ from threading import Event, Thread
 import pytest
 from pydantic import ValidationError
 
-from crawl4md.streamlit_support import (
+from crawl4md_streamlit.support import (
     CrawlJob,
     build_configs,
     cleanup_old_sessions,
@@ -27,6 +27,7 @@ from crawl4md.streamlit_support import (
     request_cancel,
     session_dir,
     start_crawl_job,
+    start_resume_job,
     validate_safe_id,
 )
 
@@ -191,7 +192,7 @@ def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
             )
             return [type("Result", (), {"success": True})()]
 
-    monkeypatch.setattr("crawl4md.streamlit_support.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(
         {
             "urls": "https://example.com",
@@ -242,7 +243,7 @@ def test_start_crawl_job_reports_missing_playwright_browser_hint(
                 "playwright install"
             )
 
-    monkeypatch.setattr("crawl4md.streamlit_support.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(
         {
             "urls": "https://example.com",
@@ -276,6 +277,144 @@ def test_start_crawl_job_reports_missing_playwright_browser_hint(
 
     assert [event["event"] for event in events] == ["started", "failed"]
     assert "python -m playwright install chromium" in str(events[-1]["error"])
+
+
+def test_start_resume_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCrawler:
+        @classmethod
+        def resume(cls, output_base: Path, session: Path, **kwargs: object) -> list[object]:
+            captured["output_base"] = output_base
+            captured["session"] = session
+            captured["kwargs"] = kwargs
+            progress_callback = kwargs["progress_callback"]
+            assert callable(progress_callback)
+            progress_callback(
+                {
+                    "event": "page_processed",
+                    "processed_pages": 2,
+                    "successful_pages": 1,
+                    "failed_pages": 1,
+                    "limit": 5,
+                }
+            )
+            return [
+                type("Result", (), {"success": True})(),
+                type("Result", (), {"success": False})(),
+            ]
+
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    output_base = tmp_path / "crawl_run123"
+    session_path = output_base / "2026-05-06_12-00-00"
+    session_path.mkdir(parents=True)
+
+    job = start_resume_job(
+        session_id="abc123",
+        crawl_id="run123",
+        output_base=output_base,
+        session_dir=session_path,
+        activity_log_size=7,
+        extra_urls=["https://example.com/new"],
+        limit=5,
+        max_depth=2,
+        max_retries=3,
+        delay=1.5,
+        flush_interval=2,
+        wait_for=2.5,
+        timeout=45,
+        max_file_size_mb=2,
+    )
+    job.thread.join(timeout=5)
+
+    events = drain_events(job)
+
+    assert [event["event"] for event in events] == ["started", "page_processed", "completed"]
+    assert events[-1]["processed_pages"] == 2
+    assert events[-1]["successful_pages"] == 1
+    assert events[-1]["failed_pages"] == 1
+    assert captured["output_base"] == output_base
+    assert captured["session"] == session_path
+    captured_kwargs = captured["kwargs"]
+    assert isinstance(captured_kwargs, dict)
+    assert captured_kwargs == {
+        "extra_urls": ["https://example.com/new"],
+        "limit": 5,
+        "max_depth": 2,
+        "max_retries": 3,
+        "delay": 1.5,
+        "flush_interval": 2,
+        "wait_for": 2.5,
+        "timeout": 45,
+        "max_file_size_mb": 2,
+        "activity_log_size": 7,
+        "progress_callback": captured_kwargs["progress_callback"],
+        "should_cancel": captured_kwargs["should_cancel"],
+    }
+
+
+def test_start_resume_job_reports_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    class FakeCrawler:
+        @classmethod
+        def resume(cls, *args: object, **kwargs: object) -> list[object]:
+            raise RuntimeError("resume failed")
+
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    output_base = tmp_path / "crawl_run123"
+    session_path = output_base / "2026-05-06_12-00-00"
+    session_path.mkdir(parents=True)
+
+    job = start_resume_job(
+        session_id="abc123",
+        crawl_id="run123",
+        output_base=output_base,
+        session_dir=session_path,
+        activity_log_size=10,
+    )
+    job.thread.join(timeout=5)
+
+    events = drain_events(job)
+
+    assert [event["event"] for event in events] == ["started", "failed"]
+    assert "RuntimeError: resume failed" in str(events[-1]["error"])
+
+
+def test_start_resume_job_reports_cancelled_after_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entered_resume = Event()
+    release_resume = Event()
+
+    class FakeCrawler:
+        @classmethod
+        def resume(cls, *args: object, **kwargs: object) -> list[object]:
+            entered_resume.set()
+            assert release_resume.wait(timeout=5)
+            should_cancel = kwargs["should_cancel"]
+            assert callable(should_cancel)
+            assert should_cancel()
+            return [type("Result", (), {"success": True})()]
+
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    output_base = tmp_path / "crawl_run123"
+    session_path = output_base / "2026-05-06_12-00-00"
+    session_path.mkdir(parents=True)
+
+    job = start_resume_job(
+        session_id="abc123",
+        crawl_id="run123",
+        output_base=output_base,
+        session_dir=session_path,
+        activity_log_size=10,
+    )
+    assert entered_resume.wait(timeout=5)
+    request_cancel(job)
+    release_resume.set()
+    job.thread.join(timeout=5)
+
+    events = drain_events(job)
+
+    assert [event["event"] for event in events] == ["started", "cancel_requested", "cancelled"]
 
 
 def test_request_cancel_sets_event(tmp_path: Path) -> None:

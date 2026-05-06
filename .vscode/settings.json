@@ -1,3 +1,7 @@
 {
+    "python.analysis.extraPaths": [
+        "./src",
+        "./apps/streamlit/src"
+    ],
     "python.analysis.typeCheckingMode": "basic"
 }

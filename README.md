@@ -33,14 +33,16 @@ Click the badge above. GitHub spins up a fully configured VS Code environment in
 
 ## Streamlit Web App
 
-A browser-based UI is included for non-technical users who prefer not to use a Jupyter Notebook. It provides the normal crawl settings as a form, runs the crawl in the background, and lets users download the generated files from the browser.
+A browser-based UI is included as a separate app package for non-technical users who prefer not to use a Jupyter Notebook. The app imports the `crawl4md` library just like any external Python app would, provides the normal crawl settings as a form, runs the crawl in the background, and lets users download the generated files from the browser.
 
 **Start the app:**
 
 ```bash
-pip install streamlit          # if not already installed
-streamlit run streamlit_app.py --server.address=0.0.0.0 --server.port=8501
+pip install -e . -e "apps/streamlit"
+cd apps/streamlit && streamlit run
 ```
+
+The app config lives in `apps/streamlit/.streamlit/config.toml` and sets `0.0.0.0:8501` when running from that directory. The explicit equivalent (from the repo root) is `python -m streamlit run apps/streamlit/streamlit_app.py --server.address=0.0.0.0 --server.port=8501`.
 
 Then open `http://localhost:8501` in your browser.
 
@@ -49,7 +51,8 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 **What it does:**
 
 - Fill in the crawl URL, page limit, depth, and optional filters via a form
-- Click **Start Crawl** to run the crawl in the background
+- Click **Start** to run the crawl in the background
+- Pause a running crawl, adjust settings, then resume from the saved checkpoint or stop it
 - Watch live progress (pages crawled, estimated completion)
 - Download the generated Markdown/text files directly from the browser
 
@@ -60,12 +63,24 @@ The Streamlit agent skill and sub-skills used for development guidance in this r
 ## Installation
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .
 crawl4ai-setup                         # one-time browser setup
 playwright install --with-deps chromium # install Chromium for JS rendering
 ```
 
 Requires Python 3.10+.
+
+For library development, install the core development tools:
+
+```bash
+pip install -e ".[dev]"
+```
+
+For the bundled Streamlit app, install the app package too:
+
+```bash
+pip install -e ".[dev]" -e "apps/streamlit[dev]"
+```
 
 > **Warning — Python 3.14 users (discovered 2026-04-20):**
 > `crawl4ai==0.8.6` pins `lxml~=5.3`, but no `lxml` 5.x pre-built wheel exists for Python 3.14.
@@ -225,27 +240,35 @@ See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook. You can also
 ## Architecture
 
 ```
-streamlit_app.py      # Browser UI for non-technical users
 src/crawl4md/
 ├── __init__.py       # Public API exports
 ├── config.py         # Pydantic v2 config models (CrawlerConfig, PageConfig, CrawlResult, ExtractedPage)
 ├── crawler.py        # SiteCrawler — synchronous wrapper around Crawl4AI
 ├── extractor.py      # ContentExtractor — HTML → Markdown via trafilatura or markdownify, validated with mdformat
 ├── sorter.py         # ContentSorter — sorts pages by URL path for natural display order
-├── streamlit_support.py # Pure-Python Streamlit job/session helpers
 ├── writer.py         # FileWriter — size-limited output files (batch & incremental modes)
 └── progress.py       # ProgressReporter — real-time progress with ETA (Jupyter & terminal)
+
+apps/streamlit/
+├── streamlit_app.py  # Browser UI that imports crawl4md
+├── pyproject.toml    # App-only dependencies, including Streamlit
+├── src/crawl4md_streamlit/
+│   ├── controls.py   # App button/state helpers
+│   └── support.py    # App job/session helpers
+└── tests/            # Streamlit app helper tests
 ```
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -v
-ruff check src/ tests/ streamlit_app.py
+pip install -e ".[dev]" -e "apps/streamlit[dev]"
+python -m pytest tests/ -q
+python -m pytest apps/streamlit/tests/ -q
+python -m ruff check src/ tests/
+python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/src/ apps/streamlit/tests/
 ```
 
-Test files: `test_config.py`, `test_crawler.py`, `test_crawler_output.py`, `test_crawler_retry.py`, `test_extractor.py`, `test_extractor_items.py`, `test_extractor_links.py`, `test_extractor_product.py`, `test_extractor_supplementary.py`, `test_sorter.py`, `test_writer.py`, `test_progress.py`.
+Core tests live in `tests/`. Streamlit app helper tests live in `apps/streamlit/tests/`.
 
 Tests use mocked HTTP calls — no real network requests are made.
 

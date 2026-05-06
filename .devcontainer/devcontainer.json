@@ -18,8 +18,8 @@
   "remoteUser": "vscode",
   // Install Tesseract OCR (eng + msa), then pip install + Playwright + crawl4ai-setup.
   // The yarn apt source is removed first — its GPG key is expired in this base image.
-  "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa && sudo rm -rf /var/lib/apt/lists/* && pip install --upgrade pip && pip install -e '.[dev]' && playwright install --with-deps chromium && crawl4ai-setup",
-  "postAttachCommand": "python -m streamlit run streamlit_app.py --server.address=0.0.0.0 --server.port=8501",
+  "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa && sudo rm -rf /var/lib/apt/lists/* && pip install --upgrade pip && pip install -e '.[dev]' -e 'apps/streamlit[dev]' && playwright install --with-deps chromium && crawl4ai-setup",
+  "postAttachCommand": "python -m streamlit run apps/streamlit/streamlit_app.py --server.address=0.0.0.0 --server.port=8501",
   "customizations": {
     "vscode": {
       "extensions": [

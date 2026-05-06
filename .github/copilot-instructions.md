@@ -16,21 +16,26 @@ SiteCrawler.crawl()
 
 Each crawl creates a timestamped output directory. Results pass through multiple rounds (initial + retries), then merged, deduplicated, and sorted.
 
-The Streamlit app starts a background crawl job, feeds optional progress/cancel hooks into `SiteCrawler`, and writes per-session outputs under `outputs/streamlit_sessions/`. Keep the core library usable without Streamlit.
+The Streamlit app lives under `apps/streamlit/`, imports the `crawl4md` library, starts a background crawl job, feeds optional progress/cancel hooks into `SiteCrawler`, and writes per-session outputs under `outputs/streamlit_sessions/`. Keep the core library usable without Streamlit.
 
 ## File Layout
 
 ```
-streamlit_app.py      # Streamlit UI entry point
 src/crawl4md/
 ├── __init__.py       # Public API exports
 ├── config.py         # Pydantic config models
 ├── crawler.py        # SiteCrawler class
 ├── extractor.py      # ContentExtractor class
 ├── sorter.py         # ContentSorter class
-├── streamlit_support.py # Streamlit helper/job logic (no Streamlit imports)
 ├── writer.py         # FileWriter class
 └── progress.py       # ProgressReporter class
+apps/streamlit/
+├── streamlit_app.py  # Streamlit UI entry point
+├── pyproject.toml    # App package and app-only dependencies
+├── src/crawl4md_streamlit/
+│   ├── controls.py   # Streamlit button/state helpers
+│   └── support.py    # Streamlit helper/job logic (no Streamlit imports)
+└── tests/            # Streamlit app helper tests
 ```
 
 ## Module-Specific Rules
@@ -44,8 +49,8 @@ Detailed constraints for each module live in on-demand instruction files under `
 | [`extractor.instructions.md`](./instructions/extractor.instructions.md) | editing `extractor.py` or extractor tests |
 | [`writer.instructions.md`](./instructions/writer.instructions.md) | editing `writer.py`, `sorter.py`, or their tests |
 | [`progress.instructions.md`](./instructions/progress.instructions.md) | editing `progress.py` or its tests |
-| [`streamlit.instructions.md`](./instructions/streamlit.instructions.md) | editing `streamlit_app.py`, `streamlit_support.py`, or their tests |
-| [`tests.instructions.md`](./instructions/tests.instructions.md) | editing anything under `tests/` |
+| [`streamlit.instructions.md`](./instructions/streamlit.instructions.md) | editing `apps/streamlit/**` |
+| [`tests.instructions.md`](./instructions/tests.instructions.md) | editing anything under `tests/` or `apps/streamlit/tests/` |
 | [`devcontainer.instructions.md`](./instructions/devcontainer.instructions.md) | editing `.devcontainer/**` or `pyproject.toml` |
 
 ## Coding Conventions

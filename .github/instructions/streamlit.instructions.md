@@ -1,6 +1,6 @@
 ---
 description: "Use when editing the Streamlit app, Streamlit support helpers, or their tests. Covers session isolation, background crawl jobs, progress/cancel events, downloads, and container startup."
-applyTo: "streamlit_app.py, src/crawl4md/streamlit_support.py, tests/test_streamlit_support.py"
+applyTo: "apps/streamlit/streamlit_app.py, apps/streamlit/src/crawl4md_streamlit/support.py, apps/streamlit/src/crawl4md_streamlit/controls.py, apps/streamlit/tests/**"
 ---
 
 # Streamlit App
@@ -14,8 +14,8 @@ Browser UI for users who prefer a form-based crawl workflow instead of the noteb
 
 ## Constraints
 
-- `streamlit_app.py` owns UI rendering and Streamlit session state. Keep crawl/job helpers in `src/crawl4md/streamlit_support.py`.
-- `streamlit_support.py` must not import Streamlit. Keep it pure Python so it stays unit-testable.
+- `apps/streamlit/streamlit_app.py` owns UI rendering and Streamlit session state. Keep crawl/job helpers in `apps/streamlit/src/crawl4md_streamlit/support.py`.
+- `crawl4md_streamlit.support` must not import Streamlit. Keep it pure Python so it stays unit-testable.
 - Keep `session_id` and `crawl_id` separate. Browser sessions write under `outputs/streamlit_sessions/session_<id>/crawl_<id>/`.
 - All file access for generated outputs must stay inside the session root. Use the existing path validation helpers instead of manual string checks.
 - Background crawls should use `start_crawl_job()` and communicate through queue events. Do not block Streamlit reruns while a crawl is active.
