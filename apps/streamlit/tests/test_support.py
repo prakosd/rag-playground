@@ -379,6 +379,43 @@ def test_start_resume_job_reports_failure(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert "RuntimeError: resume failed" in str(events[-1]["error"])
 
 
+def test_start_resume_job_resolves_relative_paths_before_resume(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, Path] = {}
+
+    class FakeCrawler:
+        @classmethod
+        def resume(cls, output_base: Path, session: Path, **kwargs: object) -> list[object]:
+            captured["output_base"] = output_base
+            captured["session"] = session
+            return []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+
+    output_base = Path("outputs") / "streamlit_sessions" / "session_abc123" / "crawl_run123"
+    session_path = output_base / "2026-05-06_12-00-00"
+    session_path.mkdir(parents=True)
+
+    job = start_resume_job(
+        session_id="abc123",
+        crawl_id="run123",
+        output_base=output_base,
+        session_dir=session_path,
+        activity_log_size=10,
+    )
+    job.thread.join(timeout=5)
+
+    events = drain_events(job)
+
+    assert [event["event"] for event in events] == ["started", "completed"]
+    assert captured["output_base"].is_absolute()
+    assert captured["session"].is_absolute()
+    assert captured["output_base"] == output_base.resolve()
+    assert captured["session"] == session_path.resolve()
+
+
 def test_start_resume_job_reports_cancelled_after_request(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

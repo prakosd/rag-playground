@@ -413,8 +413,8 @@ def start_resume_job(
     max_file_size_mb: float | None = None,
 ) -> CrawlJob:
     """Resume a saved crawl in a background thread and return its job handle."""
-    output_base_path = Path(output_base)
-    session_dir_path = Path(session_dir)
+    output_base_path = Path(output_base).resolve()
+    session_dir_path = Path(session_dir).resolve()
     event_queue: queue.Queue[dict[str, object]] = queue.Queue()
     cancel_event = threading.Event()
 
