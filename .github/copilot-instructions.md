@@ -75,6 +75,13 @@ For any non-trivial task, write a plan **before** implementing. Every plan must:
 - **Delegate diff review to the `code-reviewer` agent** before declaring a task complete — it enforces the "clean, lightweight, not bloated" bar.
 - Full testing rules live in [`tests.instructions.md`](./instructions/tests.instructions.md).
 
+## README Files
+
+Two README files document this project:
+
+- [`README.md`](../README.md) — repo root; user-facing docs: features, configuration reference, output structure, quick start, architecture overview, and dev setup. **Update this when user-facing behavior changes.**
+- [`apps/streamlit/README.md`](../apps/streamlit/README.md) — Streamlit app developer guide: file map, component responsibilities, event/state lifecycle, pause/resume/cancel flow, session/path safety, data flow diagram, testing map, and common extension points. **Update this when the Streamlit app structure or dev workflow changes.**
+
 ## Maintaining This File
 
 **Keep here:** project-wide conventions and cross-module rules that apply to *every* turn (overview, data flow, coding conventions, planning, testing policy summary).
