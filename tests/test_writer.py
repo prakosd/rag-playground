@@ -482,6 +482,18 @@ class TestRenameFilesWithTotal:
         assert result[1].name == "sorted_final_success_content_002_of_005.md"
         assert result[4].name == "sorted_final_success_content_005_of_005.md"
 
+    def test_replaces_existing_target_file(self, tmp_path: Path):
+        source = tmp_path / "sorted_success_content_001.md"
+        source.write_text("new-data", encoding="utf-8")
+        target = tmp_path / "sorted_success_content_001_of_001.md"
+        target.write_text("old-data", encoding="utf-8")
+
+        result = rename_files_with_total([source])
+
+        assert result[0] == target
+        assert target.read_text(encoding="utf-8") == "new-data"
+        assert not source.exists()
+
     def test_blank_lines_skipped(self, tmp_path: Path):
         """Blank lines in the JSONL file are silently skipped."""
         path = tmp_path / "blanks.jsonl"

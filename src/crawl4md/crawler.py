@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import json
 import random
 import re
 import sys
 import warnings
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import NamedTuple
 
 import httpx
 import nest_asyncio
@@ -27,9 +25,6 @@ from crawl4md.config import (
     CrawlResult,
     ExtractedPage,
     PageConfig,
-    RoundRecord,
-    SessionComplete,
-    SessionHeader,
 )
 from crawl4md.extractor import ContentExtractor
 from crawl4md.progress import ProgressReporter
@@ -108,6 +103,12 @@ _SUCCESS_SUFFIX = "success_"
 # Suffix for failed-page file names (e.g. "fail_content_001.txt")
 _FAIL_SUFFIX = "fail_"
 
+# Final URL list filenames.
+_SUCCESS_URLS_FILE = "success_urls.txt"
+_FAIL_URLS_FILE = "fail_urls.txt"
+_SORTED_SUCCESS_URLS_FILE = "sorted_success_urls.txt"
+_SORTED_FAIL_URLS_FILE = "sorted_fail_urls.txt"
+
 # ------------------------------------------------------------------
 # Round file naming components
 # ------------------------------------------------------------------
@@ -174,26 +175,6 @@ _PDF_DOWNLOAD_TIMEOUT = 60
 _PDF_FALLBACK_THRESHOLD = 50
 
 # ------------------------------------------------------------------
-# Session save/resume file names
-# ------------------------------------------------------------------
-
-# Append-only JSONL file storing round-boundary state snapshots
-_SESSION_FILE = "session.jsonl"
-# Overwritable checkpoint file for mid-round auto-saves
-_SESSION_CHECKPOINT_FILE = "session_checkpoint.json"
-
-# ------------------------------------------------------------------
-# Resume: overridable config fields (behavioral, not content-affecting)
-# ------------------------------------------------------------------
-
-# CrawlerConfig fields that can be overridden via resume() kwargs
-_OVERRIDABLE_CRAWLER_FIELDS = frozenset(
-    {"limit", "max_depth", "max_retries", "delay", "stealth", "headers", "flush_interval"}
-)
-# PageConfig fields that can be overridden via resume() kwargs
-_OVERRIDABLE_PAGE_FIELDS = frozenset({"wait_until", "wait_for", "timeout", "max_file_size_mb"})
-
-# ------------------------------------------------------------------
 # Skip / empty-extraction log labels
 # ------------------------------------------------------------------
 
@@ -245,33 +226,6 @@ def _shorten_url(url: str) -> str:
     return display[:25] + "…" + display[-(_SHORT_URL_MAX_LEN - 26) :]
 
 
-# ------------------------------------------------------------------
-# Session save/resume data structures
-# ------------------------------------------------------------------
-
-
-class _SessionSnapshot(NamedTuple):
-    """Result of loading a saved session from disk."""
-
-    header: SessionHeader
-    last_round: RoundRecord
-    all_generated: set[str]
-    url_depths: dict[str, int]
-    succeeded_urls: set[str]
-    failed_urls: list[str]
-    is_complete: bool
-
-
-class _ResumeState(NamedTuple):
-    """Bundles the state needed to resume a crawl into ``_run_rounds_async``."""
-
-    all_generated: set[str]
-    url_depths: dict[str, int]
-    succeeded_urls: set[str]
-    resume_urls: list[str]
-    start_round: int
-
-
 class SiteCrawler:
     """Crawls websites and collects HTML/Markdown content.
 
@@ -306,8 +260,6 @@ class SiteCrawler:
         self.content_files: list[Path] = []
         # Tracks whether the OCR-unavailable warning has already been emitted
         self._ocr_warned: bool = False
-        # Tracks the current round number for interrupt-time checkpoint saves
-        self._current_round_num: int = 1
         # Internal writer for failed-page content (symmetrical with _writer)
         self._fail_writer: FileWriter | None = None
         if writer is not None:
@@ -353,8 +305,6 @@ class SiteCrawler:
             self._writer._output_dir = self.output_dir
         if self._fail_writer is not None:
             self._fail_writer._output_dir = self.output_dir
-        # Write session header for save/resume support
-        self._write_session_header()
         try:
             if sys.platform == "win32":
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -450,533 +400,6 @@ class SiteCrawler:
                 f"{fail_count} URL(s) that could not be crawled."
             )
 
-    # ------------------------------------------------------------------
-    # Session save/resume helpers
-    # ------------------------------------------------------------------
-
-    def _write_session_header(self) -> None:
-        """Write the ``SessionHeader`` as the first line of ``session.jsonl``."""
-        assert self.output_dir is not None
-        header = SessionHeader(
-            crawler_config=self.config.model_dump(),
-            page_config=self.page_config.model_dump(),
-            output_dir=self.output_dir.name,
-            created_at=datetime.now(timezone.utc).isoformat(),
-        )
-        path = self.output_dir / _SESSION_FILE
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(header.model_dump_json())
-            fh.write("\n")
-
-    def _write_session_line(self, record: RoundRecord | SessionComplete) -> None:
-        """Append a round record or completion sentinel to ``session.jsonl``."""
-        assert self.output_dir is not None
-        path = self.output_dir / _SESSION_FILE
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(record.model_dump_json())
-            fh.write("\n")
-
-    def _save_session_checkpoint(
-        self,
-        round_num: int,
-        all_generated: set[str],
-        url_depths: dict[str, int],
-        succeeded_urls: set[str],
-        failed_urls: list[str],
-    ) -> None:
-        """Overwrite ``session_checkpoint.json`` with the current mid-round state."""
-        assert self.output_dir is not None
-        record = RoundRecord(
-            round_num=round_num,
-            all_generated=sorted(all_generated),
-            url_depths=url_depths,
-            succeeded_urls=sorted(succeeded_urls),
-            failed_urls=failed_urls,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        )
-        path = self.output_dir / _SESSION_CHECKPOINT_FILE
-        path.write_text(record.model_dump_json(), encoding="utf-8")
-
-    def _delete_session_checkpoint(self) -> None:
-        """Remove the checkpoint file (stale after a round completes)."""
-        if self.output_dir is None:
-            return
-        path = self.output_dir / _SESSION_CHECKPOINT_FILE
-        if path.exists():
-            path.unlink()
-
-    @staticmethod
-    def _load_session(session_dir: Path) -> _SessionSnapshot:
-        """Load a saved session from *session_dir* and return a snapshot.
-
-        Reads ``session.jsonl`` for round-boundary records, then checks
-        ``session_checkpoint.json`` for a newer mid-round auto-save.
-        Returns whichever state is more recent.
-        """
-        session_path = session_dir / _SESSION_FILE
-        if not session_path.exists():
-            raise FileNotFoundError(f"No session file found in {session_dir}")
-
-        header: SessionHeader | None = None
-        last_round: RoundRecord | None = None
-        is_complete = False
-
-        with session_path.open(encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                rec_type = data.get("type")
-                if rec_type == "header" and header is None:
-                    header = SessionHeader.model_validate(data)
-                elif rec_type == "round":
-                    last_round = RoundRecord.model_validate(data)
-                    is_complete = False
-                elif rec_type == "complete":
-                    is_complete = True
-
-        if header is None:
-            raise ValueError(f"No valid header found in {session_path}")
-
-        # Check if checkpoint file has newer state
-        checkpoint_path = session_dir / _SESSION_CHECKPOINT_FILE
-        if checkpoint_path.exists():
-            try:
-                cp_data = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-                cp_record = RoundRecord.model_validate(cp_data)
-                # Use checkpoint if no round in JSONL, or if checkpoint is newer
-                if last_round is None or cp_record.timestamp > last_round.timestamp:
-                    last_round = cp_record
-                    is_complete = False
-            except (json.JSONDecodeError, Exception):
-                pass  # Ignore corrupt checkpoint
-
-        if last_round is None:
-            raise ValueError(f"No valid round records found in {session_path}")
-
-        return _SessionSnapshot(
-            header=header,
-            last_round=last_round,
-            all_generated=set(last_round.all_generated),
-            url_depths=dict(last_round.url_depths),
-            succeeded_urls=set(last_round.succeeded_urls),
-            failed_urls=list(last_round.failed_urls),
-            is_complete=is_complete,
-        )
-
-    # ------------------------------------------------------------------
-    # Session resolution and inspection
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _resolve_session_dir(output_base: Path, session: int | str | Path) -> Path:
-        """Resolve a session identifier to an absolute directory path.
-
-        Parameters
-        ----------
-        output_base
-            Root directory that contains session folders.
-        session
-            An index from ``list_sessions()`` (int), a directory name
-            (str), or a ``Path`` to the session directory.
-
-        Returns
-        -------
-        Path
-            Absolute path to the session directory.
-
-        Raises
-        ------
-        ValueError
-            If the int index is out of range or no sessions exist.
-        FileNotFoundError
-            If the resolved directory does not exist.
-        """
-        if isinstance(session, int):
-            # Same ordering as list_sessions: scan for dirs with session.jsonl,
-            # sort descending, index by number.  No table printing.
-            candidates: list[Path] = []
-            if output_base.exists():
-                for d in sorted(output_base.iterdir(), reverse=True):
-                    if d.is_dir() and (d / _SESSION_FILE).exists():
-                        candidates.append(d)
-            if not candidates:
-                raise ValueError("No saved sessions found.")
-            if session < 1 or session > len(candidates):
-                raise ValueError(f"Session #{session} not found. Valid range: 1–{len(candidates)}.")
-            return candidates[session - 1]
-
-        session_dir = Path(session)
-        if not session_dir.is_absolute():
-            session_dir = output_base / session_dir
-        if not session_dir.exists():
-            raise FileNotFoundError(f"Session directory not found: {session_dir}")
-        return session_dir
-
-    @classmethod
-    def show_session(cls, output_base: Path | str, session: int | str | Path) -> None:
-        """Print a human-readable summary of a saved session's settings.
-
-        Parameters
-        ----------
-        output_base
-            Root directory that contains session folders.
-        session
-            An index from ``list_sessions()`` (int), a directory name
-            (str), or a ``Path`` to the session directory.
-        """
-        output_base = Path(output_base)
-        session_dir = cls._resolve_session_dir(output_base, session)
-        snapshot = cls._load_session(session_dir)
-
-        # Determine session index for display
-        idx_label = ""
-        if isinstance(session, int):
-            idx_label = f"#{session}"
-        else:
-            # Try to find the index
-            candidates: list[Path] = []
-            if output_base.exists():
-                for d in sorted(output_base.iterdir(), reverse=True):
-                    if d.is_dir() and (d / _SESSION_FILE).exists():
-                        candidates.append(d)
-            for i, c in enumerate(candidates, 1):
-                if c == session_dir:
-                    idx_label = f"#{i}"
-                    break
-
-        page_count = len(snapshot.succeeded_urls) + len(snapshot.failed_urls)
-        status = "complete" if snapshot.is_complete else "interrupted"
-        print(f"Session {idx_label}: {session_dir.name}  ({status}, {page_count} pages)\n")
-
-        # Restore config models to compare against defaults
-        saved_cc = CrawlerConfig.model_validate(snapshot.header.crawler_config)
-        saved_pc = PageConfig.model_validate(snapshot.header.page_config)
-        default_cc = CrawlerConfig(urls=["https://placeholder.test"])
-        default_pc = PageConfig()
-
-        # Key CrawlerConfig fields (always shown)
-        _cc_always = ["urls", "limit", "max_depth", "delay", "max_retries"]
-        # Key PageConfig fields (always shown)
-        _pc_always = [
-            "extract_main_content",
-            "exclude_tags",
-            "output_extension",
-            "max_file_size_mb",
-            "timeout",
-        ]
-
-        print("Crawl settings:")
-        for field in _cc_always:
-            val = getattr(saved_cc, field)
-            if field == "urls":
-                for i, u in enumerate(val):
-                    label = "urls:" if i == 0 else ""
-                    print(f"  {label:<24}{u}")
-            elif field == "exclude_tags":
-                print(f"  {field + ':':<24}{', '.join(val) if val else '(none)'}")
-            else:
-                print(f"  {field + ':':<24}{val}")
-        # Show remaining CrawlerConfig fields only when they differ from defaults
-        for field in sorted(CrawlerConfig.model_fields):
-            if field in _cc_always or field == "urls":
-                continue
-            val = getattr(saved_cc, field)
-            default_val = getattr(default_cc, field)
-            if val != default_val:
-                display = ", ".join(val) if isinstance(val, list) else val
-                print(f"  {field + ':':<24}{display}")
-
-        print("\nPage settings:")
-        for field in _pc_always:
-            val = getattr(saved_pc, field)
-            if isinstance(val, list):
-                print(f"  {field + ':':<24}{', '.join(val) if val else '(none)'}")
-            else:
-                print(f"  {field + ':':<24}{val}")
-        # Show remaining PageConfig fields only when they differ from defaults
-        for field in sorted(PageConfig.model_fields):
-            if field in _pc_always:
-                continue
-            val = getattr(saved_pc, field)
-            default_val = getattr(default_pc, field)
-            if val != default_val:
-                display = ", ".join(val) if isinstance(val, list) else val
-                print(f"  {field + ':':<24}{display}")
-
-        overridable = sorted(_OVERRIDABLE_CRAWLER_FIELDS | _OVERRIDABLE_PAGE_FIELDS)
-        print(f"\nOverridable on resume: {', '.join(overridable)}")
-
-    # ------------------------------------------------------------------
-    # Resume
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def resume(
-        cls,
-        output_base: Path | str,
-        session: int | str | Path,
-        *,
-        extra_urls: list[str] | str | None = None,
-        limit: int | None = None,
-        max_depth: int | None = None,
-        max_retries: int | None = None,
-        delay: float | None = None,
-        stealth: bool | None = None,
-        headers: dict[str, str] | None = None,
-        flush_interval: int | None = None,
-        wait_until: str | None = None,
-        wait_for: float | None = None,
-        timeout: float | None = None,
-        max_file_size_mb: float | None = None,
-        activity_log_size: int = 10,
-        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-        should_cancel: Callable[[], bool] | None = None,
-    ) -> list[CrawlResult]:
-        """Resume a previously interrupted crawl or add new URLs to a completed session.
-
-        Content/extraction settings are restored from the saved session.
-        Only behavioral settings can be overridden via keyword arguments.
-
-        Parameters
-        ----------
-        output_base
-            Root directory that contains session folders.
-        session
-            An index from ``list_sessions()`` (int), a directory name
-            (str), or a ``Path`` to the session directory.
-        extra_urls
-            Additional URLs to crawl (comma-separated string or list).
-        limit, max_depth, max_retries, delay, stealth, headers, flush_interval
-            Behavioral CrawlerConfig overrides (None = use saved value).
-        wait_until, wait_for, timeout, max_file_size_mb
-            Behavioral PageConfig overrides (None = use saved value).
-        activity_log_size
-            Number of recent activity entries to show in progress display.
-        progress_callback
-            Optional callback for UI progress events.
-        should_cancel
-            Optional cooperative cancellation hook.
-
-        Returns
-        -------
-        list[CrawlResult]
-            Combined results from resumed rounds.
-        """
-        output_base = Path(output_base)
-        session_dir = cls._resolve_session_dir(output_base, session)
-        snapshot = cls._load_session(session_dir)
-
-        # Restore configs from saved session
-        saved_crawler_cfg = CrawlerConfig.model_validate(snapshot.header.crawler_config)
-        saved_page_cfg = PageConfig.model_validate(snapshot.header.page_config)
-
-        # Apply behavioral overrides to CrawlerConfig
-        cc_overrides: dict[str, object] = {}
-        if limit is not None:
-            cc_overrides["limit"] = limit
-        if max_depth is not None:
-            cc_overrides["max_depth"] = max_depth
-        if max_retries is not None:
-            cc_overrides["max_retries"] = max_retries
-        if delay is not None:
-            cc_overrides["delay"] = delay
-        if stealth is not None:
-            cc_overrides["stealth"] = stealth
-        if headers is not None:
-            cc_overrides["headers"] = headers
-        if flush_interval is not None:
-            cc_overrides["flush_interval"] = flush_interval
-        if cc_overrides:
-            saved_crawler_cfg = saved_crawler_cfg.model_copy(update=cc_overrides)
-
-        # Apply behavioral overrides to PageConfig
-        pc_overrides: dict[str, object] = {}
-        if wait_until is not None:
-            pc_overrides["wait_until"] = wait_until
-        if wait_for is not None:
-            pc_overrides["wait_for"] = wait_for
-        if timeout is not None:
-            pc_overrides["timeout"] = timeout
-        if max_file_size_mb is not None:
-            pc_overrides["max_file_size_mb"] = max_file_size_mb
-        if pc_overrides:
-            saved_page_cfg = saved_page_cfg.model_copy(update=pc_overrides)
-
-        # Merge URLs: saved + extra_urls (deduplicated by normalized URL)
-        if extra_urls is not None:
-            if isinstance(extra_urls, str):
-                extra_urls = [u.strip() for u in extra_urls.split(",") if u.strip()]
-            existing_norms = {
-                cls._normalize_url(u, strip_www=saved_crawler_cfg.strip_www)
-                for u in saved_crawler_cfg.urls
-            }
-            new_urls: list[str] = []
-            for u in extra_urls:
-                norm = cls._normalize_url(u, strip_www=saved_crawler_cfg.strip_www)
-                if norm not in existing_norms:
-                    existing_norms.add(norm)
-                    new_urls.append(u)
-            if new_urls:
-                saved_crawler_cfg = saved_crawler_cfg.model_copy(
-                    update={"urls": saved_crawler_cfg.urls + new_urls}
-                )
-
-        # Build internal components
-        extractor = ContentExtractor(saved_page_cfg)
-        writer = FileWriter(
-            max_file_size_mb=saved_page_cfg.max_file_size_mb,
-            file_extension=saved_page_cfg.output_extension,
-        )
-        instance = cls(
-            saved_crawler_cfg,
-            saved_page_cfg,
-            output_base=output_base,
-            extractor=extractor,
-            writer=writer,
-            activity_log_size=activity_log_size,
-            progress_callback=progress_callback,
-            should_cancel=should_cancel,
-        )
-
-        # Reuse the existing output directory
-        instance.output_dir = session_dir
-        if instance._writer is not None:
-            instance._writer._output_dir = session_dir
-        if instance._fail_writer is not None:
-            instance._fail_writer._output_dir = session_dir
-
-        # Build resume URLs: failed URLs + new seed URLs not already succeeded
-        resume_urls = list(snapshot.failed_urls)
-        for url in saved_crawler_cfg.urls:
-            norm = cls._normalize_url(url, strip_www=saved_crawler_cfg.strip_www)
-            if norm not in snapshot.succeeded_urls and url not in resume_urls:
-                resume_urls.append(url)
-
-        if not resume_urls:
-            print("Nothing to resume — all URLs already succeeded.")
-            return []
-
-        resume_state = _ResumeState(
-            all_generated=snapshot.all_generated,
-            url_depths=snapshot.url_depths,
-            succeeded_urls=snapshot.succeeded_urls,
-            resume_urls=resume_urls,
-            start_round=snapshot.last_round.round_num + 1,
-        )
-
-        try:
-            if sys.platform == "win32":
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    all_results = pool.submit(
-                        instance._run_rounds_in_proactor_loop, resume_state
-                    ).result()
-            else:
-                all_results = asyncio.run(instance._run_rounds_async(resume=resume_state))
-        except KeyboardInterrupt:
-            all_results = []
-        return all_results
-
-    # ------------------------------------------------------------------
-    # Session listing
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def list_sessions(cls, output_base: Path | str) -> list[tuple[int, Path]]:
-        """List saved sessions in *output_base* and print a numbered table.
-
-        Returns a list of ``(index, path)`` tuples sorted by last-saved
-        descending.
-        """
-        output_base = Path(output_base)
-        if not output_base.exists():
-            print("No sessions found.")
-            return []
-
-        entries: list[tuple[str, Path, str, int, str]] = []
-        for d in sorted(output_base.iterdir(), reverse=True):
-            if not d.is_dir():
-                continue
-            session_path = d / _SESSION_FILE
-            if not session_path.exists():
-                continue
-            try:
-                # Read header (first line) for URLs
-                header_data = None
-                last_round_data = None
-                is_complete = False
-                with session_path.open(encoding="utf-8") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if data.get("type") == "header" and header_data is None:
-                            header_data = data
-                        elif data.get("type") == "round":
-                            last_round_data = data
-                            is_complete = False
-                        elif data.get("type") == "complete":
-                            is_complete = True
-
-                if header_data is None:
-                    continue
-
-                # Determine last saved timestamp
-                last_saved = ""
-                if last_round_data:
-                    last_saved = last_round_data.get("timestamp", "")
-                # Check checkpoint for newer timestamp
-                cp_path = d / _SESSION_CHECKPOINT_FILE
-                if cp_path.exists():
-                    try:
-                        cp_data = json.loads(cp_path.read_text(encoding="utf-8"))
-                        cp_ts = cp_data.get("timestamp", "")
-                        if cp_ts > last_saved:
-                            last_saved = cp_ts
-                            is_complete = False
-                    except (json.JSONDecodeError, Exception):
-                        pass
-
-                # Format last_saved for display
-                display_ts = last_saved[:19].replace("T", " ") if last_saved else "unknown"
-
-                # URLs from config
-                urls = header_data.get("crawler_config", {}).get("urls", [])
-                url_display = urls[0] if urls else "?"
-                if len(url_display) > 45:
-                    url_display = url_display[:42] + "..."
-                if len(urls) > 1:
-                    url_display += f" (+{len(urls) - 1})"
-
-                # Page count from last round
-                page_count = 0
-                if last_round_data:
-                    page_count = len(last_round_data.get("succeeded_urls", []))
-
-                status = "complete" if is_complete else "interrupted"
-                entries.append((display_ts, d, url_display, page_count, status))
-            except Exception:
-                continue
-
-        if not entries:
-            print("No sessions found.")
-            return []
-
-        result: list[tuple[int, Path]] = []
-        print(f" {'#':>3}  {'Last Saved':<20} {'URLs':<47} {'Pages':>5}  Status")
-        for i, (ts, path, url_disp, pages, status) in enumerate(entries, 1):
-            print(f" {i:>3}  {ts:<20} {url_disp:<47} {pages:>5}  {status}")
-            result.append((i, path))
-        return result
-
     def _round_dir(self, round_num: int) -> Path:
         """Return the round subdirectory for *round_num*, creating it if needed."""
         assert self.output_dir is not None
@@ -984,11 +407,11 @@ class SiteCrawler:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-    def _run_rounds_in_proactor_loop(self, resume: _ResumeState | None = None) -> list[CrawlResult]:
+    def _run_rounds_in_proactor_loop(self) -> list[CrawlResult]:
         loop = asyncio.ProactorEventLoop()
         asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(self._run_rounds_async(resume=resume))
+            return loop.run_until_complete(self._run_rounds_async())
         finally:
             loop.close()
 
@@ -996,22 +419,14 @@ class SiteCrawler:
     # Round orchestration
     # ------------------------------------------------------------------
 
-    async def _run_rounds_async(self, *, resume: _ResumeState | None = None) -> list[CrawlResult]:
+    async def _run_rounds_async(self) -> list[CrawlResult]:
         """Run the initial crawl + retry rounds, producing per-round and final files."""
         all_success: list[CrawlResult] = []
         all_fail: list[CrawlResult] = []
-
-        # When resuming, restore state from the snapshot; otherwise start fresh
-        if resume is not None:
-            succeeded_urls: set[str] = set(resume.succeeded_urls)
-            all_generated: set[str] = set(resume.all_generated)
-            url_depths: dict[str, int] = dict(resume.url_depths)
-            total_rounds = resume.start_round + self.config.max_retries
-        else:
-            succeeded_urls = set()
-            all_generated = set()
-            url_depths = {}
-            total_rounds = 1 + self.config.max_retries
+        succeeded_urls: set[str] = set()
+        all_generated: set[str] = set()
+        url_depths: dict[str, int] = {}
+        total_rounds = 1 + self.config.max_retries
 
         browser_kwargs: dict = {
             "headless": True,
@@ -1029,85 +444,56 @@ class SiteCrawler:
         run_cfg = self._build_run_config(CrawlerRunConfig)
         fallback_run_cfg = self._build_fallback_run_config(CrawlerRunConfig)
 
-        # --- Round 1: full crawl with link discovery (skipped on resume) ---
+        # --- Round 1: full crawl with link discovery ---
         # Use a single browser instance across all rounds so that
         # cookies (including WAF challenge tokens) persist through retries.
         interrupted = False
-        self._current_round_num = 1
         try:
             async with AsyncWebCrawler(config=browser_cfg) as crawler:
-                if resume is not None:
-                    # Skip round 1 — jump directly to retry loop with
-                    # resume URLs treated as failed URLs from the prior session.
-                    failed_urls = resume.resume_urls
-                    self._current_round_num = resume.start_round
-                else:
-                    round_dir = self._round_dir(1)
-                    if self._writer is not None:
-                        self._writer._output_dir = round_dir
-                        self._writer.reset(_SUCCESS_SUFFIX)
-                    if self._fail_writer is not None:
-                        self._fail_writer._output_dir = round_dir
-                        self._fail_writer.reset(_FAIL_SUFFIX)
-                    self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
-                    self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
-                    print(
-                        f"--- Round 1/{total_rounds}: "
-                        f"Crawling {len(self.config.urls)} seed URL(s) ---"
-                    )
-                    round_results = await self._crawl_urls_async(
-                        urls=self.config.urls,
-                        crawler=crawler,
-                        run_cfg=run_cfg,
-                        discover_links=True,
-                        round_dir=round_dir,
-                        prior_success=0,
-                        prior_fail=0,
-                        round_label="First pass" if total_rounds > 1 else "",
-                        all_generated=all_generated,
-                        url_depths=url_depths,
-                    )
-                    success, fail = self._split_results(round_results)
-                    if self._writer is not None:
-                        self._writer.flush()
-                    if self._fail_writer is not None:
-                        self._fail_writer.flush()
-                    all_success.extend(success)
-                    succeeded_urls.update(r.url for r in success)
-                    all_fail.extend(fail)
-                    self._save_url_lists(all_success, fail, round_dir)
-                    self._write_round_success_files(1, round_dir)
-                    self._write_sorted_round_files(1, round_dir)
+                round_dir = self._round_dir(1)
+                if self._writer is not None:
+                    self._writer._output_dir = round_dir
+                    self._writer.reset(_SUCCESS_SUFFIX)
+                if self._fail_writer is not None:
+                    self._fail_writer._output_dir = round_dir
+                    self._fail_writer.reset(_FAIL_SUFFIX)
+                self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
+                self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
+                print(
+                    f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---"
+                )
+                round_results = await self._crawl_urls_async(
+                    urls=self.config.urls,
+                    crawler=crawler,
+                    run_cfg=run_cfg,
+                    discover_links=True,
+                    round_dir=round_dir,
+                    prior_success=0,
+                    prior_fail=0,
+                    round_label="First pass" if total_rounds > 1 else "",
+                    all_generated=all_generated,
+                    url_depths=url_depths,
+                )
+                success, fail = self._split_results(round_results)
+                if self._writer is not None:
+                    self._writer.flush()
+                if self._fail_writer is not None:
+                    self._fail_writer.flush()
+                all_success.extend(success)
+                succeeded_urls.update(r.url for r in success)
+                all_fail.extend(fail)
+                self._save_url_lists(all_success, fail, round_dir)
+                self._write_round_success_files(1, round_dir)
+                self._write_sorted_round_files(1, round_dir)
 
-                    # Save round 1 state to session file
-                    self._write_session_line(
-                        RoundRecord(
-                            round_num=1,
-                            all_generated=sorted(all_generated),
-                            url_depths=url_depths,
-                            succeeded_urls=sorted(succeeded_urls),
-                            failed_urls=[r.url for r in all_fail],
-                            timestamp=datetime.now(timezone.utc).isoformat(),
-                        )
-                    )
-                    self._delete_session_checkpoint()
+                failed_urls = [r.url for r in all_fail]
 
-                    # --- Retry rounds ---
-                    failed_urls = [r.url for r in all_fail]
-
-                # Determine retry loop range based on resume state
-                if resume is not None:
-                    retry_range = range(resume.start_round, total_rounds + 1)
-                else:
-                    retry_range = range(2, total_rounds + 1)
-
-                for round_num in retry_range:
+                for round_num in range(2, total_rounds + 1):
                     self._raise_if_cancelled()
                     if not failed_urls:
                         print("\nAll pages succeeded — skipping remaining retries.")
                         break
 
-                    self._current_round_num = round_num
                     round_dir = self._round_dir(round_num)
                     if self._writer is not None:
                         self._writer._output_dir = round_dir
@@ -1161,21 +547,14 @@ class SiteCrawler:
                     self._write_round_success_files(round_num, round_dir)
                     self._write_sorted_round_files(round_num, round_dir)
 
-                    # Save round state to session file
-                    self._write_session_line(
-                        RoundRecord(
-                            round_num=round_num,
-                            all_generated=sorted(all_generated),
-                            url_depths=url_depths,
-                            succeeded_urls=sorted(succeeded_urls),
-                            failed_urls=failed_urls,
-                            timestamp=datetime.now(timezone.utc).isoformat(),
-                        )
-                    )
-                    self._delete_session_checkpoint()
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True
-            print("\n\nCrawl interrupted! Saving progress...")
+            print("\n\nCrawl stopped! Writing final files...")
+            saved_success, saved_fail = self._saved_results_from_sidecars()
+            if saved_success or saved_fail:
+                all_success = saved_success
+                all_fail = saved_fail
+                succeeded_urls = {result.url for result in all_success}
             self._emit_progress(
                 {
                     "event": _PROGRESS_EVENT_INTERRUPTED,
@@ -1185,14 +564,6 @@ class SiteCrawler:
                     "processed_pages": len(all_success) + len(all_fail),
                     "limit": self.config.limit,
                 }
-            )
-            # Save checkpoint so the session can be resumed
-            self._save_session_checkpoint(
-                round_num=getattr(self, "_current_round_num", 1),
-                all_generated=all_generated,
-                url_depths=url_depths,
-                succeeded_urls=succeeded_urls,
-                failed_urls=[r.url for r in all_fail],
             )
 
         # --- Flush any remaining buffered content ---
@@ -1207,17 +578,6 @@ class SiteCrawler:
         # --- Sorted final files (grouped by URL path) ---
         self._write_sorted_files(all_success, all_fail)
         self.content_files = self._get_final_content_files()
-
-        # --- Write session completion sentinel ---
-        if not interrupted:
-            self._write_session_line(
-                SessionComplete(
-                    total_succeeded=len(all_success),
-                    total_failed=len(all_fail),
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                )
-            )
-            self._delete_session_checkpoint()
 
         total_crawled = len(all_success) + len(all_fail)
         label = "Interrupted" if interrupted else "Done"
@@ -1687,7 +1047,7 @@ class SiteCrawler:
 
             # Flush content and URL lists periodically
             if len(results) % self.config.flush_interval == 0:
-                progress.set_activity(f"Saving progress ({len(results)} pages)")
+                progress.set_activity(f"Writing files ({len(results)} pages)")
                 if self._writer is not None:
                     self._writer.flush()
                 if self._fail_writer is not None:
@@ -1880,11 +1240,11 @@ class SiteCrawler:
     ) -> None:
         """Write per-round success and fail URL lists to *dir*."""
         if success:
-            (dir / "success_urls.txt").write_text(
+            (dir / _SUCCESS_URLS_FILE).write_text(
                 "\n".join(r.url for r in success), encoding="utf-8"
             )
         if fail:
-            (dir / "fail_urls.txt").write_text("\n".join(r.url for r in fail), encoding="utf-8")
+            (dir / _FAIL_URLS_FILE).write_text("\n".join(r.url for r in fail), encoding="utf-8")
 
     def _write_round_success_files(self, round_num: int, round_dir: Path) -> None:
         """Write cumulative round success content as a round-end snapshot.
@@ -1930,7 +1290,7 @@ class SiteCrawler:
             self._stream_entries_to_writer(
                 success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=round_dir
             )
-            path = round_dir / "sorted_success_urls.txt"
+            path = round_dir / _SORTED_SUCCESS_URLS_FILE
             path.write_text("\n".join(e.url for e in success_entries), encoding="utf-8")
 
         # --- Sorted fail (this round only, deduplicated) ---
@@ -1946,8 +1306,47 @@ class SiteCrawler:
             self._stream_entries_to_writer(
                 fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=round_dir
             )
-            path = round_dir / "sorted_fail_urls.txt"
+            path = round_dir / _SORTED_FAIL_URLS_FILE
             path.write_text("\n".join(e.url for e in fail_entries), encoding="utf-8")
+
+    def _clear_final_content_files(self, *, sorted_files: bool) -> None:
+        """Remove stale final content files before regenerating a final view."""
+        assert self.output_dir is not None
+        final_dir = self.output_dir / _FINAL_DIR_NAME
+        if not final_dir.exists():
+            return
+        extension = self.page_config.output_extension
+        prefixes = (
+            (_SORTED_SUCCESS_PREFIX, _SORTED_FAIL_PREFIX)
+            if sorted_files
+            else (_SUCCESS_SUFFIX, _FAIL_SUFFIX)
+        )
+        for prefix in prefixes:
+            for file_path in final_dir.glob(f"{prefix}content_*{extension}"):
+                if file_path.is_file():
+                    file_path.unlink()
+
+    def _saved_results_from_sidecars(self) -> tuple[list[CrawlResult], list[CrawlResult]]:
+        """Return lightweight result metadata for every page already persisted."""
+        if self.output_dir is None:
+            return [], []
+        success_results = [
+            CrawlResult(url=entry.url, html="", markdown="", success=True)
+            for entry in self._index_success()
+        ]
+        fail_results = [
+            CrawlResult(url=entry.url, html="", markdown="", success=False)
+            for entry in self._index_fail()
+        ]
+        return success_results, fail_results
+
+    @staticmethod
+    def _write_url_file(path: Path, urls: list[str]) -> None:
+        """Write a URL list, or remove a stale list when no URLs remain."""
+        if urls:
+            path.write_text("\n".join(urls), encoding="utf-8")
+            return
+        path.unlink(missing_ok=True)
 
     def _write_final_files(
         self,
@@ -1963,22 +1362,22 @@ class SiteCrawler:
         assert self.output_dir is not None
         final_dir = self.output_dir / _FINAL_DIR_NAME
         final_dir.mkdir(parents=True, exist_ok=True)
+        self._clear_final_content_files(sorted_files=False)
 
         # success_urls.txt — all successful URLs across all rounds (deduplicated)
+        unique_urls: list[str] = []
         if all_success:
             seen: set[str] = set()
-            unique_urls: list[str] = []
             for r in all_success:
                 if r.url not in seen:
                     seen.add(r.url)
                     unique_urls.append(r.url)
-            (final_dir / "success_urls.txt").write_text("\n".join(unique_urls), encoding="utf-8")
+        self._write_url_file(final_dir / _SUCCESS_URLS_FILE, unique_urls)
 
         # fail_urls.txt — URLs that still failed after all retries (deduplicated)
         remaining_fail_urls = [r.url for r in all_fail]
-        if remaining_fail_urls:
-            unique_fail = list(dict.fromkeys(remaining_fail_urls))
-            (final_dir / "fail_urls.txt").write_text("\n".join(unique_fail), encoding="utf-8")
+        unique_fail = list(dict.fromkeys(remaining_fail_urls))
+        self._write_url_file(final_dir / _FAIL_URLS_FILE, unique_fail)
 
         # success_content_*.ext — unsorted merged content from sidecars
         if self._writer is not None:
@@ -2013,32 +1412,31 @@ class SiteCrawler:
         assert self.output_dir is not None
         final_dir = self.output_dir / _FINAL_DIR_NAME
         final_dir.mkdir(parents=True, exist_ok=True)
+        self._clear_final_content_files(sorted_files=True)
 
         # Sorted success content (deduplicated by URL, keeping first occurrence)
         success_entries = ContentSorter.sort_keys(self._index_success())
+        self._write_url_file(
+            final_dir / _SORTED_SUCCESS_URLS_FILE,
+            [entry.url for entry in success_entries],
+        )
         if success_entries:
             files = self._stream_entries_to_writer(
                 success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=final_dir
             )
             rename_files_with_total(files)
-            # Sorted success URLs
-            (final_dir / "sorted_success_urls.txt").write_text(
-                "\n".join(e.url for e in success_entries),
-                encoding="utf-8",
-            )
 
         # Sorted fail content (deduplicated by URL, keeping first occurrence)
         fail_entries = ContentSorter.sort_keys(self._index_fail())
+        self._write_url_file(
+            final_dir / _SORTED_FAIL_URLS_FILE,
+            [entry.url for entry in fail_entries],
+        )
         if fail_entries:
             files = self._stream_entries_to_writer(
                 fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=final_dir
             )
             rename_files_with_total(files)
-            # Sorted fail URLs
-            (final_dir / "sorted_fail_urls.txt").write_text(
-                "\n".join(e.url for e in fail_entries),
-                encoding="utf-8",
-            )
 
     def _get_final_content_files(self) -> list[Path]:
         """Return sorted list of final content files."""

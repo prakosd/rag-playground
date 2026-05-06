@@ -1,6 +1,6 @@
 ---
-description: "Use when editing SiteCrawler in src/crawl4md/crawler.py or its tests (crawler, retry, output, session, pdf). Covers URL filtering, PDF handling, WAF detection, progress/cancel hooks, retry/cooldown, and resume()."
-applyTo: "src/crawl4md/crawler.py, tests/test_crawler.py, tests/test_crawler_retry.py, tests/test_crawler_output.py, tests/test_session.py, tests/test_pdf.py"
+description: "Use when editing SiteCrawler in src/crawl4md/crawler.py or its tests (crawler, retry, output, pdf). Covers URL filtering, PDF handling, WAF detection, progress/cancel hooks, retry/cooldown, and stop-safe final output."
+applyTo: "src/crawl4md/crawler.py, tests/test_crawler.py, tests/test_crawler_retry.py, tests/test_crawler_output.py, tests/test_pdf.py"
 ---
 
 # SiteCrawler
@@ -16,4 +16,4 @@ Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jup
 - **Retry rounds** downgrade `wait_until` to `domcontentloaded` via `_FALLBACK_WAIT_UNTIL`.
 - `_sleep_with_cancel()` should use chunked polling only when `should_cancel` is provided; without a cancel hook, keep the existing plain sleep behavior so retry timing tests remain stable.
 - `_ROUND_COOLDOWN` is patched to 0 in tests via autouse fixture in `conftest.py`.
-- `resume()` is a classmethod. Restores content/extraction settings from saved session; only behavioral settings can be overridden via kwargs: `limit`, `max_depth`, `max_retries`, `delay`, `stealth`, `headers`, `flush_interval`, `wait_until`, `wait_for`, `timeout`, `max_file_size_mb`.
+- Cancellation should preserve sidecar-based final and sorted-final output for completed pages. Do not reintroduce saved-session checkpoint or resume APIs.

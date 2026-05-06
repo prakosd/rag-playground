@@ -24,7 +24,6 @@ from crawl4md_streamlit.support import (
     read_recent_lines,
     request_cancel,
     start_crawl_job,
-    start_resume_job,
 )
 
 _DEFAULT_ACTIVITY_LOG_SIZE = 10
@@ -48,18 +47,14 @@ _STATE_CANCELLED = "cancelled"
 _STATE_COMPLETED = "completed"
 _STATE_FAILED = "failed"
 _STATE_IDLE = "idle"
-_STATE_PAUSED = "paused"
-_STATE_PAUSING = "pausing"
 _STATE_RUNNING = "running"
 _STATE_STOPPED = "stopped"
 _REFRESH_FORM_STATES = {
     _STATE_COMPLETED,
     _STATE_FAILED,
-    _STATE_CANCELLED,
-    _STATE_PAUSED,
     _STATE_STOPPED,
 }
-_TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_CANCELLED, _STATE_STOPPED}
+_TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 
 
 st.set_page_config(
@@ -84,35 +79,33 @@ def _init_state() -> None:
     st.session_state.setdefault("active_output_dir", "")
     st.session_state.setdefault("started_at", None)
     st.session_state.setdefault("activity_log_size", _DEFAULT_ACTIVITY_LOG_SIZE)
-    st.session_state.setdefault("pause_requested", False)
-    st.session_state.setdefault("stop_requested", False)
-    st.session_state.setdefault("paused_output_base", "")
-    st.session_state.setdefault("paused_session_dir", "")
+    st.session_state.setdefault("form_defaults", _default_form_values())
+
+
+def _default_form_values() -> dict[str, Any]:
+    return {
+        "urls": _DEFAULT_URLS,
+        "include_only_paths": _DEFAULT_INCLUDE_ONLY_PATHS,
+        "exclude_paths": _DEFAULT_EXCLUDE_PATHS,
+        "limit": _DEFAULT_LIMIT,
+        "max_depth": _DEFAULT_MAX_DEPTH,
+        "flush_interval": _DEFAULT_FLUSH_INTERVAL,
+        "delay": _DEFAULT_DELAY,
+        "max_retries": _DEFAULT_MAX_RETRIES,
+        "exclude_tags": _DEFAULT_EXCLUDE_TAGS,
+        "include_only_tags": "",
+        "wait_for": _DEFAULT_WAIT_FOR,
+        "timeout": _DEFAULT_TIMEOUT,
+        "max_file_size_mb": _DEFAULT_MAX_FILE_SIZE_MB,
+        "extract_main_content": True,
+        "output_extension": ".md",
+        "activity_log_size": _DEFAULT_ACTIVITY_LOG_SIZE,
+    }
 
 
 def _job_is_alive(job: CrawlJob | None = None) -> bool:
     current_job = st.session_state.job if job is None else job
     return bool(current_job is not None and current_job.thread.is_alive())
-
-
-def _store_paused_session(job: CrawlJob | None, event: dict[str, object]) -> None:
-    output_dir = str(event.get("output_dir", "")) or st.session_state.active_output_dir
-    if not output_dir and job is not None:
-        latest = find_latest_crawl_dir(job.output_base)
-        if latest is not None:
-            output_dir = str(latest)
-    if output_dir:
-        st.session_state.paused_session_dir = output_dir
-        st.session_state.active_output_dir = output_dir
-    if job is not None:
-        st.session_state.paused_output_base = str(job.output_base)
-
-
-def _clear_pause_state() -> None:
-    st.session_state.pause_requested = False
-    st.session_state.stop_requested = False
-    st.session_state.paused_output_base = ""
-    st.session_state.paused_session_dir = ""
 
 
 def _drain_job_events(job: CrawlJob | None) -> bool:
@@ -128,31 +121,20 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
         if output_dir:
             st.session_state.active_output_dir = output_dir
         next_state = job_state_from_event(event_name)
-        if st.session_state.stop_requested and next_state in {
+        # Keep the UI in Stop-pending state if older worker events arrive late.
+        if st.session_state.job_state == _STATE_CANCEL_REQUESTED and next_state in {
             _STATE_RUNNING,
             _STATE_CANCEL_REQUESTED,
         }:
             next_state = _STATE_CANCEL_REQUESTED
-        elif st.session_state.pause_requested and next_state in {
-            _STATE_RUNNING,
-            _STATE_CANCEL_REQUESTED,
-        }:
-            next_state = _STATE_PAUSING
         elif next_state == _STATE_CANCELLED:
-            if st.session_state.stop_requested:
-                next_state = _STATE_STOPPED
-                _clear_pause_state()
-            elif st.session_state.pause_requested:
-                _store_paused_session(job, event)
-                next_state = _STATE_PAUSED
-                st.session_state.pause_requested = False
-            else:
-                _clear_pause_state()
-        elif next_state in {_STATE_COMPLETED, _STATE_FAILED}:
-            _clear_pause_state()
+            next_state = _STATE_STOPPED
         if next_state != st.session_state.job_state:
             state_changed = True
         st.session_state.job_state = next_state
+        if next_state in _TERMINAL_STATES:
+            st.session_state.job = None
+            st.session_state.form_defaults = _default_form_values()
     return state_changed
 
 
@@ -165,8 +147,8 @@ def _form_values(
     fields_disabled: bool,
     state: str,
     job_alive: bool,
-    resume_ready: bool,
 ) -> dict[str, Any]:
+    defaults = st.session_state.form_defaults
     with st.form("crawl_settings", enter_to_submit=False):
         st.subheader("Set up your crawl")
         st.caption(
@@ -174,21 +156,21 @@ def _form_values(
         )
         urls = st.text_area(
             "Website URLs",
-            value=_DEFAULT_URLS,
+            value=str(defaults.get("urls", _DEFAULT_URLS)),
             height=68,
             help="Paste one or more starting pages. Use one line per site or separate with commas.",
             disabled=fields_disabled,
         )
         include_only_paths = st.text_area(
             "Only include URL patterns",
-            value=_DEFAULT_INCLUDE_ONLY_PATHS,
+            value=str(defaults.get("include_only_paths", _DEFAULT_INCLUDE_ONLY_PATHS)),
             height=68,
             help="Leave blank to allow all pages on the same site. Use regex patterns to stay inside a section.",
             disabled=fields_disabled,
         )
         exclude_paths = st.text_area(
             "Skip URL patterns",
-            value=_DEFAULT_EXCLUDE_PATHS,
+            value=str(defaults.get("exclude_paths", _DEFAULT_EXCLUDE_PATHS)),
             height=68,
             help="Pages matching these regex patterns will be skipped.",
             disabled=fields_disabled,
@@ -198,14 +180,14 @@ def _form_values(
             limit = st.number_input(
                 "Page limit",
                 min_value=1,
-                value=_DEFAULT_LIMIT,
+                value=int(defaults.get("limit", _DEFAULT_LIMIT)),
                 help="Stops after this many pages so a crawl cannot grow forever.",
                 disabled=fields_disabled,
             )
             delay = st.number_input(
                 "Delay between pages",
                 min_value=0.0,
-                value=_DEFAULT_DELAY,
+                value=float(defaults.get("delay", _DEFAULT_DELAY)),
                 step=0.5,
                 help="Adds a pause between pages to reduce blocking by websites.",
                 disabled=fields_disabled,
@@ -214,14 +196,14 @@ def _form_values(
             max_depth = st.number_input(
                 "Link depth",
                 min_value=1,
-                value=_DEFAULT_MAX_DEPTH,
+                value=int(defaults.get("max_depth", _DEFAULT_MAX_DEPTH)),
                 help="How many clicks deep to follow links.",
                 disabled=fields_disabled,
             )
             max_retries = st.number_input(
                 "Retry rounds",
                 min_value=2,
-                value=_DEFAULT_MAX_RETRIES,
+                value=int(defaults.get("max_retries", _DEFAULT_MAX_RETRIES)),
                 help="Tries failed pages again after a cooldown.",
                 disabled=fields_disabled,
             )
@@ -229,13 +211,13 @@ def _form_values(
             output_extension = st.segmented_control(
                 "Output format",
                 _OUTPUT_EXTENSION_OPTIONS,
-                default=".md",
+                default=str(defaults.get("output_extension", ".md")),
                 help="Choose Markdown for formatted text or TXT for plain text.",
                 disabled=fields_disabled,
             )
             extract_main_content = st.checkbox(
                 "Extract main content only",
-                value=True,
+                value=bool(defaults.get("extract_main_content", True)),
                 help="Keeps article/product text and strips most menus, footers, and sidebars.",
                 disabled=fields_disabled,
             )
@@ -244,16 +226,16 @@ def _form_values(
             advanced_cols = st.columns(3)
             with advanced_cols[0]:
                 flush_interval = st.number_input(
-                    "Save every N pages",
+                    "Write every N pages",
                     min_value=1,
-                    value=_DEFAULT_FLUSH_INTERVAL,
-                    help="Saves progress periodically so partial results survive interruption.",
+                    value=int(defaults.get("flush_interval", _DEFAULT_FLUSH_INTERVAL)),
+                    help="Writes generated files periodically during the crawl.",
                     disabled=fields_disabled,
                 )
                 max_file_size_mb = st.number_input(
                     "Max file size (MB)",
                     min_value=0.1,
-                    value=_DEFAULT_MAX_FILE_SIZE_MB,
+                    value=float(defaults.get("max_file_size_mb", _DEFAULT_MAX_FILE_SIZE_MB)),
                     step=0.5,
                     help="Splits output into files that are easier to open and download.",
                     disabled=fields_disabled,
@@ -262,7 +244,7 @@ def _form_values(
                 wait_for = st.number_input(
                     "Extra render wait",
                     min_value=0.0,
-                    value=_DEFAULT_WAIT_FOR,
+                    value=float(defaults.get("wait_for", _DEFAULT_WAIT_FOR)),
                     step=0.5,
                     help="Helps JavaScript-heavy pages finish loading before extraction.",
                     disabled=fields_disabled,
@@ -270,7 +252,7 @@ def _form_values(
                 timeout = st.number_input(
                     "Page timeout",
                     min_value=0.0,
-                    value=_DEFAULT_TIMEOUT,
+                    value=float(defaults.get("timeout", _DEFAULT_TIMEOUT)),
                     step=5.0,
                     help="Maximum seconds to spend loading one page.",
                     disabled=fields_disabled,
@@ -279,36 +261,31 @@ def _form_values(
                 activity_log_size = st.number_input(
                     "Activity log entries",
                     min_value=1,
-                    value=int(st.session_state.activity_log_size),
+                    value=int(
+                        defaults.get("activity_log_size", st.session_state.activity_log_size)
+                    ),
                     help="Controls how many newest entries are shown in the Activity log panel.",
                     disabled=fields_disabled,
                 )
             exclude_tags = st.text_input(
                 "HTML tags to remove",
-                value=_DEFAULT_EXCLUDE_TAGS,
+                value=str(defaults.get("exclude_tags", _DEFAULT_EXCLUDE_TAGS)),
                 help="Common values remove menus, scripts, forms, and styles from extracted text.",
                 disabled=fields_disabled,
             )
             include_only_tags = st.text_input(
                 "Only keep these HTML tags",
-                value="",
+                value=str(defaults.get("include_only_tags", "")),
                 help="Advanced: only extract content from these HTML tags. Leave blank for normal use.",
                 disabled=fields_disabled,
             )
 
         submitted = False
-        pause_submitted = False
-        resume_submitted = False
         stop_submitted = False
-        action_cols = st.columns([1.5, 1, 3], vertical_alignment="bottom")
+        action_cols = st.columns([1.5, 3], vertical_alignment="bottom")
         for action_col, action_button in zip(
             action_cols,
-            crawl_action_buttons(
-                state,
-                job_alive=job_alive,
-                resume_ready=resume_ready,
-                stop_requested=bool(st.session_state.stop_requested),
-            ),
+            crawl_action_buttons(state, job_alive=job_alive),
             strict=False,
         ):
             with action_col:
@@ -320,16 +297,10 @@ def _form_values(
                 )
             if action_button.action == "start":
                 submitted = pressed
-            elif action_button.action == "pause":
-                pause_submitted = pressed
-            elif action_button.action == "resume":
-                resume_submitted = pressed
             elif action_button.action == "stop":
                 stop_submitted = pressed
     return {
         "submitted": submitted,
-        "pause_submitted": pause_submitted,
-        "resume_submitted": resume_submitted,
         "stop_submitted": stop_submitted,
         "urls": urls,
         "include_only_paths": include_only_paths,
@@ -373,75 +344,17 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.latest_event = {"limit": crawler_config.limit}
     st.session_state.active_output_dir = ""
     st.session_state.activity_log_size = activity_log_size
-    _clear_pause_state()
     st.rerun()
 
 
-def _pause_job() -> None:
-    job = st.session_state.job
-    if job is None or not job.thread.is_alive():
-        st.warning("There is no active crawl to pause.")
-        return
-    st.session_state.pause_requested = True
-    st.session_state.stop_requested = False
-    st.session_state.job_state = _STATE_PAUSING
-    request_cancel(job)
-    st.rerun()
-
-
-def _resume_job(values: dict[str, Any]) -> None:
-    try:
-        crawler_config, page_config, activity_log_size = build_configs(values)
-    except (ValidationError, ValueError) as exc:
-        st.error(str(exc))
-        return
-    output_base = st.session_state.paused_output_base
-    session_dir = st.session_state.paused_session_dir
-    if not output_base or not session_dir:
-        st.error("No paused crawl checkpoint is available to resume.")
-        return
-    crawl_id = st.session_state.crawl_id or generate_crawl_id()
-    job = start_resume_job(
-        session_id=st.session_state.session_id,
-        crawl_id=crawl_id,
-        output_base=output_base,
-        session_dir=session_dir,
-        activity_log_size=activity_log_size,
-        extra_urls=crawler_config.urls,
-        limit=crawler_config.limit,
-        max_depth=crawler_config.max_depth,
-        max_retries=crawler_config.max_retries,
-        delay=crawler_config.delay,
-        flush_interval=crawler_config.flush_interval,
-        wait_for=page_config.wait_for,
-        timeout=page_config.timeout,
-        max_file_size_mb=page_config.max_file_size_mb,
-    )
-    st.session_state.job = job
-    st.session_state.crawl_id = crawl_id
-    st.session_state.job_state = _STATE_RUNNING
-    st.session_state.started_at = datetime.now(timezone.utc)
-    st.session_state.events = []
-    st.session_state.latest_event = {"limit": crawler_config.limit}
-    st.session_state.active_output_dir = session_dir
-    st.session_state.activity_log_size = activity_log_size
-    _clear_pause_state()
-    st.rerun()
-
-
-def _stop_paused_job() -> None:
+def _stop_job() -> None:
     job = st.session_state.job
     if job is not None and job.thread.is_alive():
-        st.session_state.stop_requested = True
-        st.session_state.pause_requested = False
         st.session_state.job_state = _STATE_CANCEL_REQUESTED
         request_cancel(job)
         st.rerun()
         return
-    st.session_state.job = None
-    st.session_state.job_state = _STATE_STOPPED
-    _clear_pause_state()
-    st.rerun()
+    st.warning("There is no active crawl to stop.")
 
 
 def _render_status() -> None:
@@ -475,16 +388,7 @@ def _render_status() -> None:
         elapsed = datetime.now(timezone.utc) - started_at
         st.caption(f"Elapsed time: {str(elapsed).split('.')[0]}")
 
-    if st.session_state.job_state == _STATE_PAUSING:
-        with st.status("Saving your place...", state="running", expanded=True):
-            st.write("Resume will be available when the current page is safely saved.")
-            st.caption("You can adjust settings while crawl4md finishes pausing.")
-    elif st.session_state.job_state == _STATE_PAUSED:
-        st.info(
-            "Paused. Review settings, then resume or stop this crawl.",
-            icon=":material/pause_circle:",
-        )
-    elif st.session_state.job_state == _STATE_FAILED:
+    if st.session_state.job_state == _STATE_FAILED:
         st.error(str(latest.get("error", "The crawl failed.")))
     elif st.session_state.job_state == _STATE_STOPPED:
         st.info("Stopped. Generated files remain available below.")
@@ -524,7 +428,7 @@ def _render_files() -> None:
         download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
     )
     if not files:
-        st.info("Generated files will appear here as the crawler saves progress.")
+        st.info("Generated files will appear here as the crawler writes output.")
         return
     rows = [
         {
@@ -575,26 +479,22 @@ st.caption(f"Session: {st.session_state.session_id}")
 current_job = st.session_state.job
 current_state = st.session_state.job_state
 job_alive = _job_is_alive(current_job)
-fields_disabled = current_state == _STATE_RUNNING and job_alive
-resume_ready = current_state == _STATE_PAUSED and bool(st.session_state.paused_session_dir)
+fields_disabled = (
+    current_state == _STATE_RUNNING and job_alive
+) or current_state == _STATE_CANCEL_REQUESTED
 
 values = _form_values(
     fields_disabled=fields_disabled,
     state=current_state,
     job_alive=job_alive,
-    resume_ready=resume_ready,
 )
 if values["submitted"]:
     if current_job is not None and current_job.thread.is_alive():
         st.warning("A crawl is already running in this browser session.")
     else:
         _start_job(values)
-elif values["pause_submitted"]:
-    _pause_job()
-elif values["resume_submitted"]:
-    _resume_job(values)
 elif values["stop_submitted"]:
-    _stop_paused_job()
+    _stop_job()
 
 st.subheader("Progress and files")
 _render_live_area()

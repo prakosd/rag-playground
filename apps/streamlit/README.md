@@ -40,7 +40,7 @@ Everything the user sees and interacts with. Responsibilities:
 
 - Initialises `st.session_state` keys on first load (`_init_state`).
 - Renders the settings form (`_form_values`) and action buttons (delegated to `controls.py`).
-- Translates button presses into job start / pause / resume / stop calls.
+- Translates button presses into job start / stop calls.
 - Drains background-thread events every Streamlit rerun and maps them to UI state
   (`_drain_job_events`).
 - Renders progress metrics, the activity log, and the file download table (`_render_live_area`,
@@ -71,7 +71,7 @@ No Streamlit imports. Contains everything that would clutter `streamlit_app.py`:
 | **Progress** | `estimate_progress` |
 | **File listing** | `list_generated_files` (session-scoped, rejects path traversal) |
 | **Log reading** | `read_recent_lines` |
-| **Crawl jobs** | `start_crawl_job`, `start_resume_job`, `request_cancel`, `drain_events` |
+| **Crawl jobs** | `start_crawl_job`, `request_cancel`, `drain_events` |
 | **State mapping** | `job_state_from_event` |
 | **Session cleanup** | `cleanup_old_sessions`, `cleanup_old_sessions_with_lock` |
 
@@ -88,8 +88,8 @@ Background thread                    st.session_state.job_state
 ──────────────────                   ──────────────────────────
 starts          → emits "started"  → "running"
 page done       → emits "page_processed" (no state change)
-cancel signal   → emits "cancel_requested" → "pausing" (pause) / "cancel_requested" (stop)
-thread ends     → emits "cancelled"  → "paused" (pause) / "stopped" (stop)
+stop signal     → emits "cancel_requested" → "cancel_requested"
+thread ends     → emits "cancelled"  → "stopped"
 thread ends     → emits "completed" → "completed"
 thread ends     → emits "failed"   → "failed"
 ```
@@ -98,40 +98,47 @@ Full `job_state` values and the transitions that produce them:
 
 | State | What triggered it |
 |---|---|
-| `idle` | App first load / after a full stop |
-| `running` | User clicked **Start** or **Resume** |
-| `pausing` | User clicked **Pause** (waiting for thread to finish current page) |
+| `idle` | App first load |
+| `running` | User clicked **Start** |
 | `cancel_requested` | User clicked **Stop** while running |
-| `paused` | Thread confirmed cancellation after a Pause request |
 | `stopped` | Thread confirmed cancellation after a Stop request |
 | `completed` | Thread finished all pages successfully |
 | `failed` | Thread threw an unhandled exception |
 
 ---
 
-## Pause / Resume / Cancel Sequence
+## Start / Stop Sequence
 
 ```
-User clicks Pause
-  └─ _pause_job()
-       sets pause_requested = True, job_state = "pausing"
+Initial load
+  └─ job_state = "idle"
+     Start is enabled; settings are editable
+
+User clicks Start
+  └─ _start_job(values)
+       calls build_configs(values)
+       creates a fresh crawl_id
+       calls start_crawl_job(...)
+       job_state = "running"
+       settings are disabled and the visible action is Stop
+
+User clicks Stop
+  └─ _stop_job()
+       sets job_state = "cancel_requested"
        calls request_cancel(job)   ← sets cancel_event + queues "cancel_requested"
        background thread sees cancel_event, finishes current page, emits "cancelled"
-  └─ _drain_job_events() sees "cancelled" while pause_requested=True
-       stores output_dir in paused_session_dir / paused_output_base
-       job_state = "paused"
+  └─ _drain_job_events() maps "cancelled" to "stopped"
+       clears the active job
+       resets form defaults
+       keeps active_output_dir so generated files stay visible
 
-User clicks Resume
-  └─ _resume_job(values)
-       calls start_resume_job(output_base, session_dir, ...)
-       SiteCrawler.resume() loads the saved session checkpoint and continues
-       job_state = "running"
-
-User clicks Stop (while paused)
-  └─ _stop_paused_job()
-       if thread still alive: sets stop_requested=True, request_cancel(job)
-       if thread already gone: job_state = "stopped" immediately
+User clicks Start again
+  └─ creates a new crawl_id and starts from the beginning
 ```
+
+Stop is cooperative: the worker is not force-killed. `SiteCrawler` owns sidecars and final
+output regeneration so completed pages are still written into the final output folder. The
+app does not persist crawl state and does not load any previous crawl when starting again.
 
 ---
 
@@ -143,7 +150,7 @@ lives inside:
 ```
 outputs/streamlit_sessions/
 └── session_{session_id}/          ← one folder per browser tab / session
-    └── crawl_{crawl_id}/          ← one folder per Start or Resume click
+    └── crawl_{crawl_id}/          ← one folder per Start click
         └── {timestamped-dir}/     ← created by SiteCrawler inside the crawl_id folder
 ```
 
@@ -191,7 +198,7 @@ _render_files()         dataframe + download buttons for all generated files
 | Test file | What it covers |
 |---|---|
 | `tests/test_controls.py` | Every `job_state` value → correct buttons (label, disabled, type) |
-| `tests/test_support.py` | ID safety, path helpers, file listing, session cleanup, progress, job start/resume with a fake `SiteCrawler` |
+| `tests/test_support.py` | ID safety, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |
 | `tests/test_launcher.py` | `.streamlit/config.toml` sets the right address and port; no config leaks to repo root |
 
 Tests mock `SiteCrawler` — no real network calls are made. The split between `streamlit_app.py`

@@ -257,7 +257,10 @@ def rename_files_with_total(files: list[Path]) -> list[Path]:
     renamed: list[Path] = []
     for path in files:
         new_name = f"{path.stem}{suffix}{path.suffix}"
-        new_path = path.rename(path.parent / new_name)
+        target_path = path.parent / new_name
+        if target_path.exists() and target_path != path:
+            target_path.unlink()
+        new_path = path.rename(target_path)
         renamed.append(new_path)
     return renamed
 

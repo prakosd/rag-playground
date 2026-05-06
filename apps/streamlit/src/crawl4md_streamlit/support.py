@@ -32,7 +32,7 @@ _SESSION_PREFIX = "session_"
 _TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 
 _EVENT_CANCEL_REQUESTED = "cancel_requested"
-_EVENT_CANCELLED: Literal["cancelled"] = "cancelled"
+_EVENT_CANCELLED = "cancelled"
 _EVENT_COMPLETED = "completed"
 _EVENT_FAILED = "failed"
 _EVENT_STARTED = "started"
@@ -389,98 +389,6 @@ def start_crawl_job(
         session_id=session_id,
         crawl_id=crawl_id,
         output_base=output_base,
-        events=event_queue,
-        cancel_event=cancel_event,
-        thread=thread,
-    )
-
-
-def start_resume_job(
-    *,
-    session_id: str,
-    crawl_id: str,
-    output_base: Path | str,
-    session_dir: Path | str,
-    activity_log_size: int,
-    extra_urls: list[str] | str | None = None,
-    limit: int | None = None,
-    max_depth: int | None = None,
-    max_retries: int | None = None,
-    delay: float | None = None,
-    flush_interval: int | None = None,
-    wait_for: float | None = None,
-    timeout: float | None = None,
-    max_file_size_mb: float | None = None,
-) -> CrawlJob:
-    """Resume a saved crawl in a background thread and return its job handle."""
-    output_base_path = Path(output_base).resolve()
-    session_dir_path = Path(session_dir).resolve()
-    event_queue: queue.Queue[dict[str, object]] = queue.Queue()
-    cancel_event = threading.Event()
-
-    def emit(event: Mapping[str, object]) -> None:
-        event_queue.put(dict(event))
-
-    def run() -> None:
-        started_event: dict[str, object] = {
-            "event": _EVENT_STARTED,
-            "session_id": session_id,
-            "crawl_id": crawl_id,
-            "output_base": str(output_base_path),
-            "output_dir": str(session_dir_path),
-        }
-        if limit is not None:
-            started_event["limit"] = limit
-        emit(started_event)
-        try:
-            results = SiteCrawler.resume(
-                output_base_path,
-                session_dir_path,
-                extra_urls=extra_urls,
-                limit=limit,
-                max_depth=max_depth,
-                max_retries=max_retries,
-                delay=delay,
-                flush_interval=flush_interval,
-                wait_for=wait_for,
-                timeout=timeout,
-                max_file_size_mb=max_file_size_mb,
-                activity_log_size=activity_log_size,
-                progress_callback=emit,
-                should_cancel=cancel_event.is_set,
-            )
-            success_count = sum(1 for result in results if result.success)
-            fail_count = len(results) - success_count
-            state = _EVENT_CANCELLED if cancel_event.is_set() else _EVENT_COMPLETED
-            completed_event: dict[str, object] = {
-                "event": state,
-                "session_id": session_id,
-                "crawl_id": crawl_id,
-                "output_dir": str(session_dir_path),
-                "processed_pages": len(results),
-                "successful_pages": success_count,
-                "failed_pages": fail_count,
-            }
-            if limit is not None:
-                completed_event["limit"] = limit
-            emit(completed_event)
-        except Exception as exc:  # noqa: BLE001 - surface background errors to the UI.
-            failed_event: dict[str, object] = {
-                "event": _EVENT_FAILED,
-                "session_id": session_id,
-                "crawl_id": crawl_id,
-                "error": _format_crawl_error(exc),
-            }
-            if limit is not None:
-                failed_event["limit"] = limit
-            emit(failed_event)
-
-    thread = threading.Thread(target=run, name=f"crawl4md-resume-{crawl_id}", daemon=True)
-    thread.start()
-    return CrawlJob(
-        session_id=session_id,
-        crawl_id=crawl_id,
-        output_base=output_base_path,
         events=event_queue,
         cancel_event=cancel_event,
         thread=thread,

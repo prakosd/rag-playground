@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from crawl4md.config import CrawlerConfig, PageConfig
+from crawl4md.config import CrawlerConfig, CrawlResult, ExtractedPage, PageConfig
 from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter, PageSidecar
@@ -802,6 +802,94 @@ class TestInterruptHandling:
         final_urls = crawler.output_dir / "final" / "success_urls.txt"
         if final_urls.exists():
             assert url_a in final_urls.read_text(encoding="utf-8")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_interrupt_writes_final_files_without_session_artifacts(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """Stopping a crawl keeps completed pages without saved-session state."""
+        url_a = "https://example.com/a"
+        result_a = _make_mock_result(url_a)
+        call_count = {"count": 0}
+
+        async def mock_arun(url, config=None):
+            call_count["count"] += 1
+            if call_count["count"] == 1:
+                return result_a
+            raise asyncio.CancelledError()
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[url_a, "https://example.com/b"], limit=10, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        crawler = SiteCrawler(
+            config,
+            page_config,
+            output_base=tmp_path,
+            extractor=ContentExtractor(page_config),
+            writer=FileWriter(max_file_size_mb=15.0),
+        )
+
+        results = crawler.crawl()
+
+        assert crawler.output_dir is not None
+        final_urls = crawler.output_dir / "final" / "success_urls.txt"
+        assert url_a in final_urls.read_text(encoding="utf-8")
+        assert [result.url for result in results if result.success] == [url_a]
+        assert not (crawler.output_dir / "session.jsonl").exists()
+        assert not (crawler.output_dir / "session_checkpoint.json").exists()
+
+    def test_final_files_are_rebuilt_without_stale_content(self, tmp_path: Path):
+        """Regenerating final files replaces old content and stale URL lists."""
+        url_a = "https://example.com/a"
+        session_dir = tmp_path / "2026-05-06_12-00-00"
+        round_dir = session_dir / "round_1"
+        final_dir = session_dir / "final"
+        round_dir.mkdir(parents=True)
+        final_dir.mkdir()
+        PageSidecar.append(
+            ExtractedPage(url=url_a, title="A", markdown="fresh content"),
+            round_dir / "success_pages.jsonl",
+        )
+        (final_dir / "success_content_001.md").write_text("stale content", encoding="utf-8")
+        (final_dir / "success_content_002.md").write_text("stale extra", encoding="utf-8")
+        (final_dir / "fail_content_001.md").write_text("stale fail", encoding="utf-8")
+        (final_dir / "sorted_success_content_001_of_999.md").write_text(
+            "stale sorted", encoding="utf-8"
+        )
+        (final_dir / "sorted_fail_content_001_of_999.md").write_text(
+            "stale sorted fail", encoding="utf-8"
+        )
+        (final_dir / "fail_urls.txt").write_text("https://example.com/old", encoding="utf-8")
+
+        page_config = PageConfig(output_extension=".md")
+        crawler = SiteCrawler(
+            CrawlerConfig(urls=[url_a]),
+            page_config,
+            output_base=tmp_path,
+            writer=FileWriter(max_file_size_mb=15.0, file_extension=".md"),
+        )
+        crawler.output_dir = session_dir
+        crawler._write_final_files([CrawlResult(url=url_a, success=True)], [])
+        crawler._write_sorted_files([CrawlResult(url=url_a, success=True)], [])
+
+        success_files = sorted(final_dir.glob("success_content_*.md"))
+        sorted_success_files = sorted(final_dir.glob("sorted_success_content_*.md"))
+        assert [path.name for path in success_files] == ["success_content_001.md"]
+        assert [path.name for path in sorted_success_files] == [
+            "sorted_success_content_001_of_001.md"
+        ]
+        assert "stale" not in success_files[0].read_text(encoding="utf-8")
+        assert not (final_dir / "fail_urls.txt").exists()
+        assert not (final_dir / "sorted_fail_urls.txt").exists()
+        assert not list(final_dir.glob("fail_content_*.md"))
+        assert not list(final_dir.glob("sorted_fail_content_*.md"))
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_interrupt_returns_partial_results(self, mock_crawler_cls, tmp_path: Path):

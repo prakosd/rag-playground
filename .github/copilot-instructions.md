@@ -80,7 +80,7 @@ For any non-trivial task, write a plan **before** implementing. Every plan must:
 Two README files document this project:
 
 - [`README.md`](../README.md) — repo root; user-facing docs: features, configuration reference, output structure, quick start, architecture overview, and dev setup. **Update this when user-facing behavior changes.**
-- [`apps/streamlit/README.md`](../apps/streamlit/README.md) — Streamlit app developer guide: file map, component responsibilities, event/state lifecycle, pause/resume/cancel flow, session/path safety, data flow diagram, testing map, and common extension points. **Update this when the Streamlit app structure or dev workflow changes.**
+- [`apps/streamlit/README.md`](../apps/streamlit/README.md) — Streamlit app developer guide: file map, component responsibilities, event/state lifecycle, start/stop/cancel flow, session/path safety, data flow diagram, testing map, and common extension points. **Update this when the Streamlit app structure or dev workflow changes.**
 
 ## Maintaining This File
 

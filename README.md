@@ -12,6 +12,7 @@ A Python library for crawling websites and extracting their content as Markdown-
 - **WAF / bot-detection handling** — two-stage detection (HTML block signatures + post-extraction content-length check) with automatic retry rounds and cooldown between rounds
 - **Size-limited output files** — pages are never split across files; oversized pages get their own file
 - **Real-time progress** — browser progress in Streamlit, animated spider progress widget in Jupyter, and plain-text ETA in terminal
+- **Stop-safe output** — stopping a Streamlit crawl still writes the final output folder for pages completed so far
 - **Configurable filtering** — include/exclude URL paths and HTML tags via regex
 - **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) via DOM analysis and inserts `---` separators; supports custom CSS selectors
 - **Markdown validation** — every extracted page is auto-fixed via mdformat (with GFM support) to ensure structurally correct, renderable Markdown; a content-preservation guard prevents any words, numbers, or punctuation from being lost
@@ -52,11 +53,13 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 
 - Fill in the crawl URL, page limit, depth, and optional filters via a form
 - Click **Start** to run the crawl in the background
-- Pause a running crawl, adjust settings, then resume from the saved checkpoint or stop it
+- While a crawl is running, settings are locked and the action changes to **Stop**
+- Click **Stop** to request a cooperative stop; crawl4md writes final files for pages completed so far
+- Start again after stopping to begin a fresh crawl from the form settings
 - Watch live progress (pages crawled, estimated completion)
 - Download the generated Markdown/text files directly from the browser
 
-Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run).
+Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run). Stopped crawls keep their generated files in that crawl folder, but no crawl state is kept for continuing later.
 
 The Streamlit agent skill and sub-skills used for development guidance in this repository come from the external Streamlit skills source: [Developing with Streamlit](https://skills.sh/streamlit/agent-skills/developing-with-streamlit).
 
@@ -159,7 +162,7 @@ SiteCrawler.crawl()
 | `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages (minimum 2) |
-| `flush_interval` | `int` | `10` | Save progress to disk every N pages |
+| `flush_interval` | `int` | `10` | Write generated files to disk every N pages |
 
 ### PageConfig
 
