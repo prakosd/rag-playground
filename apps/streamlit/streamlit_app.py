@@ -58,6 +58,15 @@ _REFRESH_FORM_STATES = {
 }
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
+_STATE_SPINNER_CSS = (
+    "<style>"
+    "@keyframes _c4md_spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}"
+    "._c4md_spin{display:inline-block;width:.8em;height:.8em;"
+    "border:2px solid rgba(49,51,63,0.15);border-top-color:rgba(49,51,63,0.7);"
+    "border-radius:50%;animation:_c4md_spin .75s linear infinite;"
+    "vertical-align:middle;margin-right:.3em}"
+    "</style>"
+)
 
 
 st.set_page_config(
@@ -448,21 +457,30 @@ def render_progress_and_files(
             ),
             border=True,
         )
-        row2[2].metric(
-            label=f"{state_icon} State",
-            value=state_label,
-            delta="Current lifecycle stage",
-            delta_color="off",
-            help="Current crawl lifecycle state",
-            border=True,
-        )
+        with row2[2]:
+            if normalized_state == _STATE_RUNNING:
+                st.markdown(
+                    _STATE_SPINNER_CSS
+                    + "<div style='border:1px solid rgba(49,51,63,0.2);border-radius:.5rem;overflow:hidden'>"
+                    "<div style='padding:15px'>"
+                    f"<p style='font-size:.875rem;color:rgba(49,51,63,0.6);margin:0 0 .2rem'>{state_icon} State</p>"
+                    "<p style='font-size:2.25rem;font-weight:700;color:rgb(49,51,63);margin:0 0 .15rem;line-height:1.2'>"
+                    f"<span class='_c4md_spin'></span>{state_label}</p>"
+                    "<p style='font-size:.875rem;color:rgba(49,51,63,0.5);margin:0'>Current lifecycle stage</p>"
+                    "</div></div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.metric(
+                    label=f"{state_icon} State",
+                    value=state_label,
+                    delta="Current lifecycle stage",
+                    delta_color="off",
+                    help="Current crawl lifecycle state",
+                    border=True,
+                )
 
-        if normalized_state == _STATE_IDLE:
-            st.info("🟡 Idle — waiting to start")
-        elif normalized_state == _STATE_RUNNING:
-            running_status = st.status("Running", state="running", expanded=False)
-            running_status.write("Processing pages and generating output files.")
-        elif normalized_state == _STATE_FAILED:
+        if normalized_state == _STATE_FAILED:
             st.error("🔴 Failed — processing encountered errors")
         elif normalized_state == _STATE_COMPLETED:
             st.success("✅ Completed — all files processed")
@@ -470,8 +488,6 @@ def render_progress_and_files(
             st.info("🟡 Stop requested — waiting for worker to finish")
         elif normalized_state == _STATE_STOPPED:
             st.info("🟡 Stopped — generated files remain available")
-        else:
-            st.warning("⚠️ Unknown state")
 
 
 def _render_status() -> None:
@@ -547,12 +563,13 @@ def _render_activity_log() -> None:
     lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
     if lines:
         st.markdown("**Activity log**")
-        with st.container(height=200):
-            rendered = "<br>".join(_linkify_log_line(line) for line in reversed(lines))
-            st.markdown(
-                f'<div style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;line-height:1.5">{rendered}</div>',
-                unsafe_allow_html=True,
-            )
+        rows_html = "".join(
+            f"<div style='padding:4px 8px;border-bottom:1px solid rgba(49,51,63,0.1);font-size:14px;font-family:sans-serif'>{_linkify_log_line(line)}</div>"
+            for line in reversed(lines)
+        )
+        st.html(
+            f"<div style='height:200px;overflow-y:auto;border:1px solid rgba(49,51,63,0.1);border-radius:8px'>{rows_html}</div>"
+        )
 
 
 def _render_files() -> None:
