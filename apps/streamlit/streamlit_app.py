@@ -55,6 +55,7 @@ _REFRESH_FORM_STATES = {
     _STATE_STOPPED,
 }
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
+_FORM_MAX_WIDTH_PX = 980
 
 
 st.set_page_config(
@@ -469,6 +470,25 @@ def _render_live_area() -> None:
 _run_startup_cleanup()
 _init_state()
 _drain_job_events(st.session_state.job)
+
+st.markdown(
+    f"""
+    <style>
+    div[data-testid="stMainBlockContainer"],
+    section.main .block-container {{
+        max-width: {_FORM_MAX_WIDTH_PX}px !important;
+        margin-left: auto;
+        margin-right: auto;
+    }}
+    div[data-testid="stForm"] {{
+        max-width: {_FORM_MAX_WIDTH_PX}px;
+        margin-left: auto;
+        margin-right: auto;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.title(":material/travel_explore: crawl4md — Website to Markdown Crawler")
 st.write(
