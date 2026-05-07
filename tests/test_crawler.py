@@ -152,6 +152,34 @@ class TestSiteCrawler:
         assert crawler.output_dir is not None
         assert (crawler.output_dir / "final" / "success_urls.txt").exists()
 
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_limit_stops_discovery_not_crawling(self, mock_crawler_cls, tmp_path: Path):
+        """When discovery overshoots the limit, queued URLs are still crawled."""
+        seed_url = "https://example.com"
+        discovered_count = 23
+        discovered_urls = [f"https://example.com/p{i}" for i in range(1, discovered_count + 1)]
+        seed_html = "".join(f'<a href="/p{i}">P{i}</a>' for i in range(1, discovered_count + 1))
+
+        side_effects = [_make_mock_result(seed_url, seed_html, "seed")]
+        side_effects.extend(
+            _make_mock_result(url, "<p>child</p>", "child") for url in discovered_urls
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=side_effects)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=[seed_url], limit=20, max_depth=2, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        # 1 seed + 23 discovered URLs should all be crawled.
+        assert len(results) == 1 + discovered_count
+        assert mock_instance.arun.await_count == 1 + discovered_count
+        assert all(result.success for result in results)
+
     def test_stealth_enables_browser_and_run_flags(self):
         """Stealth mode sets enable_stealth, simulate_user, override_navigator, magic, scan_full_page."""
         from crawl4ai import CrawlerRunConfig

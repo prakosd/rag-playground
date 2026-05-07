@@ -184,7 +184,11 @@ def _form_values(
                 "Page limit",
                 min_value=1,
                 value=int(defaults.get("limit", _DEFAULT_LIMIT)),
-                help="Stops after this many pages so a crawl cannot grow forever.",
+                help=(
+                    "Discovery cutoff: once this many pages are discovered, "
+                    "the crawler stops discovering new links but still finishes "
+                    "all already discovered pages."
+                ),
                 disabled=fields_disabled,
             )
             delay = st.number_input(
@@ -368,8 +372,8 @@ def render_progress_and_files(
     limit: int,
     state: str,
 ) -> None:
-    safe_limit = max(limit, 1)
-    progress_ratio = min(max(processed / safe_limit, 0.0), 1.0)
+    denominator = discovered if discovered > 0 else max(limit, 1)
+    progress_ratio = min(max(processed / denominator, 0.0), 1.0)
     progress_pct = progress_ratio * 100
     normalized_state = (state or "unknown").strip().lower()
     state_label = normalized_state.replace("_", " ").title()
@@ -381,13 +385,14 @@ def render_progress_and_files(
         _STATE_CANCEL_REQUESTED: "🟠",
         _STATE_STOPPED: "⏹️",
     }.get(normalized_state, "⚠️")
+    denominator_label = f"{discovered:,} discovered" if discovered > 0 else f"{limit:,} limit"
 
     with st.container():
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
-            f'<span>📄 {processed:,} / {limit:,} pages processed</span>'
-            f'<span>⏳ {progress_pct:.2f}% complete</span>'
-            f'</div>',
+            f"<span>📄 {processed:,} / {denominator_label}</span>"
+            f"<span>⏳ {progress_pct:.2f}% complete</span>"
+            f"</div>",
             unsafe_allow_html=True,
         )
         st.progress(progress_ratio)
@@ -419,20 +424,28 @@ def render_progress_and_files(
         )
 
         row2 = st.columns(3)
+        discovered_remaining = max(limit - discovered, 0)
+        limit_reached = discovered >= limit
+        limit_status_delta = (
+            "Discovery stopped (limit reached)" if limit_reached else "Discovering more pages"
+        )
         row2[0].metric(
             label="🔎 Discovered",
             value=f"{discovered:,}",
-            delta=f"{discovered:,} found",
+            delta=f"{discovered:,} found, {discovered_remaining:,} remaining",
             delta_color="normal",
             help="URLs discovered and queued so far",
             border=True,
         )
         row2[1].metric(
-            label="🎯 Limit",
+            label="🔢 Limit",
             value=f"{limit:,}",
-            delta=f"{max(limit - processed, 0):,} remaining",
+            delta=limit_status_delta,
             delta_color="off",
-            help="Configured processing limit",
+            help=(
+                "Discovery cutoff — once reached, no new URLs are added, "
+                "but already discovered URLs are still crawled."
+            ),
             border=True,
         )
         row2[2].metric(
@@ -447,7 +460,8 @@ def render_progress_and_files(
         if normalized_state == _STATE_IDLE:
             st.info("🟡 Idle — waiting to start")
         elif normalized_state == _STATE_RUNNING:
-            st.success("🟢 Running — processing files")
+            running_status = st.status("Running", state="running", expanded=False)
+            running_status.write("Processing pages and generating output files.")
         elif normalized_state == _STATE_FAILED:
             st.error("🔴 Failed — processing encountered errors")
         elif normalized_state == _STATE_COMPLETED:
@@ -458,8 +472,6 @@ def render_progress_and_files(
             st.info("🟡 Stopped — generated files remain available")
         else:
             st.warning("⚠️ Unknown state")
-
-
 
 
 def _render_status() -> None:
@@ -489,12 +501,16 @@ def _render_status() -> None:
         elapsed = datetime.now(timezone.utc) - started_at
         elapsed_str = str(elapsed).split(".")[0]
     if current_url or elapsed_str:
-        left = f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>' if current_url else ""
+        left = (
+            f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
+            if current_url
+            else ""
+        )
         right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
-            f'<span>{left}</span><span>{right}</span>'
-            f'</div>',
+            f"<span>{left}</span><span>{right}</span>"
+            f"</div>",
             unsafe_allow_html=True,
         )
 
@@ -518,7 +534,9 @@ def _active_file_root() -> Path:
 def _linkify_log_line(line: str) -> str:
     escaped = html.escape(line)
     return _URL_RE.sub(
-        lambda m: f'<a href="{m.group()}" target="_blank" rel="noopener noreferrer">{m.group()}</a>',
+        lambda m: (
+            f'<a href="{m.group()}" target="_blank" rel="noopener noreferrer">{m.group()}</a>'
+        ),
         escaped,
     )
 

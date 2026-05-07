@@ -5,6 +5,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_STREAMLIT_CONFIG = _REPO_ROOT / ".streamlit" / "config.toml"
 _APP_STREAMLIT_CONFIG = _REPO_ROOT / "apps" / "streamlit" / ".streamlit" / "config.toml"
+_STREAMLIT_APP_FILE = _REPO_ROOT / "apps" / "streamlit" / "streamlit_app.py"
 
 
 def test_app_streamlit_config_exists_and_sets_server_defaults() -> None:
@@ -16,3 +17,10 @@ def test_app_streamlit_config_exists_and_sets_server_defaults() -> None:
 
 def test_root_streamlit_config_does_not_exist() -> None:
     assert not _ROOT_STREAMLIT_CONFIG.exists()
+
+
+def test_running_state_uses_native_streamlit_status_indicator() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert 'st.status("Running", state="running", expanded=False)' in app_source
+    assert "crawl-running-dot" not in app_source

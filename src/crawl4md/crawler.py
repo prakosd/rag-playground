@@ -711,13 +711,14 @@ class SiteCrawler:
             generated.add(norm_seed)
             queue.append((seed_url, depths.get(norm_seed, 1)))
         progress = ProgressReporter(
-            min(len(urls), self.config.limit),
+            max(len(queue), 1),
             prior_success=prior_success,
             prior_fail=prior_fail,
             round_label=round_label,
             max_log_entries=self._activity_log_size,
             log_dir=self.output_dir,
         )
+        discovery_limit_reached = len(generated) >= self.config.limit
 
         consecutive_blocks = 0
         # Redirect storm tracking: count consecutive redirects to the
@@ -751,7 +752,7 @@ class SiteCrawler:
                 progress.update(skipped_url, success=False)
             skipped_redirect_urls.clear()
 
-        while queue and len(results) < self.config.limit:
+        while queue:
             self._raise_if_cancelled()
             url, depth = queue.pop(0)
 
@@ -1073,13 +1074,16 @@ class SiteCrawler:
                 await self._sleep_with_cancel(jitter)
 
             # Discover links for deeper crawling
-            if discover_links and depth < self.config.max_depth and crawl_result.success:
+            if (
+                discover_links
+                and depth < self.config.max_depth
+                and crawl_result.success
+                and not discovery_limit_reached
+            ):
                 progress.set_activity(f"Finding more pages on {_shorten_url(url)}")
                 new_links = self._extract_links(crawl_result, crawl_result.url, strip_www=_sw)
                 added = 0
                 for link in new_links:
-                    if len(generated) >= self.config.limit:
-                        break
                     norm_link = self._normalize_url(link, strip_www=_sw)
                     if norm_link in generated:
                         continue
@@ -1098,8 +1102,10 @@ class SiteCrawler:
                         "limit": self.config.limit,
                     }
                 )
+                if len(generated) >= self.config.limit:
+                    discovery_limit_reached = True
                 # Update progress total to reflect discovered pages
-                progress.total = min(len(generated), self.config.limit)
+                progress.total = max(len(generated), 1)
 
             # Free heavy payload — content is persisted in sidecar / writer
             crawl_result.html = ""
