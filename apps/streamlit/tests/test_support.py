@@ -12,14 +12,17 @@ from pydantic import ValidationError
 
 from crawl4md_streamlit.support import (
     CrawlJob,
+    activity_log_path,
     build_configs,
     cleanup_old_sessions,
     cleanup_old_sessions_with_lock,
     crawl_output_base,
     drain_events,
     estimate_progress,
+    find_latest_crawl_dir,
     generate_crawl_id,
     generate_safe_id,
+    job_state_from_event,
     list_generated_files,
     prepare_crawl_output_base,
     prepare_session_dir,
@@ -29,6 +32,25 @@ from crawl4md_streamlit.support import (
     start_crawl_job,
     validate_safe_id,
 )
+
+
+def _form_values(*, urls: str = "https://example.com", limit: int = 1) -> dict[str, object]:
+    return {
+        "urls": urls,
+        "limit": limit,
+        "max_depth": 1,
+        "flush_interval": 1,
+        "delay": 0,
+        "max_retries": 2,
+        "exclude_tags": "nav",
+        "include_only_tags": "",
+        "wait_for": 0,
+        "timeout": 30,
+        "max_file_size_mb": 1,
+        "extract_main_content": True,
+        "output_extension": ".md",
+        "activity_log_size": 10,
+    }
 
 
 def test_generate_safe_id_uses_path_safe_characters() -> None:
@@ -70,6 +92,17 @@ def test_estimate_progress_uses_limit_and_completion() -> None:
     assert complete.percent == 100
 
 
+def test_estimate_progress_handles_unknown_limit_and_clamps() -> None:
+    unknown = estimate_progress(4, 0)
+    clamped = estimate_progress(5, 2)
+
+    assert unknown.fraction == 0.0
+    assert unknown.percent == 0
+    assert unknown.label == "Estimating"
+    assert clamped.fraction == 1.0
+    assert clamped.percent == 100
+
+
 def test_list_generated_files_stays_inside_session_root(tmp_path: Path) -> None:
     session_path = prepare_session_dir(tmp_path, "abc123")
     output_path = prepare_crawl_output_base(tmp_path, "abc123", "run_123")
@@ -85,6 +118,19 @@ def test_list_generated_files_stays_inside_session_root(tmp_path: Path) -> None:
         "crawl_run_123/final/sorted_success_content_001.md"
     ]
     assert files[0].download_allowed is True
+
+
+def test_list_generated_files_respects_download_size_limit(tmp_path: Path) -> None:
+    session_path = prepare_session_dir(tmp_path, "abc123")
+    output_path = prepare_crawl_output_base(tmp_path, "abc123", "run_123")
+    generated = output_path / "final" / "large_file.md"
+    generated.parent.mkdir()
+    generated.write_text("x" * 20, encoding="utf-8")
+
+    files = list_generated_files(session_path, output_path, download_limit_bytes=10)
+
+    assert len(files) == 1
+    assert files[0].download_allowed is False
 
 
 def test_list_generated_files_accepts_relative_session_root(
@@ -125,6 +171,15 @@ def test_read_recent_lines_returns_all_when_unlimited(tmp_path: Path) -> None:
     assert read_recent_lines(log_path, max_lines=None) == ["one", "two", "three"]
 
 
+def test_read_recent_lines_handles_missing_file_and_non_positive_limit(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.log"
+    log_path = tmp_path / "activity.log"
+    log_path.write_text("one\ntwo\n", encoding="utf-8")
+
+    assert read_recent_lines(missing, max_lines=5) == []
+    assert read_recent_lines(log_path, max_lines=0) == []
+
+
 def test_cleanup_old_sessions_removes_only_expired_safe_sessions(tmp_path: Path) -> None:
     now = datetime(2026, 5, 4, tzinfo=timezone.utc)
     old_session = prepare_session_dir(tmp_path, "old123")
@@ -159,10 +214,44 @@ def test_cleanup_old_sessions_with_lock_skips_existing_lock(tmp_path: Path) -> N
     assert cleanup_old_sessions_with_lock(tmp_path) == []
 
 
+def test_cleanup_old_sessions_with_lock_replaces_stale_lock(tmp_path: Path) -> None:
+    old_session = prepare_session_dir(tmp_path, "old123")
+    lock_path = tmp_path / ".cleanup.lock"
+    lock_path.write_text("stale", encoding="utf-8")
+
+    stale_time = (datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()
+    os.utime(lock_path, (stale_time, stale_time))
+    os.utime(old_session, (stale_time, stale_time))
+
+    removed = cleanup_old_sessions_with_lock(tmp_path, retention_days=0)
+
+    assert removed == [old_session]
+    assert not lock_path.exists()
+
+
 def test_generate_crawl_id_includes_timestamp() -> None:
     now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=timezone.utc)
 
     assert generate_crawl_id(now).startswith("20260504_123045_")
+
+
+def test_find_latest_crawl_dir_and_activity_log_path(tmp_path: Path) -> None:
+    crawl_a = prepare_crawl_output_base(tmp_path, "abc123", "run123")
+    crawl_b = prepare_crawl_output_base(tmp_path, "abc123", "run124")
+
+    old_time = (datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp()
+    new_time = datetime.now(timezone.utc).timestamp()
+    os.utime(crawl_a, (old_time, old_time))
+    os.utime(crawl_b, (new_time, new_time))
+
+    assert find_latest_crawl_dir(crawl_b.parent) == crawl_b
+    assert find_latest_crawl_dir(tmp_path / "missing") is None
+    assert activity_log_path(None) is None
+    assert activity_log_path(crawl_b) is None
+
+    log_path = crawl_b / "activity_log.txt"
+    log_path.write_text("entry", encoding="utf-8")
+    assert activity_log_path(crawl_b) == log_path
 
 
 def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -193,24 +282,7 @@ def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
             return [type("Result", (), {"success": True})()]
 
     monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
-    crawler_config, page_config, activity_log_size = build_configs(
-        {
-            "urls": "https://example.com",
-            "limit": 1,
-            "max_depth": 1,
-            "flush_interval": 1,
-            "delay": 0,
-            "max_retries": 2,
-            "exclude_tags": "nav",
-            "include_only_tags": "",
-            "wait_for": 0,
-            "timeout": 30,
-            "max_file_size_mb": 1,
-            "extract_main_content": True,
-            "output_extension": ".md",
-            "activity_log_size": 10,
-        }
-    )
+    crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
         session_id="abc123",
@@ -225,6 +297,47 @@ def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
     events = drain_events(job)
 
     assert [event["event"] for event in events] == ["started", "page_processed", "completed"]
+
+
+def test_start_crawl_job_reports_success_and_failure_counts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class FakeCrawler:
+        def __init__(
+            self,
+            *args: object,
+            output_base: Path,
+            **kwargs: object,
+        ) -> None:
+            self.output_dir = output_base / "2026-05-04_12-30-45"
+
+        def crawl(self) -> list[object]:
+            self.output_dir.mkdir(parents=True)
+            return [
+                type("Result", (), {"success": True})(),
+                type("Result", (), {"success": False})(),
+            ]
+
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    crawler_config, page_config, activity_log_size = build_configs(_form_values(limit=2))
+
+    job = start_crawl_job(
+        session_id="abc123",
+        crawl_id="run123",
+        crawler_config=crawler_config,
+        page_config=page_config,
+        activity_log_size=activity_log_size,
+        sessions_root=tmp_path,
+    )
+    job.thread.join(timeout=5)
+
+    events = drain_events(job)
+    completed = events[-1]
+
+    assert completed["event"] == "completed"
+    assert completed["processed_pages"] == 2
+    assert completed["successful_pages"] == 1
+    assert completed["failed_pages"] == 1
 
 
 def test_start_crawl_job_reports_missing_playwright_browser_hint(
@@ -244,24 +357,7 @@ def test_start_crawl_job_reports_missing_playwright_browser_hint(
             )
 
     monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
-    crawler_config, page_config, activity_log_size = build_configs(
-        {
-            "urls": "https://example.com",
-            "limit": 1,
-            "max_depth": 1,
-            "flush_interval": 1,
-            "delay": 0,
-            "max_retries": 2,
-            "exclude_tags": "nav",
-            "include_only_tags": "",
-            "wait_for": 0,
-            "timeout": 30,
-            "max_file_size_mb": 1,
-            "extract_main_content": True,
-            "output_extension": ".md",
-            "activity_log_size": 10,
-        }
-    )
+    crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
         session_id="abc123",
@@ -277,6 +373,35 @@ def test_start_crawl_job_reports_missing_playwright_browser_hint(
 
     assert [event["event"] for event in events] == ["started", "failed"]
     assert "python -m playwright install chromium" in str(events[-1]["error"])
+
+
+def test_start_crawl_job_reports_generic_error_details(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class FakeCrawler:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.output_dir = tmp_path / "unused"
+
+        def crawl(self) -> list[object]:
+            raise ValueError("boom")
+
+    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    crawler_config, page_config, activity_log_size = build_configs(_form_values())
+
+    job = start_crawl_job(
+        session_id="abc123",
+        crawl_id="run123",
+        crawler_config=crawler_config,
+        page_config=page_config,
+        activity_log_size=activity_log_size,
+        sessions_root=tmp_path,
+    )
+    job.thread.join(timeout=5)
+
+    events = drain_events(job)
+
+    assert [event["event"] for event in events] == ["started", "failed"]
+    assert events[-1]["error"] == "ValueError: boom"
 
 
 def test_start_crawl_job_reports_cancelled_after_request(
@@ -306,24 +431,7 @@ def test_start_crawl_job_reports_cancelled_after_request(
             return [type("Result", (), {"success": True})()]
 
     monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
-    crawler_config, page_config, activity_log_size = build_configs(
-        {
-            "urls": "https://example.com",
-            "limit": 1,
-            "max_depth": 1,
-            "flush_interval": 1,
-            "delay": 0,
-            "max_retries": 2,
-            "exclude_tags": "nav",
-            "include_only_tags": "",
-            "wait_for": 0,
-            "timeout": 30,
-            "max_file_size_mb": 1,
-            "extract_main_content": True,
-            "output_extension": ".md",
-            "activity_log_size": 10,
-        }
-    )
+    crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
         session_id="abc123",
@@ -360,23 +468,30 @@ def test_request_cancel_sets_event(tmp_path: Path) -> None:
     assert drain_events(job)[0]["event"] == "cancel_requested"
 
 
+def test_job_state_from_event_maps_expected_and_unknown_values() -> None:
+    assert job_state_from_event("started") == "running"
+    assert job_state_from_event("completed") == "completed"
+    assert job_state_from_event("failed") == "failed"
+    assert job_state_from_event("cancel_requested") == "cancel_requested"
+    assert job_state_from_event("cancelled") == "cancelled"
+    assert job_state_from_event("something_else") == "running"
+
+
 def test_build_configs_surfaces_validation_errors() -> None:
     with pytest.raises(ValidationError):
         build_configs(
             {
-                "urls": "not-a-url",
-                "limit": 1,
-                "max_depth": 1,
-                "flush_interval": 1,
-                "delay": 0,
-                "max_retries": 2,
-                "exclude_tags": "nav",
+                **_form_values(urls="not-a-url"),
                 "include_only_tags": "main",
-                "wait_for": 0,
-                "timeout": 30,
-                "max_file_size_mb": 1,
-                "extract_main_content": True,
-                "output_extension": ".md",
-                "activity_log_size": 10,
+            }
+        )
+
+
+def test_build_configs_rejects_non_positive_activity_log_size() -> None:
+    with pytest.raises(ValueError, match="Activity log size must be at least 1"):
+        build_configs(
+            {
+                **_form_values(),
+                "activity_log_size": 0,
             }
         )
