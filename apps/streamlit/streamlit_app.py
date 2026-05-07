@@ -569,6 +569,7 @@ def _render_activity_log() -> None:
     max_lines = int(st.session_state.activity_log_size or _DEFAULT_ACTIVITY_LOG_SIZE)
     lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
     if lines:
+        st.write("")
         st.markdown("**Activity log**")
         rows_html = "".join(
             f"<div style='padding:4px 8px;border-bottom:1px solid rgba(49,51,63,0.1);font-size:14px;font-family:sans-serif'>{_linkify_log_line(line)}</div>"
