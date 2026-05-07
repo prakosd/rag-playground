@@ -58,15 +58,6 @@ _REFRESH_FORM_STATES = {
 }
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
-_STATE_SPINNER_CSS = (
-    "<style>"
-    "@keyframes _c4md_spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}"
-    "._c4md_spin{display:inline-block;width:.8em;height:.8em;"
-    "border:2px solid rgba(49,51,63,0.15);border-top-color:rgba(49,51,63,0.7);"
-    "border-radius:50%;animation:_c4md_spin .75s linear infinite;"
-    "vertical-align:middle;margin-right:.3em}"
-    "</style>"
-)
 
 
 st.set_page_config(
@@ -458,32 +449,17 @@ def render_progress_and_files(
             border=True,
         )
         with row2[2]:
-            if normalized_state == _STATE_RUNNING:
-                st.markdown(
-                    _STATE_SPINNER_CSS
-                    + "<div style='border:1px solid rgba(49,51,63,0.2);border-radius:.5rem;overflow:hidden'>"
-                    "<div style='padding:15px'>"
-                    f"<p style='font-size:.875rem;color:rgba(49,51,63,0.6);margin:0 0 .2rem'>{state_icon} State</p>"
-                    "<p style='font-size:2.25rem;font-weight:700;color:rgb(49,51,63);margin:0 0 .15rem;line-height:1.2'>"
-                    f"<span class='_c4md_spin'></span>{state_label}</p>"
-                    "<p style='font-size:.875rem;color:rgba(49,51,63,0.5);margin:0'>Current lifecycle stage</p>"
-                    "</div></div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.metric(
-                    label=f"{state_icon} State",
-                    value=state_label,
-                    delta="Current lifecycle stage",
-                    delta_color="off",
-                    help="Current crawl lifecycle state",
-                    border=True,
-                )
+            st.metric(
+                label=f"{state_icon} State",
+                value=state_label,
+                delta="Current lifecycle stage",
+                delta_color="off",
+                help="Current crawl lifecycle state",
+                border=True,
+            )
 
         if normalized_state == _STATE_FAILED:
             st.error("🔴 Failed — processing encountered errors")
-        elif normalized_state == _STATE_COMPLETED:
-            st.success("✅ Completed — all files processed")
         elif normalized_state == _STATE_CANCEL_REQUESTED:
             st.info("🟡 Stop requested — waiting for worker to finish")
         elif normalized_state == _STATE_STOPPED:
@@ -501,34 +477,66 @@ def _render_status() -> None:
     failed_pages = int(latest.get("failed_pages", 0) or 0)
     discovered_pages = int(latest.get("queued_discovered_urls", 0) or 0)
     limit = int(latest.get("limit", _DEFAULT_LIMIT) or _DEFAULT_LIMIT)
-    render_progress_and_files(
-        processed=processed_pages,
-        successful=successful_pages,
-        failed=failed_pages,
-        discovered=discovered_pages,
-        limit=limit,
-        state=st.session_state.job_state,
-    )
 
-    current_url = str(latest.get("current_url", ""))
-    started_at = st.session_state.started_at
-    elapsed_str = ""
-    if started_at is not None:
-        elapsed = datetime.now(timezone.utc) - started_at
-        elapsed_str = str(elapsed).split(".")[0]
-    if current_url or elapsed_str:
-        left = (
-            f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
-            if current_url
-            else ""
+    if st.session_state.job_state == _STATE_RUNNING:
+        with st.status("Running", state="running", expanded=False):
+            render_progress_and_files(
+                processed=processed_pages,
+                successful=successful_pages,
+                failed=failed_pages,
+                discovered=discovered_pages,
+                limit=limit,
+                state=st.session_state.job_state,
+            )
+
+            current_url = str(latest.get("current_url", ""))
+            started_at = st.session_state.started_at
+            elapsed_str = ""
+            if started_at is not None:
+                elapsed = datetime.now(timezone.utc) - started_at
+                elapsed_str = str(elapsed).split(".")[0]
+            if current_url or elapsed_str:
+                left = (
+                    f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
+                    if current_url
+                    else ""
+                )
+                right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
+                    f"<span>{left}</span><span>{right}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+    else:
+        render_progress_and_files(
+            processed=processed_pages,
+            successful=successful_pages,
+            failed=failed_pages,
+            discovered=discovered_pages,
+            limit=limit,
+            state=st.session_state.job_state,
         )
-        right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
-        st.markdown(
-            f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
-            f"<span>{left}</span><span>{right}</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+
+        current_url = str(latest.get("current_url", ""))
+        started_at = st.session_state.started_at
+        elapsed_str = ""
+        if started_at is not None:
+            elapsed = datetime.now(timezone.utc) - started_at
+            elapsed_str = str(elapsed).split(".")[0]
+        if current_url or elapsed_str:
+            left = (
+                f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
+                if current_url
+                else ""
+            )
+            right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
+            st.markdown(
+                f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
+                f"<span>{left}</span><span>{right}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
     if st.session_state.job_state == _STATE_FAILED:
         st.error(str(latest.get("error", "The crawl failed.")))
@@ -581,8 +589,8 @@ def _render_files() -> None:
         download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
     )
     if not files:
-        st.info("Generated files will appear here as the crawler writes output.")
         return
+    st.markdown("**Generated Files**")
     rows = [
         {
             "File": file.relative_path,
@@ -613,9 +621,7 @@ def _render_files() -> None:
 @st.fragment(run_every="1s")
 def _render_live_area() -> None:
     _render_status()
-    st.divider()
     _render_activity_log()
-    st.divider()
     _render_files()
 
 

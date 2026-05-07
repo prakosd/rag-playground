@@ -1089,6 +1089,8 @@ class SiteCrawler:
                         continue
                     if not self._url_allowed(link):
                         continue
+                    if is_retry and len(generated) >= self.config.limit:
+                        break
                     generated.add(norm_link)
                     depths[norm_link] = depth + 1
                     queue.append((link, depth + 1))
