@@ -479,35 +479,34 @@ def _render_status() -> None:
     limit = int(latest.get("limit", _DEFAULT_LIMIT) or _DEFAULT_LIMIT)
 
     if st.session_state.job_state == _STATE_RUNNING:
-        with st.status("Running", state="running", expanded=False):
-            render_progress_and_files(
-                processed=processed_pages,
-                successful=successful_pages,
-                failed=failed_pages,
-                discovered=discovered_pages,
-                limit=limit,
-                state=st.session_state.job_state,
-            )
+        render_progress_and_files(
+            processed=processed_pages,
+            successful=successful_pages,
+            failed=failed_pages,
+            discovered=discovered_pages,
+            limit=limit,
+            state=st.session_state.job_state,
+        )
 
-            current_url = str(latest.get("current_url", ""))
-            started_at = st.session_state.started_at
-            elapsed_str = ""
-            if started_at is not None:
-                elapsed = datetime.now(timezone.utc) - started_at
-                elapsed_str = str(elapsed).split(".")[0]
-            if current_url or elapsed_str:
-                left = (
-                    f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
-                    if current_url
-                    else ""
-                )
-                right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
-                    f"<span>{left}</span><span>{right}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+        current_url = str(latest.get("current_url", ""))
+        started_at = st.session_state.started_at
+        elapsed_str = ""
+        if started_at is not None:
+            elapsed = datetime.now(timezone.utc) - started_at
+            elapsed_str = str(elapsed).split(".")[0]
+        if current_url or elapsed_str:
+            left = (
+                f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
+                if current_url
+                else ""
+            )
+            right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
+            st.markdown(
+                f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
+                f"<span>{left}</span><span>{right}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
     else:
         render_progress_and_files(
             processed=processed_pages,

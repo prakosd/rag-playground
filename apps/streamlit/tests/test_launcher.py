@@ -19,8 +19,8 @@ def test_root_streamlit_config_does_not_exist() -> None:
     assert not _ROOT_STREAMLIT_CONFIG.exists()
 
 
-def test_running_state_uses_native_streamlit_status_indicator() -> None:
+def test_running_state_renders_without_collapsible_status_container() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 
-    assert 'st.status("Running", state="running", expanded=False)' in app_source
+    assert 'st.status("Running", state="running", expanded=' not in app_source
     assert "crawl-running-dot" not in app_source
