@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,7 +16,6 @@ from crawl4md_streamlit.support import (
     build_configs,
     cleanup_old_sessions_with_lock,
     drain_events,
-    estimate_progress,
     find_latest_crawl_dir,
     generate_crawl_id,
     generate_safe_id,
@@ -27,6 +28,7 @@ from crawl4md_streamlit.support import (
 )
 
 _DEFAULT_ACTIVITY_LOG_SIZE = 10
+_URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _DEFAULT_DELAY = 3.0
 _DEFAULT_EXCLUDE_PATHS = "ato.gov.au/api/"
 _DEFAULT_EXCLUDE_TAGS = "nav, script, form, style"
@@ -59,7 +61,7 @@ _FORM_MAX_WIDTH_PX = 980
 
 
 st.set_page_config(
-    page_title="crawl4md — Website to Markdown Crawler",
+    page_title="crawl4md — Website Crawler",
     page_icon=":material/travel_explore:",
     layout="wide",
 )
@@ -358,6 +360,108 @@ def _stop_job() -> None:
     st.warning("There is no active crawl to stop.")
 
 
+def render_progress_and_files(
+    processed: int,
+    successful: int,
+    failed: int,
+    discovered: int,
+    limit: int,
+    state: str,
+) -> None:
+    safe_limit = max(limit, 1)
+    progress_ratio = min(max(processed / safe_limit, 0.0), 1.0)
+    progress_pct = progress_ratio * 100
+    normalized_state = (state or "unknown").strip().lower()
+    state_label = normalized_state.replace("_", " ").title()
+    state_icon = {
+        _STATE_IDLE: "🟡",
+        _STATE_RUNNING: "🟢",
+        _STATE_FAILED: "🔴",
+        _STATE_COMPLETED: "✅",
+        _STATE_CANCEL_REQUESTED: "🟠",
+        _STATE_STOPPED: "⏹️",
+    }.get(normalized_state, "⚠️")
+
+    with st.container():
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
+            f'<span>📄 {processed:,} / {limit:,} pages processed</span>'
+            f'<span>⏳ {progress_pct:.2f}% complete</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        st.progress(progress_ratio)
+
+        row1 = st.columns(3)
+        row1[0].metric(
+            label="📄 Processed",
+            value=f"{processed:,}",
+            delta=f"{processed:,} total",
+            delta_color="off",
+            help="Number of pages processed so far",
+            border=True,
+        )
+        row1[1].metric(
+            label="✅ Successful",
+            value=f"{successful:,}",
+            delta=f"{successful:,} completed",
+            delta_color="normal",
+            help="Pages processed successfully",
+            border=True,
+        )
+        row1[2].metric(
+            label="❌ Failed",
+            value=f"{failed:,}",
+            delta=f"{failed:,} failed",
+            delta_color="inverse",
+            help="Pages that failed during processing",
+            border=True,
+        )
+
+        row2 = st.columns(3)
+        row2[0].metric(
+            label="🔎 Discovered",
+            value=f"{discovered:,}",
+            delta=f"{discovered:,} found",
+            delta_color="normal",
+            help="URLs discovered and queued so far",
+            border=True,
+        )
+        row2[1].metric(
+            label="🎯 Limit",
+            value=f"{limit:,}",
+            delta=f"{max(limit - processed, 0):,} remaining",
+            delta_color="off",
+            help="Configured processing limit",
+            border=True,
+        )
+        row2[2].metric(
+            label=f"{state_icon} State",
+            value=state_label,
+            delta="Current lifecycle stage",
+            delta_color="off",
+            help="Current crawl lifecycle state",
+            border=True,
+        )
+
+        if normalized_state == _STATE_IDLE:
+            st.info("🟡 Idle — waiting to start")
+        elif normalized_state == _STATE_RUNNING:
+            st.success("🟢 Running — processing files")
+        elif normalized_state == _STATE_FAILED:
+            st.error("🔴 Failed — processing encountered errors")
+        elif normalized_state == _STATE_COMPLETED:
+            st.success("✅ Completed — all files processed")
+        elif normalized_state == _STATE_CANCEL_REQUESTED:
+            st.info("🟡 Stop requested — waiting for worker to finish")
+        elif normalized_state == _STATE_STOPPED:
+            st.info("🟡 Stopped — generated files remain available")
+        else:
+            st.warning("⚠️ Unknown state")
+
+
+
+
 def _render_status() -> None:
     job = st.session_state.job
     state_changed = _drain_job_events(job)
@@ -369,32 +473,33 @@ def _render_status() -> None:
     failed_pages = int(latest.get("failed_pages", 0) or 0)
     discovered_pages = int(latest.get("queued_discovered_urls", 0) or 0)
     limit = int(latest.get("limit", _DEFAULT_LIMIT) or _DEFAULT_LIMIT)
-    is_finished = st.session_state.job_state == _STATE_COMPLETED
-    progress = estimate_progress(processed_pages, limit, is_finished=is_finished)
-    st.progress(progress.fraction, text=progress.label)
-
-    metric_cols = st.columns(6)
-    metric_cols[0].metric("Processed", processed_pages)
-    metric_cols[1].metric("Successful", successful_pages)
-    metric_cols[2].metric("Failed", failed_pages)
-    metric_cols[3].metric("Discovered", discovered_pages)
-    metric_cols[4].metric("Limit", limit)
-    metric_cols[5].metric("State", st.session_state.job_state.replace("_", " ").title())
+    render_progress_and_files(
+        processed=processed_pages,
+        successful=successful_pages,
+        failed=failed_pages,
+        discovered=discovered_pages,
+        limit=limit,
+        state=st.session_state.job_state,
+    )
 
     current_url = str(latest.get("current_url", ""))
-    if current_url:
-        st.caption(f"Current URL: {current_url}")
     started_at = st.session_state.started_at
+    elapsed_str = ""
     if started_at is not None:
         elapsed = datetime.now(timezone.utc) - started_at
-        st.caption(f"Elapsed time: {str(elapsed).split('.')[0]}")
+        elapsed_str = str(elapsed).split(".")[0]
+    if current_url or elapsed_str:
+        left = f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>' if current_url else ""
+        right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
+            f'<span>{left}</span><span>{right}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
     if st.session_state.job_state == _STATE_FAILED:
         st.error(str(latest.get("error", "The crawl failed.")))
-    elif st.session_state.job_state == _STATE_STOPPED:
-        st.info("Stopped. Generated files remain available below.")
-    elif st.session_state.job_state in _TERMINAL_STATES:
-        st.success("Crawl finished. Generated files are available below.")
 
 
 def _active_file_root() -> Path:
@@ -410,6 +515,14 @@ def _active_file_root() -> Path:
     return _session_root()
 
 
+def _linkify_log_line(line: str) -> str:
+    escaped = html.escape(line)
+    return _URL_RE.sub(
+        lambda m: f'<a href="{m.group()}" target="_blank" rel="noopener noreferrer">{m.group()}</a>',
+        escaped,
+    )
+
+
 def _render_activity_log() -> None:
     log_path = activity_log_path(_active_file_root())
     max_lines = int(st.session_state.activity_log_size or _DEFAULT_ACTIVITY_LOG_SIZE)
@@ -417,7 +530,11 @@ def _render_activity_log() -> None:
     if lines:
         st.markdown("**Activity log**")
         with st.container(height=200):
-            st.code("\n".join(reversed(lines)), language="text")
+            rendered = "<br>".join(_linkify_log_line(line) for line in reversed(lines))
+            st.markdown(
+                f'<div style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;line-height:1.5">{rendered}</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def _render_files() -> None:
@@ -485,14 +602,24 @@ st.markdown(
         margin-left: auto;
         margin-right: auto;
     }}
+    div[class*="st-key-FormSubmitter-crawl_settings-Stop"] button {{
+        background-color: #dc2626;
+        border-color: #dc2626;
+        color: white;
+    }}
+    div[class*="st-key-FormSubmitter-crawl_settings-Stop"] button:hover {{
+        background-color: #b91c1c;
+        border-color: #b91c1c;
+        color: white;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title(":material/travel_explore: crawl4md — Website to Markdown Crawler")
+st.title(":material/travel_explore: crawl4md — Website Crawler")
 st.write(
-    "Point it at any website and crawl4md will follow links, extract the main content from each page, and save everything as clean, readable Markdown files — ready to use in notebooks, RAG pipelines, or documentation."
+    "Point it at any website and crawl4md will follow links, extract the main content from each page, and save everything as clean, readable Markdown files."
 )
 st.caption(f"Session: {st.session_state.session_id}")
 
@@ -516,5 +643,5 @@ if values["submitted"]:
 elif values["stop_submitted"]:
     _stop_job()
 
-st.subheader("Progress and files")
+st.subheader("📊 Progress")
 _render_live_area()
