@@ -19,16 +19,10 @@ def test_root_streamlit_config_does_not_exist() -> None:
     assert not _ROOT_STREAMLIT_CONFIG.exists()
 
 
-def test_running_state_uses_native_status_box() -> None:
-    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
-
-    assert 'st.status(label=f"State: {state_label}", state="running", expanded=False)' in app_source
-    assert "crawl-running-dot" not in app_source
-
-
 def test_running_state_no_longer_uses_page_level_spinner() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 
+    assert "crawl-running-dot" not in app_source
     assert 'with st.spinner("Running"):' not in app_source
     assert 'st.spinner("Crawling…")' not in app_source
 

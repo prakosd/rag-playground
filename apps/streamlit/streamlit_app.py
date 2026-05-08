@@ -374,6 +374,28 @@ def _stop_job() -> None:
 
 @st.dialog("Stop crawl?", width="small")
 def _stop_confirmation_dialog() -> None:
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stElementContainer"].st-key-stop_cancel_button button {
+            background-color: #28a745; border-color: #28a745; color: white;
+        }
+        div[data-testid="stElementContainer"].st-key-stop_cancel_button button:hover {
+            background-color: #218838; border-color: #1e7e34; color: white;
+        }
+        div[data-testid="stElementContainer"].st-key-stop_confirm_button button {
+            background-color: #dc3545; border-color: #dc3545; color: white;
+        }
+        div[data-testid="stElementContainer"].st-key-stop_confirm_button button:hover {
+            background-color: #c82333; border-color: #bd2130; color: white;
+        }
+        div[data-testid="stColumn"]:has(.st-key-stop_confirm_button) [data-testid="stVerticalBlock"] {
+            align-items: flex-end;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.write("Stop this crawl now? This will cancel any pages still in progress.")
     action_cols = st.columns(2)
     with action_cols[0]:
@@ -484,9 +506,6 @@ def render_progress_and_files(
                 help="Current crawl lifecycle state",
                 border=True,
             )
-
-        if normalized_state == _STATE_RUNNING:
-            st.status(label=f"State: {state_label}", state="running", expanded=False)
 
         if normalized_state == _STATE_FAILED:
             st.error("🔴 Failed — processing encountered errors")
