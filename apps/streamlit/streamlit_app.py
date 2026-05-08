@@ -12,10 +12,12 @@ from pydantic import ValidationError
 
 from crawl4md_streamlit.controls import crawl_action_buttons
 from crawl4md_streamlit.support import (
+    _DEFAULT_ACTIVITY_LOG_SIZE,
     CrawlJob,
     activity_log_path,
     build_configs,
     cleanup_old_sessions_with_lock,
+    count_new_log_entries,
     drain_events,
     find_latest_crawl_dir,
     generate_crawl_id,
@@ -28,7 +30,6 @@ from crawl4md_streamlit.support import (
     start_crawl_job,
 )
 
-_DEFAULT_ACTIVITY_LOG_SIZE = 10
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _DEFAULT_DELAY = 3.0
 _DEFAULT_EXCLUDE_PATHS = "ato.gov.au/api/"
@@ -45,6 +46,9 @@ _DEFAULT_WAIT_FOR = 3.0
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _OUTPUT_EXTENSION_OPTIONS = [".md", ".txt"]
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
+_TOAST_PAGE_SUCCESS_ICON = "✅"
+_TOAST_PAGE_FAIL_ICON = "❌"
+_TOAST_PAGE_DISCOVERED_ICON = "🔎"
 _STATE_CANCEL_REQUESTED = "cancel_requested"
 _STATE_CANCELLED = "cancelled"
 _STATE_COMPLETED = "completed"
@@ -83,7 +87,9 @@ def _init_state() -> None:
     st.session_state.setdefault("active_output_dir", "")
     st.session_state.setdefault("started_at", None)
     st.session_state.setdefault("activity_log_size", _DEFAULT_ACTIVITY_LOG_SIZE)
+    st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("form_defaults", _default_form_values())
+    st.session_state.setdefault("stop_confirmation_open", False)
 
 
 def _default_form_values() -> dict[str, Any]:
@@ -352,6 +358,7 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.latest_event = {"limit": crawler_config.limit}
     st.session_state.active_output_dir = ""
     st.session_state.activity_log_size = activity_log_size
+    st.session_state.activity_log_latest_line = None
     st.rerun()
 
 
@@ -363,6 +370,25 @@ def _stop_job() -> None:
         st.rerun()
         return
     st.warning("There is no active crawl to stop.")
+
+
+@st.dialog("Stop crawl?", width="small")
+def _stop_confirmation_dialog() -> None:
+    st.write("Stop this crawl now? This will cancel any pages still in progress.")
+    action_cols = st.columns(2)
+    with action_cols[0]:
+        if st.button("Keep running", key="stop_cancel_button"):
+            st.session_state.stop_confirmation_open = False
+            st.rerun()
+    with action_cols[1]:
+        if st.button(
+            "Stop crawl",
+            type="secondary",
+            icon=":material/stop_circle:",
+            key="stop_confirm_button",
+        ):
+            st.session_state.stop_confirmation_open = False
+            _stop_job()
 
 
 def render_progress_and_files(
@@ -459,6 +485,9 @@ def render_progress_and_files(
                 border=True,
             )
 
+        if normalized_state == _STATE_RUNNING:
+            st.status(label=f"State: {state_label}", state="running", expanded=False)
+
         if normalized_state == _STATE_FAILED:
             st.error("🔴 Failed — processing encountered errors")
         elif normalized_state == _STATE_CANCEL_REQUESTED:
@@ -477,9 +506,30 @@ def _render_status() -> None:
     successful_pages = int(latest.get("successful_pages", 0) or 0)
     failed_pages = int(latest.get("failed_pages", 0) or 0)
     discovered_pages = int(latest.get("queued_discovered_urls", 0) or 0)
+    new_success = successful_pages - int(st.session_state.get("prev_successful_pages", 0))
+    new_fail = failed_pages - int(st.session_state.get("prev_failed_pages", 0))
+    new_discovered = discovered_pages - int(st.session_state.get("prev_discovered_pages", 0))
+    if new_success > 0:
+        st.toast(
+            f"{successful_pages} page{'s' if successful_pages > 1 else ''} crawl success",
+            icon=_TOAST_PAGE_SUCCESS_ICON,
+        )
+    if new_fail > 0:
+        st.toast(
+            f"{failed_pages} page{'s' if failed_pages > 1 else ''} failed crawl",
+            icon=_TOAST_PAGE_FAIL_ICON,
+        )
+    if new_discovered > 0:
+        st.toast(
+            f"{discovered_pages} page{'s' if discovered_pages > 1 else ''} discovered",
+            icon=_TOAST_PAGE_DISCOVERED_ICON,
+        )
+    st.session_state.prev_successful_pages = successful_pages
+    st.session_state.prev_failed_pages = failed_pages
+    st.session_state.prev_discovered_pages = discovered_pages
     limit = int(latest.get("limit", _DEFAULT_LIMIT) or _DEFAULT_LIMIT)
 
-    if st.session_state.job_state == _STATE_RUNNING:
+    def _render_status_content() -> None:
         render_progress_and_files(
             processed=processed_pages,
             successful=successful_pages,
@@ -508,35 +558,8 @@ def _render_status() -> None:
                 f"</div>",
                 unsafe_allow_html=True,
             )
-    else:
-        render_progress_and_files(
-            processed=processed_pages,
-            successful=successful_pages,
-            failed=failed_pages,
-            discovered=discovered_pages,
-            limit=limit,
-            state=st.session_state.job_state,
-        )
 
-        current_url = str(latest.get("current_url", ""))
-        started_at = st.session_state.started_at
-        elapsed_str = ""
-        if started_at is not None:
-            elapsed = datetime.now(timezone.utc) - started_at
-            elapsed_str = str(elapsed).split(".")[0]
-        if current_url or elapsed_str:
-            left = (
-                f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
-                if current_url
-                else ""
-            )
-            right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
-            st.markdown(
-                f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
-                f"<span>{left}</span><span>{right}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+    _render_status_content()
 
     if st.session_state.job_state == _STATE_FAILED:
         st.error(str(latest.get("error", "The crawl failed.")))
@@ -567,8 +590,13 @@ def _linkify_log_line(line: str) -> str:
 
 def _render_activity_log() -> None:
     log_path = activity_log_path(_active_file_root())
-    max_lines = int(st.session_state.activity_log_size or _DEFAULT_ACTIVITY_LOG_SIZE)
+    max_lines = int(st.session_state.activity_log_size)
     lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
+    new_entries, latest_line = count_new_log_entries(
+        lines,
+        st.session_state.activity_log_latest_line,
+    )
+    st.session_state.activity_log_latest_line = latest_line
     if lines:
         st.write("")
         st.markdown("**Activity log**")
@@ -592,7 +620,6 @@ def render_file_download(file_path: Path, root_path: Path) -> None:
         file_name=file_path.name,
         mime=mime_type,
         key=f"download_{relative_path.as_posix()}",
-        use_container_width=True,
     )
 
 
@@ -696,12 +723,19 @@ values = _form_values(
     job_alive=job_alive,
 )
 if values["submitted"]:
+    st.session_state.stop_confirmation_open = False
     if current_job is not None and current_job.thread.is_alive():
         st.warning("A crawl is already running in this browser session.")
     else:
         _start_job(values)
 elif values["stop_submitted"]:
-    _stop_job()
+    st.session_state.stop_confirmation_open = True
+
+if st.session_state.stop_confirmation_open and not job_alive:
+    st.session_state.stop_confirmation_open = False
+
+if st.session_state.stop_confirmation_open:
+    _stop_confirmation_dialog()
 
 st.subheader("📊 Progress")
 _render_live_area()

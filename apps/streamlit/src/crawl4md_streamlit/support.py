@@ -229,6 +229,30 @@ def read_recent_lines(path: Path | str, *, max_lines: int | None) -> list[str]:
     return lines[-max_lines:]
 
 
+def count_new_log_entries(
+    lines: list[str],
+    previous_latest_line: str | None,
+) -> tuple[int, str | None]:
+    """Return new-entry count and newest line, using a conservative fallback.
+
+    If ``previous_latest_line`` is no longer in the visible tail window, the
+    function returns 1 so the UI still signals that fresh activity arrived.
+    """
+    if not lines:
+        return 0, previous_latest_line
+
+    latest_line = lines[-1]
+    if previous_latest_line is None:
+        return 0, latest_line
+    if latest_line == previous_latest_line:
+        return 0, latest_line
+
+    for index in range(len(lines) - 1, -1, -1):
+        if lines[index] == previous_latest_line:
+            return len(lines) - index - 1, latest_line
+    return 1, latest_line
+
+
 def find_latest_crawl_dir(crawl_base: Path | str) -> Path | None:
     """Return the newest crawler-created output directory under a crawl base."""
     base = Path(crawl_base)

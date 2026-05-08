@@ -16,6 +16,7 @@ from crawl4md_streamlit.support import (
     build_configs,
     cleanup_old_sessions,
     cleanup_old_sessions_with_lock,
+    count_new_log_entries,
     crawl_output_base,
     drain_events,
     estimate_progress,
@@ -178,6 +179,33 @@ def test_read_recent_lines_handles_missing_file_and_non_positive_limit(tmp_path:
 
     assert read_recent_lines(missing, max_lines=5) == []
     assert read_recent_lines(log_path, max_lines=0) == []
+
+
+def test_count_new_log_entries_initializes_without_toast() -> None:
+    lines = ["entry 1", "entry 2"]
+
+    new_count, latest = count_new_log_entries(lines, None)
+
+    assert new_count == 0
+    assert latest == "entry 2"
+
+
+def test_count_new_log_entries_counts_tail_appends() -> None:
+    lines = ["entry 1", "entry 2", "entry 3", "entry 4"]
+
+    new_count, latest = count_new_log_entries(lines, "entry 2")
+
+    assert new_count == 2
+    assert latest == "entry 4"
+
+
+def test_count_new_log_entries_handles_window_shift() -> None:
+    lines = ["entry 8", "entry 9", "entry 10"]
+
+    new_count, latest = count_new_log_entries(lines, "entry 7")
+
+    assert new_count == 1
+    assert latest == "entry 10"
 
 
 def test_cleanup_old_sessions_removes_only_expired_safe_sessions(tmp_path: Path) -> None:
