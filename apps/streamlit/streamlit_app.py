@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import mimetypes
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -580,42 +581,60 @@ def _render_activity_log() -> None:
         )
 
 
+def render_file_download(file_path: Path, root_path: Path) -> None:
+    relative_path = file_path.relative_to(root_path)
+    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    with file_path.open("rb") as file_obj:
+        file_bytes = file_obj.read()
+    st.download_button(
+        label=f"📄 {file_path.name}",
+        data=file_bytes,
+        file_name=file_path.name,
+        mime=mime_type,
+        key=f"download_{relative_path.as_posix()}",
+        use_container_width=True,
+    )
+
+
+def render_tree(path: Path, root_path: Path) -> None:
+    entries = sorted(path.iterdir(), key=lambda entry: (not entry.is_dir(), entry.name.lower()))
+    for entry in entries:
+        if entry.is_dir():
+            with st.expander(f"📁 {entry.name}"):
+                render_tree(entry, root_path)
+            continue
+        if entry.is_file():
+            render_file_download(entry, root_path)
+
+
 def _render_files() -> None:
-    session_root = _session_root()
+    session_folder = _session_root()
     file_root = _active_file_root()
     files = list_generated_files(
-        session_root,
+        session_folder,
         file_root,
         download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
     )
-    if not files:
-        return
-    st.markdown("**Generated Files**")
-    rows = [
-        {
-            "File": file.relative_path,
-            "Type": file.file_type,
-            "Size (MB)": round(file.size_bytes / (1024 * 1024), 3),
-            "Modified": file.modified_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
-        }
-        for file in files
-    ]
-    st.dataframe(rows, hide_index=True, width="stretch")
-    st.markdown("**Downloads**")
-    for file in files:
-        if not file.download_allowed:
-            st.caption(f"{file.relative_path} is large. Open it from the workspace folder instead.")
-            continue
-        st.download_button(
-            label=file.relative_path,
-            data=file.path.read_bytes(),
-            file_name=file.name,
-            mime="text/plain"
-            if file.file_type in {"txt", "csv", "log"}
-            else "application/octet-stream",
-            icon=":material/download:",
-        )
-    st.caption(f"Session folder: {session_root}")
+    if files:
+        st.markdown("**Generated Files**")
+        rows = [
+            {
+                "File": file.relative_path,
+                "Type": file.file_type,
+                "Size (MB)": round(file.size_bytes / (1024 * 1024), 3),
+                "Modified": file.modified_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            }
+            for file in files
+        ]
+        st.dataframe(rows, hide_index=True, width="stretch")
+
+    st.subheader("Downloads")
+    if session_folder.exists():
+        with st.expander(f"📁 {session_folder.name}", expanded=True):
+            render_tree(session_folder, session_folder)
+        st.caption(f"Session folder: {session_folder}")
+    else:
+        st.warning("Session folder does not exist.")
 
 
 @st.fragment(run_every="1s")
