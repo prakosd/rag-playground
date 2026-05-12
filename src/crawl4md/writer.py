@@ -7,6 +7,7 @@ import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from crawl4md.config import ExtractedPage
 
@@ -17,6 +18,7 @@ _MB = 1024 * 1024
 _CONTENT_PREFIX = "content_"
 # Zero-padding width for file index numbers (e.g. 3 → 001, 002, …)
 _FILE_INDEX_WIDTH = 3
+_YAML_FRONT_MATTER_DELIMITER = "---\n"
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,7 @@ class FileWriter:
         max_file_size_mb: float = 15.0,
         file_extension: str = ".txt",
         prefix: str = "",
+        run_metadata: dict[str, Any] | None = None,
     ) -> None:
         self._output_dir = Path(output_dir) if output_dir else None
         self._max_bytes = int(max_file_size_mb * _MB)
@@ -74,6 +77,11 @@ class FileWriter:
         self._current_size = 0
         self._bytes_on_disk = 0  # bytes already written to the current file
         self._files: list[Path] = []
+        self._run_metadata: dict[str, Any] = run_metadata.copy() if run_metadata else {}
+
+    def set_run_metadata(self, metadata: dict[str, Any] | None) -> None:
+        """Set run metadata used to render file-level YAML front matter."""
+        self._run_metadata = metadata.copy() if metadata else {}
 
     # ------------------------------------------------------------------
     # Incremental API
@@ -165,17 +173,21 @@ class FileWriter:
                 )
                 # Flush current buffer first
                 if current_chunks:
-                    files.append(self._write_to(output_dir, file_index, current_chunks, ext))
+                    files.append(
+                        self._write_to_with_prefix(output_dir, file_index, current_chunks, ext)
+                    )
                     file_index += 1
                     current_chunks = []
                     current_size = 0
                 # Write oversized page alone
-                files.append(self._write_to(output_dir, file_index, [block], ext))
+                files.append(self._write_to_with_prefix(output_dir, file_index, [block], ext))
                 file_index += 1
                 continue
 
             if current_size + block_size > max_bytes and current_chunks:
-                files.append(self._write_to(output_dir, file_index, current_chunks, ext))
+                files.append(
+                    self._write_to_with_prefix(output_dir, file_index, current_chunks, ext)
+                )
                 file_index += 1
                 current_chunks = []
                 current_size = 0
@@ -184,7 +196,7 @@ class FileWriter:
             current_size += block_size
 
         if current_chunks:
-            files.append(self._write_to(output_dir, file_index, current_chunks, ext))
+            files.append(self._write_to_with_prefix(output_dir, file_index, current_chunks, ext))
 
         return files
 
@@ -202,6 +214,7 @@ class FileWriter:
             self._output_dir
             / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:0{_FILE_INDEX_WIDTH}d}{self._file_extension}"
         )
+        self._write_file_header_if_needed(path)
         with path.open("ab") as fh:
             fh.write("".join(self._current_chunks).encode("utf-8"))
         if path not in self._files:
@@ -218,7 +231,9 @@ class FileWriter:
             self._output_dir
             / f"{self._prefix}{_CONTENT_PREFIX}{self._file_index:0{_FILE_INDEX_WIDTH}d}{self._file_extension}"
         )
-        path.write_bytes("".join(chunks).encode("utf-8"))
+        self._write_file_header_if_needed(path)
+        with path.open("ab") as fh:
+            fh.write("".join(chunks).encode("utf-8"))
         if path not in self._files:
             self._files.append(path)
 
@@ -241,6 +256,132 @@ class FileWriter:
         path = output_dir / filename
         path.write_bytes("".join(chunks).encode("utf-8"))
         return path
+
+    def _write_to_with_prefix(
+        self,
+        output_dir: Path,
+        index: int,
+        chunks: list[str],
+        ext: str = ".txt",
+    ) -> Path:
+        """Write chunks to a numbered output file including writer prefix."""
+        filename = f"{self._prefix}{_CONTENT_PREFIX}{index:0{_FILE_INDEX_WIDTH}d}{ext}"
+        path = output_dir / filename
+        self._write_file_header_if_needed(path)
+        with path.open("ab") as fh:
+            fh.write("".join(chunks).encode("utf-8"))
+        return path
+
+    def _write_file_header_if_needed(self, path: Path) -> None:
+        """Write YAML front matter once at the top of each new content file."""
+        if path.exists() and path.stat().st_size > 0:
+            return
+
+        front_matter = self._build_front_matter(path.parent)
+        if not front_matter:
+            return
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("ab") as fh:
+            fh.write(front_matter.encode("utf-8"))
+
+    def _build_front_matter(self, stored_directory: Path) -> str:
+        """Build file-level YAML metadata for generated crawl content files."""
+        if not self._run_metadata:
+            return ""
+
+        status = "success"
+        if self._prefix.startswith("fail_") or self._prefix.startswith("sorted_fail_"):
+            status = "failed"
+
+        data: dict[str, Any] = {
+            "crawl_start_datetime": self._run_metadata.get("crawl_start_datetime"),
+            "session_id": self._run_metadata.get("session_id"),
+            "stored_directory": str(stored_directory),
+            "crawl_parameters": self._run_metadata.get("crawl_parameters", {}),
+            "status": status,
+        }
+
+        lines = [_YAML_FRONT_MATTER_DELIMITER]
+        for key, value in data.items():
+            self._append_yaml_key_value(lines, key, value)
+        lines.append(_YAML_FRONT_MATTER_DELIMITER)
+        return "".join(lines)
+
+    @classmethod
+    def _append_yaml_key_value(
+        cls,
+        lines: list[str],
+        key: str,
+        value: Any,
+        *,
+        indent: int = 0,
+    ) -> None:
+        """Append one YAML key/value entry, expanding nested objects as needed."""
+        prefix = " " * indent
+        if isinstance(value, dict):
+            if not value:
+                lines.append(f"{prefix}{key}: {{}}\n")
+                return
+            lines.append(f"{prefix}{key}:\n")
+            for child_key, child_value in value.items():
+                cls._append_yaml_key_value(
+                    lines,
+                    str(child_key),
+                    child_value,
+                    indent=indent + 2,
+                )
+            return
+
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"{prefix}{key}: []\n")
+                return
+            lines.append(f"{prefix}{key}:\n")
+            cls._append_yaml_list(lines, value, indent=indent + 2)
+            return
+
+        lines.append(f"{prefix}{key}: {cls._yaml_scalar(value)}\n")
+
+    @classmethod
+    def _append_yaml_list(cls, lines: list[str], values: list[Any], *, indent: int = 0) -> None:
+        """Append YAML list items, expanding nested containers recursively."""
+        prefix = " " * indent
+        for item in values:
+            if isinstance(item, dict):
+                if not item:
+                    lines.append(f"{prefix}- {{}}\n")
+                    continue
+                lines.append(f"{prefix}-\n")
+                for child_key, child_value in item.items():
+                    cls._append_yaml_key_value(
+                        lines,
+                        str(child_key),
+                        child_value,
+                        indent=indent + 2,
+                    )
+                continue
+
+            if isinstance(item, list):
+                if not item:
+                    lines.append(f"{prefix}- []\n")
+                    continue
+                lines.append(f"{prefix}-\n")
+                cls._append_yaml_list(lines, item, indent=indent + 2)
+                continue
+
+            lines.append(f"{prefix}- {cls._yaml_scalar(item)}\n")
+
+    @staticmethod
+    def _yaml_scalar(value: Any) -> str:
+        """Render a JSON-serializable scalar/object in a YAML-compatible form."""
+        if isinstance(value, str):
+            return json.dumps(value, ensure_ascii=False)
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if value is None:
+            return "null"
+        return str(value)
 
 
 def rename_files_with_total(files: list[Path]) -> list[Path]:

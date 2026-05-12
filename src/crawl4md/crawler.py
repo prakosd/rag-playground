@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import json
 import random
 import re
 import sys
@@ -97,6 +98,7 @@ _FINAL_DIR_NAME = "final"
 
 # Prefix for per-round subdirectory names (e.g. "round_1")
 _ROUND_DIR_PREFIX = "round_"
+_SESSION_DIR_PREFIX = "session_"
 
 # Suffix for successful-page file names (e.g. "success_content_001.txt")
 _SUCCESS_SUFFIX = "success_"
@@ -271,6 +273,7 @@ class SiteCrawler:
         # generation.  Set by _run_rounds_async before each round.
         self._success_sidecar: Path | None = None
         self._fail_sidecar: Path | None = None
+        self._run_metadata: dict[str, object] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -293,6 +296,7 @@ class SiteCrawler:
         ``html`` and ``markdown`` are empty strings.
         """
         self.output_dir = self._create_output_dir()
+        self._run_metadata = self._build_run_metadata()
         self._emit_progress(
             {
                 "event": _PROGRESS_EVENT_STARTED,
@@ -303,8 +307,10 @@ class SiteCrawler:
         # Attach output_dir to writer so incremental flushes land there
         if self._writer is not None:
             self._writer._output_dir = self.output_dir
+            self._writer.set_run_metadata(self._run_metadata)
         if self._fail_writer is not None:
             self._fail_writer._output_dir = self.output_dir
+            self._fail_writer.set_run_metadata(self._run_metadata)
         try:
             if sys.platform == "win32":
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -1533,6 +1539,7 @@ class SiteCrawler:
             max_file_size_mb=self.page_config.max_file_size_mb,
             file_extension=ext,
             prefix=prefix,
+            run_metadata=self._run_metadata,
         )
         for entry in entries:
             page = PageSidecar.read_page_at(
@@ -1765,6 +1772,27 @@ class SiteCrawler:
         output_dir = self._output_base / folder_name
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
+
+    def _build_run_metadata(self) -> dict[str, object]:
+        """Build run-level metadata used in output-file YAML front matter."""
+        assert self.output_dir is not None
+        crawl_parameters: dict[str, object] = {
+            "crawler_config": json.loads(self.config.model_dump_json()),
+            "page_config": json.loads(self.page_config.model_dump_json()),
+        }
+        return {
+            "crawl_start_datetime": datetime.now().isoformat(timespec="seconds"),
+            "session_id": self._derive_session_id(),
+            "crawl_parameters": crawl_parameters,
+        }
+
+    def _derive_session_id(self) -> str:
+        """Return Streamlit session folder name when present; else output dir name."""
+        assert self.output_dir is not None
+        for path in [self.output_dir, *self.output_dir.parents]:
+            if path.name.startswith(_SESSION_DIR_PREFIX):
+                return path.name
+        return self.output_dir.name
 
     def _save_url_list(self, results: list[CrawlResult]) -> None:
         """Write urls.txt with one URL per line (legacy, kept for compatibility)."""

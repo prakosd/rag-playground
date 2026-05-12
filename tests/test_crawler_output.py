@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -130,6 +131,110 @@ class TestFailContentFiles:
         assert crawler.output_dir is not None
         fail_files = list(crawler.output_dir.glob("**/fail_content*"))
         assert len(fail_files) == 0
+
+
+class TestOutputFrontMatter:
+    """Tests for YAML front matter metadata on generated content files."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_all_generated_content_files_include_front_matter(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """Every generated success/fail content file starts with required metadata."""
+        ok_url = "https://example.com/ok"
+        blocked_url = "https://example.com/blocked"
+
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 123</body></html>"
+
+        async def _mock_arun(*, url, config):
+            if url == blocked_url:
+                return _make_mock_result(url, blocked_html, "blocked page text")
+            return _make_mock_result(url, "<p>ok</p>", "ok content")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=_mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[ok_url, blocked_url],
+            limit=2,
+            max_retries=0,
+            flush_interval=1,
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        content_files = sorted(crawler.output_dir.glob("**/*content_*.txt"))
+        assert content_files
+
+        for file_path in content_files:
+            content = file_path.read_text(encoding="utf-8")
+            assert content.startswith("---\n")
+            assert "crawl_start_datetime:" in content
+            assert f'session_id: "{crawler.output_dir.name}"' in content
+            assert f"stored_directory: {json.dumps(str(file_path.parent))}" in content
+            assert "crawl_parameters:" in content
+            if "fail_content_" in file_path.name:
+                assert 'status: "failed"' in content
+            else:
+                assert 'status: "success"' in content
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_session_id_uses_streamlit_session_folder(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """When output_base is under a Streamlit session folder, session_id uses that folder."""
+        streamlit_session = "session_n25mbzlcfcpn"
+        output_base = (
+            tmp_path
+            / "outputs"
+            / "streamlit_sessions"
+            / streamlit_session
+            / "crawl_20260512_132924_iqlz0jd1_ukv"
+        )
+
+        mock_result = _make_mock_result("https://example.com/page", "<p>ok</p>", "ok content")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/page"],
+            limit=1,
+            max_retries=0,
+            flush_interval=1,
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config,
+            page_config,
+            output_base=output_base,
+            extractor=extractor,
+            writer=writer,
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        content_files = sorted(crawler.output_dir.glob("round_1/success_content_*.txt"))
+        assert content_files
+
+        content = content_files[0].read_text(encoding="utf-8")
+        assert f'session_id: "{streamlit_session}"' in content
 
 
 class TestPrintSummary:
@@ -512,9 +617,9 @@ class TestFinalUnsortedContentFiles:
         final_files = list(crawler.output_dir.glob("final/success_content_*.txt"))
         assert len(final_files) >= 1
         content = final_files[0].read_text(encoding="utf-8")
-        # Both URLs should appear exactly once
-        assert content.count(url_a) == 1
-        assert content.count(url_b) == 1
+        # Both source blocks should appear exactly once
+        assert content.count(f"*Source: {url_a}*") == 1
+        assert content.count(f"*Source: {url_b}*") == 1
 
 
 class TestRoundSuccessSnapshots:
@@ -564,8 +669,8 @@ class TestRoundSuccessSnapshots:
         round_2_files = list(crawler.output_dir.glob("round_2/success_content_*.txt"))
         assert len(round_2_files) >= 1
         round_2_content = round_2_files[0].read_text(encoding="utf-8")
-        assert round_2_content.count(url_a) == 1
-        assert round_2_content.count(url_b) == 1
+        assert round_2_content.count(f"*Source: {url_a}*") == 1
+        assert round_2_content.count(f"*Source: {url_b}*") == 1
 
 
 class TestSortedRoundFiles:
@@ -1094,8 +1199,8 @@ class TestSidecarFiles:
         assert "https://example.com/b/page" in content
 
         # In sorted output, /a/ should come before /b/
-        pos_a = content.index("example.com/a/page")
-        pos_b = content.index("example.com/b/page")
+        pos_a = content.index("*Source: https://example.com/a/page*")
+        pos_b = content.index("*Source: https://example.com/b/page*")
         assert pos_a < pos_b
 
     @patch("crawl4md.crawler.AsyncWebCrawler")

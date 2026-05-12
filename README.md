@@ -232,6 +232,58 @@ Each crawl creates a timestamped folder with three tiers of output:
 └── sorted_final_fail_urls.txt
 ```
 
+Every generated content file (`*_content_*.txt` / `*_content_*.md`) starts with YAML front matter metadata.
+
+Example:
+
+```yaml
+---
+crawl_start_datetime: "2026-05-12T23:19:38"
+session_id: "2026-05-12_23-19-38"
+stored_directory: "outputs\\streamlit_sessions\\session_mrjnre7ljfxx\\crawl_20260512_131938_bms4zel2a4ya\\2026-05-12_23-19-38\\round_1"
+crawl_parameters:
+  crawler_config:
+    urls:
+      - "https://www.ato.gov.au/"
+    exclude_paths:
+      - "ato.gov.au/api/"
+    include_only_paths:
+      - "ato.gov.au"
+    limit: 2000
+    max_depth: 5
+    flush_interval: 1
+    delay: 3.0
+    stealth: true
+    strip_www: false
+    headers: {}
+    max_retries: 5
+  page_config:
+    exclude_tags:
+      - "nav"
+      - "script"
+      - "form"
+      - "style"
+    include_only_tags: []
+    wait_until: "networkidle"
+    wait_for: 3.0
+    timeout: 60.0
+    max_file_size_mb: 10.0
+    extract_main_content: true
+    output_extension: ".md"
+    separate_items: true
+    item_selector: ""
+    js_code: []
+    scan_full_page: true
+    scroll_delay: 0.4
+    ocr_languages:
+      - "eng"
+      - "msa"
+    absolute_links: true
+    flatten_shadow_dom: true
+status: "success"
+---
+```
+
 ## Notebook Usage
 
 The Jupyter Notebook is still available for technical users who want to inspect or adjust the Python workflow step by step. Non-technical users should use the Streamlit app instead.
