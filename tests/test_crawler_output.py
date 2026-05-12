@@ -189,9 +189,7 @@ class TestOutputFrontMatter:
                 assert 'status: "success"' in content
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
-    def test_session_id_uses_streamlit_session_folder(
-        self, mock_crawler_cls, tmp_path: Path
-    ):
+    def test_session_id_uses_streamlit_session_folder(self, mock_crawler_cls, tmp_path: Path):
         """When output_base is under a Streamlit session folder, session_id uses that folder."""
         streamlit_session = "session_n25mbzlcfcpn"
         output_base = (

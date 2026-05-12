@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from crawl4md_streamlit.i18n import Strings
+
 _ACTION_START = "start"
 _ACTION_STOP = "stop"
 
@@ -13,9 +15,6 @@ _BUTTON_TYPE_SECONDARY = "secondary"
 
 _ICON_START = ":material/play_arrow:"
 _ICON_STOP = ":material/stop_circle:"
-
-_LABEL_START = "Start"
-_LABEL_STOP = "Stop"
 
 _STATE_CANCEL_REQUESTED = "cancel_requested"
 _STATE_RUNNING = "running"
@@ -40,13 +39,14 @@ def crawl_action_buttons(
     state: str,
     *,
     job_alive: bool,
+    strings: Strings,
 ) -> tuple[CrawlActionButton, ...]:
     """Return the action buttons that should be visible for a crawl state."""
     if state == _STATE_CANCEL_REQUESTED:
         return (
             CrawlActionButton(
                 action=_ACTION_STOP,
-                label=_LABEL_STOP,
+                label=strings["BTN_STOP"],
                 icon=_ICON_STOP,
                 button_type=_BUTTON_TYPE_SECONDARY,
                 disabled=True,
@@ -56,7 +56,7 @@ def crawl_action_buttons(
         return (
             CrawlActionButton(
                 action=_ACTION_STOP,
-                label=_LABEL_STOP,
+                label=strings["BTN_STOP"],
                 icon=_ICON_STOP,
                 button_type=_BUTTON_TYPE_SECONDARY,
             ),
@@ -64,7 +64,7 @@ def crawl_action_buttons(
     return (
         CrawlActionButton(
             action=_ACTION_START,
-            label=_LABEL_START,
+            label=strings["BTN_START"],
             icon=_ICON_START,
             button_type=_BUTTON_TYPE_PRIMARY,
         ),

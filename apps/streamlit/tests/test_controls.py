@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from crawl4md_streamlit.controls import crawl_action_buttons
+from crawl4md_streamlit.i18n import STRINGS_EN
 
 
 def _actions_for(
@@ -13,6 +14,7 @@ def _actions_for(
         for button in crawl_action_buttons(
             state,
             job_alive=state == "running" if job_alive is None else job_alive,
+            strings=STRINGS_EN,
         )
     ]
 

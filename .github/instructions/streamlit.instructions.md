@@ -1,6 +1,6 @@
 ---
 description: "Use when editing the Streamlit app, Streamlit support helpers, or their tests. Covers session isolation, background crawl jobs, progress/cancel events, downloads, and container startup."
-applyTo: "apps/streamlit/streamlit_app.py, apps/streamlit/src/crawl4md_streamlit/support.py, apps/streamlit/src/crawl4md_streamlit/controls.py, apps/streamlit/tests/**"
+applyTo: "apps/streamlit/streamlit_app.py, apps/streamlit/src/crawl4md_streamlit/support.py, apps/streamlit/src/crawl4md_streamlit/controls.py, apps/streamlit/src/crawl4md_streamlit/i18n/**, apps/streamlit/tests/**"
 ---
 
 # Streamlit App
@@ -24,3 +24,4 @@ Browser UI for users who prefer a form-based crawl workflow instead of the noteb
 - Downloads should come from the generated-file listing helper and respect the app download-size guard.
 - The dev container starts Streamlit on attach at `0.0.0.0:8501`. If the port or startup command changes, update `.devcontainer/devcontainer.json`, `README.md`, and `devcontainer.instructions.md` together.
 - Tests must use `tmp_path` and mocked/stubbed crawl jobs. Never make real network requests from Streamlit tests.
+- **Translation catalog:** Whenever new user-facing text is added to the Streamlit UI, add both an English and an Indonesian entry to the `apps/streamlit/src/crawl4md_streamlit/i18n/` package first — `en.py` and `id.py` — then reference the key via `get_strings()` in the UI code. Never hardcode text directly in Streamlit components. To add a new language, create a new `<code>.py` file in the package and register it in `__init__.py`.

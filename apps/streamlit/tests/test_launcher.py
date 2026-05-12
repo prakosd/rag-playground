@@ -52,9 +52,9 @@ def test_stop_form_submit_sets_confirmation_flag() -> None:
 def test_stop_confirmation_dialog_wires_both_actions() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 
-    assert 'if st.button("Keep running", key="stop_cancel_button"):' in app_source
-    assert "if st.button(" in app_source
-    assert '"Stop crawl",' in app_source
+    assert 'st.button(strings["DIALOG_BTN_KEEP"], key="stop_cancel_button")' in app_source
+    assert "st.button(" in app_source
+    assert 'strings["DIALOG_BTN_STOP"],' in app_source
     assert "_stop_job()" in app_source
 
 

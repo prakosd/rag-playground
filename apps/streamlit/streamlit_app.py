@@ -11,8 +11,10 @@ import streamlit as st
 from pydantic import ValidationError
 
 from crawl4md_streamlit.controls import crawl_action_buttons
+from crawl4md_streamlit.i18n import CATALOG, get_strings
 from crawl4md_streamlit.support import (
     _DEFAULT_ACTIVITY_LOG_SIZE,
+    _PLAYWRIGHT_MISSING_BROWSER_MESSAGE,
     CrawlJob,
     activity_log_path,
     build_configs,
@@ -46,6 +48,7 @@ _DEFAULT_WAIT_FOR = 3.0
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _OUTPUT_EXTENSION_OPTIONS = [".md", ".txt"]
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
+_DEFAULT_LANGUAGE = "English"
 _TOAST_PAGE_SUCCESS_ICON = "✅"
 _TOAST_PAGE_FAIL_ICON = "❌"
 _TOAST_PAGE_DISCOVERED_ICON = "🔎"
@@ -90,6 +93,7 @@ def _init_state() -> None:
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("form_defaults", _default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
+    st.session_state.setdefault("language", "English")
 
 
 def _default_form_values() -> dict[str, Any]:
@@ -158,139 +162,134 @@ def _form_values(
     state: str,
     job_alive: bool,
 ) -> dict[str, Any]:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     defaults = st.session_state.form_defaults
     with st.form("crawl_settings", enter_to_submit=False):
-        st.subheader("Set up your crawl")
-        st.caption(
-            "Configure the starting URLs, filtering rules, and crawl behaviour before starting."
-        )
+        st.subheader(strings["FORM_SUBHEADER"])
+        st.caption(strings["FORM_CAPTION"])
         urls = st.text_area(
-            "Website URLs",
+            strings["FORM_URLS_LABEL"],
             value=str(defaults.get("urls", _DEFAULT_URLS)),
             height=68,
-            help="Paste one or more starting pages. Use one line per site or separate with commas.",
+            help=strings["FORM_URLS_HELP"],
             disabled=fields_disabled,
         )
         include_only_paths = st.text_area(
-            "Only include URL patterns",
+            strings["FORM_INCLUDE_PATHS_LABEL"],
             value=str(defaults.get("include_only_paths", _DEFAULT_INCLUDE_ONLY_PATHS)),
             height=68,
-            help="Leave blank to allow all pages on the same site. Use regex patterns to stay inside a section.",
+            help=strings["FORM_INCLUDE_PATHS_HELP"],
             disabled=fields_disabled,
         )
         exclude_paths = st.text_area(
-            "Skip URL patterns",
+            strings["FORM_EXCLUDE_PATHS_LABEL"],
             value=str(defaults.get("exclude_paths", _DEFAULT_EXCLUDE_PATHS)),
             height=68,
-            help="Pages matching these regex patterns will be skipped.",
+            help=strings["FORM_EXCLUDE_PATHS_HELP"],
             disabled=fields_disabled,
         )
         basic_cols = st.columns(3)
         with basic_cols[0]:
             limit = st.number_input(
-                "Page limit",
+                strings["FORM_LIMIT_LABEL"],
                 min_value=1,
                 value=int(defaults.get("limit", _DEFAULT_LIMIT)),
-                help=(
-                    "Discovery cutoff: once this many pages are discovered, "
-                    "the crawler stops discovering new links but still finishes "
-                    "all already discovered pages."
-                ),
+                help=strings["FORM_LIMIT_HELP"],
                 disabled=fields_disabled,
             )
             delay = st.number_input(
-                "Delay between pages",
+                strings["FORM_DELAY_LABEL"],
                 min_value=0.0,
                 value=float(defaults.get("delay", _DEFAULT_DELAY)),
                 step=0.5,
-                help="Adds a pause between pages to reduce blocking by websites.",
+                help=strings["FORM_DELAY_HELP"],
                 disabled=fields_disabled,
             )
         with basic_cols[1]:
             max_depth = st.number_input(
-                "Link depth",
+                strings["FORM_DEPTH_LABEL"],
                 min_value=1,
                 value=int(defaults.get("max_depth", _DEFAULT_MAX_DEPTH)),
-                help="How many clicks deep to follow links.",
+                help=strings["FORM_DEPTH_HELP"],
                 disabled=fields_disabled,
             )
             max_retries = st.number_input(
-                "Retry rounds",
+                strings["FORM_RETRIES_LABEL"],
                 min_value=2,
                 value=int(defaults.get("max_retries", _DEFAULT_MAX_RETRIES)),
-                help="Tries failed pages again after a cooldown.",
+                help=strings["FORM_RETRIES_HELP"],
                 disabled=fields_disabled,
             )
         with basic_cols[2]:
             output_extension = st.segmented_control(
-                "Output format",
+                strings["FORM_OUTPUT_FORMAT_LABEL"],
                 _OUTPUT_EXTENSION_OPTIONS,
                 default=str(defaults.get("output_extension", ".md")),
-                help="Choose Markdown for formatted text or TXT for plain text.",
+                help=strings["FORM_OUTPUT_FORMAT_HELP"],
                 disabled=fields_disabled,
             )
             extract_main_content = st.checkbox(
-                "Extract main content only",
+                strings["FORM_EXTRACT_MAIN_LABEL"],
                 value=bool(defaults.get("extract_main_content", True)),
-                help="Keeps article/product text and strips most menus, footers, and sidebars.",
+                help=strings["FORM_EXTRACT_MAIN_HELP"],
                 disabled=fields_disabled,
             )
 
-        with st.expander("Advanced options"):
+        with st.expander(strings["FORM_ADVANCED_LABEL"]):
             advanced_cols = st.columns(3)
             with advanced_cols[0]:
                 flush_interval = st.number_input(
-                    "Write every N pages",
+                    strings["FORM_FLUSH_LABEL"],
                     min_value=1,
                     value=int(defaults.get("flush_interval", _DEFAULT_FLUSH_INTERVAL)),
-                    help="Writes generated files periodically during the crawl.",
+                    help=strings["FORM_FLUSH_HELP"],
                     disabled=fields_disabled,
                 )
                 max_file_size_mb = st.number_input(
-                    "Max file size (MB)",
+                    strings["FORM_MAX_FILE_SIZE_LABEL"],
                     min_value=0.1,
                     value=float(defaults.get("max_file_size_mb", _DEFAULT_MAX_FILE_SIZE_MB)),
                     step=0.5,
-                    help="Splits output into files that are easier to open and download.",
+                    help=strings["FORM_MAX_FILE_SIZE_HELP"],
                     disabled=fields_disabled,
                 )
             with advanced_cols[1]:
                 wait_for = st.number_input(
-                    "Extra render wait",
+                    strings["FORM_WAIT_FOR_LABEL"],
                     min_value=0.0,
                     value=float(defaults.get("wait_for", _DEFAULT_WAIT_FOR)),
                     step=0.5,
-                    help="Helps JavaScript-heavy pages finish loading before extraction.",
+                    help=strings["FORM_WAIT_FOR_HELP"],
                     disabled=fields_disabled,
                 )
                 timeout = st.number_input(
-                    "Page timeout",
+                    strings["FORM_TIMEOUT_LABEL"],
                     min_value=0.0,
                     value=float(defaults.get("timeout", _DEFAULT_TIMEOUT)),
                     step=5.0,
-                    help="Maximum seconds to spend loading one page.",
+                    help=strings["FORM_TIMEOUT_HELP"],
                     disabled=fields_disabled,
                 )
             with advanced_cols[2]:
                 activity_log_size = st.number_input(
-                    "Activity log entries",
+                    strings["FORM_ACTIVITY_LOG_LABEL"],
                     min_value=1,
                     value=int(
                         defaults.get("activity_log_size", st.session_state.activity_log_size)
                     ),
-                    help="Controls how many newest entries are shown in the Activity log panel.",
+                    help=strings["FORM_ACTIVITY_LOG_HELP"],
                     disabled=fields_disabled,
                 )
             exclude_tags = st.text_input(
-                "HTML tags to remove",
+                strings["FORM_EXCLUDE_TAGS_LABEL"],
                 value=str(defaults.get("exclude_tags", _DEFAULT_EXCLUDE_TAGS)),
-                help="Common values remove menus, scripts, forms, and styles from extracted text.",
+                help=strings["FORM_EXCLUDE_TAGS_HELP"],
                 disabled=fields_disabled,
             )
             include_only_tags = st.text_input(
-                "Only keep these HTML tags",
+                strings["FORM_INCLUDE_ONLY_TAGS_LABEL"],
                 value=str(defaults.get("include_only_tags", "")),
-                help="Advanced: only extract content from these HTML tags. Leave blank for normal use.",
+                help=strings["FORM_INCLUDE_ONLY_TAGS_HELP"],
                 disabled=fields_disabled,
             )
 
@@ -299,7 +298,7 @@ def _form_values(
         action_cols = st.columns([1.5, 3], vertical_alignment="bottom")
         for action_col, action_button in zip(
             action_cols,
-            crawl_action_buttons(state, job_alive=job_alive),
+            crawl_action_buttons(state, job_alive=job_alive, strings=strings),
             strict=False,
         ):
             with action_col:
@@ -308,6 +307,7 @@ def _form_values(
                     type=action_button.button_type,
                     icon=action_button.icon,
                     disabled=action_button.disabled,
+                    key=action_button.action.capitalize(),
                 )
             if action_button.action == "start":
                 submitted = pressed
@@ -363,17 +363,19 @@ def _start_job(values: dict[str, Any]) -> None:
 
 
 def _stop_job() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     job = st.session_state.job
     if job is not None and job.thread.is_alive():
         st.session_state.job_state = _STATE_CANCEL_REQUESTED
         request_cancel(job)
         st.rerun()
         return
-    st.warning("There is no active crawl to stop.")
+    st.warning(strings["ERROR_NO_ACTIVE_CRAWL"])
 
 
 @st.dialog("Stop crawl?", width="small")
 def _stop_confirmation_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     st.markdown(
         """
         <style>
@@ -396,15 +398,15 @@ def _stop_confirmation_dialog() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.write("Stop this crawl now? This will cancel any pages still in progress.")
+    st.write(strings["DIALOG_STOP_BODY"])
     action_cols = st.columns(2)
     with action_cols[0]:
-        if st.button("Keep running", key="stop_cancel_button"):
+        if st.button(strings["DIALOG_BTN_KEEP"], key="stop_cancel_button"):
             st.session_state.stop_confirmation_open = False
             st.rerun()
     with action_cols[1]:
         if st.button(
-            "Stop crawl",
+            strings["DIALOG_BTN_STOP"],
             type="secondary",
             icon=":material/stop_circle:",
             key="stop_confirm_button",
@@ -421,11 +423,14 @@ def render_progress_and_files(
     limit: int,
     state: str,
 ) -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     denominator = discovered if discovered > 0 else max(limit, 1)
     progress_ratio = min(max(processed / denominator, 0.0), 1.0)
     progress_pct = progress_ratio * 100
     normalized_state = (state or "unknown").strip().lower()
-    state_label = normalized_state.replace("_", " ").title()
+    state_label = strings["STATE_LABELS"].get(
+        normalized_state, normalized_state.replace("_", " ").title()
+    )
     state_icon = {
         _STATE_IDLE: "🟡",
         _STATE_RUNNING: "🟢",
@@ -434,13 +439,17 @@ def render_progress_and_files(
         _STATE_CANCEL_REQUESTED: "🟠",
         _STATE_STOPPED: "⏹️",
     }.get(normalized_state, "⚠️")
-    denominator_label = f"{discovered:,} discovered" if discovered > 0 else f"{limit:,} limit"
+    denominator_label = (
+        strings["DENOM_DISCOVERED"].format(n=f"{discovered:,}")
+        if discovered > 0
+        else strings["DENOM_LIMIT"].format(n=f"{limit:,}")
+    )
 
     with st.container():
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
             f"<span>📄 {processed:,} / {denominator_label}</span>"
-            f"<span>⏳ {progress_pct:.2f}% complete</span>"
+            f"<span>⏳ {progress_pct:.2f}% {strings['PROGRESS_COMPLETE']}</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -448,27 +457,27 @@ def render_progress_and_files(
 
         row1 = st.columns(3)
         row1[0].metric(
-            label="📄 Processed",
+            label=strings["METRIC_PROCESSED_LABEL"],
             value=f"{processed:,}",
-            delta=f"{processed:,} total",
+            delta=strings["METRIC_PROCESSED_DELTA"].format(n=f"{processed:,}"),
             delta_color="off",
-            help="Number of pages processed so far",
+            help=strings["METRIC_PROCESSED_TOOLTIP"],
             border=True,
         )
         row1[1].metric(
-            label="✅ Successful",
+            label=strings["METRIC_SUCCESSFUL_LABEL"],
             value=f"{successful:,}",
-            delta=f"{successful:,} completed",
+            delta=strings["METRIC_SUCCESSFUL_DELTA"].format(n=f"{successful:,}"),
             delta_color="normal",
-            help="Pages processed successfully",
+            help=strings["METRIC_SUCCESSFUL_TOOLTIP"],
             border=True,
         )
         row1[2].metric(
-            label="❌ Failed",
+            label=strings["METRIC_FAILED_LABEL"],
             value=f"{failed:,}",
-            delta=f"{failed:,} failed",
+            delta=strings["METRIC_FAILED_DELTA"].format(n=f"{failed:,}"),
             delta_color="inverse",
-            help="Pages that failed during processing",
+            help=strings["METRIC_FAILED_TOOLTIP"],
             border=True,
         )
 
@@ -476,46 +485,48 @@ def render_progress_and_files(
         discovered_remaining = max(limit - discovered, 0)
         limit_reached = discovered >= limit
         limit_status_delta = (
-            "Discovery stopped (limit reached)" if limit_reached else "Discovering more pages"
+            strings["METRIC_LIMIT_DELTA_REACHED"]
+            if limit_reached
+            else strings["METRIC_LIMIT_DELTA_MORE"]
         )
         row2[0].metric(
-            label="🔎 Discovered",
+            label=strings["METRIC_DISCOVERED_LABEL"],
             value=f"{discovered:,}",
-            delta=f"{discovered:,} found, {discovered_remaining:,} remaining",
+            delta=strings["METRIC_DISCOVERED_DELTA"].format(
+                n=f"{discovered:,}", m=f"{discovered_remaining:,}"
+            ),
             delta_color="normal",
-            help="URLs discovered and queued so far",
+            help=strings["METRIC_DISCOVERED_TOOLTIP"],
             border=True,
         )
         row2[1].metric(
-            label="🔢 Limit",
+            label=strings["METRIC_LIMIT_LABEL"],
             value=f"{limit:,}",
             delta=limit_status_delta,
             delta_color="off",
-            help=(
-                "Discovery cutoff — once reached, no new URLs are added, "
-                "but already discovered URLs are still crawled."
-            ),
+            help=strings["METRIC_LIMIT_TOOLTIP"],
             border=True,
         )
         with row2[2]:
             st.metric(
-                label=f"{state_icon} State",
+                label=f"{state_icon} {strings['METRIC_STATE_WORD']}",
                 value=state_label,
-                delta="Current lifecycle stage",
+                delta=strings["METRIC_STATE_DELTA"],
                 delta_color="off",
-                help="Current crawl lifecycle state",
+                help=strings["METRIC_STATE_TOOLTIP"],
                 border=True,
             )
 
         if normalized_state == _STATE_FAILED:
-            st.error("🔴 Failed — processing encountered errors")
+            st.error(strings["BANNER_FAILED"])
         elif normalized_state == _STATE_CANCEL_REQUESTED:
-            st.info("🟡 Stop requested — waiting for worker to finish")
+            st.info(strings["BANNER_CANCEL_REQUESTED"])
         elif normalized_state == _STATE_STOPPED:
-            st.info("🟡 Stopped — generated files remain available")
+            st.info(strings["BANNER_STOPPED"])
 
 
 def _render_status() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     job = st.session_state.job
     state_changed = _drain_job_events(job)
     if state_changed and st.session_state.job_state in _REFRESH_FORM_STATES:
@@ -530,17 +541,17 @@ def _render_status() -> None:
     new_discovered = discovered_pages - int(st.session_state.get("prev_discovered_pages", 0))
     if new_success > 0:
         st.toast(
-            f"{successful_pages} page{'s' if successful_pages > 1 else ''} crawl success",
+            strings["TOAST_SUCCESS"].format(n=successful_pages),
             icon=_TOAST_PAGE_SUCCESS_ICON,
         )
     if new_fail > 0:
         st.toast(
-            f"{failed_pages} page{'s' if failed_pages > 1 else ''} failed crawl",
+            strings["TOAST_FAILED"].format(n=failed_pages),
             icon=_TOAST_PAGE_FAIL_ICON,
         )
     if new_discovered > 0:
         st.toast(
-            f"{discovered_pages} page{'s' if discovered_pages > 1 else ''} discovered",
+            strings["TOAST_DISCOVERED"].format(n=discovered_pages),
             icon=_TOAST_PAGE_DISCOVERED_ICON,
         )
     st.session_state.prev_successful_pages = successful_pages
@@ -565,12 +576,9 @@ def _render_status() -> None:
             elapsed = datetime.now(timezone.utc) - started_at
             elapsed_str = str(elapsed).split(".")[0]
         if current_url or elapsed_str:
-            left = (
-                f'Crawling: <a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
-                if current_url
-                else ""
-            )
-            right = f"Elapsed time: {elapsed_str}" if elapsed_str else ""
+            url_html = f'<a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
+            left = strings["STATUS_CRAWLING"].format(url_html=url_html) if current_url else ""
+            right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
                 f"<span>{left}</span><span>{right}</span>"
@@ -581,7 +589,11 @@ def _render_status() -> None:
     _render_status_content()
 
     if st.session_state.job_state == _STATE_FAILED:
-        st.error(str(latest.get("error", "The crawl failed.")))
+        err = str(latest.get("error", ""))
+        if err == _PLAYWRIGHT_MISSING_BROWSER_MESSAGE:
+            st.error(strings["ERROR_PLAYWRIGHT_MISSING"])
+        else:
+            st.error(err or strings["ERROR_CRAWL_FAILED_FALLBACK"])
 
 
 def _active_file_root() -> Path:
@@ -608,6 +620,7 @@ def _linkify_log_line(line: str) -> str:
 
 
 def _render_activity_log() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     log_path = activity_log_path(_active_file_root())
     max_lines = int(st.session_state.activity_log_size)
     lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
@@ -618,7 +631,7 @@ def _render_activity_log() -> None:
     st.session_state.activity_log_latest_line = latest_line
     if lines:
         st.write("")
-        st.markdown("**Activity log**")
+        st.markdown(f"**{strings['ACTIVITY_LOG_HEADER']}**")
         rows_html = "".join(
             f"<div style='padding:4px 8px;border-bottom:1px solid rgba(49,51,63,0.1);font-size:14px;font-family:sans-serif'>{_linkify_log_line(line)}</div>"
             for line in reversed(lines)
@@ -654,6 +667,7 @@ def render_tree(path: Path, root_path: Path) -> None:
 
 
 def _render_files() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
     file_root = _active_file_root()
     files = list_generated_files(
@@ -662,25 +676,25 @@ def _render_files() -> None:
         download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
     )
     if files:
-        st.markdown("**Generated Files**")
+        st.markdown(f"**{strings['FILES_HEADER']}**")
         rows = [
             {
-                "File": file.relative_path,
-                "Type": file.file_type,
-                "Size (MB)": round(file.size_bytes / (1024 * 1024), 3),
-                "Modified": file.modified_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                strings["FILES_COL_NAME"]: file.relative_path,
+                strings["FILES_COL_TYPE"]: file.file_type,
+                strings["FILES_COL_SIZE"]: round(file.size_bytes / (1024 * 1024), 3),
+                strings["FILES_COL_MODIFIED"]: file.modified_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
             }
             for file in files
         ]
         st.dataframe(rows, hide_index=True, width="stretch")
 
-    st.subheader("Downloads")
+    st.subheader(strings["FILES_DOWNLOADS_SUBHEADER"])
     if session_folder.exists():
         with st.expander(f"📁 {session_folder.name}", expanded=True):
             render_tree(session_folder, session_folder)
-        st.caption(f"Session folder: {session_folder}")
+        st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
     else:
-        st.warning("Session folder does not exist.")
+        st.warning(strings["ERROR_SESSION_FOLDER_MISSING"])
 
 
 @st.fragment(run_every="1s")
@@ -693,6 +707,8 @@ def _render_live_area() -> None:
 _run_startup_cleanup()
 _init_state()
 _drain_job_events(st.session_state.job)
+
+strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 
 st.markdown(
     f"""
@@ -708,12 +724,12 @@ st.markdown(
         margin-left: auto;
         margin-right: auto;
     }}
-    div[class*="st-key-FormSubmitter-crawl_settings-Stop"] button {{
+    div[class*="st-key-Stop"] button {{
         background-color: #dc2626;
         border-color: #dc2626;
         color: white;
     }}
-    div[class*="st-key-FormSubmitter-crawl_settings-Stop"] button:hover {{
+    div[class*="st-key-Stop"] button:hover {{
         background-color: #b91c1c;
         border-color: #b91c1c;
         color: white;
@@ -723,18 +739,26 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title(":material/travel_explore: crawl4md — Website Crawler")
-st.write(
-    "Point it at any website and crawl4md will follow links, extract the main content from each page, and save everything as clean, readable Markdown files."
-)
-st.caption(f"Session: {st.session_state.session_id}")
-
+st.title(strings["PAGE_TITLE"])
+st.write(strings["PAGE_SUBTITLE"])
 current_job = st.session_state.job
 current_state = st.session_state.job_state
 job_alive = _job_is_alive(current_job)
 fields_disabled = (
     current_state == _STATE_RUNNING and job_alive
 ) or current_state == _STATE_CANCEL_REQUESTED
+
+col_session, col_lang = st.columns([3, 1], vertical_alignment="center")
+with col_session:
+    st.caption(strings["SESSION_PREFIX"].format(session_id=st.session_state.session_id))
+with col_lang:
+    st.segmented_control(
+        label=strings["LANG_SELECTOR_LABEL"],
+        options=list(CATALOG.keys()),
+        key="language",
+        label_visibility="collapsed",
+        disabled=fields_disabled,
+    )
 
 values = _form_values(
     fields_disabled=fields_disabled,
@@ -744,7 +768,7 @@ values = _form_values(
 if values["submitted"]:
     st.session_state.stop_confirmation_open = False
     if current_job is not None and current_job.thread.is_alive():
-        st.warning("A crawl is already running in this browser session.")
+        st.warning(strings["ERROR_CRAWL_ALREADY_RUNNING"])
     else:
         _start_job(values)
 elif values["stop_submitted"]:
@@ -756,5 +780,5 @@ if st.session_state.stop_confirmation_open and not job_alive:
 if st.session_state.stop_confirmation_open:
     _stop_confirmation_dialog()
 
-st.subheader("📊 Progress")
+st.subheader(strings["PROGRESS_HEADER"])
 _render_live_area()
