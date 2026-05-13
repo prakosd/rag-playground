@@ -142,7 +142,7 @@ STRINGS_EN: Strings = {
     "FILES_COL_MODIFIED": "Modified",
     "FILES_SESSION_CAPTION": "Session folder: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} is too large to download from the app.",
-    "FILES_DOWNLOADS_IN_PROGRESS": "Downloads will be available after the crawl completes.",
+    "FILES_DOWNLOADS_IN_PROGRESS": "Crawl in progress — files generated so far are shown below.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Ready",

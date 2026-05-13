@@ -180,6 +180,71 @@ class TestSiteCrawler:
         assert mock_instance.arun.await_count == 1 + discovered_count
         assert all(result.success for result in results)
 
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_seed_url_excluded_by_include_only_not_in_discovered(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """Seed URLs that don't match include_only_paths are not added to discovered count."""
+        # Two seeds: /blog matches the include filter, /about does not.
+        result_blog = _make_mock_result("https://example.com/blog/", "<p>blog</p>", "blog")
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=result_blog)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/blog/", "https://example.com/about"],
+            include_only_paths=[r"/blog"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        results = crawler.crawl()
+
+        # Only /blog passes the include filter — /about is skipped entirely.
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/blog/"
+
+        # Discovered count should be 1 (only /blog), not 2.
+        page_events = [e for e in events if "queued_discovered_urls" in e]
+        assert page_events, "Expected at least one event with queued_discovered_urls"
+        max_discovered = max(int(e["queued_discovered_urls"]) for e in page_events)
+        assert max_discovered == 1, f"Expected 1 discovered, got {max_discovered}"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_seed_url_excluded_by_exclude_paths_not_in_discovered(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """Seed URLs matching exclude_paths are not added to discovered count."""
+        result_page = _make_mock_result("https://example.com/page", "<p>page</p>", "page")
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=result_page)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/page", "https://example.com/admin/settings"],
+            exclude_paths=[r"/admin"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        results = crawler.crawl()
+
+        # Only /page passes — /admin/settings is filtered by exclude_paths.
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/page"
+
+        # Discovered count must not include the excluded seed URL.
+        page_events = [e for e in events if "queued_discovered_urls" in e]
+        assert page_events, "Expected at least one event with queued_discovered_urls"
+        max_discovered = max(int(e["queued_discovered_urls"]) for e in page_events)
+        assert max_discovered == 1, f"Expected 1 discovered, got {max_discovered}"
+
     def test_stealth_enables_browser_and_run_flags(self):
         """Stealth mode sets enable_stealth, simulate_user, override_navigator, magic, scan_full_page."""
         from crawl4ai import CrawlerRunConfig
@@ -334,6 +399,113 @@ class TestSiteCrawler:
 
         assert len(results) == 1
         assert len(crawler.content_files) >= 1
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_discovered_equals_processed_on_completion(self, mock_crawler_cls, tmp_path: Path):
+        """After crawl completes, discovered count equals processed count."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result("https://example.com", "<p>ok</p>", "ok")
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        results = crawler.crawl()
+
+        assert len(results) == 1
+        # Simulate Streamlit event merging — final merged state should tally.
+        merged: dict = {}
+        for e in events:
+            merged.update(e)
+        assert merged.get("queued_discovered_urls") == merged.get("processed_pages")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_already_visited_redirect_removed_from_discovered(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """A queued URL visited via redirect from another page is removed from discovered."""
+        # /a redirects to /b; /b is also a separately-seeded URL.
+        # /a is processed (redirect result has url=/b); when /b is dequeued it
+        # is already in visited — it should be removed from generated so
+        # discovered stays equal to processed.
+        result_a = _make_mock_result("https://example.com/a", "", "")
+        result_a.redirected_url = "https://example.com/b"
+
+        mock_instance = AsyncMock()
+        # Only /a is crawled — /b is dequeued but already visited, skipped
+        mock_instance.arun = AsyncMock(side_effect=[result_a])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/a", "https://example.com/b"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        results = crawler.crawl()
+
+        # Only one result: redirect from /a to /b
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/b"
+
+        # Simulate how Streamlit merges events (latest_event.update(event)).
+        # After the last page event (discovered=2, processed=1) a urls_discovered
+        # event fires with discovered=1 — merged state should tally.
+        merged: dict = {}
+        for e in events:
+            merged.update(e)
+        assert merged.get("queued_discovered_urls") == merged.get("processed_pages"), (
+            f"discovered={merged.get('queued_discovered_urls')} != "
+            f"processed={merged.get('processed_pages')}"
+        )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_single_redirect_to_visited_removed_from_discovered(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """URL redirecting to an already-visited page is removed from discovered.
+
+        When exactly one URL redirects to an already-visited target (below the
+        storm threshold), _flush_skipped_redirects silently drops it.  The fix
+        must discard that URL from ``generated`` so discovered == processed.
+        """
+        # /b is crawled first (queue order), then /a redirects to /b.
+        result_b = _make_mock_result("https://example.com/b", "<p>b</p>", "b")
+        result_a = _make_mock_result("https://example.com/a", "", "")
+        result_a.redirected_url = "https://example.com/b"
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_b, result_a])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/b", "https://example.com/a"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        results = crawler.crawl()
+
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/b"
+
+        merged: dict = {}
+        for e in events:
+            merged.update(e)
+        assert merged.get("queued_discovered_urls") == merged.get("processed_pages"), (
+            f"discovered={merged.get('queued_discovered_urls')} != "
+            f"processed={merged.get('processed_pages')}"
+        )
 
 
 class TestIsBlocked:
@@ -837,6 +1009,44 @@ class TestRedirectDedup:
         if log_txt.exists():
             log_content = log_txt.read_text(encoding="utf-8")
             assert "Skipped" in log_content or "skip" in log_content.lower()
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_redirect_outside_filter_removed_from_discovered(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """URL that redirects outside the include filter must not stay in discovered count."""
+        result_a = _make_mock_result("https://example.com/a", "<p>content A</p>", "content A")
+        result_a.redirected_url = None
+
+        # /b redirects to an external domain (outside the filter)
+        result_b = _make_mock_result("https://example.com/b", "", "")
+        result_b.redirected_url = "https://other.com/page"
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_a, result_b])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/a", "https://example.com/b"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        results = crawler.crawl()
+
+        # Only page A should succeed
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/a"
+
+        # The redirect-outside-filter URL must not inflate the discovered count —
+        # a urls_discovered event must be emitted after the discard, ending at 1.
+        discovered_events = [e for e in events if e.get("event") == "urls_discovered"]
+        assert discovered_events, "Expected at least one urls_discovered event after discard"
+        final_discovered = discovered_events[-1]["queued_discovered_urls"]
+        assert final_discovered == 1, f"Expected 1 discovered (only /a), got {final_discovered}"
 
 
 class TestRedirectStorm:

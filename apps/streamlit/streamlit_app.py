@@ -1030,6 +1030,9 @@ def _render_downloads() -> None:
     st.subheader(strings["FILES_DOWNLOADS_SUBHEADER"])
     if _job_is_alive(st.session_state.job):
         st.caption(strings["FILES_DOWNLOADS_IN_PROGRESS"])
+        if files:
+            with st.expander(f"📁 {session_folder.name}", expanded=True):
+                render_download_tree(build_download_tree(files))
     elif session_folder.exists():
         with st.expander(f"📁 {session_folder.name}", expanded=True):
             render_download_tree(build_download_tree(files))

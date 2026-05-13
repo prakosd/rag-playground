@@ -712,8 +712,11 @@ class SiteCrawler:
         queue: list[tuple[str, int]] = []
         for seed_url in urls:
             norm_seed = self._normalize_url(seed_url, strip_www=_sw)
-            if norm_seed not in generated and len(generated) >= self.config.limit:
-                break
+            if norm_seed not in generated:
+                if len(generated) >= self.config.limit:
+                    break
+                if not self._url_allowed(seed_url):
+                    continue
             generated.add(norm_seed)
             queue.append((seed_url, depths.get(norm_seed, 1)))
         progress = ProgressReporter(
@@ -743,6 +746,18 @@ class SiteCrawler:
             URLs have been skipped, which indicates a suspicious pattern.
             """
             if len(skipped_redirect_urls) < 2:
+                for skipped_url in skipped_redirect_urls:
+                    generated.discard(self._normalize_url(skipped_url, strip_www=_sw))
+                if skipped_redirect_urls:
+                    progress.total = max(len(generated), 1)
+                    self._emit_progress(
+                        {
+                            "event": _PROGRESS_EVENT_DISCOVERED,
+                            "queued_discovered_urls": len(generated),
+                            "current_url": skipped_redirect_urls[0],
+                            "limit": self.config.limit,
+                        }
+                    )
                 skipped_redirect_urls.clear()
                 return
             for skipped_url in skipped_redirect_urls:
@@ -764,6 +779,16 @@ class SiteCrawler:
 
             norm_url = self._normalize_url(url, strip_www=_sw)
             if norm_url in visited:
+                generated.discard(norm_url)
+                progress.total = max(len(generated), 1)
+                self._emit_progress(
+                    {
+                        "event": _PROGRESS_EVENT_DISCOVERED,
+                        "queued_discovered_urls": len(generated),
+                        "current_url": url,
+                        "limit": self.config.limit,
+                    }
+                )
                 continue
             visited.add(norm_url)
 
@@ -894,6 +919,20 @@ class SiteCrawler:
                 depths[norm_final] = depth
 
                 if redirected and not self._url_allowed(final_url):
+                    # Undo the generated/visited adds above — the redirect target
+                    # is outside the filter and neither the original URL nor the
+                    # redirect destination should count as discovered.
+                    generated.discard(self._normalize_url(url, strip_www=_sw))
+                    generated.discard(norm_final)
+                    visited.discard(norm_final)
+                    self._emit_progress(
+                        {
+                            "event": _PROGRESS_EVENT_DISCOVERED,
+                            "queued_discovered_urls": len(generated),
+                            "current_url": url,
+                            "limit": self.config.limit,
+                        }
+                    )
                     progress.set_activity(f"Skipped {_shorten_url(url)} (redirect outside filter)")
                     continue
 

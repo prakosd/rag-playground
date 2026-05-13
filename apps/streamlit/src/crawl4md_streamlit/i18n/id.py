@@ -147,7 +147,7 @@ STRINGS_ID: Strings = {
     "FILES_COL_MODIFIED": "Dimodifikasi",
     "FILES_SESSION_CAPTION": "Folder sesi: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} terlalu besar untuk diunduh dari aplikasi.",
-    "FILES_DOWNLOADS_IN_PROGRESS": "Unduhan tersedia setelah proses crawl selesai.",
+    "FILES_DOWNLOADS_IN_PROGRESS": "Proses crawl sedang berjalan — file yang sudah dibuat ditampilkan di bawah.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Siap",
