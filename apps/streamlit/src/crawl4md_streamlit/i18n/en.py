@@ -12,6 +12,9 @@ STRINGS_EN: Strings = {
         "content from each page, and save everything as clean, readable Markdown files."
     ),
     "SESSION_PREFIX": "Session: {session_id}",
+    "SESSION_LOADING": "Loading browser sessions...",
+    "SESSION_SELECTOR_LABEL": "Session ID",
+    "SESSION_CREATE_BUTTON": "New",
     "PROGRESS_HEADER": "📊 Progress",
     "LANG_SELECTOR_LABEL": "Language",
     # ── Form ──────────────────────────────────────────────────────────────
@@ -118,6 +121,9 @@ STRINGS_EN: Strings = {
     # ── Error messages ────────────────────────────────────────────────────
     "ERROR_NO_ACTIVE_CRAWL": "There is no active crawl to stop.",
     "ERROR_CRAWL_ALREADY_RUNNING": "A crawl is already running in this browser session.",
+    "ERROR_SESSION_STORAGE_WRITE": (
+        "Browser storage is unavailable. Enable local storage in this browser and refresh the page."
+    ),
     "ERROR_SESSION_FOLDER_MISSING": "Session folder does not exist.",
     "ERROR_CRAWL_FAILED_FALLBACK": "The crawl failed.",
     "ERROR_PLAYWRIGHT_MISSING": (
@@ -135,9 +141,11 @@ STRINGS_EN: Strings = {
     "FILES_COL_SIZE": "Size (MB)",
     "FILES_COL_MODIFIED": "Modified",
     "FILES_SESSION_CAPTION": "Session folder: {path}",
+    "FILES_DOWNLOAD_TOO_LARGE": "{file} is too large to download from the app.",
+    "FILES_DOWNLOADS_IN_PROGRESS": "Downloads will be available after the crawl completes.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
-        "idle": "Idle",
+        "idle": "Ready",
         "running": "Running",
         "failed": "Failed",
         "completed": "Completed",

@@ -49,6 +49,21 @@ _PLAYWRIGHT_MISSING_BROWSER_MESSAGE = (
 
 _HIDDEN_FILE_PREFIX = "."
 _SAFE_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_-")
+_SESSION_CREATED_AT_FIELD = "created_at"
+_SESSION_ID_FIELD = "session_id"
+_SESSION_LANGUAGE_FIELD = "language"
+_SESSION_RECORDS_FIELD = "sessions"
+_DEFAULT_SESSION_LANGUAGE = "EN"
+_SUPPORTED_LANGUAGES = frozenset({"EN", "ID"})
+
+
+@dataclass(frozen=True)
+class SessionRecord:
+    """A browser-persisted Streamlit session entry."""
+
+    session_id: str
+    created_at: datetime
+    language: str = _DEFAULT_SESSION_LANGUAGE
 
 
 @dataclass(frozen=True)
@@ -85,6 +100,25 @@ class CrawlJob:
     thread: threading.Thread
 
 
+def _normalize_language(value: object) -> str:
+    normalized = str(value).strip().upper() if isinstance(value, str) else ""
+    return normalized if normalized in _SUPPORTED_LANGUAGES else _DEFAULT_SESSION_LANGUAGE
+
+
+def bootstrap_gate_state(
+    *,
+    browser_sessions_hydrated: bool,
+    pending_bootstrap_session_id: str,
+    session_storage_write_failed: bool,
+) -> Literal["hydrating", "storing", "storage_error", "ready"]:
+    """Return the current browser-session bootstrap gate state for the UI."""
+    if not browser_sessions_hydrated:
+        return "hydrating"
+    if pending_bootstrap_session_id:
+        return "storage_error" if session_storage_write_failed else "storing"
+    return "ready"
+
+
 def generate_safe_id() -> str:
     """Return a short lowercase ID safe for directory names."""
     raw_id = secrets.token_urlsafe(_ID_BYTES).lower()
@@ -96,6 +130,108 @@ def validate_safe_id(value: str) -> str:
     if not value or any(char not in _SAFE_ID_CHARS for char in value):
         raise ValueError("ID contains unsafe characters.")
     return value
+
+
+def create_session_record(
+    session_id: str | None = None,
+    *,
+    language: str = _DEFAULT_SESSION_LANGUAGE,
+    now: datetime | None = None,
+) -> SessionRecord:
+    """Create a session record with a path-safe ID and UTC creation time."""
+    safe_session_id = validate_safe_id(session_id) if session_id is not None else generate_safe_id()
+    created_at = now or datetime.now(timezone.utc)
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return SessionRecord(
+        session_id=safe_session_id,
+        created_at=created_at.astimezone(timezone.utc),
+        language=_normalize_language(language),
+    )
+
+
+def normalize_session_records(payload: object) -> list[SessionRecord]:
+    """Return valid session records from an untrusted browser payload."""
+    raw_records = (
+        payload.get(_SESSION_RECORDS_FIELD, []) if isinstance(payload, Mapping) else payload
+    )
+    if isinstance(raw_records, (str, bytes)) or not isinstance(raw_records, Iterable):
+        return []
+
+    records_by_id: dict[str, SessionRecord] = {}
+    for raw_record in raw_records:
+        record = _session_record_from_payload(raw_record)
+        if record is None:
+            continue
+        existing = records_by_id.get(record.session_id)
+        if existing is None or record.created_at >= existing.created_at:
+            records_by_id[record.session_id] = record
+    return sorted(
+        records_by_id.values(),
+        key=lambda record: (record.created_at, record.session_id),
+        reverse=True,
+    )
+
+
+def serialize_session_records(records: Iterable[SessionRecord]) -> list[dict[str, str]]:
+    """Serialize session records for browser localStorage."""
+    return [
+        {
+            _SESSION_ID_FIELD: record.session_id,
+            _SESSION_CREATED_AT_FIELD: _format_session_created_at(record.created_at),
+            _SESSION_LANGUAGE_FIELD: record.language,
+        }
+        for record in sorted(
+            records,
+            key=lambda item: (item.created_at, item.session_id),
+            reverse=True,
+        )
+    ]
+
+
+def latest_session_id(records: Iterable[SessionRecord]) -> str:
+    """Return the newest session ID, or an empty string when no records exist."""
+    sorted_records = serialize_session_records(records)
+    return sorted_records[0][_SESSION_ID_FIELD] if sorted_records else ""
+
+
+def _session_record_from_payload(payload: object) -> SessionRecord | None:
+    if not isinstance(payload, Mapping):
+        return None
+    session_id = payload.get(_SESSION_ID_FIELD)
+    created_at = payload.get(_SESSION_CREATED_AT_FIELD)
+    if not isinstance(session_id, str) or not isinstance(created_at, str):
+        return None
+    try:
+        return SessionRecord(
+            session_id=validate_safe_id(session_id),
+            created_at=_parse_session_created_at(created_at),
+            language=_normalize_language(payload.get(_SESSION_LANGUAGE_FIELD)),
+        )
+    except ValueError:
+        return None
+
+
+def _parse_session_created_at(value: str) -> datetime:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("Session creation time is missing.")
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError("Session creation time is invalid.") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _format_session_created_at(value: datetime) -> str:
+    normalized = value
+    if normalized.tzinfo is None:
+        normalized = normalized.replace(tzinfo=timezone.utc)
+    return normalized.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def generate_crawl_id(now: datetime | None = None) -> str:
@@ -215,7 +351,10 @@ def list_generated_files(
         relative = path.relative_to(root)
         if any(part.startswith(_HIDDEN_FILE_PREFIX) for part in relative.parts):
             continue
-        safe_path = ensure_within_root(root, path)
+        try:
+            safe_path = ensure_within_root(root, path)
+        except ValueError:
+            continue
         stat = safe_path.stat()
         file_type = safe_path.suffix.lower().lstrip(".") or "file"
         files.append(
@@ -297,7 +436,8 @@ def cleanup_old_sessions(
 ) -> list[Path]:
     """Delete inactive session folders older than the retention period."""
     root = Path(sessions_root)
-    root.mkdir(parents=True, exist_ok=True)
+    if not root.exists():
+        return []
     active_ids = {validate_safe_id(session_id) for session_id in active_session_ids}
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=retention_days)
     removed: list[Path] = []
@@ -333,7 +473,8 @@ def cleanup_old_sessions_with_lock(
 ) -> list[Path]:
     """Run cleanup under a lightweight lock file."""
     root = Path(sessions_root)
-    root.mkdir(parents=True, exist_ok=True)
+    if not root.exists():
+        return []
     lock_path = root / _CLEANUP_LOCK_FILE
     if _lock_is_stale(lock_path):
         lock_path.unlink(missing_ok=True)

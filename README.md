@@ -56,10 +56,11 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 - While a crawl is running, settings are locked and the action changes to **Stop**
 - Click **Stop** to request a cooperative stop; crawl4md writes final files for pages completed so far
 - Start again after stopping to begin a fresh crawl from the form settings
+- Reuse the newest browser session automatically, switch to older sessions from the searchable session selector, or create a new session manually
 - Watch live progress (pages crawled, estimated completion)
 - Download the generated Markdown/text files directly from the browser
 
-Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run). Stopped crawls keep their generated files in that crawl folder, but no crawl state is kept for continuing later.
+Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run). The browser stores known session IDs and creation times in local storage so later page loads can select the newest existing session instead of creating a new one. Stopped crawls keep their generated files in that crawl folder, but no crawl state is kept for continuing later.
 
 The Streamlit agent skill and sub-skills used for development guidance in this repository come from the external Streamlit skills source: [Developing with Streamlit](https://skills.sh/streamlit/agent-skills/developing-with-streamlit).
 

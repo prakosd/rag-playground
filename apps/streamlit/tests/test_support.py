@@ -6,18 +6,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from queue import Queue
 from threading import Event, Thread
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
 
 from crawl4md_streamlit.support import (
     CrawlJob,
+    SessionRecord,
     activity_log_path,
+    bootstrap_gate_state,
     build_configs,
     cleanup_old_sessions,
     cleanup_old_sessions_with_lock,
     count_new_log_entries,
     crawl_output_base,
+    create_session_record,
     drain_events,
     elapsed_time_display,
     estimate_progress,
@@ -25,11 +29,14 @@ from crawl4md_streamlit.support import (
     generate_crawl_id,
     generate_safe_id,
     job_state_from_event,
+    latest_session_id,
     list_generated_files,
+    normalize_session_records,
     prepare_crawl_output_base,
     prepare_session_dir,
     read_recent_lines,
     request_cancel,
+    serialize_session_records,
     session_dir,
     start_crawl_job,
     validate_safe_id,
@@ -73,6 +80,182 @@ def test_session_and_crawl_dirs_are_prefixed(tmp_path: Path) -> None:
 def test_validate_safe_id_rejects_path_traversal() -> None:
     with pytest.raises(ValueError):
         validate_safe_id("../secret")
+
+
+def test_create_session_record_uses_safe_id_and_utc_time() -> None:
+    now = datetime(2026, 5, 13, 17, 30, tzinfo=timezone(timedelta(hours=7)))
+
+    record = create_session_record("abc123", now=now)
+
+    assert record == SessionRecord(
+        session_id="abc123",
+        created_at=datetime(2026, 5, 13, 10, 30, tzinfo=timezone.utc),
+    )
+
+
+def test_bootstrap_gate_state_waits_for_hydration_first() -> None:
+    state = bootstrap_gate_state(
+        browser_sessions_hydrated=False,
+        pending_bootstrap_session_id="",
+        session_storage_write_failed=False,
+    )
+
+    assert state == "hydrating"
+
+
+def test_bootstrap_gate_state_waits_for_storage_roundtrip() -> None:
+    state = bootstrap_gate_state(
+        browser_sessions_hydrated=True,
+        pending_bootstrap_session_id="session123",
+        session_storage_write_failed=False,
+    )
+
+    assert state == "storing"
+
+
+def test_bootstrap_gate_state_surfaces_storage_failure() -> None:
+    state = bootstrap_gate_state(
+        browser_sessions_hydrated=True,
+        pending_bootstrap_session_id="session123",
+        session_storage_write_failed=True,
+    )
+
+    assert state == "storage_error"
+
+
+def test_bootstrap_gate_state_is_ready_when_bootstrap_is_complete() -> None:
+    state = bootstrap_gate_state(
+        browser_sessions_hydrated=True,
+        pending_bootstrap_session_id="",
+        session_storage_write_failed=True,
+    )
+
+    assert state == "ready"
+
+
+def test_serialize_session_records_formats_utc_iso_strings() -> None:
+    records = [
+        SessionRecord("older", datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc)),
+        SessionRecord("newer", datetime(2026, 5, 13, 11, 0, tzinfo=timezone.utc)),
+    ]
+
+    serialized = serialize_session_records(records)
+
+    assert serialized == [
+        {"session_id": "newer", "created_at": "2026-05-13T11:00:00Z", "language": "EN"},
+        {"session_id": "older", "created_at": "2026-05-13T10:00:00Z", "language": "EN"},
+    ]
+
+
+def test_normalize_session_records_sorts_newest_and_deduplicates() -> None:
+    payload = {
+        "sessions": [
+            {"session_id": "same", "created_at": "2026-05-13T10:00:00Z"},
+            {"session_id": "other", "created_at": "2026-05-13T11:00:00Z"},
+            {"session_id": "same", "created_at": "2026-05-13T12:00:00Z"},
+        ]
+    }
+
+    records = normalize_session_records(payload)
+
+    assert [(record.session_id, record.created_at.hour) for record in records] == [
+        ("same", 12),
+        ("other", 11),
+    ]
+
+
+def test_normalize_session_records_ignores_malformed_and_unsafe_values() -> None:
+    payload = [
+        {"session_id": "../secret", "created_at": "2026-05-13T10:00:00Z"},
+        {"session_id": "bad!", "created_at": "2026-05-13T10:00:00Z"},
+        {"session_id": "missing_time"},
+        {"session_id": "bad_time", "created_at": "not-a-date"},
+        {"session_id": "valid_1", "created_at": "2026-05-13T10:00:00Z"},
+    ]
+
+    records = normalize_session_records(payload)
+
+    assert [record.session_id for record in records] == ["valid_1"]
+
+
+def test_latest_session_id_returns_newest_or_empty() -> None:
+    records = normalize_session_records(
+        [
+            {"session_id": "older", "created_at": "2026-05-13T10:00:00Z"},
+            {"session_id": "newer", "created_at": "2026-05-13T10:01:00Z"},
+        ]
+    )
+
+    assert latest_session_id(records) == "newer"
+    assert latest_session_id([]) == ""
+
+
+def test_session_record_defaults_language_to_en() -> None:
+    record = SessionRecord("abc123", datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc))
+
+    assert record.language == "EN"
+
+
+def test_create_session_record_stores_given_language() -> None:
+    record = create_session_record("abc123", language="ID")
+
+    assert record.language == "ID"
+
+
+def test_create_session_record_defaults_language_to_en() -> None:
+    record = create_session_record("abc123")
+
+    assert record.language == "EN"
+
+
+def test_create_session_record_rejects_invalid_language() -> None:
+    record = create_session_record("abc123", language="FR")
+
+    assert record.language == "EN"
+
+
+def test_serialize_session_records_includes_language() -> None:
+    records = [SessionRecord("abc", datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc), "ID")]
+
+    serialized = serialize_session_records(records)
+
+    assert serialized[0]["language"] == "ID"
+
+
+def test_normalize_session_records_reads_language_from_payload() -> None:
+    payload = [{"session_id": "abc", "created_at": "2026-05-13T10:00:00Z", "language": "ID"}]
+
+    records = normalize_session_records(payload)
+
+    assert records[0].language == "ID"
+
+
+def test_normalize_session_records_defaults_language_to_en_when_missing() -> None:
+    payload = [{"session_id": "abc", "created_at": "2026-05-13T10:00:00Z"}]
+
+    records = normalize_session_records(payload)
+
+    assert records[0].language == "EN"
+
+
+def test_normalize_session_records_defaults_language_to_en_for_invalid() -> None:
+    payload = [{"session_id": "abc", "created_at": "2026-05-13T10:00:00Z", "language": "FR"}]
+
+    records = normalize_session_records(payload)
+
+    assert records[0].language == "EN"
+
+
+def test_normalize_session_records_last_record_wins_for_equal_timestamp() -> None:
+    payload = [
+        {"session_id": "abc", "created_at": "2026-05-13T10:00:00Z", "language": "EN"},
+        {"session_id": "abc", "created_at": "2026-05-13T10:00:00Z", "language": "ID"},
+    ]
+
+    records = normalize_session_records(payload)
+
+    assert len(records) == 1
+    assert records[0].language == "ID"
 
 
 def test_prepare_crawl_output_base_creates_unique_folder(tmp_path: Path) -> None:
@@ -232,6 +415,37 @@ def test_list_generated_files_rejects_sibling_session(tmp_path: Path) -> None:
         list_generated_files(session_path, sibling_path)
 
 
+def test_list_generated_files_skips_symlink_escape(tmp_path: Path) -> None:
+    session_path = prepare_session_dir(tmp_path, "abc123")
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("secret", encoding="utf-8")
+    link_path = session_path / "outside.txt"
+    try:
+        link_path.symlink_to(outside_file)
+    except (NotImplementedError, OSError):
+        # Symlinks unavailable (e.g. Windows without elevated privilege).
+        # Simulate the escape by placing a regular file and patching
+        # Path.resolve so ensure_within_root sees it as outside the root.
+        link_path.write_text("placeholder", encoding="utf-8")
+        resolved_outside = outside_file.resolve()
+        _original_resolve = Path.resolve
+
+        def _mock_resolve(self: Path, *, strict: bool = False) -> Path:
+            if self == link_path:
+                return resolved_outside
+            return _original_resolve(self, strict=strict)
+
+        with patch.object(Path, "resolve", _mock_resolve):
+            files = list_generated_files(session_path)
+
+        assert files == []
+        return
+
+    files = list_generated_files(session_path)
+
+    assert files == []
+
+
 def test_read_recent_lines_returns_tail(tmp_path: Path) -> None:
     log_path = tmp_path / "activity.log"
     log_path.write_text("one\ntwo\nthree\n", encoding="utf-8")
@@ -314,6 +528,22 @@ def test_cleanup_old_sessions_with_lock_skips_existing_lock(tmp_path: Path) -> N
     lock_path.write_text("locked", encoding="utf-8")
 
     assert cleanup_old_sessions_with_lock(tmp_path) == []
+
+
+def test_cleanup_old_sessions_returns_empty_when_root_is_missing(tmp_path: Path) -> None:
+    missing_root = tmp_path / "missing"
+
+    assert cleanup_old_sessions(missing_root) == []
+    assert not missing_root.exists()
+
+
+def test_cleanup_old_sessions_with_lock_returns_empty_when_root_is_missing(
+    tmp_path: Path,
+) -> None:
+    missing_root = tmp_path / "missing"
+
+    assert cleanup_old_sessions_with_lock(missing_root) == []
+    assert not missing_root.exists()
 
 
 def test_cleanup_old_sessions_with_lock_replaces_stale_lock(tmp_path: Path) -> None:

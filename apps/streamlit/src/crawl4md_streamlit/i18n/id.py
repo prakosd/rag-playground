@@ -13,6 +13,9 @@ STRINGS_ID: Strings = {
         "sebagai file Markdown yang bersih dan mudah dibaca."
     ),
     "SESSION_PREFIX": "Sesi: {session_id}",
+    "SESSION_LOADING": "Memuat sesi browser...",
+    "SESSION_SELECTOR_LABEL": "ID Sesi",
+    "SESSION_CREATE_BUTTON": "Baru",
     "PROGRESS_HEADER": "📊 Progres",
     "LANG_SELECTOR_LABEL": "Bahasa",
     # ── Form ──────────────────────────────────────────────────────────────
@@ -122,6 +125,10 @@ STRINGS_ID: Strings = {
     # ── Error messages ────────────────────────────────────────────────────
     "ERROR_NO_ACTIVE_CRAWL": "Tidak ada crawl yang aktif untuk dihentikan.",
     "ERROR_CRAWL_ALREADY_RUNNING": "Crawl sudah berjalan di sesi browser ini.",
+    "ERROR_SESSION_STORAGE_WRITE": (
+        "Penyimpanan browser tidak tersedia. Aktifkan local storage di browser ini lalu "
+        "muat ulang halaman."
+    ),
     "ERROR_SESSION_FOLDER_MISSING": "Folder sesi tidak ada.",
     "ERROR_CRAWL_FAILED_FALLBACK": "Crawl gagal.",
     "ERROR_PLAYWRIGHT_MISSING": (
@@ -139,9 +146,11 @@ STRINGS_ID: Strings = {
     "FILES_COL_SIZE": "Ukuran (MB)",
     "FILES_COL_MODIFIED": "Dimodifikasi",
     "FILES_SESSION_CAPTION": "Folder sesi: {path}",
+    "FILES_DOWNLOAD_TOO_LARGE": "{file} terlalu besar untuk diunduh dari aplikasi.",
+    "FILES_DOWNLOADS_IN_PROGRESS": "Unduhan tersedia setelah proses crawl selesai.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
-        "idle": "Diam",
+        "idle": "Siap",
         "running": "Berjalan",
         "failed": "Gagal",
         "completed": "Selesai",

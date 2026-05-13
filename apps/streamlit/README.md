@@ -39,12 +39,16 @@ be imported and unit-tested independently of Streamlit — no Streamlit runtime 
 Everything the user sees and interacts with. Responsibilities:
 
 - Initialises `st.session_state` keys on first load (`_init_state`).
+- Hydrates browser-local session records through the inline CCv2 localStorage bridge.
+- Renders the selected session ID, searchable session selector, create-session button, and language selector.
 - Renders the settings form (`_form_values`) and action buttons (delegated to `controls.py`).
 - Translates button presses into job start / stop calls.
 - Drains background-thread events every Streamlit rerun and maps them to UI state
   (`_drain_job_events`).
-- Renders progress metrics, the activity log, and the file download table (`_render_live_area`,
-  refreshed every 1 second via `@st.fragment(run_every="1s")`).
+- Renders progress metrics and the activity log (`_render_live_area`, refreshed every 1 second
+  via `@st.fragment(run_every="1s")`).
+- Renders the selected session's generated-file table and download tree separately
+  (`_render_downloads`, also refreshed every 1 second).
 - Runs a one-time startup cleanup of old session folders (`_run_startup_cleanup`, cached with
   `@st.cache_resource`).
 
@@ -65,6 +69,7 @@ No Streamlit imports. Contains everything that would clutter `streamlit_app.py`:
 | Group | Functions |
 |---|---|
 | **ID generation** | `generate_safe_id`, `validate_safe_id`, `generate_crawl_id` |
+| **Session records** | `SessionRecord`, `create_session_record`, `normalize_session_records`, `serialize_session_records`, `latest_session_id` |
 | **Path helpers** | `session_dir`, `crawl_output_base`, `ensure_within_root` |
 | **Directory setup** | `prepare_session_dir`, `prepare_crawl_output_base` |
 | **Config building** | `build_configs` (form values → `CrawlerConfig` + `PageConfig`) |
@@ -144,8 +149,14 @@ app does not persist crawl state and does not load any previous crawl when start
 
 ## Session and Path Safety
 
-Each browser session gets a unique `session_id` (stored in `st.session_state`). All output
-lives inside:
+Each browser stores known session IDs and UTC creation times in localStorage under a versioned
+`crawl4md` key. The app reads those records through a small inline `st.components.v2` bridge,
+validates them server-side, and selects the newest valid session on page load. If localStorage
+has no valid sessions, the server creates one safe ID, sends it back to the bridge for storage,
+and selects it. Users can switch sessions with the searchable `st.selectbox()` or create a new
+session with the adjacent button.
+
+All output lives inside:
 
 ```
 outputs/streamlit_sessions/
@@ -156,13 +167,17 @@ outputs/streamlit_sessions/
 
 `ensure_within_root(root, path)` is called before every file read or listing. It resolves
 both paths and raises `ValueError` if `path` escapes `root`. This prevents path-traversal
-attacks when any server-generated path is forwarded back into a file read.
+attacks when any server-generated path is forwarded back into a file read. Browser-provided
+session records are treated as untrusted input and filtered through `validate_safe_id()` before
+they can affect any server-side path.
 
 `validate_safe_id(id)` enforces that IDs only contain `[a-z0-9_-]` before they are
 interpolated into directory names.
 
-Session folders older than 7 days are removed by `cleanup_old_sessions_with_lock` at app
-startup (using a `.cleanup.lock` file so only one Streamlit worker runs the cleanup).
+Session folders older than 7 days are removed by `cleanup_old_sessions_with_lock` after browser
+session hydration (using a `.cleanup.lock` file so only one Streamlit worker runs the cleanup).
+Session IDs known to the browser are passed as active IDs so the selector does not point to
+folders removed during the same startup.
 
 ---
 
@@ -188,7 +203,7 @@ _drain_job_events()     dequeues events, updates st.session_state
   ▼
 _render_status()        progress bar, metrics, current URL, elapsed time
 _render_activity_log()  tail of activity_log.txt from the output dir
-_render_files()         dataframe + download buttons for all generated files
+_render_downloads()     dataframe + download buttons for the selected session
 ```
 
 ---
@@ -198,7 +213,7 @@ _render_files()         dataframe + download buttons for all generated files
 | Test file | What it covers |
 |---|---|
 | `tests/test_controls.py` | Every `job_state` value → correct buttons (label, disabled, type) |
-| `tests/test_support.py` | ID safety, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |
+| `tests/test_support.py` | ID safety, browser session records, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |
 | `tests/test_launcher.py` | `.streamlit/config.toml` sets the right address and port; no config leaks to repo root |
 
 Tests mock `SiteCrawler` — no real network calls are made. The split between `streamlit_app.py`
@@ -214,7 +229,7 @@ pure-Python testing possible.
 | Add a new form field | `_form_values()` in `streamlit_app.py` + `build_configs()` in `support.py` |
 | Change action buttons or states | `controls.py` (`CrawlActionButton`, `crawl_action_buttons`) + `test_controls.py` |
 | Add a new event type from the crawler | `job_state_from_event()` in `support.py` + `_drain_job_events()` in `streamlit_app.py` |
-| Add a new output panel | A new `_render_*` function in `streamlit_app.py`, called from `_render_live_area` |
+| Add a new output panel | A new `_render_*` function in `streamlit_app.py`; use `_render_live_area` for crawl-status panels and a separate fragment for selected-session downloads |
 | Change retention or cleanup logic | `cleanup_old_sessions()` in `support.py` + `test_support.py` |
 | Change the server port or theme | `apps/streamlit/.streamlit/config.toml` |
 

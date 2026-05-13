@@ -17,11 +17,12 @@ from crawl4md_streamlit.i18n.id import STRINGS_ID
 __all__ = ["CATALOG", "Strings", "STRINGS_EN", "STRINGS_ID", "get_strings"]
 
 CATALOG: dict[str, Strings] = {
-    "English": STRINGS_EN,
-    "Indonesian": STRINGS_ID,
+    "EN": STRINGS_EN,
+    "ID": STRINGS_ID,
 }
 
 
 def get_strings(lang: str) -> Strings:
     """Return the translation catalog for *lang*, falling back to English."""
-    return CATALOG.get(lang, STRINGS_EN)
+    normalized_lang = str(lang).strip().upper()
+    return CATALOG.get(normalized_lang, STRINGS_EN)

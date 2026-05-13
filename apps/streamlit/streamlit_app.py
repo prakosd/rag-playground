@@ -3,33 +3,43 @@ from __future__ import annotations
 import html
 import mimetypes
 import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import streamlit as st
 from pydantic import ValidationError
+from streamlit.components.v2 import component as component_v2
 
 from crawl4md_streamlit.controls import crawl_action_buttons
 from crawl4md_streamlit.i18n import CATALOG, get_strings
 from crawl4md_streamlit.support import (
     _DEFAULT_ACTIVITY_LOG_SIZE,
+    _DEFAULT_SESSION_LANGUAGE,
     _PLAYWRIGHT_MISSING_BROWSER_MESSAGE,
     CrawlJob,
+    GeneratedFile,
+    SessionRecord,
     activity_log_path,
+    bootstrap_gate_state,
     build_configs,
     cleanup_old_sessions_with_lock,
     count_new_log_entries,
+    create_session_record,
     drain_events,
     elapsed_time_display,
+    ensure_within_root,
     find_latest_crawl_dir,
     generate_crawl_id,
-    generate_safe_id,
     job_state_from_event,
+    latest_session_id,
     list_generated_files,
-    prepare_session_dir,
+    normalize_session_records,
     read_recent_lines,
     request_cancel,
+    serialize_session_records,
+    session_dir,
     start_crawl_job,
 )
 
@@ -49,7 +59,7 @@ _DEFAULT_WAIT_FOR = 3.0
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _OUTPUT_EXTENSION_OPTIONS = [".md", ".txt"]
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
-_DEFAULT_LANGUAGE = "English"
+_DEFAULT_LANGUAGE = _DEFAULT_SESSION_LANGUAGE
 _TOAST_PAGE_SUCCESS_ICON = "✅"
 _TOAST_PAGE_FAIL_ICON = "❌"
 _TOAST_PAGE_DISCOVERED_ICON = "🔎"
@@ -67,6 +77,94 @@ _REFRESH_FORM_STATES = {
 }
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
+_SESSION_STORAGE_COMPONENT_KEY = "browser_session_storage"
+_SESSION_STORAGE_KEY = "crawl4md.streamlit.sessions.v1"
+_SESSION_STORAGE_HTML = """
+<div id="crawl4md-session-storage" hidden></div>
+"""
+_SESSION_STORAGE_JS = """
+const SESSION_ID_PATTERN = /^[a-z0-9_-]+$/
+const SUPPORTED_LANGUAGES = new Set(["EN", "ID"])
+
+function normalizeRecords(records) {
+    const byId = new Map()
+    for (const record of records || []) {
+        if (!record || typeof record.session_id !== "string") continue
+        if (!SESSION_ID_PATTERN.test(record.session_id)) continue
+        if (typeof record.created_at !== "string") continue
+        const createdAt = new Date(record.created_at)
+        if (Number.isNaN(createdAt.getTime())) continue
+        const rawLang = typeof record.language === "string" ? record.language.trim().toUpperCase() : ""
+        const language = SUPPORTED_LANGUAGES.has(rawLang) ? rawLang : "EN"
+        const normalized = {
+            session_id: record.session_id,
+            created_at: createdAt.toISOString().replace(".000Z", "Z"),
+            language,
+        }
+        const existing = byId.get(normalized.session_id)
+        if (!existing || createdAt >= new Date(existing.created_at)) {
+            byId.set(normalized.session_id, normalized)
+        }
+    }
+    return Array.from(byId.values()).sort((left, right) => {
+        const timeDelta = new Date(right.created_at) - new Date(left.created_at)
+        if (timeDelta !== 0) return timeDelta
+        return right.session_id.localeCompare(left.session_id)
+    })
+}
+
+function readRecords(storageKey) {
+    try {
+        const rawValue = window.localStorage.getItem(storageKey)
+        if (!rawValue) return []
+        const parsed = JSON.parse(rawValue)
+        if (Array.isArray(parsed)) return normalizeRecords(parsed)
+        if (Array.isArray(parsed.sessions)) return normalizeRecords(parsed.sessions)
+    } catch {
+        return []
+    }
+    return []
+}
+
+function writeRecords(storageKey, records) {
+    try {
+        const payload = JSON.stringify({ version: 1, sessions: records })
+        window.localStorage.setItem(storageKey, payload)
+        return true
+    } catch {
+        return false
+    }
+}
+
+export default function (component) {
+    const { data, setStateValue } = component
+    const storageKey = data.storageKey
+    const storedRecords = readRecords(storageKey)
+    const pendingRecords = Array.isArray(data.pendingRecords) ? data.pendingRecords : []
+    const nextRecords = normalizeRecords([...storedRecords, ...pendingRecords])
+    const nextSerialized = JSON.stringify(nextRecords)
+    const storedSerialized = JSON.stringify(storedRecords)
+    let storedPending = pendingRecords.length === 0
+    if (pendingRecords.length > 0 || nextSerialized !== storedSerialized) {
+        storedPending = writeRecords(storageKey, nextRecords)
+    }
+    const storageWriteFailed = pendingRecords.length > 0 && storedPending === false
+    if (pendingRecords.length > 0 && storedPending) {
+        setStateValue("stored_records", nextRecords)
+    }
+    if (data.storageWriteFailed !== storageWriteFailed) {
+        setStateValue("storage_write_failed", storageWriteFailed)
+    }
+
+    const pythonRecords = normalizeRecords(Array.isArray(data.records) ? data.records : [])
+    if (JSON.stringify(pythonRecords) !== nextSerialized) {
+        setStateValue("records", nextRecords)
+    }
+    if (data.hydrated !== true) {
+        setStateValue("hydrated", true)
+    }
+}
+"""
 
 
 st.set_page_config(
@@ -76,13 +174,26 @@ st.set_page_config(
 )
 
 
+_SESSION_STORAGE_COMPONENT = component_v2(
+    "crawl4md_session_storage",
+    html=_SESSION_STORAGE_HTML,
+    js=_SESSION_STORAGE_JS,
+)
+
+
 @st.cache_resource(show_spinner=False)
-def _run_startup_cleanup() -> None:
-    cleanup_old_sessions_with_lock(_SESSIONS_ROOT)
+def _run_startup_cleanup(active_session_ids: tuple[str, ...]) -> None:
+    cleanup_old_sessions_with_lock(_SESSIONS_ROOT, active_session_ids=active_session_ids)
 
 
 def _init_state() -> None:
-    st.session_state.setdefault("session_id", generate_safe_id())
+    st.session_state.setdefault("session_id", "")
+    st.session_state.setdefault("browser_session_records", [])
+    st.session_state.setdefault("browser_sessions_hydrated", False)
+    st.session_state.setdefault("pending_browser_session_records", [])
+    st.session_state.setdefault("pending_bootstrap_session_id", "")
+    st.session_state.setdefault("session_storage_write_failed", False)
+    st.session_state.setdefault("preferred_session_id", "")
     st.session_state.setdefault("job", None)
     st.session_state.setdefault("job_state", _STATE_IDLE)
     st.session_state.setdefault("crawl_id", "")
@@ -95,7 +206,193 @@ def _init_state() -> None:
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("form_defaults", _default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
-    st.session_state.setdefault("language", "English")
+    st.session_state.setdefault("language", _DEFAULT_LANGUAGE)
+
+
+def _browser_session_records() -> list[SessionRecord]:
+    records = st.session_state.get("browser_session_records", [])
+    if isinstance(records, list) and all(isinstance(record, SessionRecord) for record in records):
+        return records
+    return normalize_session_records(records)
+
+
+def _component_field(result: Any, field: str) -> Any:
+    value = getattr(result, field, None)
+    if value is not None:
+        return value
+    component_state = st.session_state.get(_SESSION_STORAGE_COMPONENT_KEY, {})
+    getter = getattr(component_state, "get", None)
+    if callable(getter):
+        return getter(field)
+    return getattr(component_state, field, None)
+
+
+def _component_result_field(result: Any, field: str) -> Any:
+    return getattr(result, field, None)
+
+
+def _mount_session_storage() -> None:
+    result = _SESSION_STORAGE_COMPONENT(
+        key=_SESSION_STORAGE_COMPONENT_KEY,
+        data={
+            "storageKey": _SESSION_STORAGE_KEY,
+            "records": serialize_session_records(_browser_session_records()),
+            "pendingRecords": st.session_state.pending_browser_session_records,
+            "hydrated": st.session_state.browser_sessions_hydrated,
+            "storageWriteFailed": st.session_state.session_storage_write_failed,
+        },
+        on_records_change=lambda: None,
+        on_stored_records_change=lambda: None,
+        on_storage_write_failed_change=lambda: None,
+        on_hydrated_change=lambda: None,
+    )
+    _apply_session_storage_result(result)
+
+
+def _apply_session_storage_result(result: Any) -> None:
+    records_payload = _component_field(result, "records")
+    if records_payload is not None:
+        st.session_state.browser_session_records = normalize_session_records(
+            [
+                *serialize_session_records(normalize_session_records(records_payload)),
+                *st.session_state.pending_browser_session_records,
+            ]
+        )
+    storage_write_failed = _component_result_field(result, "storage_write_failed")
+    if storage_write_failed is not None:
+        st.session_state.session_storage_write_failed = bool(storage_write_failed)
+    if _component_field(result, "hydrated") is True:
+        st.session_state.browser_sessions_hydrated = True
+
+    pending = normalize_session_records(st.session_state.pending_browser_session_records)
+    stored_payload = _component_result_field(result, "stored_records")
+    if pending and stored_payload is not None:
+        stored_ids = {record.session_id for record in normalize_session_records(stored_payload)}
+        if {record.session_id for record in pending}.issubset(stored_ids):
+            st.session_state.pending_browser_session_records = []
+        if st.session_state.pending_bootstrap_session_id in stored_ids:
+            st.session_state.pending_bootstrap_session_id = ""
+            st.session_state.session_storage_write_failed = False
+
+
+def _normalize_language(value: object) -> str:
+    normalized = str(value).strip().upper() if isinstance(value, str) else ""
+    return normalized if normalized in CATALOG else _DEFAULT_LANGUAGE
+
+
+def _language_widget_key() -> str:
+    session_id = str(st.session_state.get("session_id", "")).strip()
+    return f"language_selector_{session_id or 'bootstrap'}"
+
+
+def _sync_language_widget_state() -> str:
+    widget_key = _language_widget_key()
+    language = _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    st.session_state.language = language
+    if st.session_state.get(widget_key) != language:
+        st.session_state[widget_key] = language
+    return widget_key
+
+
+def _select_session_id(session_id: str, *, restore_language: bool = True) -> None:
+    if not session_id:
+        return
+    records = _browser_session_records()
+    known_ids = {record.session_id for record in records}
+    if session_id not in known_ids:
+        return
+    st.session_state.session_id = session_id
+    st.session_state.preferred_session_id = session_id
+    if not restore_language:
+        return
+    for record in records:
+        if record.session_id == session_id:
+            st.session_state.language = _normalize_language(record.language)
+            break
+
+
+def _create_new_session() -> None:
+    record = create_session_record()
+    st.session_state.language = record.language
+    records = normalize_session_records(
+        [
+            *serialize_session_records(_browser_session_records()),
+            *serialize_session_records([record]),
+        ]
+    )
+    pending_records = normalize_session_records(
+        [
+            *st.session_state.pending_browser_session_records,
+            *serialize_session_records([record]),
+        ]
+    )
+    st.session_state.browser_session_records = records
+    st.session_state.pending_browser_session_records = serialize_session_records(pending_records)
+    st.session_state.pending_bootstrap_session_id = record.session_id
+    st.session_state.session_storage_write_failed = False
+    _select_session_id(record.session_id)
+    st.rerun()
+
+
+def _ensure_selected_session() -> None:
+    records = _browser_session_records()
+    if records:
+        known_ids = {record.session_id for record in records}
+        preferred_session_id = str(st.session_state.get("preferred_session_id", ""))
+        current_session_id = str(st.session_state.get("session_id", ""))
+        selected_session_id = current_session_id
+        if preferred_session_id in known_ids:
+            selected_session_id = preferred_session_id
+        elif current_session_id not in known_ids:
+            selected_session_id = latest_session_id(records)
+        restore_language = (
+            selected_session_id != current_session_id
+            or str(st.session_state.get("language", "")).strip().upper() not in CATALOG
+        )
+        _select_session_id(
+            selected_session_id,
+            restore_language=restore_language,
+        )
+        return
+
+    record = create_session_record()
+    st.session_state.browser_session_records = [record]
+    st.session_state.pending_browser_session_records = serialize_session_records([record])
+    st.session_state.pending_bootstrap_session_id = record.session_id
+    st.session_state.session_storage_write_failed = False
+    _select_session_id(record.session_id)
+    st.rerun()
+
+
+def _on_language_change(widget_key: str) -> None:
+    new_lang = _normalize_language(st.session_state.get(widget_key, _DEFAULT_LANGUAGE))
+    st.session_state.language = new_lang
+    session_id = st.session_state.session_id
+    records = _browser_session_records()
+    updated = [
+        SessionRecord(r.session_id, r.created_at, new_lang) if r.session_id == session_id else r
+        for r in records
+    ]
+    st.session_state.browser_session_records = updated
+    updated_record = next((r for r in updated if r.session_id == session_id), None)
+    if updated_record is not None:
+        pending = normalize_session_records(
+            [
+                *st.session_state.pending_browser_session_records,
+                *serialize_session_records([updated_record]),
+            ]
+        )
+        st.session_state.pending_browser_session_records = serialize_session_records(pending)
+
+
+def _session_options() -> list[str]:
+    return [record.session_id for record in _browser_session_records()]
+
+
+def _session_selector_index(options: list[str]) -> int:
+    if st.session_state.session_id in options:
+        return options.index(st.session_state.session_id)
+    return 0
 
 
 def _default_form_values() -> dict[str, Any]:
@@ -159,8 +456,11 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
     return state_changed
 
 
-def _session_root() -> Path:
-    return prepare_session_dir(_SESSIONS_ROOT, st.session_state.session_id)
+def _session_root(session_id: str | None = None) -> Path:
+    current_session_id = session_id or st.session_state.session_id
+    if not current_session_id:
+        return _SESSIONS_ROOT
+    return session_dir(_SESSIONS_ROOT, current_session_id)
 
 
 def _form_values(
@@ -605,16 +905,20 @@ def _render_status() -> None:
 
 
 def _active_file_root() -> Path:
+    session_folder = _session_root()
     active_output_dir = st.session_state.active_output_dir
     if active_output_dir:
-        return Path(active_output_dir)
+        try:
+            return ensure_within_root(session_folder, active_output_dir)
+        except ValueError:
+            pass
     job = st.session_state.job
-    if job is not None:
+    if job is not None and job.session_id == st.session_state.session_id:
         latest = find_latest_crawl_dir(job.output_base)
         if latest is not None:
-            return latest
-        return job.output_base
-    return _session_root()
+            return ensure_within_root(session_folder, latest)
+        return ensure_within_root(session_folder, job.output_base)
+    return session_folder
 
 
 def _linkify_log_line(line: str) -> str:
@@ -649,38 +953,65 @@ def _render_activity_log() -> None:
         )
 
 
-def render_file_download(file_path: Path, root_path: Path) -> None:
-    relative_path = file_path.relative_to(root_path)
-    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-    with file_path.open("rb") as file_obj:
+def render_generated_file_download(file: GeneratedFile) -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    try:
+        current_size = file.path.stat().st_size
+    except OSError:
+        return
+    if not file.download_allowed or current_size > _DOWNLOAD_LIMIT_BYTES:
+        st.button(
+            label=f"📄 {file.name}",
+            disabled=True,
+            help=strings["FILES_DOWNLOAD_TOO_LARGE"].format(file=file.name),
+            key=f"download_blocked_{st.session_state.session_id}_{file.relative_path}",
+        )
+        return
+
+    mime_type = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
+    with file.path.open("rb") as file_obj:
         file_bytes = file_obj.read()
     st.download_button(
-        label=f"📄 {file_path.name}",
+        label=f"📄 {file.name}",
         data=file_bytes,
-        file_name=file_path.name,
+        file_name=file.name,
         mime=mime_type,
-        key=f"download_{relative_path.as_posix()}",
+        key=f"download_{st.session_state.session_id}_{file.relative_path}",
     )
 
 
-def render_tree(path: Path, root_path: Path) -> None:
-    entries = sorted(path.iterdir(), key=lambda entry: (not entry.is_dir(), entry.name.lower()))
-    for entry in entries:
-        if entry.is_dir():
-            with st.expander(f"📁 {entry.name}"):
-                render_tree(entry, root_path)
+def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
+    tree: dict[str, Any] = {}
+    for file in files:
+        parts = PurePosixPath(file.relative_path).parts
+        if not parts:
             continue
-        if entry.is_file():
-            render_file_download(entry, root_path)
+        node = tree
+        for folder in parts[:-1]:
+            node = node.setdefault(folder, {})
+        node[parts[-1]] = file
+    return tree
 
 
-def _render_files() -> None:
+def render_download_tree(tree: Mapping[str, Any]) -> None:
+    entries = sorted(
+        tree.items(), key=lambda item: (not isinstance(item[1], dict), item[0].lower())
+    )
+    for name, entry in entries:
+        if isinstance(entry, dict):
+            with st.expander(f"📁 {name}"):
+                render_download_tree(entry)
+            continue
+        render_generated_file_download(entry)
+
+
+@st.fragment(run_every="1s")
+def _render_downloads() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
-    file_root = _active_file_root()
     files = list_generated_files(
         session_folder,
-        file_root,
+        session_folder,
         download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
     )
     if files:
@@ -697,26 +1028,58 @@ def _render_files() -> None:
         st.dataframe(rows, hide_index=True, width="stretch")
 
     st.subheader(strings["FILES_DOWNLOADS_SUBHEADER"])
-    if session_folder.exists():
+    if _job_is_alive(st.session_state.job):
+        st.caption(strings["FILES_DOWNLOADS_IN_PROGRESS"])
+    elif session_folder.exists():
         with st.expander(f"📁 {session_folder.name}", expanded=True):
-            render_tree(session_folder, session_folder)
+            render_download_tree(build_download_tree(files))
         st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
     else:
-        st.warning(strings["ERROR_SESSION_FOLDER_MISSING"])
+        st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
 
 
 @st.fragment(run_every="1s")
 def _render_live_area() -> None:
     _render_status()
     _render_activity_log()
-    _render_files()
 
 
-_run_startup_cleanup()
 _init_state()
+_mount_session_storage()
+strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+
+bootstrap_state = bootstrap_gate_state(
+    browser_sessions_hydrated=st.session_state.browser_sessions_hydrated,
+    pending_bootstrap_session_id=st.session_state.pending_bootstrap_session_id,
+    session_storage_write_failed=st.session_state.session_storage_write_failed,
+)
+if bootstrap_state == "hydrating":
+    st.title(strings["PAGE_TITLE"])
+    st.write(strings["PAGE_SUBTITLE"])
+    st.info(strings["SESSION_LOADING"])
+    st.stop()
+
+_ensure_selected_session()
+bootstrap_state = bootstrap_gate_state(
+    browser_sessions_hydrated=st.session_state.browser_sessions_hydrated,
+    pending_bootstrap_session_id=st.session_state.pending_bootstrap_session_id,
+    session_storage_write_failed=st.session_state.session_storage_write_failed,
+)
+if bootstrap_state != "ready":
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    st.title(strings["PAGE_TITLE"])
+    st.write(strings["PAGE_SUBTITLE"])
+    if bootstrap_state == "storage_error":
+        st.error(strings["ERROR_SESSION_STORAGE_WRITE"])
+        st.stop()
+    st.info(strings["SESSION_LOADING"])
+    st.stop()
+
+_run_startup_cleanup(tuple(_session_options()))
 _drain_job_events(st.session_state.job)
 
 strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+language_widget_key = _sync_language_widget_state()
 
 st.markdown(
     f"""
@@ -756,16 +1119,39 @@ fields_disabled = (
     current_state == _STATE_RUNNING and job_alive
 ) or current_state == _STATE_CANCEL_REQUESTED
 
-col_session, col_lang = st.columns([3, 1], vertical_alignment="center")
-with col_session:
-    st.caption(strings["SESSION_PREFIX"].format(session_id=st.session_state.session_id))
-with col_lang:
+session_options = _session_options()
+session_controls_col, language_col = st.columns([5, 1], vertical_alignment="bottom")
+with session_controls_col:
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        with st.container(horizontal=True, vertical_alignment="center", width="content"):
+            st.markdown(strings["SESSION_SELECTOR_LABEL"])
+            selected_session = st.selectbox(
+                label=strings["SESSION_SELECTOR_LABEL"],
+                options=session_options,
+                index=_session_selector_index(session_options),
+                key=f"session_selector_{st.session_state.session_id}",
+                label_visibility="collapsed",
+                width=170,
+                disabled=fields_disabled,
+            )
+        if st.button(
+            strings["SESSION_CREATE_BUTTON"],
+            icon=":material/add:",
+            disabled=fields_disabled,
+        ):
+            _create_new_session()
+    if selected_session != st.session_state.session_id:
+        _select_session_id(str(selected_session))
+        st.rerun()
+with language_col, st.container(horizontal_alignment="right"):
     st.segmented_control(
         label=strings["LANG_SELECTOR_LABEL"],
         options=list(CATALOG.keys()),
-        key="language",
+        key=language_widget_key,
         label_visibility="collapsed",
         disabled=fields_disabled,
+        on_change=_on_language_change,
+        args=(language_widget_key,),
     )
 
 values = _form_values(
@@ -790,3 +1176,4 @@ if st.session_state.stop_confirmation_open:
 
 st.subheader(strings["PROGRESS_HEADER"])
 _render_live_area()
+_render_downloads()

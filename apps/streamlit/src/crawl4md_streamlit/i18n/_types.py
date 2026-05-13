@@ -10,6 +10,9 @@ class Strings(TypedDict):
     PAGE_TITLE: str
     PAGE_SUBTITLE: str
     SESSION_PREFIX: str  # template: {session_id}
+    SESSION_LOADING: str
+    SESSION_SELECTOR_LABEL: str
+    SESSION_CREATE_BUTTON: str
     PROGRESS_HEADER: str
     LANG_SELECTOR_LABEL: str
     # ── Form ──────────────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ class Strings(TypedDict):
     # ── Error messages ────────────────────────────────────────────────────
     ERROR_NO_ACTIVE_CRAWL: str
     ERROR_CRAWL_ALREADY_RUNNING: str
+    ERROR_SESSION_STORAGE_WRITE: str
     ERROR_SESSION_FOLDER_MISSING: str
     ERROR_CRAWL_FAILED_FALLBACK: str
     ERROR_PLAYWRIGHT_MISSING: str
@@ -107,5 +111,7 @@ class Strings(TypedDict):
     FILES_COL_SIZE: str
     FILES_COL_MODIFIED: str
     FILES_SESSION_CAPTION: str  # template: {path}
+    FILES_DOWNLOAD_TOO_LARGE: str  # template: {file}
+    FILES_DOWNLOADS_IN_PROGRESS: str
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]
