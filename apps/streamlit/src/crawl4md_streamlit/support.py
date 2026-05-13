@@ -36,6 +36,8 @@ _EVENT_CANCELLED = "cancelled"
 _EVENT_COMPLETED = "completed"
 _EVENT_FAILED = "failed"
 _EVENT_STARTED = "started"
+_STATE_RUNNING = "running"
+_ELAPSED_ACTIVE_STATES = frozenset({_STATE_RUNNING, _EVENT_CANCEL_REQUESTED})
 
 _PLAYWRIGHT_INSTALL_HINT = "playwright install"
 _PLAYWRIGHT_MISSING_EXECUTABLE_MARKER = "BrowserType.launch: Executable doesn't exist at"
@@ -179,6 +181,20 @@ def estimate_progress(
         percent=percent,
         label=f"Estimated from {processed_pages} of {limit} configured pages",
     )
+
+
+def elapsed_time_display(
+    *,
+    started_at: datetime | None,
+    job_state: str,
+    frozen_elapsed: str = "",
+    now: datetime | None = None,
+) -> str:
+    """Return elapsed time, live while active and frozen after terminal states."""
+    if started_at is None or job_state not in _ELAPSED_ACTIVE_STATES:
+        return frozen_elapsed
+    elapsed = (now or datetime.now(timezone.utc)) - started_at
+    return str(elapsed).split(".")[0]
 
 
 def list_generated_files(

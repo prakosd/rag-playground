@@ -19,6 +19,7 @@ from crawl4md_streamlit.support import (
     count_new_log_entries,
     crawl_output_base,
     drain_events,
+    elapsed_time_display,
     estimate_progress,
     find_latest_crawl_dir,
     generate_crawl_id,
@@ -102,6 +103,79 @@ def test_estimate_progress_handles_unknown_limit_and_clamps() -> None:
     assert unknown.label == "Estimating"
     assert clamped.fraction == 1.0
     assert clamped.percent == 100
+
+
+def test_elapsed_time_display_shows_duration_for_running_state() -> None:
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=timezone.utc)
+
+    elapsed = elapsed_time_display(started_at=started_at, job_state="running", now=now)
+
+    assert elapsed == "0:00:05"
+
+
+def test_elapsed_time_display_hides_when_crawl_is_not_active() -> None:
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=timezone.utc)
+
+    elapsed = elapsed_time_display(started_at=started_at, job_state="stopped", now=now)
+
+    assert elapsed == ""
+
+
+def test_elapsed_time_display_hides_when_started_at_missing() -> None:
+    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=timezone.utc)
+
+    elapsed = elapsed_time_display(started_at=None, job_state="running", now=now)
+
+    assert elapsed == ""
+
+
+def test_elapsed_time_display_restarts_from_zero_for_new_crawl() -> None:
+    now = datetime(2026, 5, 13, 10, 0, 10, tzinfo=timezone.utc)
+    previous_start = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
+    restarted_start = datetime(2026, 5, 13, 10, 0, 10, tzinfo=timezone.utc)
+
+    previous_elapsed = elapsed_time_display(
+        started_at=previous_start,
+        job_state="running",
+        now=now,
+    )
+    restarted_elapsed = elapsed_time_display(
+        started_at=restarted_start,
+        job_state="running",
+        now=now,
+    )
+
+    assert previous_elapsed == "0:00:10"
+    assert restarted_elapsed == "0:00:00"
+
+
+def test_elapsed_time_display_shows_duration_when_cancel_requested() -> None:
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 13, 10, 0, 7, tzinfo=timezone.utc)
+
+    elapsed = elapsed_time_display(
+        started_at=started_at,
+        job_state="cancel_requested",
+        now=now,
+    )
+
+    assert elapsed == "0:00:07"
+
+
+def test_elapsed_time_display_shows_frozen_value_when_stopped() -> None:
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 13, 10, 0, 7, tzinfo=timezone.utc)
+
+    elapsed = elapsed_time_display(
+        started_at=started_at,
+        job_state="stopped",
+        frozen_elapsed="0:00:07",
+        now=now,
+    )
+
+    assert elapsed == "0:00:07"
 
 
 def test_list_generated_files_stays_inside_session_root(tmp_path: Path) -> None:

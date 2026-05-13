@@ -21,6 +21,7 @@ from crawl4md_streamlit.support import (
     cleanup_old_sessions_with_lock,
     count_new_log_entries,
     drain_events,
+    elapsed_time_display,
     find_latest_crawl_dir,
     generate_crawl_id,
     generate_safe_id,
@@ -89,6 +90,7 @@ def _init_state() -> None:
     st.session_state.setdefault("latest_event", {})
     st.session_state.setdefault("active_output_dir", "")
     st.session_state.setdefault("started_at", None)
+    st.session_state.setdefault("last_elapsed", "")
     st.session_state.setdefault("activity_log_size", _DEFAULT_ACTIVITY_LOG_SIZE)
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("form_defaults", _default_form_values())
@@ -147,6 +149,11 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
             state_changed = True
         st.session_state.job_state = next_state
         if next_state in _TERMINAL_STATES:
+            started_at = st.session_state.started_at
+            if started_at is not None:
+                elapsed = datetime.now(timezone.utc) - started_at
+                st.session_state.last_elapsed = str(elapsed).split(".")[0]
+            st.session_state.started_at = None
             st.session_state.job = None
             st.session_state.form_defaults = _default_form_values()
     return state_changed
@@ -354,6 +361,7 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.crawl_id = crawl_id
     st.session_state.job_state = _STATE_RUNNING
     st.session_state.started_at = datetime.now(timezone.utc)
+    st.session_state.last_elapsed = ""
     st.session_state.events = []
     st.session_state.latest_event = {"limit": crawler_config.limit}
     st.session_state.active_output_dir = ""
@@ -570,11 +578,11 @@ def _render_status() -> None:
         )
 
         current_url = str(latest.get("current_url", ""))
-        started_at = st.session_state.started_at
-        elapsed_str = ""
-        if started_at is not None:
-            elapsed = datetime.now(timezone.utc) - started_at
-            elapsed_str = str(elapsed).split(".")[0]
+        elapsed_str = elapsed_time_display(
+            started_at=st.session_state.started_at,
+            job_state=st.session_state.job_state,
+            frozen_elapsed=st.session_state.last_elapsed,
+        )
         if current_url or elapsed_str:
             url_html = f'<a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
             left = strings["STATUS_CRAWLING"].format(url_html=url_html) if current_url else ""
