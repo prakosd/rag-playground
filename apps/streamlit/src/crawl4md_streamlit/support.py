@@ -384,6 +384,19 @@ def read_recent_lines(path: Path | str, *, max_lines: int | None) -> list[str]:
     return lines[-max_lines:]
 
 
+def format_eta_seconds(seconds: float | None, strings: Mapping[str, Any]) -> str:
+    """Return localized ETA text from numeric seconds (None → estimating placeholder)."""
+    if seconds is None:
+        return str(strings["ETA_ESTIMATING"])
+    secs = int(seconds)
+    if secs < 60:
+        return str(strings["ETA_LESS_THAN_MINUTE"])
+    hours, mins = divmod(secs // 60, 60)
+    if hours > 0:
+        return str(strings["ETA_HOURS_MINUTES"]).format(h=hours, m=mins)
+    return str(strings["ETA_MINUTES"]).format(n=mins)
+
+
 def count_new_log_entries(
     lines: list[str],
     previous_latest_line: str | None,

@@ -26,6 +26,7 @@ from crawl4md_streamlit.support import (
     elapsed_time_display,
     estimate_progress,
     find_latest_crawl_dir,
+    format_eta_seconds,
     generate_crawl_id,
     generate_safe_id,
     job_state_from_event,
@@ -827,3 +828,84 @@ def test_build_configs_rejects_non_positive_activity_log_size() -> None:
                 "activity_log_size": 0,
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# format_eta_seconds
+# ---------------------------------------------------------------------------
+
+
+def _en_strings() -> dict[str, str]:
+    from crawl4md_streamlit.i18n import STRINGS_EN
+
+    return dict(STRINGS_EN)
+
+
+def _id_strings() -> dict[str, str]:
+    from crawl4md_streamlit.i18n import STRINGS_ID
+
+    return dict(STRINGS_ID)
+
+
+def test_format_eta_seconds_none_returns_estimating_en() -> None:
+    result = format_eta_seconds(None, _en_strings())
+    assert result == "Estimating..."
+
+
+def test_format_eta_seconds_none_returns_estimating_id() -> None:
+    result = format_eta_seconds(None, _id_strings())
+    assert result == "Mengestimasi..."
+
+
+def test_format_eta_seconds_less_than_60_returns_less_than_minute_en() -> None:
+    result = format_eta_seconds(45.0, _en_strings())
+    assert result == "Less than a minute left"
+
+
+def test_format_eta_seconds_less_than_60_returns_less_than_minute_id() -> None:
+    result = format_eta_seconds(30.0, _id_strings())
+    assert result == "Kurang dari satu menit lagi"
+
+
+def test_format_eta_seconds_zero_returns_less_than_minute() -> None:
+    result = format_eta_seconds(0.0, _en_strings())
+    assert result == "Less than a minute left"
+
+
+def test_format_eta_seconds_minutes_en() -> None:
+    result = format_eta_seconds(180.0, _en_strings())  # 3 minutes
+    assert "3" in result
+    assert "minute" in result.lower()
+
+
+def test_format_eta_seconds_minutes_id() -> None:
+    result = format_eta_seconds(120.0, _id_strings())  # 2 minutes
+    assert "2" in result
+    assert "menit" in result
+
+
+def test_format_eta_seconds_hours_minutes_en() -> None:
+    result = format_eta_seconds(3700.0, _en_strings())  # 1h 1m 40s → 1h 1m
+    assert "1" in result
+    assert "h" in result
+
+
+def test_format_eta_seconds_hours_minutes_id() -> None:
+    result = format_eta_seconds(7260.0, _id_strings())  # 2h 1m
+    assert "2" in result
+    assert "j" in result
+
+
+def test_format_eta_seconds_exactly_60_is_one_minute() -> None:
+    result = format_eta_seconds(60.0, _en_strings())
+    assert "1" in result
+    assert "minute" in result.lower()
+
+
+def test_format_eta_seconds_does_not_compute_from_processed_elapsed() -> None:
+    """format_eta_seconds only formats provided seconds — it has no internal crawl state."""
+    # Called with same seconds, different strings → only wording differs
+    result_en = format_eta_seconds(120.0, _en_strings())
+    result_id = format_eta_seconds(120.0, _id_strings())
+    assert "2" in result_en and "2" in result_id
+    assert result_en != result_id  # different languages produce different text

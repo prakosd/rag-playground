@@ -90,6 +90,12 @@ class Strings(TypedDict):
     # ── Status line ───────────────────────────────────────────────────────
     STATUS_CRAWLING: str  # template: {url_html}
     STATUS_ELAPSED: str  # template: {elapsed}
+    STATUS_NEXT_URL: str  # template: {url_html}
+    # ── ETA phrases ───────────────────────────────────────────────────────
+    ETA_ESTIMATING: str
+    ETA_LESS_THAN_MINUTE: str
+    ETA_MINUTES: str  # template: {n}
+    ETA_HOURS_MINUTES: str  # template: {h}, {m}
     # ── State banners ─────────────────────────────────────────────────────
     BANNER_FAILED: str
     BANNER_CANCEL_REQUESTED: str

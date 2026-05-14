@@ -90,3 +90,33 @@ def test_files_download_too_large_has_file_placeholder() -> None:
 def test_files_downloads_in_progress_exists_in_all_locales() -> None:
     assert "FILES_DOWNLOADS_IN_PROGRESS" in STRINGS_EN
     assert "FILES_DOWNLOADS_IN_PROGRESS" in STRINGS_ID
+
+
+def test_eta_keys_exist_in_all_locales() -> None:
+    eta_keys = ("ETA_ESTIMATING", "ETA_LESS_THAN_MINUTE", "ETA_MINUTES", "ETA_HOURS_MINUTES")
+    for key in eta_keys:
+        assert key in STRINGS_EN, f"STRINGS_EN missing {key!r}"
+        assert key in STRINGS_ID, f"STRINGS_ID missing {key!r}"
+
+
+def test_status_row2_keys_exist_in_all_locales() -> None:
+    for key in ("STATUS_NEXT_URL",):
+        assert key in STRINGS_EN, f"STRINGS_EN missing {key!r}"
+        assert key in STRINGS_ID, f"STRINGS_ID missing {key!r}"
+
+
+def test_eta_minutes_has_n_placeholder() -> None:
+    assert "{n}" in STRINGS_EN["ETA_MINUTES"]
+    assert "{n}" in STRINGS_ID["ETA_MINUTES"]
+
+
+def test_eta_hours_minutes_has_h_and_m_placeholders() -> None:
+    assert "{h}" in STRINGS_EN["ETA_HOURS_MINUTES"]
+    assert "{m}" in STRINGS_EN["ETA_HOURS_MINUTES"]
+    assert "{h}" in STRINGS_ID["ETA_HOURS_MINUTES"]
+    assert "{m}" in STRINGS_ID["ETA_HOURS_MINUTES"]
+
+
+def test_status_next_url_has_url_html_placeholder() -> None:
+    assert "{url_html}" in STRINGS_EN["STATUS_NEXT_URL"]
+    assert "{url_html}" in STRINGS_ID["STATUS_NEXT_URL"]

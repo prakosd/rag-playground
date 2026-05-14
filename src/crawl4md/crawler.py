@@ -302,6 +302,8 @@ class SiteCrawler:
                 "event": _PROGRESS_EVENT_STARTED,
                 "output_dir": str(self.output_dir),
                 "limit": self.config.limit,
+                "next_url": "",
+                "eta_remaining_seconds": None,
             }
         )
         # Attach output_dir to writer so incremental flushes land there
@@ -569,6 +571,8 @@ class SiteCrawler:
                     "failed_pages": len(all_fail),
                     "processed_pages": len(all_success) + len(all_fail),
                     "limit": self.config.limit,
+                    "next_url": "",
+                    "eta_remaining_seconds": None,
                 }
             )
 
@@ -611,6 +615,8 @@ class SiteCrawler:
                 "processed_pages": total_crawled,
                 "queued_discovered_urls": total_crawled,
                 "limit": self.config.limit,
+                "next_url": "",
+                "eta_remaining_seconds": None,
             }
         )
         if self.output_dir is not None:
@@ -633,6 +639,8 @@ class SiteCrawler:
         prior_success: int,
         prior_fail: int,
         current_url: str,
+        next_url: str = "",
+        eta_remaining_seconds: float | None = None,
     ) -> None:
         """Emit a compact page-progress event."""
         success_count = sum(1 for result in results if result.success)
@@ -645,6 +653,8 @@ class SiteCrawler:
                 "failed_pages": prior_fail + fail_count,
                 "queued_discovered_urls": len(generated),
                 "current_url": current_url,
+                "next_url": next_url,
+                "eta_remaining_seconds": eta_remaining_seconds,
                 "output_dir": str(self.output_dir) if self.output_dir else "",
                 "limit": self.config.limit,
             }
@@ -808,6 +818,8 @@ class SiteCrawler:
                     prior_success=prior_success,
                     prior_fail=prior_fail,
                     current_url=crawl_result.url,
+                    next_url=queue[0][0] if queue else "",
+                    eta_remaining_seconds=progress.eta_remaining_seconds(),
                 )
 
                 if crawl_result.success and self._extractor and self._writer:
@@ -1000,6 +1012,8 @@ class SiteCrawler:
                 prior_success=prior_success,
                 prior_fail=prior_fail,
                 current_url=crawl_result.url,
+                next_url=queue[0][0] if queue else "",
+                eta_remaining_seconds=progress.eta_remaining_seconds(),
             )
 
             # Extract and buffer content incrementally

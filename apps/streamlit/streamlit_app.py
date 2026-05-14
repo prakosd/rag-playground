@@ -31,6 +31,7 @@ from crawl4md_streamlit.support import (
     elapsed_time_display,
     ensure_within_root,
     find_latest_crawl_dir,
+    format_eta_seconds,
     generate_crawl_id,
     job_state_from_event,
     latest_session_id,
@@ -77,6 +78,7 @@ _REFRESH_FORM_STATES = {
 }
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
+_STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6"
 _SESSION_STORAGE_COMPONENT_KEY = "browser_session_storage"
 _SESSION_STORAGE_KEY = "crawl4md.streamlit.sessions.v1"
 _SESSION_STORAGE_HTML = """
@@ -884,12 +886,35 @@ def _render_status() -> None:
             frozen_elapsed=st.session_state.last_elapsed,
         )
         if current_url or elapsed_str:
-            url_html = f'<a href="{current_url}" target="_blank" rel="noopener noreferrer">{current_url}</a>'
+            url_html = (
+                f'<a href="{html.escape(current_url)}" target="_blank" rel="noopener noreferrer">'
+                f"{html.escape(current_url)}</a>"
+            )
             left = strings["STATUS_CRAWLING"].format(url_html=url_html) if current_url else ""
             right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
             st.markdown(
-                f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
+                f'<div style="{_STATUS_ROW_STYLE}">'
                 f"<span>{left}</span><span>{right}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        next_url = str(latest.get("next_url", ""))
+        eta_seconds_raw = latest.get("eta_remaining_seconds")
+        eta_seconds = float(eta_seconds_raw) if eta_seconds_raw is not None else None
+        eta_text = format_eta_seconds(eta_seconds, strings)
+        if next_url or eta_seconds is not None:
+            next_url_html = (
+                f'<a href="{html.escape(next_url)}" target="_blank" rel="noopener noreferrer">'
+                f"{html.escape(next_url)}</a>"
+                if next_url
+                else ""
+            )
+            left2 = strings["STATUS_NEXT_URL"].format(url_html=next_url_html) if next_url else ""
+            right2 = eta_text
+            st.markdown(
+                f'<div style="{_STATUS_ROW_STYLE}">'
+                f"<span>{left2}</span><span>{right2}</span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )

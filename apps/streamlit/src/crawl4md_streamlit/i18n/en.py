@@ -114,6 +114,12 @@ STRINGS_EN: Strings = {
     # ── Status line ───────────────────────────────────────────────────────
     "STATUS_CRAWLING": "Crawling: {url_html}",
     "STATUS_ELAPSED": "Elapsed time: {elapsed}",
+    "STATUS_NEXT_URL": "Next: {url_html}",
+    # ── ETA phrases ───────────────────────────────────────────────────────
+    "ETA_ESTIMATING": "Estimating...",
+    "ETA_LESS_THAN_MINUTE": "Less than a minute left",
+    "ETA_MINUTES": "About {n} minute(s) left",
+    "ETA_HOURS_MINUTES": "About {h}h {m}m left",
     # ── State banners ─────────────────────────────────────────────────────
     "BANNER_FAILED": "🔴 Failed — processing encountered errors",
     "BANNER_CANCEL_REQUESTED": "🟡 Stop requested — waiting for worker to finish",

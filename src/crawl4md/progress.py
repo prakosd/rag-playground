@@ -313,6 +313,13 @@ class ProgressReporter:
             return f"About {' '.join(parts)} left"
         return f"About {mins} minute{'s' if mins != 1 else ''} left"
 
+    def eta_remaining_seconds(self) -> float | None:
+        """Remaining seconds estimated from current rate, or None if not yet computable."""
+        if self.count == 0:
+            return None
+        elapsed = time.time() - self._start_time
+        return elapsed / self.count * (self.total - self.count)
+
     # ------------------------------------------------------------------
     # Activity tracking
     # ------------------------------------------------------------------

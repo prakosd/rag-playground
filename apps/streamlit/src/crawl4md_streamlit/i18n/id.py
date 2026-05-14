@@ -118,6 +118,12 @@ STRINGS_ID: Strings = {
     # ── Status line ───────────────────────────────────────────────────────
     "STATUS_CRAWLING": "Merayapi: {url_html}",
     "STATUS_ELAPSED": "Waktu berlalu: {elapsed}",
+    "STATUS_NEXT_URL": "Berikutnya: {url_html}",
+    # ── ETA phrases ───────────────────────────────────────────────────────
+    "ETA_ESTIMATING": "Mengestimasi...",
+    "ETA_LESS_THAN_MINUTE": "Kurang dari satu menit lagi",
+    "ETA_MINUTES": "Sekitar {n} menit lagi",
+    "ETA_HOURS_MINUTES": "Sekitar {h}j {m}m lagi",
     # ── State banners ─────────────────────────────────────────────────────
     "BANNER_FAILED": "🔴 Gagal — pemrosesan mengalami kesalahan",
     "BANNER_CANCEL_REQUESTED": "🟡 Penghentian diminta — menunggu worker selesai",

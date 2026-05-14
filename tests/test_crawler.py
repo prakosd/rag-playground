@@ -1423,3 +1423,137 @@ class TestEmptyExtraction:
         assert fail_urls.exists()
         content = fail_urls.read_text(encoding="utf-8")
         assert "https://example.com/empty" in content
+
+
+class TestProgressEventFields:
+    """Tests for next_url and eta_remaining_seconds in progress events."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_page_event_has_next_url_and_eta_fields(self, mock_crawler_cls, tmp_path: Path):
+        """page_processed events include next_url and eta_remaining_seconds keys."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result("https://example.com", "<p>ok</p>", "ok")
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        crawler.crawl()
+
+        page_events = [e for e in events if e.get("event") == "page_processed"]
+        assert page_events, "Expected at least one page_processed event"
+        for event in page_events:
+            assert "next_url" in event
+            assert "eta_remaining_seconds" in event
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_next_url_empty_for_last_page(self, mock_crawler_cls, tmp_path: Path):
+        """next_url is empty string when the queue is empty (last in-flight page)."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result("https://example.com", "<p>ok</p>", "ok")
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        crawler.crawl()
+
+        page_events = [e for e in events if e.get("event") == "page_processed"]
+        assert page_events
+        # Single-URL crawl: queue is empty when page is processed
+        last_page_event = page_events[-1]
+        assert last_page_event["next_url"] == ""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_next_url_is_set_when_more_pages_queued(self, mock_crawler_cls, tmp_path: Path):
+        """next_url is populated with the queued URL when there are pages left."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            side_effect=[
+                _make_mock_result("https://example.com/a", "<p>a</p>", "a"),
+                _make_mock_result("https://example.com/b", "<p>b</p>", "b"),
+            ]
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/a", "https://example.com/b"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        crawler.crawl()
+
+        page_events = [e for e in events if e.get("event") == "page_processed"]
+        assert len(page_events) >= 2
+        # After first page, second is still queued
+        first_event = page_events[0]
+        assert first_event["next_url"] == "https://example.com/b"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_started_completed_events_have_safe_defaults(self, mock_crawler_cls, tmp_path: Path):
+        """crawl_started and crawl_completed events carry next_url='' and eta_remaining_seconds=None."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result("https://example.com", "<p>ok</p>", "ok")
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(urls=["https://example.com"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        crawler.crawl()
+
+        started = next((e for e in events if e.get("event") == "crawl_started"), None)
+        completed = next((e for e in events if e.get("event") == "crawl_completed"), None)
+
+        assert started is not None
+        assert started["next_url"] == ""
+        assert started["eta_remaining_seconds"] is None
+
+        assert completed is not None
+        assert completed["next_url"] == ""
+        assert completed["eta_remaining_seconds"] is None
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_eta_remaining_seconds_is_float_in_page_events(self, mock_crawler_cls, tmp_path: Path):
+        """page_processed events have eta_remaining_seconds as float after update() increments count."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            side_effect=[
+                _make_mock_result("https://example.com/a", "<p>a</p>", "a"),
+                _make_mock_result("https://example.com/b", "<p>b</p>", "b"),
+            ]
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/a", "https://example.com/b"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        crawler.crawl()
+
+        page_events = [e for e in events if e.get("event") == "page_processed"]
+        assert len(page_events) >= 2
+        # progress.update() increments count before _emit_page_progress is called,
+        # so eta_remaining_seconds() returns a float for all page events.
+        for event in page_events:
+            assert isinstance(event["eta_remaining_seconds"], float)

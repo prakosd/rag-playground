@@ -463,6 +463,51 @@ class TestProgressReporter:
         # Normal entry should NOT have fail class — check first entry is not styled
         assert html.count("c4md-log-fail") == 3  # CSS rules (light + dark) + one entry
 
+    def test_eta_remaining_seconds_none_before_first_update(self):
+        """Returns None when no pages have been processed yet."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+
+            assert reporter.eta_remaining_seconds() is None
+
+    def test_eta_remaining_seconds_returns_float_after_first_update(self):
+        """Returns a non-negative float after at least one page is processed."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+            reporter.update("https://example.com/a", success=True)
+
+            result = reporter.eta_remaining_seconds()
+            assert result is not None
+            assert isinstance(result, float)
+            assert result >= 0.0
+
+    def test_eta_remaining_seconds_zero_when_all_done(self):
+        """Returns 0.0 when all pages are processed (total == count)."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(2)
+            reporter._use_notebook = False
+            reporter.update("https://example.com/a", success=True)
+            reporter.update("https://example.com/b", success=True)
+
+            result = reporter.eta_remaining_seconds()
+            assert result == 0.0
+
+    def test_eta_remaining_seconds_returns_proportional_estimate(self):
+        """Returns elapsed/count * remaining_pages as a raw float."""
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10)
+            reporter._use_notebook = False
+            reporter.count = 1
+            reporter._start_time = time.time() - 2.0  # simulate 2s elapsed
+
+            result = reporter.eta_remaining_seconds()
+            # elapsed≈2, count=1, remaining_pages=9 → raw≈18.0
+            assert result is not None
+            assert isinstance(result, float)
+            assert 16.0 <= result <= 20.0  # allow for slight timing variation
+
 
 class TestActivityLogDisk:
     """Tests for flushing the activity log to disk (TXT + CSV)."""

@@ -148,6 +148,53 @@ def test_session_storage_js_reports_write_failures() -> None:
     assert 'setStateValue("storage_write_failed", storageWriteFailed)' in app_source
 
 
+def test_second_status_row_renders_next_url() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert 'strings["STATUS_NEXT_URL"]' in app_source
+    assert "next_url" in app_source
+
+
+def test_second_status_row_renders_eta() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "format_eta_seconds" in app_source
+    assert "eta_remaining_seconds" in app_source
+
+
+def test_format_eta_seconds_imported_from_support() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "format_eta_seconds," in app_source
+
+
+def test_eta_ui_does_not_compute_from_processed_elapsed() -> None:
+    """Streamlit must not compute ETA from processed/elapsed — only format provided seconds."""
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    # The UI must NOT contain manual ETA math like dividing elapsed by processed_pages
+    assert "processed_pages / elapsed" not in app_source
+    assert "elapsed / processed_pages" not in app_source
+
+
+def test_status_row_urls_are_escaped() -> None:
+    """Both status rows must use html.escape() on URLs to prevent attribute breakout."""
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    # current_url and next_url both escape via html.escape()
+    assert "html.escape(current_url)" in app_source
+    assert "html.escape(next_url)" in app_source
+
+
+def test_status_row_style_uses_constant() -> None:
+    """Repeated CSS inline style must use a named constant, not a duplicate literal."""
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "_STATUS_ROW_STYLE" in app_source
+    # The literal should not appear directly in the markdown calls
+    assert app_source.count("display:flex;justify-content:space-between") == 1
+
+
 def test_session_storage_js_uses_gte_for_dedup() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 
