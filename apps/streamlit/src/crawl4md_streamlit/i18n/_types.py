@@ -66,6 +66,7 @@ class Strings(TypedDict):
     # ── Progress metrics ──────────────────────────────────────────────────
     METRIC_PROCESSED_LABEL: str
     METRIC_PROCESSED_DELTA: str  # template: {n}
+    METRIC_PROCESSED_DELTA_RETRY: str  # template: {n}
     METRIC_PROCESSED_TOOLTIP: str
     METRIC_SUCCESSFUL_LABEL: str
     METRIC_SUCCESSFUL_DELTA: str  # template: {n}
@@ -86,7 +87,9 @@ class Strings(TypedDict):
     # ── Progress bar labels ───────────────────────────────────────────────
     DENOM_DISCOVERED: str  # template: {n}
     DENOM_LIMIT: str  # template: {n}
+    PROGRESS_ATTEMPTS: str  # template: {n}
     PROGRESS_COMPLETE: str
+    PROGRESS_RETRYING: str
     # ── Status line ───────────────────────────────────────────────────────
     STATUS_CRAWLING: str  # template: {url_html}
     STATUS_ELAPSED: str  # template: {elapsed}

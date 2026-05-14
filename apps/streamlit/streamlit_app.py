@@ -735,9 +735,15 @@ def render_progress_and_files(
 ) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     denominator = discovered if discovered > 0 else max(limit, 1)
-    progress_ratio = min(max(processed / denominator, 0.0), 1.0)
+    covered_unique_pages = min(processed, denominator)
+    progress_ratio = min(max(covered_unique_pages / denominator, 0.0), 1.0)
     progress_pct = progress_ratio * 100
+    extra_attempts = max(processed - discovered, 0) if discovered > 0 else 0
     normalized_state = (state or "unknown").strip().lower()
+    is_retry_phase = extra_attempts > 0 and normalized_state in {
+        _STATE_RUNNING,
+        _STATE_CANCEL_REQUESTED,
+    }
     state_label = strings["STATE_LABELS"].get(
         normalized_state, normalized_state.replace("_", " ").title()
     )
@@ -754,12 +760,23 @@ def render_progress_and_files(
         if discovered > 0
         else strings["DENOM_LIMIT"].format(n=f"{limit:,}")
     )
+    processed_delta = (
+        strings["METRIC_PROCESSED_DELTA_RETRY"].format(n=f"{extra_attempts:,}")
+        if extra_attempts > 0
+        else strings["METRIC_PROCESSED_DELTA"].format(n=f"{processed:,}")
+    )
+    progress_status = (
+        strings["PROGRESS_RETRYING"]
+        if is_retry_phase
+        else f"{progress_pct:.2f}% {strings['PROGRESS_COMPLETE']}"
+    )
+    attempts_label = strings["PROGRESS_ATTEMPTS"].format(n=f"{processed:,}")
 
     with st.container():
         st.markdown(
             f'<div style="{_STATUS_ROW_STYLE}">'
-            f"<span>📄 {processed:,} / {denominator_label}</span>"
-            f"<span>⏳ {progress_pct:.2f}% {strings['PROGRESS_COMPLETE']}</span>"
+            f"<span>📄 {attempts_label} / {denominator_label}</span>"
+            f"<span>⏳ {progress_status}</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -769,7 +786,7 @@ def render_progress_and_files(
         row1[0].metric(
             label=strings["METRIC_PROCESSED_LABEL"],
             value=f"{processed:,}",
-            delta=strings["METRIC_PROCESSED_DELTA"].format(n=f"{processed:,}"),
+            delta=processed_delta,
             delta_color="off",
             help=strings["METRIC_PROCESSED_TOOLTIP"],
             border=True,

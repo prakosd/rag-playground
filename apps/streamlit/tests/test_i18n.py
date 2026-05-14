@@ -64,6 +64,12 @@ def test_discovered_delta_has_n_and_m_placeholders() -> None:
         assert "{m}" in val, f"STRINGS_{name}[METRIC_DISCOVERED_DELTA] missing {{m}}"
 
 
+def test_processed_retry_delta_has_n_placeholder() -> None:
+    for catalog, name in ((STRINGS_EN, "EN"), (STRINGS_ID, "ID")):
+        val = catalog["METRIC_PROCESSED_DELTA_RETRY"]
+        assert "{n}" in val, f"STRINGS_{name}[METRIC_PROCESSED_DELTA_RETRY] missing {{n}}"
+
+
 def test_state_labels_cover_known_states() -> None:
     known_states = {"idle", "running", "failed", "completed", "cancel_requested", "stopped"}
     for lang, catalog in CATALOG.items():
@@ -100,9 +106,14 @@ def test_eta_keys_exist_in_all_locales() -> None:
 
 
 def test_status_row2_keys_exist_in_all_locales() -> None:
-    for key in ("STATUS_NEXT_URL",):
+    for key in ("STATUS_NEXT_URL", "PROGRESS_RETRYING"):
         assert key in STRINGS_EN, f"STRINGS_EN missing {key!r}"
         assert key in STRINGS_ID, f"STRINGS_ID missing {key!r}"
+
+
+def test_progress_attempts_has_n_placeholder() -> None:
+    assert "{n}" in STRINGS_EN["PROGRESS_ATTEMPTS"]
+    assert "{n}" in STRINGS_ID["PROGRESS_ATTEMPTS"]
 
 
 def test_eta_minutes_has_n_placeholder() -> None:

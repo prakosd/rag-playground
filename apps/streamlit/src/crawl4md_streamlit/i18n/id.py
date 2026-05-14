@@ -89,9 +89,12 @@ STRINGS_ID: Strings = {
     "TOAST_FAILED": "{n} halaman gagal di-crawl",
     "TOAST_DISCOVERED": "{n} halaman ditemukan",
     # ── Progress metrics ──────────────────────────────────────────────────
-    "METRIC_PROCESSED_LABEL": "📄 Diproses",
+    "METRIC_PROCESSED_LABEL": "📄 Upaya halaman",
     "METRIC_PROCESSED_DELTA": "{n} total",
-    "METRIC_PROCESSED_TOOLTIP": "Jumlah halaman yang telah diproses sejauh ini",
+    "METRIC_PROCESSED_DELTA_RETRY": "{n} upaya retry",
+    "METRIC_PROCESSED_TOOLTIP": (
+        "Jumlah upaya saat ini untuk fase crawl yang berjalan. Halaman gagal dapat dicoba lagi selama retry."
+    ),
     "METRIC_SUCCESSFUL_LABEL": "✅ Berhasil",
     "METRIC_SUCCESSFUL_DELTA": "{n} selesai",
     "METRIC_SUCCESSFUL_TOOLTIP": "Halaman yang berhasil diproses",
@@ -114,7 +117,9 @@ STRINGS_ID: Strings = {
     # ── Progress bar labels ───────────────────────────────────────────────
     "DENOM_DISCOVERED": "{n} ditemukan",
     "DENOM_LIMIT": "{n} batas",
+    "PROGRESS_ATTEMPTS": "{n} upaya",
     "PROGRESS_COMPLETE": "selesai",
+    "PROGRESS_RETRYING": "Sedang retry halaman gagal",
     # ── Status line ───────────────────────────────────────────────────────
     "STATUS_CRAWLING": "Merayapi: {url_html}",
     "STATUS_ELAPSED": "Waktu berlalu: {elapsed}",

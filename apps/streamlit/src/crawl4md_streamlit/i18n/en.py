@@ -85,9 +85,12 @@ STRINGS_EN: Strings = {
     "TOAST_FAILED": "{n} page(s) failed",
     "TOAST_DISCOVERED": "{n} page(s) discovered",
     # ── Progress metrics ──────────────────────────────────────────────────
-    "METRIC_PROCESSED_LABEL": "📄 Processed",
+    "METRIC_PROCESSED_LABEL": "📄 Page attempts",
     "METRIC_PROCESSED_DELTA": "{n} total",
-    "METRIC_PROCESSED_TOOLTIP": "Number of pages processed so far",
+    "METRIC_PROCESSED_DELTA_RETRY": "{n} retry attempts",
+    "METRIC_PROCESSED_TOOLTIP": (
+        "Live attempt count for the current crawl phase. Failed pages may be attempted again during retries."
+    ),
     "METRIC_SUCCESSFUL_LABEL": "✅ Successful",
     "METRIC_SUCCESSFUL_DELTA": "{n} completed",
     "METRIC_SUCCESSFUL_TOOLTIP": "Pages processed successfully",
@@ -110,7 +113,9 @@ STRINGS_EN: Strings = {
     # ── Progress bar labels ───────────────────────────────────────────────
     "DENOM_DISCOVERED": "{n} discovered",
     "DENOM_LIMIT": "{n} limit",
+    "PROGRESS_ATTEMPTS": "{n} attempts",
     "PROGRESS_COMPLETE": "complete",
+    "PROGRESS_RETRYING": "Retrying failed pages",
     # ── Status line ───────────────────────────────────────────────────────
     "STATUS_CRAWLING": "Crawling: {url_html}",
     "STATUS_ELAPSED": "Elapsed time: {elapsed}",
