@@ -544,6 +544,7 @@ def start_crawl_job(
                 crawler_config,
                 page_config,
                 output_base=output_base,
+                session_id=f"{_SESSION_PREFIX}{session_id}",
                 extractor=extractor,
                 writer=writer,
                 activity_log_size=activity_log_size,

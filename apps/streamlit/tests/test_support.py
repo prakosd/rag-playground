@@ -589,14 +589,18 @@ def test_find_latest_crawl_dir_and_activity_log_path(tmp_path: Path) -> None:
 
 def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     class FakeCrawler:
+        seen_session_id = ""
+
         def __init__(
             self,
             *args: object,
             output_base: Path,
+            session_id: str,
             progress_callback: Callable[[Mapping[str, object]], None],
             **kwargs: object,
         ) -> None:
             self.output_dir = output_base / "2026-05-04_12-30-45"
+            FakeCrawler.seen_session_id = session_id
             self._progress_callback = progress_callback
 
         def crawl(self) -> list[object]:
@@ -630,6 +634,7 @@ def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
     events = drain_events(job)
 
     assert [event["event"] for event in events] == ["started", "page_processed", "completed"]
+    assert FakeCrawler.seen_session_id == "session_abc123"
 
 
 def test_start_crawl_job_reports_success_and_failure_counts(

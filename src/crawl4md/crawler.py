@@ -98,7 +98,6 @@ _FINAL_DIR_NAME = "final"
 
 # Prefix for per-round subdirectory names (e.g. "round_1")
 _ROUND_DIR_PREFIX = "round_"
-_SESSION_DIR_PREFIX = "session_"
 
 # Suffix for successful-page file names (e.g. "success_content_001.txt")
 _SUCCESS_SUFFIX = "success_"
@@ -241,6 +240,7 @@ class SiteCrawler:
         page_config: PageConfig | None = None,
         *,
         output_base: Path | str | None = None,
+        session_id: str | None = None,
         extractor: ContentExtractor | None = None,
         writer: FileWriter | None = None,
         activity_log_size: int = 10,
@@ -250,6 +250,7 @@ class SiteCrawler:
         self.config = config
         self.page_config = page_config or PageConfig()
         self._output_base = Path(output_base) if output_base else Path.cwd()
+        self._session_id = session_id
         self.output_dir: Path | None = None
         self._allowed_domains: set[str] = self._extract_base_domains(
             config.urls, strip_www=config.strip_www
@@ -920,7 +921,7 @@ class SiteCrawler:
                         self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
                     )
                     progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
-                    await asyncio.sleep(backoff)
+                    await self._sleep_with_cancel(backoff)
                     continue
 
                 # Non-redirect-skip result — reset storm counter
@@ -1841,17 +1842,9 @@ class SiteCrawler:
         }
         return {
             "crawl_start_datetime": datetime.now().isoformat(timespec="seconds"),
-            "session_id": self._derive_session_id(),
+            "session_id": self._session_id or self.output_dir.name,
             "crawl_parameters": crawl_parameters,
         }
-
-    def _derive_session_id(self) -> str:
-        """Return Streamlit session folder name when present; else output dir name."""
-        assert self.output_dir is not None
-        for path in [self.output_dir, *self.output_dir.parents]:
-            if path.name.startswith(_SESSION_DIR_PREFIX):
-                return path.name
-        return self.output_dir.name
 
     def _save_url_list(self, results: list[CrawlResult]) -> None:
         """Write urls.txt with one URL per line (legacy, kept for compatibility)."""

@@ -1183,6 +1183,40 @@ class TestRedirectStorm:
         assert failure_urls == {f"https://example.com/p{i}" for i in range(4)}
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_cancel_during_storm_backoff_emits_interrupted(self, mock_crawler_cls, tmp_path: Path):
+        from crawl4md.crawler import _PROGRESS_EVENT_INTERRUPTED
+
+        target = "https://example.com/home"
+        sources = [f"https://example.com/p{i}" for i in range(3)]
+        expected_crawl_calls = 1 + len(sources)
+
+        result_home = _make_mock_result(target, "<p>home</p>", "home")
+        redirects = self._make_redirect_side_effects(target, sources)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_home, *redirects])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict[str, object]] = []
+        config = CrawlerConfig(
+            urls=[target, *sources],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(
+            config,
+            output_base=tmp_path,
+            progress_callback=events.append,
+            should_cancel=lambda: mock_instance.arun.call_count >= expected_crawl_calls,
+        )
+
+        crawler.crawl()
+
+        assert any(event.get("event") == _PROGRESS_EVENT_INTERRUPTED for event in events)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_counter_resets_on_successful_crawl(self, mock_crawler_cls, tmp_path: Path):
         """A non-redirect result resets the counter and flushes skipped URLs."""
         from crawl4md.crawler import _UNRESOLVED_REDIRECT_ERROR

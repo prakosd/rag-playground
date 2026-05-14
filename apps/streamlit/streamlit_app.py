@@ -757,7 +757,7 @@ def render_progress_and_files(
 
     with st.container():
         st.markdown(
-            f'<div style="display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6">'
+            f'<div style="{_STATUS_ROW_STYLE}">'
             f"<span>📄 {processed:,} / {denominator_label}</span>"
             f"<span>⏳ {progress_pct:.2f}% {strings['PROGRESS_COMPLETE']}</span>"
             f"</div>",
@@ -893,9 +893,7 @@ def _render_status() -> None:
             left = strings["STATUS_CRAWLING"].format(url_html=url_html) if current_url else ""
             right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
             st.markdown(
-                f'<div style="{_STATUS_ROW_STYLE}">'
-                f"<span>{left}</span><span>{right}</span>"
-                f"</div>",
+                f'<div style="{_STATUS_ROW_STYLE}"><span>{left}</span><span>{right}</span></div>',
                 unsafe_allow_html=True,
             )
 
@@ -913,9 +911,7 @@ def _render_status() -> None:
             left2 = strings["STATUS_NEXT_URL"].format(url_html=next_url_html) if next_url else ""
             right2 = eta_text
             st.markdown(
-                f'<div style="{_STATUS_ROW_STYLE}">'
-                f"<span>{left2}</span><span>{right2}</span>"
-                f"</div>",
+                f'<div style="{_STATUS_ROW_STYLE}"><span>{left2}</span><span>{right2}</span></div>',
                 unsafe_allow_html=True,
             )
 

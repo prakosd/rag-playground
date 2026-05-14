@@ -189,14 +189,14 @@ class TestOutputFrontMatter:
                 assert 'status: "success"' in content
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
-    def test_session_id_uses_streamlit_session_folder(self, mock_crawler_cls, tmp_path: Path):
-        """When output_base is under a Streamlit session folder, session_id uses that folder."""
-        streamlit_session = "session_n25mbzlcfcpn"
+    def test_session_id_defaults_to_output_dir_name_even_under_app_like_path(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
         output_base = (
             tmp_path
             / "outputs"
             / "streamlit_sessions"
-            / streamlit_session
+            / "session_n25mbzlcfcpn"
             / "crawl_20260512_132924_iqlz0jd1_ukv"
         )
 
@@ -232,7 +232,45 @@ class TestOutputFrontMatter:
         assert content_files
 
         content = content_files[0].read_text(encoding="utf-8")
-        assert f'session_id: "{streamlit_session}"' in content
+        assert f'session_id: "{crawler.output_dir.name}"' in content
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_session_id_can_be_set_explicitly(self, mock_crawler_cls, tmp_path: Path):
+        explicit_session_id = "ui_session_abc123"
+        mock_result = _make_mock_result("https://example.com/page", "<p>ok</p>", "ok content")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/page"],
+            limit=1,
+            max_retries=0,
+            flush_interval=1,
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config,
+            page_config,
+            output_base=tmp_path,
+            session_id=explicit_session_id,
+            extractor=extractor,
+            writer=writer,
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        content_files = sorted(crawler.output_dir.glob("round_1/success_content_*.txt"))
+        assert content_files
+
+        content = content_files[0].read_text(encoding="utf-8")
+        assert f'session_id: "{explicit_session_id}"' in content
 
 
 class TestPrintSummary:
