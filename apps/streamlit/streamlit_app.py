@@ -1073,7 +1073,7 @@ def render_generated_file_download(file: GeneratedFile) -> None:
         horizontal=True,
         vertical_alignment="center",
         width="content",
-        gap="small",
+        gap="xxsmall",
     ):
         _render_file_preview_button(file)
         if not file.download_allowed or current_size > _DOWNLOAD_LIMIT_BYTES:
