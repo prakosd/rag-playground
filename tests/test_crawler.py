@@ -153,8 +153,8 @@ class TestSiteCrawler:
         assert (crawler.output_dir / "final" / "success_urls.txt").exists()
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
-    def test_limit_stops_discovery_not_crawling(self, mock_crawler_cls, tmp_path: Path):
-        """When discovery overshoots the limit, queued URLs are still crawled."""
+    def test_limit_stops_further_discovery_after_overshoot(self, mock_crawler_cls, tmp_path: Path):
+        """Round 1 may overshoot limit in one burst, then processes all discovered pages."""
         seed_url = "https://example.com"
         discovered_count = 23
         discovered_urls = [f"https://example.com/p{i}" for i in range(1, discovered_count + 1)]
@@ -175,7 +175,8 @@ class TestSiteCrawler:
         crawler = SiteCrawler(config, output_base=tmp_path)
         results = crawler.crawl()
 
-        # 1 seed + 23 discovered URLs should all be crawled.
+        # Discovery can overshoot in a single burst from a page under the limit.
+        # All already-discovered pages are still processed.
         assert len(results) == 1 + discovered_count
         assert mock_instance.arun.await_count == 1 + discovered_count
         assert all(result.success for result in results)
@@ -422,6 +423,9 @@ class TestSiteCrawler:
         for e in events:
             merged.update(e)
         assert merged.get("queued_discovered_urls") == merged.get("processed_pages")
+        assert int(merged.get("successful_pages", 0)) + int(merged.get("failed_pages", 0)) == int(
+            merged.get("processed_pages", 0)
+        )
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_already_visited_redirect_removed_from_discovered(
@@ -505,6 +509,40 @@ class TestSiteCrawler:
         assert merged.get("queued_discovered_urls") == merged.get("processed_pages"), (
             f"discovered={merged.get('queued_discovered_urls')} != "
             f"processed={merged.get('processed_pages')}"
+        )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_redirect_to_new_target_replaces_source_in_discovered(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """A redirected source URL must not be double-counted in discovered pages."""
+        result_a = _make_mock_result("https://example.com/a", "", "")
+        result_a.redirected_url = "https://example.com/b"
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[result_a])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(
+            urls=["https://example.com/a"],
+            limit=10,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        results = crawler.crawl()
+
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/b"
+
+        merged: dict = {}
+        for event in events:
+            merged.update(event)
+        assert merged.get("queued_discovered_urls") == merged.get("processed_pages")
+        assert int(merged.get("successful_pages", 0)) + int(merged.get("failed_pages", 0)) == int(
+            merged.get("processed_pages", 0)
         )
 
 

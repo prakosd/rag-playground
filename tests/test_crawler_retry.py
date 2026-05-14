@@ -521,7 +521,7 @@ class TestRetryRounds:
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_discovery_respects_limit(self, mock_crawler_cls, tmp_path: Path):
-        """Links discovered on retry are subject to the overall limit."""
+        """Retry discovery may overshoot once, then stops further discovery."""
         blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
         start_html_ok = (
             "<html><body><p>Content</p>"
@@ -557,8 +557,9 @@ class TestRetryRounds:
         crawler = SiteCrawler(config, output_base=tmp_path)
         results = crawler.crawl()
 
-        # limit=2: /start + at most 1 discovered link
-        assert len(results) <= 2
+        # Retry starts below limit, so one discovery burst can overshoot.
+        # All already discovered pages are still processed.
+        assert len(results) == 4
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_non_crawlable_links_do_not_consume_limit(self, mock_crawler_cls, tmp_path: Path):

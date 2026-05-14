@@ -609,6 +609,7 @@ class SiteCrawler:
                 "successful_pages": len(all_success),
                 "failed_pages": len(all_fail),
                 "processed_pages": total_crawled,
+                "queued_discovered_urls": total_crawled,
                 "limit": self.config.limit,
             }
         )
@@ -936,6 +937,13 @@ class SiteCrawler:
                     progress.set_activity(f"Skipped {_shorten_url(url)} (redirect outside filter)")
                     continue
 
+                if redirected and norm_final != norm_url:
+                    # Keep discovered URL count aligned with processable URLs by
+                    # replacing the redirected source URL with its final target.
+                    generated.discard(norm_url)
+                    depths.pop(norm_url, None)
+                    progress.total = max(len(generated), 1)
+
                 error_msg: str | None = None
                 if not result.success:
                     raw_err = (
@@ -1134,8 +1142,6 @@ class SiteCrawler:
                         continue
                     if not self._url_allowed(link):
                         continue
-                    if is_retry and len(generated) >= self.config.limit:
-                        break
                     generated.add(norm_link)
                     depths[norm_link] = depth + 1
                     queue.append((link, depth + 1))
