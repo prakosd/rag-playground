@@ -154,6 +154,15 @@ STRINGS_EN: Strings = {
     "FILES_SESSION_CAPTION": "Session folder: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} is too large to download from the app.",
     "FILES_DOWNLOADS_IN_PROGRESS": "Crawl in progress — files generated so far are shown below.",
+    "FILES_PREVIEW_BUTTON": ":material/visibility:",
+    "FILES_PREVIEW_HELP": "Preview {file}",
+    "FILES_PREVIEW_DIALOG_TITLE": "Preview: {file}",
+    "FILES_PREVIEW_DETAILS": "Path: {path} · Size: {size_kib} KiB",
+    "FILES_PREVIEW_UNSUPPORTED": "Preview is available only for text-based files. {file} is not previewable.",
+    "FILES_PREVIEW_MISSING": "The selected file is no longer available: {file}",
+    "FILES_PREVIEW_READ_ERROR": "Unable to read file for preview: {file}",
+    "FILES_PREVIEW_EMPTY": "{file} is empty.",
+    "FILES_PREVIEW_TRUNCATED": "Preview is capped to the first {limit_kib} KiB.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Ready",

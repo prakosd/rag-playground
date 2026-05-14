@@ -122,5 +122,14 @@ class Strings(TypedDict):
     FILES_SESSION_CAPTION: str  # template: {path}
     FILES_DOWNLOAD_TOO_LARGE: str  # template: {file}
     FILES_DOWNLOADS_IN_PROGRESS: str
+    FILES_PREVIEW_BUTTON: str
+    FILES_PREVIEW_HELP: str  # template: {file}
+    FILES_PREVIEW_DIALOG_TITLE: str  # template: {file}
+    FILES_PREVIEW_DETAILS: str  # template: {path}, {size_kib}
+    FILES_PREVIEW_UNSUPPORTED: str  # template: {file}
+    FILES_PREVIEW_MISSING: str  # template: {file}
+    FILES_PREVIEW_READ_ERROR: str  # template: {file}
+    FILES_PREVIEW_EMPTY: str  # template: {file}
+    FILES_PREVIEW_TRUNCATED: str  # template: {limit_kib}
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]

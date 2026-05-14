@@ -143,6 +143,69 @@ def test_download_buttons_use_validated_generated_file_records() -> None:
     assert "file.download_allowed" in app_source
 
 
+def test_download_rows_include_preview_button_with_eye_icon() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "FILES_PREVIEW_BUTTON" in app_source
+    assert 'label=strings["FILES_PREVIEW_BUTTON"]' in app_source
+    assert "icon=_PREVIEW_BUTTON_ICON" not in app_source
+    assert "_PREVIEW_BUTTON_WIDTH_PX = 44" in app_source
+    assert "width=_PREVIEW_BUTTON_WIDTH_PX" in app_source
+
+
+def test_download_rows_render_preview_before_download_with_small_gap() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    function_start = app_source.index(
+        "def render_generated_file_download(file: GeneratedFile) -> None:"
+    )
+    function_end = app_source.index("\ndef build_download_tree(", function_start)
+    function_source = app_source[function_start:function_end]
+
+    assert 'gap="small"' in function_source
+    assert function_source.index("_render_file_preview_button(file)") < function_source.index(
+        "if not file.download_allowed"
+    )
+    assert function_source.index("_render_file_preview_button(file)") < function_source.index(
+        "st.download_button("
+    )
+
+
+def test_file_preview_uses_native_dialog_and_preview_helpers() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "def _open_file_preview_dialog(file: GeneratedFile) -> None:" in app_source
+    assert "@st.dialog(" in app_source
+    assert 'st.session_state.setdefault("preview_file_relative_path", "")' in app_source
+    assert "read_text_preview(file.path" in app_source
+    assert "is_text_previewable(file.name)" in app_source
+    assert "st.session_state.preview_file_relative_path = file.relative_path" in app_source
+    assert 'st.session_state.preview_file_relative_path = ""' in app_source
+    assert "_render_open_preview_dialog(files)" in app_source
+    assert "_render_file_preview_button(file)" in app_source
+
+
+def test_file_preview_uses_scrollable_native_container() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "_PREVIEW_CODE_CONTAINER_HEIGHT_PX = 560" in app_source
+    assert "with st.container(height=_PREVIEW_CODE_CONTAINER_HEIGHT_PX):" in app_source
+
+
+def test_preview_state_clears_before_dialog_open() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "selected_file = file_by_relative_path.get(preview_relative_path)" in app_source
+    assert (
+        'if selected_file is None:\n        st.session_state.preview_file_relative_path = ""'
+        in app_source
+    )
+    assert (
+        'st.session_state.preview_file_relative_path = ""\n    _open_file_preview_dialog(selected_file)'
+        in app_source
+    )
+
+
 def test_download_buttons_hidden_while_crawl_is_running() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 

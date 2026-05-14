@@ -159,6 +159,15 @@ STRINGS_ID: Strings = {
     "FILES_SESSION_CAPTION": "Folder sesi: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} terlalu besar untuk diunduh dari aplikasi.",
     "FILES_DOWNLOADS_IN_PROGRESS": "Proses crawl sedang berjalan — file yang sudah dibuat ditampilkan di bawah.",
+    "FILES_PREVIEW_BUTTON": ":material/visibility:",
+    "FILES_PREVIEW_HELP": "Pratinjau {file}",
+    "FILES_PREVIEW_DIALOG_TITLE": "Pratinjau: {file}",
+    "FILES_PREVIEW_DETAILS": "Path: {path} · Ukuran: {size_kib} KiB",
+    "FILES_PREVIEW_UNSUPPORTED": "Pratinjau hanya tersedia untuk file berbasis teks. {file} tidak bisa dipratinjau.",
+    "FILES_PREVIEW_MISSING": "File yang dipilih sudah tidak tersedia: {file}",
+    "FILES_PREVIEW_READ_ERROR": "Tidak dapat membaca file untuk pratinjau: {file}",
+    "FILES_PREVIEW_EMPTY": "{file} kosong.",
+    "FILES_PREVIEW_TRUNCATED": "Pratinjau dibatasi pada {limit_kib} KiB pertama.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Siap",

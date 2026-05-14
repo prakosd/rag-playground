@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 import os
 import queue
 import secrets
@@ -24,6 +25,7 @@ _CLEANUP_LOG_FILE = "cleanup.log"
 _CRAWL_PREFIX = "crawl_"
 _DEFAULT_ACTIVITY_LOG_SIZE = 10
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
+_DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _DEFAULT_RETENTION_DAYS = 7
 _DEFAULT_SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
 _ID_BYTES = 9
@@ -55,6 +57,28 @@ _SESSION_LANGUAGE_FIELD = "language"
 _SESSION_RECORDS_FIELD = "sessions"
 _DEFAULT_SESSION_LANGUAGE = "EN"
 _SUPPORTED_LANGUAGES = frozenset({"EN", "ID"})
+_TEXT_PREVIEW_EXTENSIONS = frozenset(
+    {
+        ".cfg",
+        ".conf",
+        ".csv",
+        ".htm",
+        ".html",
+        ".ini",
+        ".json",
+        ".jsonl",
+        ".log",
+        ".md",
+        ".rst",
+        ".text",
+        ".toml",
+        ".tsv",
+        ".txt",
+        ".xml",
+        ".yaml",
+        ".yml",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -77,6 +101,14 @@ class GeneratedFile:
     modified_at: datetime
     file_type: str
     download_allowed: bool
+
+
+@dataclass(frozen=True)
+class TextPreview:
+    """A capped text preview payload suitable for inline UI display."""
+
+    text: str
+    truncated: bool
 
 
 @dataclass(frozen=True)
@@ -369,6 +401,35 @@ def list_generated_files(
             )
         )
     return files
+
+
+def is_text_previewable(path_or_name: Path | str) -> bool:
+    """Return True when the file can be shown as plain text in preview UI."""
+    file_name = Path(path_or_name).name
+    lower_name = file_name.lower()
+    if any(lower_name.endswith(ext) for ext in _TEXT_PREVIEW_EXTENSIONS):
+        return True
+    mime_type = mimetypes.guess_type(file_name)[0]
+    return bool(mime_type and mime_type.startswith("text/"))
+
+
+def read_text_preview(
+    path: Path | str,
+    *,
+    max_bytes: int = _DEFAULT_PREVIEW_MAX_BYTES,
+) -> TextPreview:
+    """Read up to *max_bytes* from a file and decode as UTF-8 replacement text."""
+    if max_bytes < 1:
+        raise ValueError("Preview byte limit must be at least 1.")
+    preview_path = Path(path)
+    if not preview_path.exists() or not preview_path.is_file():
+        return TextPreview(text="", truncated=False)
+    with preview_path.open("rb") as file_obj:
+        raw_bytes = file_obj.read(max_bytes + 1)
+    truncated = len(raw_bytes) > max_bytes
+    if truncated:
+        raw_bytes = raw_bytes[:max_bytes]
+    return TextPreview(text=raw_bytes.decode("utf-8", errors="replace"), truncated=truncated)
 
 
 def read_recent_lines(path: Path | str, *, max_lines: int | None) -> list[str]:

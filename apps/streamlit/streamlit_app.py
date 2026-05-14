@@ -33,11 +33,13 @@ from crawl4md_streamlit.support import (
     find_latest_crawl_dir,
     format_eta_seconds,
     generate_crawl_id,
+    is_text_previewable,
     job_state_from_event,
     latest_session_id,
     list_generated_files,
     normalize_session_records,
     read_recent_lines,
+    read_text_preview,
     request_cancel,
     serialize_session_records,
     session_dir,
@@ -58,6 +60,11 @@ _DEFAULT_TIMEOUT = 60.0
 _DEFAULT_URLS = "https://www.ato.gov.au/"
 _DEFAULT_WAIT_FOR = 3.0
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
+_PREVIEW_BUTTON_WIDTH_PX = 44
+_PREVIEW_DIALOG_WIDTH = "large"
+_PREVIEW_CODE_CONTAINER_HEIGHT_PX = 560
+_PREVIEW_LIMIT_BYTES = 256 * 1024
+_PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
 _OUTPUT_EXTENSION_OPTIONS = [".md", ".txt"]
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
 _DEFAULT_LANGUAGE = _DEFAULT_SESSION_LANGUAGE
@@ -206,6 +213,7 @@ def _init_state() -> None:
     st.session_state.setdefault("last_elapsed", "")
     st.session_state.setdefault("activity_log_size", _DEFAULT_ACTIVITY_LOG_SIZE)
     st.session_state.setdefault("activity_log_latest_line", None)
+    st.session_state.setdefault("preview_file_relative_path", "")
     st.session_state.setdefault("form_defaults", _default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
     st.session_state.setdefault("language", _DEFAULT_LANGUAGE)
@@ -303,6 +311,8 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
     known_ids = {record.session_id for record in records}
     if session_id not in known_ids:
         return
+    if st.session_state.session_id != session_id:
+        st.session_state.preview_file_relative_path = ""
     st.session_state.session_id = session_id
     st.session_state.preferred_session_id = session_id
     if not restore_language:
@@ -991,31 +1001,99 @@ def _render_activity_log() -> None:
         )
 
 
+def _open_file_preview_dialog(file: GeneratedFile) -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+
+    @st.dialog(
+        strings["FILES_PREVIEW_DIALOG_TITLE"].format(file=file.name),
+        width=_PREVIEW_DIALOG_WIDTH,
+    )
+    def _file_preview_dialog() -> None:
+        if not file.path.exists() or not file.path.is_file():
+            st.warning(strings["FILES_PREVIEW_MISSING"].format(file=file.relative_path))
+            return
+        if not is_text_previewable(file.name):
+            st.info(strings["FILES_PREVIEW_UNSUPPORTED"].format(file=file.name))
+            return
+        try:
+            current_size = file.path.stat().st_size
+        except OSError:
+            st.warning(strings["FILES_PREVIEW_MISSING"].format(file=file.relative_path))
+            return
+
+        st.caption(
+            strings["FILES_PREVIEW_DETAILS"].format(
+                path=file.relative_path,
+                size_kib=round(current_size / 1024, 1),
+            )
+        )
+        try:
+            preview = read_text_preview(file.path, max_bytes=_PREVIEW_LIMIT_BYTES)
+        except OSError:
+            st.warning(strings["FILES_PREVIEW_READ_ERROR"].format(file=file.relative_path))
+            return
+
+        if preview.text:
+            with st.container(height=_PREVIEW_CODE_CONTAINER_HEIGHT_PX):
+                st.code(preview.text, language="text")
+        else:
+            st.info(strings["FILES_PREVIEW_EMPTY"].format(file=file.name))
+        if preview.truncated:
+            st.caption(strings["FILES_PREVIEW_TRUNCATED"].format(limit_kib=_PREVIEW_LIMIT_KIB))
+
+    _file_preview_dialog()
+
+
+def _render_file_preview_button(file: GeneratedFile) -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    previewable = is_text_previewable(file.name)
+    preview_help = (
+        strings["FILES_PREVIEW_HELP"].format(file=file.name)
+        if previewable
+        else strings["FILES_PREVIEW_UNSUPPORTED"].format(file=file.name)
+    )
+    if st.button(
+        label=strings["FILES_PREVIEW_BUTTON"],
+        width=_PREVIEW_BUTTON_WIDTH_PX,
+        key=f"preview_{st.session_state.session_id}_{file.relative_path}",
+        help=preview_help,
+        disabled=not previewable,
+    ):
+        st.session_state.preview_file_relative_path = file.relative_path
+        st.rerun()
+
+
 def render_generated_file_download(file: GeneratedFile) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     try:
         current_size = file.path.stat().st_size
     except OSError:
         return
-    if not file.download_allowed or current_size > _DOWNLOAD_LIMIT_BYTES:
-        st.button(
-            label=f"📄 {file.name}",
-            disabled=True,
-            help=strings["FILES_DOWNLOAD_TOO_LARGE"].format(file=file.name),
-            key=f"download_blocked_{st.session_state.session_id}_{file.relative_path}",
-        )
-        return
-
-    mime_type = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
-    with file.path.open("rb") as file_obj:
-        file_bytes = file_obj.read()
-    st.download_button(
-        label=f"📄 {file.name}",
-        data=file_bytes,
-        file_name=file.name,
-        mime=mime_type,
-        key=f"download_{st.session_state.session_id}_{file.relative_path}",
-    )
+    with st.container(
+        horizontal=True,
+        vertical_alignment="center",
+        width="content",
+        gap="small",
+    ):
+        _render_file_preview_button(file)
+        if not file.download_allowed or current_size > _DOWNLOAD_LIMIT_BYTES:
+            st.button(
+                label=f"📄 {file.name}",
+                disabled=True,
+                help=strings["FILES_DOWNLOAD_TOO_LARGE"].format(file=file.name),
+                key=f"download_blocked_{st.session_state.session_id}_{file.relative_path}",
+            )
+        else:
+            mime_type = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
+            with file.path.open("rb") as file_obj:
+                file_bytes = file_obj.read()
+            st.download_button(
+                label=f"📄 {file.name}",
+                data=file_bytes,
+                file_name=file.name,
+                mime=mime_type,
+                key=f"download_{st.session_state.session_id}_{file.relative_path}",
+            )
 
 
 def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
@@ -1041,6 +1119,19 @@ def render_download_tree(tree: Mapping[str, Any]) -> None:
                 render_download_tree(entry)
             continue
         render_generated_file_download(entry)
+
+
+def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
+    preview_relative_path = str(st.session_state.get("preview_file_relative_path", ""))
+    if not preview_relative_path:
+        return
+    file_by_relative_path = {file.relative_path: file for file in files}
+    selected_file = file_by_relative_path.get(preview_relative_path)
+    if selected_file is None:
+        st.session_state.preview_file_relative_path = ""
+        return
+    st.session_state.preview_file_relative_path = ""
+    _open_file_preview_dialog(selected_file)
 
 
 @st.fragment(run_every="1s")
@@ -1077,6 +1168,8 @@ def _render_downloads() -> None:
         st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
     else:
         st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
+
+    _render_open_preview_dialog(files)
 
 
 @st.fragment(run_every="1s")

@@ -29,6 +29,7 @@ from crawl4md_streamlit.support import (
     format_eta_seconds,
     generate_crawl_id,
     generate_safe_id,
+    is_text_previewable,
     job_state_from_event,
     latest_session_id,
     list_generated_files,
@@ -36,6 +37,7 @@ from crawl4md_streamlit.support import (
     prepare_crawl_output_base,
     prepare_session_dir,
     read_recent_lines,
+    read_text_preview,
     request_cancel,
     serialize_session_records,
     session_dir,
@@ -445,6 +447,65 @@ def test_list_generated_files_skips_symlink_escape(tmp_path: Path) -> None:
     files = list_generated_files(session_path)
 
     assert files == []
+
+
+def test_is_text_previewable_accepts_common_text_extensions() -> None:
+    assert is_text_previewable("results.md")
+    assert is_text_previewable("report.json")
+    assert is_text_previewable("index.html")
+    assert is_text_previewable("activity.log")
+    assert is_text_previewable("notes.TXT")
+
+
+def test_is_text_previewable_rejects_binary_extensions() -> None:
+    assert not is_text_previewable("image.png")
+    assert not is_text_previewable("archive.zip")
+    assert not is_text_previewable("capture.pdf")
+
+
+def test_read_text_preview_returns_text_and_not_truncated(tmp_path: Path) -> None:
+    file_path = tmp_path / "content.txt"
+    file_path.write_text("hello world", encoding="utf-8")
+
+    preview = read_text_preview(file_path, max_bytes=100)
+
+    assert preview.text == "hello world"
+    assert preview.truncated is False
+
+
+def test_read_text_preview_marks_truncated_when_limit_exceeded(tmp_path: Path) -> None:
+    file_path = tmp_path / "content.txt"
+    file_path.write_text("0123456789", encoding="utf-8")
+
+    preview = read_text_preview(file_path, max_bytes=5)
+
+    assert preview.text == "01234"
+    assert preview.truncated is True
+
+
+def test_read_text_preview_replaces_invalid_utf8_bytes(tmp_path: Path) -> None:
+    file_path = tmp_path / "content.txt"
+    file_path.write_bytes(b"first\n\xff\xfe\nlast")
+
+    preview = read_text_preview(file_path, max_bytes=100)
+
+    assert "\ufffd" in preview.text
+    assert preview.truncated is False
+
+
+def test_read_text_preview_handles_missing_file(tmp_path: Path) -> None:
+    preview = read_text_preview(tmp_path / "missing.txt", max_bytes=100)
+
+    assert preview.text == ""
+    assert preview.truncated is False
+
+
+def test_read_text_preview_rejects_non_positive_limit(tmp_path: Path) -> None:
+    file_path = tmp_path / "content.txt"
+    file_path.write_text("hello", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        read_text_preview(file_path, max_bytes=0)
 
 
 def test_read_recent_lines_returns_tail(tmp_path: Path) -> None:

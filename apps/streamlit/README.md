@@ -47,7 +47,7 @@ Everything the user sees and interacts with. Responsibilities:
   (`_drain_job_events`).
 - Renders progress metrics and the activity log (`_render_live_area`, refreshed every 1 second
   via `@st.fragment(run_every="1s")`).
-- Renders the selected session's generated-file table and download tree separately
+- Renders the selected session's generated-file table and a per-file download + preview tree separately
   (`_render_downloads`, also refreshed every 1 second).
 - Runs a one-time startup cleanup of old session folders (`_run_startup_cleanup`, cached with
   `@st.cache_resource`).
@@ -75,6 +75,7 @@ No Streamlit imports. Contains everything that would clutter `streamlit_app.py`:
 | **Config building** | `build_configs` (form values → `CrawlerConfig` + `PageConfig`) |
 | **Progress** | `estimate_progress` |
 | **File listing** | `list_generated_files` (session-scoped, rejects path traversal) |
+| **File preview helpers** | `is_text_previewable`, `read_text_preview` |
 | **Log reading** | `read_recent_lines` |
 | **Crawl jobs** | `start_crawl_job`, `request_cancel`, `drain_events` |
 | **State mapping** | `job_state_from_event` |
@@ -203,7 +204,7 @@ _drain_job_events()     dequeues events, updates st.session_state
   ▼
 _render_status()        progress bar, metrics, current URL, elapsed time
 _render_activity_log()  tail of activity_log.txt from the output dir
-_render_downloads()     dataframe + download buttons for the selected session
+_render_downloads()     dataframe + download/preview buttons for the selected session
 ```
 
 ---

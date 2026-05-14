@@ -98,6 +98,41 @@ def test_files_downloads_in_progress_exists_in_all_locales() -> None:
     assert "FILES_DOWNLOADS_IN_PROGRESS" in STRINGS_ID
 
 
+def test_files_preview_title_has_file_placeholder() -> None:
+    assert "{file}" in STRINGS_EN["FILES_PREVIEW_DIALOG_TITLE"]
+    assert "{file}" in STRINGS_ID["FILES_PREVIEW_DIALOG_TITLE"]
+
+
+def test_files_preview_details_has_path_and_size_placeholders() -> None:
+    assert "{path}" in STRINGS_EN["FILES_PREVIEW_DETAILS"]
+    assert "{size_kib}" in STRINGS_EN["FILES_PREVIEW_DETAILS"]
+    assert "{path}" in STRINGS_ID["FILES_PREVIEW_DETAILS"]
+    assert "{size_kib}" in STRINGS_ID["FILES_PREVIEW_DETAILS"]
+
+
+def test_files_preview_truncated_has_limit_placeholder() -> None:
+    assert "{limit_kib}" in STRINGS_EN["FILES_PREVIEW_TRUNCATED"]
+    assert "{limit_kib}" in STRINGS_ID["FILES_PREVIEW_TRUNCATED"]
+
+
+def test_files_preview_messages_keep_file_placeholder() -> None:
+    keys = (
+        "FILES_PREVIEW_HELP",
+        "FILES_PREVIEW_UNSUPPORTED",
+        "FILES_PREVIEW_MISSING",
+        "FILES_PREVIEW_READ_ERROR",
+        "FILES_PREVIEW_EMPTY",
+    )
+    for key in keys:
+        assert "{file}" in STRINGS_EN[key]
+        assert "{file}" in STRINGS_ID[key]
+
+
+def test_files_preview_button_label_is_icon_only() -> None:
+    assert STRINGS_EN["FILES_PREVIEW_BUTTON"] == ":material/visibility:"
+    assert STRINGS_ID["FILES_PREVIEW_BUTTON"] == ":material/visibility:"
+
+
 def test_eta_keys_exist_in_all_locales() -> None:
     eta_keys = ("ETA_ESTIMATING", "ETA_LESS_THAN_MINUTE", "ETA_MINUTES", "ETA_HOURS_MINUTES")
     for key in eta_keys:

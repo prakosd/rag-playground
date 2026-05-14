@@ -58,7 +58,7 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 - Start again after stopping to begin a fresh crawl from the form settings
 - Reuse the newest browser session automatically, switch to older sessions from the searchable session selector, or create a new session manually
 - Watch live progress (pages crawled, estimated completion)
-- Download the generated Markdown/text files directly from the browser
+- Preview common text-based generated files and download files directly from the browser
 
 Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run). The browser stores known session IDs and creation times in local storage so later page loads can select the newest existing session instead of creating a new one. Stopped crawls keep their generated files in that crawl folder, but no crawl state is kept for continuing later.
 
