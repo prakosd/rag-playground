@@ -162,7 +162,7 @@ def test_download_rows_render_preview_before_download_with_small_gap() -> None:
     function_end = app_source.index("\ndef build_download_tree(", function_start)
     function_source = app_source[function_start:function_end]
 
-    assert 'gap="small"' in function_source
+    assert 'gap="xxsmall"' in function_source
     assert function_source.index("_render_file_preview_button(file)") < function_source.index(
         "if not file.download_allowed"
     )
@@ -190,6 +190,7 @@ def test_file_preview_uses_scrollable_native_container() -> None:
 
     assert "_PREVIEW_CODE_CONTAINER_HEIGHT_PX = 560" in app_source
     assert "with st.container(height=_PREVIEW_CODE_CONTAINER_HEIGHT_PX):" in app_source
+    assert 'st.code(preview.text, language="text", line_numbers=True)' in app_source
 
 
 def test_preview_state_clears_before_dialog_open() -> None:

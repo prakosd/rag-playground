@@ -1035,7 +1035,7 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
 
         if preview.text:
             with st.container(height=_PREVIEW_CODE_CONTAINER_HEIGHT_PX):
-                st.code(preview.text, language="text")
+                st.code(preview.text, language="text", line_numbers=True)
         else:
             st.info(strings["FILES_PREVIEW_EMPTY"].format(file=file.name))
         if preview.truncated:
