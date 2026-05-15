@@ -52,9 +52,9 @@ _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _DEFAULT_DELAY = 3.0
 _DEFAULT_EXCLUDE_PATHS = "ato.gov.au/api/"
 _DEFAULT_EXCLUDE_TAGS = "nav, script, form, style"
-_DEFAULT_FLUSH_INTERVAL = 1
+_DEFAULT_FLUSH_INTERVAL = 5
 _DEFAULT_INCLUDE_ONLY_PATHS = "ato.gov.au"
-_DEFAULT_LIMIT = 9999
+_DEFAULT_LIMIT = 10
 _DEFAULT_MAX_DEPTH = 5
 _DEFAULT_MAX_FILE_SIZE_MB = 10.0
 _DEFAULT_MAX_RETRIES = 5
@@ -62,8 +62,11 @@ _DEFAULT_TIMEOUT = 60.0
 _DEFAULT_URLS = "https://www.ato.gov.au/"
 _DEFAULT_WAIT_FOR = 3.0
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
+_DOWNLOADS_REFRESH_INTERVAL = "7s"
 _ICON_BUTTON_WIDTH_PX = 44
+_LIVE_AREA_REFRESH_INTERVAL = "3s"
 _PREVIEW_DIALOG_WIDTH = "large"
+_PREVIEW_DIALOG_TITLE = "File Preview"
 # Adjust this percentage to resize the preview modal relative to the viewport.
 _PREVIEW_DIALOG_VIEWPORT_PERCENT = 70
 _PREVIEW_DIALOG_VIEWPORT_WIDTH = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vw"
@@ -894,21 +897,22 @@ def _render_status() -> None:
     new_success = successful_pages - int(st.session_state.get("prev_successful_pages", 0))
     new_fail = failed_pages - int(st.session_state.get("prev_failed_pages", 0))
     new_discovered = discovered_pages - int(st.session_state.get("prev_discovered_pages", 0))
-    if new_success > 0:
-        st.toast(
-            strings["TOAST_SUCCESS"].format(n=successful_pages),
-            icon=_TOAST_PAGE_SUCCESS_ICON,
-        )
-    if new_fail > 0:
-        st.toast(
-            strings["TOAST_FAILED"].format(n=failed_pages),
-            icon=_TOAST_PAGE_FAIL_ICON,
-        )
-    if new_discovered > 0:
-        st.toast(
-            strings["TOAST_DISCOVERED"].format(n=discovered_pages),
-            icon=_TOAST_PAGE_DISCOVERED_ICON,
-        )
+    if not st.session_state.get("preview_file_relative_path", ""):
+        if new_success > 0:
+            st.toast(
+                strings["TOAST_SUCCESS"].format(n=successful_pages),
+                icon=_TOAST_PAGE_SUCCESS_ICON,
+            )
+        if new_fail > 0:
+            st.toast(
+                strings["TOAST_FAILED"].format(n=failed_pages),
+                icon=_TOAST_PAGE_FAIL_ICON,
+            )
+        if new_discovered > 0:
+            st.toast(
+                strings["TOAST_DISCOVERED"].format(n=discovered_pages),
+                icon=_TOAST_PAGE_DISCOVERED_ICON,
+            )
     st.session_state.prev_successful_pages = successful_pages
     st.session_state.prev_failed_pages = failed_pages
     st.session_state.prev_discovered_pages = discovered_pages
@@ -1008,153 +1012,167 @@ def _render_activity_log() -> None:
         st.write("")
         st.markdown(f"**{strings['ACTIVITY_LOG_HEADER']}**")
         rows_html = "".join(
-            f"<div style='padding:4px 8px;border-bottom:1px solid rgba(49,51,63,0.1);font-size:14px;font-family:sans-serif'>{_linkify_log_line(line)}</div>"
+            f"<div style='padding:4px 8px;border-bottom:1px solid rgba(150,150,150,0.35);font-size:14px;font-family:sans-serif'>{_linkify_log_line(line)}</div>"
             for line in reversed(lines)
         )
         st.html(
-            f"<div style='height:200px;overflow-y:auto;border:1px solid rgba(49,51,63,0.1);border-radius:8px'>{rows_html}</div>"
+            f"<div style='height:200px;overflow-y:auto;border:1px solid rgba(150,150,150,0.35);border-radius:8px'>{rows_html}</div>"
         )
 
 
-def _open_file_preview_dialog(file: GeneratedFile) -> None:
+def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
+    if timestamp is None:
+        return None
+    try:
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(_UTC_DISPLAY_FORMAT)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _on_preview_dismiss() -> None:
+    st.session_state.preview_file_relative_path = ""
+
+
+@st.dialog(_PREVIEW_DIALOG_TITLE, width=_PREVIEW_DIALOG_WIDTH, on_dismiss=_on_preview_dismiss)
+def _file_preview_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-
-    def _format_timestamp_utc(timestamp: float | None) -> str | None:
-        if timestamp is None:
-            return None
-        try:
-            return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(_UTC_DISPLAY_FORMAT)
-        except (OverflowError, OSError, ValueError):
-            return None
-
-    def _on_preview_dismiss() -> None:
+    preview_relative_path = str(st.session_state.get("preview_file_relative_path", ""))
+    if not preview_relative_path:
+        return
+    session_folder = _session_root()
+    try:
+        file_path = ensure_within_root(session_folder, session_folder / preview_relative_path)
+    except ValueError:
         st.session_state.preview_file_relative_path = ""
-
-    @st.dialog(
-        strings["FILES_PREVIEW_DIALOG_TITLE"].format(file=file.name),
-        width=_PREVIEW_DIALOG_WIDTH,
-        on_dismiss=_on_preview_dismiss,
+        return
+    file_name = Path(preview_relative_path).name
+    st.markdown(
+        f"""
+        <div class="{_PREVIEW_DIALOG_SCOPE_CLASS}" style="display:none"></div>
+        <style>
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) {{
+            overflow: hidden !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) > div {{
+            align-items: center !important;
+            justify-content: center !important;
+            padding-top: 0 !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] {{
+            width: {_PREVIEW_DIALOG_VIEWPORT_WIDTH} !important;
+            max-width: {_PREVIEW_DIALOG_VIEWPORT_WIDTH} !important;
+            height: {_PREVIEW_DIALOG_VIEWPORT_HEIGHT} !important;
+            max-height: {_PREVIEW_DIALOG_VIEWPORT_HEIGHT} !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) {{
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) [data-testid="stVerticalBlock"],
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) [data-testid="stLayoutWrapper"] {{
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) {{
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: 100% !important;
+            overflow: hidden !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) [data-testid="stCode"] {{
+            height: 100% !important;
+            max-height: 100% !important;
+            overflow: auto !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) pre {{
+            height: 100% !important;
+            max-height: 100% !important;
+            overflow: auto !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(1) {{
+            padding-top: 0.25rem !important;
+            padding-bottom: 0.25rem !important;
+        }}
+        div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(1) > div:first-child {{
+            display: none !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-    def _file_preview_dialog() -> None:
-        st.markdown(
-            f"""
-            <div class="{_PREVIEW_DIALOG_SCOPE_CLASS}" style="display:none"></div>
-            <style>
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) {{
-                overflow: hidden !important;
-            }}
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) > div {{
-                align-items: center !important;
-                justify-content: center !important;
-                padding-top: 0 !important;
-            }}
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] {{
-                width: {_PREVIEW_DIALOG_VIEWPORT_WIDTH} !important;
-                max-width: {_PREVIEW_DIALOG_VIEWPORT_WIDTH} !important;
-                height: {_PREVIEW_DIALOG_VIEWPORT_HEIGHT} !important;
-                max-height: {_PREVIEW_DIALOG_VIEWPORT_HEIGHT} !important;
-                margin: 0 !important;
-                overflow: hidden !important;
-                display: flex !important;
-                flex-direction: column !important;
-            }}
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) {{
-                flex: 1 1 auto !important;
-                min-height: 0 !important;
-                overflow: hidden !important;
-                display: flex !important;
-                flex-direction: column !important;
-            }}
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) [data-testid="stVerticalBlock"],
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) [data-testid="stLayoutWrapper"] {{
-                flex: 1 1 auto !important;
-                min-height: 0 !important;
-                display: flex !important;
-                flex-direction: column !important;
-            }}
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) {{
-                flex: 1 1 auto !important;
-                min-height: 0 !important;
-                height: auto !important;
-                max-height: 100% !important;
-                overflow: hidden !important;
-            }}
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) [data-testid="stCode"] {{
-                height: 100% !important;
-                max-height: 100% !important;
-                overflow: auto !important;
-            }}
-            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) pre {{
-                height: 100% !important;
-                max-height: 100% !important;
-                overflow: auto !important;
-            }}
-            </style>
-            """,
-            unsafe_allow_html=True,
+    st.title(file_name)
+    if not file_path.exists() or not file_path.is_file():
+        st.warning(strings["FILES_PREVIEW_MISSING"].format(file=preview_relative_path))
+        return
+    if not is_text_previewable(file_name):
+        st.info(strings["FILES_PREVIEW_UNSUPPORTED"].format(file=file_name))
+        return
+    try:
+        current_stat = file_path.stat()
+    except OSError:
+        st.warning(strings["FILES_PREVIEW_MISSING"].format(file=preview_relative_path))
+        return
+    current_size = current_stat.st_size
+
+    path_text = strings["FILES_PREVIEW_PATH"].format(path=preview_relative_path)
+    size_text = strings["FILES_PREVIEW_SIZE"].format(size_kib=round(current_size / 1024, 1))
+    modified_display = _format_preview_timestamp_utc(current_stat.st_mtime)
+    modified_text = (
+        strings["FILES_PREVIEW_MODIFIED_AT"].format(value=modified_display)
+        if modified_display
+        else None
+    )
+
+    created_timestamp = preview_created_timestamp(current_stat)
+    created_display = _format_preview_timestamp_utc(created_timestamp)
+    created_text = (
+        strings["FILES_PREVIEW_CREATED_AT"].format(value=created_display)
+        if created_display
+        else None
+    )
+
+    caption_html = (
+        f'<div style="{_STATUS_ROW_STYLE}"><span>{path_text}</span><span>{size_text}</span></div>'
+    )
+    if modified_text and created_text:
+        caption_html += (
+            f'<div style="{_STATUS_ROW_STYLE}">'
+            f"<span>{modified_text}</span><span>{created_text}</span></div>"
         )
-        if not file.path.exists() or not file.path.is_file():
-            st.warning(strings["FILES_PREVIEW_MISSING"].format(file=file.relative_path))
-            return
-        if not is_text_previewable(file.name):
-            st.info(strings["FILES_PREVIEW_UNSUPPORTED"].format(file=file.name))
-            return
-        try:
-            current_stat = file.path.stat()
-        except OSError:
-            st.warning(strings["FILES_PREVIEW_MISSING"].format(file=file.relative_path))
-            return
-        current_size = current_stat.st_size
+    elif modified_text:
+        caption_html += f"<div>{modified_text}</div>"
+    elif created_text:
+        caption_html += f"<div>{created_text}</div>"
 
-        path_text = strings["FILES_PREVIEW_PATH"].format(path=file.relative_path)
-        size_text = strings["FILES_PREVIEW_SIZE"].format(size_kib=round(current_size / 1024, 1))
-        modified_display = _format_timestamp_utc(current_stat.st_mtime)
-        modified_text = (
-            strings["FILES_PREVIEW_MODIFIED_AT"].format(value=modified_display)
-            if modified_display
-            else None
+    st.caption(caption_html, unsafe_allow_html=True)
+
+    try:
+        preview = read_text_preview(file_path, max_bytes=_PREVIEW_LIMIT_BYTES)
+    except OSError:
+        st.warning(strings["FILES_PREVIEW_READ_ERROR"].format(file=preview_relative_path))
+        return
+
+    if preview.text:
+        st.code(
+            preview.text,
+            language="text",
+            line_numbers=True,
+            wrap_lines=False,
         )
-
-        created_timestamp = preview_created_timestamp(current_stat)
-        created_display = _format_timestamp_utc(created_timestamp)
-        created_text = (
-            strings["FILES_PREVIEW_CREATED_AT"].format(value=created_display)
-            if created_display
-            else None
-        )
-
-        caption_html = f'<div style="{_STATUS_ROW_STYLE}"><span>{path_text}</span><span>{size_text}</span></div>'
-        if modified_text and created_text:
-            caption_html += (
-                f'<div style="{_STATUS_ROW_STYLE}">'
-                f"<span>{modified_text}</span><span>{created_text}</span></div>"
-            )
-        elif modified_text:
-            caption_html += f"<div>{modified_text}</div>"
-        elif created_text:
-            caption_html += f"<div>{created_text}</div>"
-
-        st.caption(caption_html, unsafe_allow_html=True)
-
-        try:
-            preview = read_text_preview(file.path, max_bytes=_PREVIEW_LIMIT_BYTES)
-        except OSError:
-            st.warning(strings["FILES_PREVIEW_READ_ERROR"].format(file=file.relative_path))
-            return
-
-        if preview.text:
-            st.code(
-                preview.text,
-                language="text",
-                line_numbers=True,
-                wrap_lines=False,
-            )
-        else:
-            st.info(strings["FILES_PREVIEW_EMPTY"].format(file=file.name))
-        if preview.truncated:
-            st.caption(strings["FILES_PREVIEW_TRUNCATED"].format(limit_kib=_PREVIEW_LIMIT_KIB))
-
-    _file_preview_dialog()
+    else:
+        st.info(strings["FILES_PREVIEW_EMPTY"].format(file=file_name))
+    if preview.truncated:
+        st.caption(strings["FILES_PREVIEW_TRUNCATED"].format(limit_kib=_PREVIEW_LIMIT_KIB))
 
 
 def _render_file_preview_button(file: GeneratedFile) -> None:
@@ -1239,14 +1257,13 @@ def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
     if not preview_relative_path:
         return
     file_by_relative_path = {file.relative_path: file for file in files}
-    selected_file = file_by_relative_path.get(preview_relative_path)
-    if selected_file is None:
+    if preview_relative_path not in file_by_relative_path:
         st.session_state.preview_file_relative_path = ""
         return
-    _open_file_preview_dialog(selected_file)
+    _file_preview_dialog()
 
 
-@st.fragment(run_every="1s")
+@st.fragment(run_every=_DOWNLOADS_REFRESH_INTERVAL)
 def _render_downloads() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
@@ -1284,7 +1301,7 @@ def _render_downloads() -> None:
     _render_open_preview_dialog(files)
 
 
-@st.fragment(run_every="1s")
+@st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
 def _render_live_area() -> None:
     _render_status()
     _render_activity_log()
