@@ -1032,20 +1032,27 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
             return
         current_size = current_stat.st_size
 
-        st.caption(
-            strings["FILES_PREVIEW_DETAILS"].format(
-                path=file.relative_path,
-                size_kib=round(current_size / 1024, 1),
-            )
-        )
+        path_text = strings["FILES_PREVIEW_PATH"].format(path=file.relative_path)
+        size_text = strings["FILES_PREVIEW_SIZE"].format(size_kib=round(current_size / 1024, 1))
         modified_display = _format_timestamp_utc(current_stat.st_mtime)
-        if modified_display is not None:
-            st.caption(strings["FILES_PREVIEW_MODIFIED_AT"].format(value=modified_display))
+        modified_text = strings["FILES_PREVIEW_MODIFIED_AT"].format(value=modified_display) if modified_display else None
 
         created_timestamp = preview_created_timestamp(current_stat)
         created_display = _format_timestamp_utc(created_timestamp)
-        if created_display is not None:
-            st.caption(strings["FILES_PREVIEW_CREATED_AT"].format(value=created_display))
+        created_text = strings["FILES_PREVIEW_CREATED_AT"].format(value=created_display) if created_display else None
+
+        caption_html = f'<div style="display:flex;justify-content:space-between"><span>{path_text}</span><span>{size_text}</span></div>'
+        if modified_text and created_text:
+            caption_html += (
+                f'<div style="display:flex;justify-content:space-between">'
+                f"<span>{modified_text}</span><span>{created_text}</span></div>"
+            )
+        elif modified_text:
+            caption_html += f"<div>{modified_text}</div>"
+        elif created_text:
+            caption_html += f"<div>{created_text}</div>"
+
+        st.caption(caption_html, unsafe_allow_html=True)
 
         try:
             preview = read_text_preview(file.path, max_bytes=_PREVIEW_LIMIT_BYTES)

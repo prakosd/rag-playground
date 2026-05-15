@@ -125,7 +125,8 @@ class Strings(TypedDict):
     FILES_PREVIEW_BUTTON: str
     FILES_PREVIEW_HELP: str  # template: {file}
     FILES_PREVIEW_DIALOG_TITLE: str  # template: {file}
-    FILES_PREVIEW_DETAILS: str  # template: {path}, {size_kib}
+    FILES_PREVIEW_PATH: str  # template: {path}
+    FILES_PREVIEW_SIZE: str  # template: {size_kib}
     FILES_PREVIEW_MODIFIED_AT: str  # template: {value}
     FILES_PREVIEW_CREATED_AT: str  # template: {value}
     FILES_PREVIEW_UNSUPPORTED: str  # template: {file}

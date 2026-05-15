@@ -103,11 +103,11 @@ def test_files_preview_title_has_file_placeholder() -> None:
     assert "{file}" in STRINGS_ID["FILES_PREVIEW_DIALOG_TITLE"]
 
 
-def test_files_preview_details_has_path_and_size_placeholders() -> None:
-    assert "{path}" in STRINGS_EN["FILES_PREVIEW_DETAILS"]
-    assert "{size_kib}" in STRINGS_EN["FILES_PREVIEW_DETAILS"]
-    assert "{path}" in STRINGS_ID["FILES_PREVIEW_DETAILS"]
-    assert "{size_kib}" in STRINGS_ID["FILES_PREVIEW_DETAILS"]
+def test_files_preview_path_and_size_have_placeholders() -> None:
+    assert "{path}" in STRINGS_EN["FILES_PREVIEW_PATH"]
+    assert "{size_kib}" in STRINGS_EN["FILES_PREVIEW_SIZE"]
+    assert "{path}" in STRINGS_ID["FILES_PREVIEW_PATH"]
+    assert "{size_kib}" in STRINGS_ID["FILES_PREVIEW_SIZE"]
 
 
 def test_files_preview_timestamps_have_value_placeholder() -> None:
