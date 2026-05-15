@@ -98,9 +98,9 @@ def test_files_downloads_in_progress_exists_in_all_locales() -> None:
     assert "FILES_DOWNLOADS_IN_PROGRESS" in STRINGS_ID
 
 
-def test_files_preview_title_has_file_placeholder() -> None:
-    assert "{file}" in STRINGS_EN["FILES_PREVIEW_DIALOG_TITLE"]
-    assert "{file}" in STRINGS_ID["FILES_PREVIEW_DIALOG_TITLE"]
+def test_files_preview_title_is_filename_only() -> None:
+    assert STRINGS_EN["FILES_PREVIEW_DIALOG_TITLE"] == "{file}"
+    assert STRINGS_ID["FILES_PREVIEW_DIALOG_TITLE"] == "{file}"
 
 
 def test_files_preview_path_and_size_have_placeholders() -> None:
