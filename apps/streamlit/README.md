@@ -30,6 +30,13 @@ apps/streamlit/
 be imported and unit-tested independently of Streamlit — no Streamlit runtime needed in tests.
 `streamlit_app.py` is the only file that imports `streamlit`.
 
+This package is a reference adapter over the core `crawl4md` library, not a second crawl engine.
+The library owns crawling, extraction, file writing, sorted and final outputs, run metadata,
+progress events, and cooperative cancellation hooks. The Streamlit package owns form rendering,
+browser-session persistence, background thread orchestration, and generated-file presentation.
+If a feature is UI-agnostic and needed by other frontends, add it to the core library instead of
+reimplementing it here.
+
 ---
 
 ## Component Responsibilities

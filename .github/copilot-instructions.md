@@ -18,6 +18,8 @@ Each crawl creates a timestamped output directory. Results pass through multiple
 
 The Streamlit app lives under `apps/streamlit/`, imports the `crawl4md` library, starts a background crawl job, feeds optional progress/cancel hooks into `SiteCrawler`, and writes per-session outputs under `outputs/streamlit_sessions/`. Keep the core library usable without Streamlit.
 
+The core package under `src/crawl4md/` owns crawling, extraction, file writing, sorted and final outputs, run metadata, progress event emission, and cooperative cancellation hooks. UI packages such as `apps/streamlit/` may build adapters around those APIs, but must own only rendering, browser or session persistence, background job orchestration, and downloads. Do not move app-specific path conventions, browser state, or UI-only behavior into the core library.
+
 ## File Layout
 
 ```

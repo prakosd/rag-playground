@@ -43,17 +43,23 @@ Walk through every item. Flag violations with file + line.
 - **Type hints on public APIs** — required.
 - **Tests use mocked HTTP** — flag any real network call.
 
-### 5. Tests
+### 5. Core / app boundary
+- Code under `src/crawl4md/` must not import UI or app packages such as `streamlit` or `crawl4md_streamlit`.
+- Core code must not take on app-only concerns such as browser storage, UI state, download panels, or app-specific output roots. Generic hooks such as `output_base`, `session_id`, `progress_callback`, and `should_cancel` are acceptable because other adapters can reuse them.
+- UI packages should adapt core APIs, not reimplement crawl, extraction, write, sort, or final-output behavior that belongs in the library.
+- If a change touches the boundary, check that the relevant boundary tests still cover it.
+
+### 6. Tests
 - Every code change has a test (happy path + key edge cases). Bug fixes need a reproducing test.
 - Tests are focused — flag tests that assert too many unrelated things.
 - No real network, no real filesystem outside `tmp_path` / fixtures.
 
-### 6. Readability
+### 7. Readability
 - Function/method longer than ~40 lines and doing >1 thing? Suggest a split — but only if there is a real second use case or a clear cognitive boundary. Do NOT suggest splits that just create one-time helpers (that's bloat).
 - Names match domain language (`CrawlResult`, `ExtractedPage`, `flush_interval`).
 - Control flow is flat — flag deep nesting (>3 levels).
 
-### 7. Public API surface
+### 8. Public API surface
 - Any new export in `__init__.py` that isn't required? Flag.
 - Any breaking change to a public model field? Flag and require justification.
 
