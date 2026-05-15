@@ -1027,9 +1027,13 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
         except (OverflowError, OSError, ValueError):
             return None
 
+    def _on_preview_dismiss() -> None:
+        st.session_state.preview_file_relative_path = ""
+
     @st.dialog(
         strings["FILES_PREVIEW_DIALOG_TITLE"].format(file=file.name),
         width=_PREVIEW_DIALOG_WIDTH,
+        on_dismiss=_on_preview_dismiss,
     )
     def _file_preview_dialog() -> None:
         st.markdown(
@@ -1239,7 +1243,6 @@ def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
     if selected_file is None:
         st.session_state.preview_file_relative_path = ""
         return
-    st.session_state.preview_file_relative_path = ""
     _open_file_preview_dialog(selected_file)
 
 
@@ -1347,6 +1350,10 @@ st.markdown(
         background-color: #b91c1c;
         border-color: #b91c1c;
         color: white;
+    }}
+    div[data-testid="stToastContainer"] {{
+        top: auto !important;
+        bottom: 1rem !important;
     }}
     </style>
     """,
