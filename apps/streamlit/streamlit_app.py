@@ -87,7 +87,7 @@ _REFRESH_FORM_STATES = {
 }
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
-_STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:0.6"
+_STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:1"
 _SESSION_STORAGE_COMPONENT_KEY = "browser_session_storage"
 _SESSION_STORAGE_KEY = "crawl4md.streamlit.sessions.v1"
 _SESSION_STORAGE_HTML = """

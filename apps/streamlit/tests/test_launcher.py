@@ -202,6 +202,15 @@ def test_file_preview_uses_scrollable_native_container() -> None:
     assert 'st.code(preview.text, language="text", line_numbers=True)' in app_source
 
 
+def test_file_preview_metadata_rows_use_readable_gray() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert (
+        '_STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:1"'
+        in app_source
+    )
+
+
 def test_preview_state_clears_before_dialog_open() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 
