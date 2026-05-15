@@ -301,6 +301,21 @@ def test_select_session_id_restores_language_from_record() -> None:
     assert "st.session_state.language = _normalize_language(record.language)" in app_source
 
 
+def test_select_session_id_clears_stale_view_state_on_session_change() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "st.session_state.events = []" in app_source
+    assert "st.session_state.latest_event = {}" in app_source
+    assert 'st.session_state.active_output_dir = ""' in app_source
+    assert "st.session_state.activity_log_latest_line = None" in app_source
+    assert 'st.session_state.last_elapsed = ""' in app_source
+    assert "st.session_state.job_state = _STATE_IDLE" in app_source
+    assert "st.session_state.started_at = None" in app_source
+    assert "st.session_state.prev_successful_pages = 0" in app_source
+    assert "st.session_state.prev_failed_pages = 0" in app_source
+    assert "st.session_state.prev_discovered_pages = 0" in app_source
+
+
 def test_on_language_change_updates_pending_records() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 

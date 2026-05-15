@@ -315,6 +315,17 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
         return
     if st.session_state.session_id != session_id:
         st.session_state.preview_file_relative_path = ""
+        st.session_state.events = []
+        st.session_state.latest_event = {}
+        st.session_state.active_output_dir = ""
+        st.session_state.activity_log_latest_line = None
+        st.session_state.last_elapsed = ""
+        st.session_state.job = None
+        st.session_state.job_state = _STATE_IDLE
+        st.session_state.started_at = None
+        st.session_state.prev_successful_pages = 0
+        st.session_state.prev_failed_pages = 0
+        st.session_state.prev_discovered_pages = 0
     st.session_state.session_id = session_id
     st.session_state.preferred_session_id = session_id
     if not restore_language:
@@ -1035,16 +1046,24 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
         path_text = strings["FILES_PREVIEW_PATH"].format(path=file.relative_path)
         size_text = strings["FILES_PREVIEW_SIZE"].format(size_kib=round(current_size / 1024, 1))
         modified_display = _format_timestamp_utc(current_stat.st_mtime)
-        modified_text = strings["FILES_PREVIEW_MODIFIED_AT"].format(value=modified_display) if modified_display else None
+        modified_text = (
+            strings["FILES_PREVIEW_MODIFIED_AT"].format(value=modified_display)
+            if modified_display
+            else None
+        )
 
         created_timestamp = preview_created_timestamp(current_stat)
         created_display = _format_timestamp_utc(created_timestamp)
-        created_text = strings["FILES_PREVIEW_CREATED_AT"].format(value=created_display) if created_display else None
+        created_text = (
+            strings["FILES_PREVIEW_CREATED_AT"].format(value=created_display)
+            if created_display
+            else None
+        )
 
-        caption_html = f'<div style="display:flex;justify-content:space-between"><span>{path_text}</span><span>{size_text}</span></div>'
+        caption_html = f'<div style="{_STATUS_ROW_STYLE}"><span>{path_text}</span><span>{size_text}</span></div>'
         if modified_text and created_text:
             caption_html += (
-                f'<div style="display:flex;justify-content:space-between">'
+                f'<div style="{_STATUS_ROW_STYLE}">'
                 f"<span>{modified_text}</span><span>{created_text}</span></div>"
             )
         elif modified_text:

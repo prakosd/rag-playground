@@ -231,3 +231,50 @@ def test_real_app_retries_language_write_after_same_session_store_failure(
 
         assert app.selectbox[0].value == "other"
         assert app.button_group[0].value == "ID"
+
+
+def test_real_app_switching_session_clears_stale_view_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    initial_records = serialize_session_records(
+        [
+            SessionRecord("active", _FIXED_CREATED_AT, "EN"),
+            SessionRecord("other", _FIXED_CREATED_AT.replace(minute=1), "EN"),
+        ]
+    )
+    with _patched_app_test(
+        monkeypatch,
+        tmp_path,
+        component_factory=_storage_component_factory(initial_records=initial_records),
+    ) as app:
+        app.run(timeout=10)
+
+        assert app.selectbox[0].value == "other"
+
+        app.session_state["events"] = [{"event": "completed", "processed_pages": 3}]
+        app.session_state["latest_event"] = {"event": "completed", "processed_pages": 3}
+        app.session_state["active_output_dir"] = (
+            "outputs/streamlit_sessions/session_other/crawl_abc"
+        )
+        app.session_state["activity_log_latest_line"] = "Saved page"
+        app.session_state["last_elapsed"] = "0:00:10"
+        app.session_state["job_state"] = "failed"
+        app.session_state["started_at"] = _FIXED_CREATED_AT
+        app.session_state["prev_successful_pages"] = 7
+        app.session_state["prev_failed_pages"] = 2
+        app.session_state["prev_discovered_pages"] = 11
+
+        app.selectbox[0].set_value("active")
+        app.run(timeout=10)
+
+        assert app.selectbox[0].value == "active"
+        assert app.session_state["events"] == []
+        assert app.session_state["latest_event"] == {}
+        assert app.session_state["active_output_dir"] == ""
+        assert app.session_state["activity_log_latest_line"] is None
+        assert app.session_state["last_elapsed"] == ""
+        assert app.session_state["job_state"] == "idle"
+        assert app.session_state["started_at"] is None
+        assert app.session_state["prev_successful_pages"] == 0
+        assert app.session_state["prev_failed_pages"] == 0
+        assert app.session_state["prev_discovered_pages"] == 0
