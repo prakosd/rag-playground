@@ -38,6 +38,7 @@ from crawl4md_streamlit.support import (
     latest_session_id,
     list_generated_files,
     normalize_session_records,
+    preview_created_timestamp,
     read_recent_lines,
     read_text_preview,
     request_cancel,
@@ -65,6 +66,7 @@ _PREVIEW_DIALOG_WIDTH = "large"
 _PREVIEW_CODE_CONTAINER_HEIGHT_PX = 560
 _PREVIEW_LIMIT_BYTES = 256 * 1024
 _PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
+_UTC_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
 _OUTPUT_EXTENSION_OPTIONS = [".md", ".txt"]
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
 _DEFAULT_LANGUAGE = _DEFAULT_SESSION_LANGUAGE
@@ -1004,6 +1006,14 @@ def _render_activity_log() -> None:
 def _open_file_preview_dialog(file: GeneratedFile) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 
+    def _format_timestamp_utc(timestamp: float | None) -> str | None:
+        if timestamp is None:
+            return None
+        try:
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(_UTC_DISPLAY_FORMAT)
+        except (OverflowError, OSError, ValueError):
+            return None
+
     @st.dialog(
         strings["FILES_PREVIEW_DIALOG_TITLE"].format(file=file.name),
         width=_PREVIEW_DIALOG_WIDTH,
@@ -1016,10 +1026,11 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
             st.info(strings["FILES_PREVIEW_UNSUPPORTED"].format(file=file.name))
             return
         try:
-            current_size = file.path.stat().st_size
+            current_stat = file.path.stat()
         except OSError:
             st.warning(strings["FILES_PREVIEW_MISSING"].format(file=file.relative_path))
             return
+        current_size = current_stat.st_size
 
         st.caption(
             strings["FILES_PREVIEW_DETAILS"].format(
@@ -1027,6 +1038,15 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
                 size_kib=round(current_size / 1024, 1),
             )
         )
+        modified_display = _format_timestamp_utc(current_stat.st_mtime)
+        if modified_display is not None:
+            st.caption(strings["FILES_PREVIEW_MODIFIED_AT"].format(value=modified_display))
+
+        created_timestamp = preview_created_timestamp(current_stat)
+        created_display = _format_timestamp_utc(created_timestamp)
+        if created_display is not None:
+            st.caption(strings["FILES_PREVIEW_CREATED_AT"].format(value=created_display))
+
         try:
             preview = read_text_preview(file.path, max_bytes=_PREVIEW_LIMIT_BYTES)
         except OSError:
@@ -1150,7 +1170,7 @@ def _render_downloads() -> None:
                 strings["FILES_COL_NAME"]: file.relative_path,
                 strings["FILES_COL_TYPE"]: file.file_type,
                 strings["FILES_COL_SIZE"]: round(file.size_bytes / (1024 * 1024), 3),
-                strings["FILES_COL_MODIFIED"]: file.modified_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                strings["FILES_COL_MODIFIED"]: file.modified_at.strftime(_UTC_DISPLAY_FORMAT),
             }
             for file in files
         ]

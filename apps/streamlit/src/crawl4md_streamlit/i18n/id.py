@@ -163,6 +163,8 @@ STRINGS_ID: Strings = {
     "FILES_PREVIEW_HELP": "Pratinjau {file}",
     "FILES_PREVIEW_DIALOG_TITLE": "Pratinjau: {file}",
     "FILES_PREVIEW_DETAILS": "Path: {path} · Ukuran: {size_kib} KiB",
+    "FILES_PREVIEW_MODIFIED_AT": "Terakhir dimodifikasi: {value}",
+    "FILES_PREVIEW_CREATED_AT": "Dibuat: {value}",
     "FILES_PREVIEW_UNSUPPORTED": "Pratinjau hanya tersedia untuk file berbasis teks. {file} tidak bisa dipratinjau.",
     "FILES_PREVIEW_MISSING": "File yang dipilih sudah tidak tersedia: {file}",
     "FILES_PREVIEW_READ_ERROR": "Tidak dapat membaca file untuk pratinjau: {file}",

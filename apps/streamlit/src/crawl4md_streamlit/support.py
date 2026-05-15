@@ -413,6 +413,18 @@ def is_text_previewable(path_or_name: Path | str) -> bool:
     return bool(mime_type and mime_type.startswith("text/"))
 
 
+def preview_created_timestamp(stat_result: Any, *, platform_name: str = os.name) -> float | None:
+    """Return a reliable creation timestamp for preview metadata when available."""
+    birthtime = getattr(stat_result, "st_birthtime", None)
+    if isinstance(birthtime, (int, float)):
+        return float(birthtime)
+    if platform_name == "nt":
+        ctime = getattr(stat_result, "st_ctime", None)
+        if isinstance(ctime, (int, float)):
+            return float(ctime)
+    return None
+
+
 def read_text_preview(
     path: Path | str,
     *,

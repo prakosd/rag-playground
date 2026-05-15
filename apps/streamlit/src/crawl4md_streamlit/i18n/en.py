@@ -158,6 +158,8 @@ STRINGS_EN: Strings = {
     "FILES_PREVIEW_HELP": "Preview {file}",
     "FILES_PREVIEW_DIALOG_TITLE": "Preview: {file}",
     "FILES_PREVIEW_DETAILS": "Path: {path} · Size: {size_kib} KiB",
+    "FILES_PREVIEW_MODIFIED_AT": "Last modified: {value}",
+    "FILES_PREVIEW_CREATED_AT": "Created: {value}",
     "FILES_PREVIEW_UNSUPPORTED": "Preview is available only for text-based files. {file} is not previewable.",
     "FILES_PREVIEW_MISSING": "The selected file is no longer available: {file}",
     "FILES_PREVIEW_READ_ERROR": "Unable to read file for preview: {file}",

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from queue import Queue
 from threading import Event, Thread
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -36,6 +37,7 @@ from crawl4md_streamlit.support import (
     normalize_session_records,
     prepare_crawl_output_base,
     prepare_session_dir,
+    preview_created_timestamp,
     read_recent_lines,
     read_text_preview,
     request_cancel,
@@ -461,6 +463,38 @@ def test_is_text_previewable_rejects_binary_extensions() -> None:
     assert not is_text_previewable("image.png")
     assert not is_text_previewable("archive.zip")
     assert not is_text_previewable("capture.pdf")
+
+
+def test_preview_created_timestamp_prefers_birthtime_when_available() -> None:
+    stat_result = SimpleNamespace(st_birthtime=10.0, st_ctime=20.0)
+
+    created_timestamp = preview_created_timestamp(stat_result, platform_name="posix")
+
+    assert created_timestamp == 10.0
+
+
+def test_preview_created_timestamp_uses_ctime_on_windows_without_birthtime() -> None:
+    stat_result = SimpleNamespace(st_ctime=20.0)
+
+    created_timestamp = preview_created_timestamp(stat_result, platform_name="nt")
+
+    assert created_timestamp == 20.0
+
+
+def test_preview_created_timestamp_skips_ctime_on_non_windows_without_birthtime() -> None:
+    stat_result = SimpleNamespace(st_ctime=20.0)
+
+    created_timestamp = preview_created_timestamp(stat_result, platform_name="posix")
+
+    assert created_timestamp is None
+
+
+def test_preview_created_timestamp_rejects_non_numeric_values() -> None:
+    stat_result = SimpleNamespace(st_birthtime="invalid", st_ctime="invalid")
+
+    created_timestamp = preview_created_timestamp(stat_result, platform_name="nt")
+
+    assert created_timestamp is None
 
 
 def test_read_text_preview_returns_text_and_not_truncated(tmp_path: Path) -> None:

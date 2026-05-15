@@ -110,6 +110,13 @@ def test_files_preview_details_has_path_and_size_placeholders() -> None:
     assert "{size_kib}" in STRINGS_ID["FILES_PREVIEW_DETAILS"]
 
 
+def test_files_preview_timestamps_have_value_placeholder() -> None:
+    keys = ("FILES_PREVIEW_MODIFIED_AT", "FILES_PREVIEW_CREATED_AT")
+    for key in keys:
+        assert "{value}" in STRINGS_EN[key]
+        assert "{value}" in STRINGS_ID[key]
+
+
 def test_files_preview_truncated_has_limit_placeholder() -> None:
     assert "{limit_kib}" in STRINGS_EN["FILES_PREVIEW_TRUNCATED"]
     assert "{limit_kib}" in STRINGS_ID["FILES_PREVIEW_TRUNCATED"]

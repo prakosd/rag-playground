@@ -185,6 +185,15 @@ def test_file_preview_uses_native_dialog_and_preview_helpers() -> None:
     assert "_render_file_preview_button(file)" in app_source
 
 
+def test_file_preview_shows_modified_and_created_timestamps_when_available() -> None:
+    app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "_format_timestamp_utc" in app_source
+    assert "FILES_PREVIEW_MODIFIED_AT" in app_source
+    assert "FILES_PREVIEW_CREATED_AT" in app_source
+    assert "preview_created_timestamp(current_stat)" in app_source
+
+
 def test_file_preview_uses_scrollable_native_container() -> None:
     app_source = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 
