@@ -62,9 +62,13 @@ _DEFAULT_TIMEOUT = 60.0
 _DEFAULT_URLS = "https://www.ato.gov.au/"
 _DEFAULT_WAIT_FOR = 3.0
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
-_PREVIEW_BUTTON_WIDTH_PX = 44
+_ICON_BUTTON_WIDTH_PX = 44
 _PREVIEW_DIALOG_WIDTH = "large"
-_PREVIEW_CODE_CONTAINER_HEIGHT_PX = 560
+# Adjust this percentage to resize the preview modal relative to the viewport.
+_PREVIEW_DIALOG_VIEWPORT_PERCENT = 70
+_PREVIEW_DIALOG_VIEWPORT_WIDTH = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vw"
+_PREVIEW_DIALOG_VIEWPORT_HEIGHT = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vh"
+_PREVIEW_DIALOG_SCOPE_CLASS = "crawl4md-preview-dialog-scope"
 _PREVIEW_LIMIT_BYTES = 256 * 1024
 _PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
 _UTC_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
@@ -1028,6 +1032,63 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
         width=_PREVIEW_DIALOG_WIDTH,
     )
     def _file_preview_dialog() -> None:
+        st.markdown(
+            f"""
+            <div class="{_PREVIEW_DIALOG_SCOPE_CLASS}" style="display:none"></div>
+            <style>
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) {{
+                overflow: hidden !important;
+            }}
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) > div {{
+                align-items: center !important;
+                justify-content: center !important;
+                padding-top: 0 !important;
+            }}
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] {{
+                width: {_PREVIEW_DIALOG_VIEWPORT_WIDTH} !important;
+                max-width: {_PREVIEW_DIALOG_VIEWPORT_WIDTH} !important;
+                height: {_PREVIEW_DIALOG_VIEWPORT_HEIGHT} !important;
+                max-height: {_PREVIEW_DIALOG_VIEWPORT_HEIGHT} !important;
+                margin: 0 !important;
+                overflow: hidden !important;
+                display: flex !important;
+                flex-direction: column !important;
+            }}
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) {{
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                overflow: hidden !important;
+                display: flex !important;
+                flex-direction: column !important;
+            }}
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) [data-testid="stVerticalBlock"],
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] > div:nth-child(2) [data-testid="stLayoutWrapper"] {{
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+            }}
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) {{
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                height: auto !important;
+                max-height: 100% !important;
+                overflow: hidden !important;
+            }}
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) [data-testid="stCode"] {{
+                height: 100% !important;
+                max-height: 100% !important;
+                overflow: auto !important;
+            }}
+            div[data-testid="stDialog"]:has(.{_PREVIEW_DIALOG_SCOPE_CLASS}) [data-testid="stElementContainer"]:has([data-testid="stCode"]) pre {{
+                height: 100% !important;
+                max-height: 100% !important;
+                overflow: auto !important;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         if not file.path.exists() or not file.path.is_file():
             st.warning(strings["FILES_PREVIEW_MISSING"].format(file=file.relative_path))
             return
@@ -1083,7 +1144,6 @@ def _open_file_preview_dialog(file: GeneratedFile) -> None:
                 language="text",
                 line_numbers=True,
                 wrap_lines=False,
-                height=_PREVIEW_CODE_CONTAINER_HEIGHT_PX,
             )
         else:
             st.info(strings["FILES_PREVIEW_EMPTY"].format(file=file.name))
@@ -1103,7 +1163,7 @@ def _render_file_preview_button(file: GeneratedFile) -> None:
     )
     if st.button(
         label=strings["FILES_PREVIEW_BUTTON"],
-        width=_PREVIEW_BUTTON_WIDTH_PX,
+        width=_ICON_BUTTON_WIDTH_PX,
         key=f"preview_{st.session_state.session_id}_{file.relative_path}",
         help=preview_help,
         disabled=not previewable,
@@ -1305,8 +1365,10 @@ fields_disabled = (
 session_options = _session_options()
 session_controls_col, language_col = st.columns([5, 1], vertical_alignment="bottom")
 with session_controls_col:
-    with st.container(horizontal=True, vertical_alignment="bottom"):
-        with st.container(horizontal=True, vertical_alignment="center", width="content"):
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
+        with st.container(
+            horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"
+        ):
             st.markdown(strings["SESSION_SELECTOR_LABEL"])
             selected_session = st.selectbox(
                 label=strings["SESSION_SELECTOR_LABEL"],
@@ -1318,8 +1380,11 @@ with session_controls_col:
                 disabled=fields_disabled,
             )
         if st.button(
-            strings["SESSION_CREATE_BUTTON"],
+            "",
+            width=_ICON_BUTTON_WIDTH_PX,
+            key="session_create_button",
             icon=":material/add:",
+            help=strings["SESSION_CREATE_BUTTON"],
             disabled=fields_disabled,
         ):
             _create_new_session()
