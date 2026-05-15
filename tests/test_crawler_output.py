@@ -13,6 +13,19 @@ from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter, PageSidecar
 from tests.conftest import _make_mock_result
 
+_SITE_GRAPH_FILE = "site_graph.jsonl"
+
+
+def _read_pages_registry(output_dir: Path) -> list[dict[str, object]]:
+    path = output_dir / _SITE_GRAPH_FILE
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def _records_by_url(output_dir: Path) -> dict[str, dict[str, object]]:
+    return {str(record["url"]): record for record in _read_pages_registry(output_dir)}
+
 
 class TestFailContentFiles:
     """Tests for fail content file generation (symmetrical with success content)."""
@@ -271,6 +284,273 @@ class TestOutputFrontMatter:
 
         content = content_files[0].read_text(encoding="utf-8")
         assert f'session_id: "{explicit_session_id}"' in content
+
+
+class TestPagesRegistry:
+    """Tests for the root-level deduped site_graph.jsonl graph source."""
+
+    @staticmethod
+    def _crawler_config(urls: list[str], **overrides: object) -> CrawlerConfig:
+        values = {
+            "urls": urls,
+            "limit": 10,
+            "max_depth": 2,
+            "flush_interval": 1,
+        }
+        values.update(overrides)
+        return CrawlerConfig(**values)
+
+    @staticmethod
+    def _crawler(tmp_path: Path, config: CrawlerConfig, **kwargs: object) -> SiteCrawler:
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+        return SiteCrawler(
+            config,
+            page_config,
+            output_base=tmp_path,
+            extractor=extractor,
+            writer=writer,
+            **kwargs,
+        )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_pages_registry_records_successful_discovery(
+        self, mock_crawler_cls, tmp_path: Path
+    ) -> None:
+        seed_url = "https://example.com"
+        page_a = "https://example.com/a"
+        page_b = "https://example.com/b"
+        seed_html = (
+            "<main><p>seed content with enough visible text for the crawler.</p>"
+            '<a href="/a">A</a><a href="/b">B</a></main>'
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            side_effect=[
+                _make_mock_result(seed_url, seed_html, "seed markdown content" * 4),
+                _make_mock_result(page_a, "<p>alpha content long enough</p>", "alpha" * 20),
+                _make_mock_result(page_b, "<p>beta content long enough</p>", "beta" * 20),
+            ]
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        crawler = self._crawler(tmp_path, self._crawler_config([seed_url], limit=3))
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        records = _records_by_url(crawler.output_dir)
+
+        assert set(records) == {seed_url, page_a, page_b}
+        assert {record["status"] for record in records.values()} == {"success"}
+        assert records[seed_url]["discovered_from"] is None
+        assert records[seed_url]["depth"] == 0
+        assert records[page_a]["discovered_from"] == seed_url
+        assert records[page_a]["depth"] == 1
+        assert records[page_a]["page_size_kb"] is not None
+        assert not (crawler.output_dir / "final" / _SITE_GRAPH_FILE).exists()
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_pages_registry_preserves_parent_for_retry_failure(
+        self, mock_crawler_cls, tmp_path: Path
+    ) -> None:
+        seed_url = "https://example.com"
+        fail_url = "https://example.com/fail"
+        seed_html = '<main><p>seed</p><a href="/fail">Fail</a></main>'
+        blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 123</body></html>"
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            side_effect=[
+                _make_mock_result(seed_url, seed_html, "seed markdown content" * 4),
+                _make_mock_result(fail_url, blocked_html, "blocked"),
+                _make_mock_result(fail_url, blocked_html, "blocked"),
+                _make_mock_result(fail_url, blocked_html, "blocked"),
+            ]
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        crawler = self._crawler(tmp_path, self._crawler_config([seed_url], max_retries=2))
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        record = _records_by_url(crawler.output_dir)[fail_url]
+
+        assert record["status"] == "fail"
+        assert record["page_size_kb"] is None
+        assert record["discovered_from"] == seed_url
+        assert record["depth"] == 1
+        assert record["round_num"] == 3
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_pages_registry_records_skipped_links(self, mock_crawler_cls, tmp_path: Path) -> None:
+        seed_url = "https://example.com"
+        external_url = "https://external.example/about"
+        excluded_url = "https://example.com/admin"
+        seed_html = (
+            "<main><p>seed content with enough visible text for links.</p>"
+            '<a href="https://external.example/about">External</a>'
+            '<a href="/admin">Admin</a>'
+            '<a href="/style.css">Style</a></main>'
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result(seed_url, seed_html, "seed markdown content" * 4)
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = self._crawler_config([seed_url], exclude_paths=[r"/admin"])
+        crawler = self._crawler(tmp_path, config)
+        results = crawler.crawl()
+
+        assert crawler.output_dir is not None
+        records = _records_by_url(crawler.output_dir)
+
+        assert len(results) == 1
+        assert mock_instance.arun.await_count == 1
+        assert external_url not in records
+        assert records[excluded_url]["status"] == "skipped"
+        assert records[excluded_url]["discovered_from"] == seed_url
+        assert records[excluded_url]["depth"] == 1
+        assert records[excluded_url]["page_size_kb"] is None
+        assert all("style.css" not in url for url in records)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_pages_registry_flushes_discovered_page_on_cancel(
+        self, mock_crawler_cls, tmp_path: Path
+    ) -> None:
+        seed_url = "https://example.com"
+        child_url = "https://example.com/child"
+        seed_html = '<main><p>seed</p><a href="/child">Child</a></main>'
+        cancel_checks = 0
+
+        def should_cancel() -> bool:
+            nonlocal cancel_checks
+            cancel_checks += 1
+            return cancel_checks > 1
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result(seed_url, seed_html, "seed markdown content" * 4)
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        crawler = self._crawler(
+            tmp_path,
+            self._crawler_config([seed_url]),
+            should_cancel=should_cancel,
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        records = _records_by_url(crawler.output_dir)
+
+        assert records[seed_url]["status"] == "success"
+        assert records[child_url]["status"] == "discovered"
+        assert records[child_url]["page_size_kb"] is None
+        assert records[child_url]["round_num"] is None
+        assert not (crawler.output_dir / "final" / _SITE_GRAPH_FILE).exists()
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_pages_registry_keeps_first_parent_for_duplicate_links(
+        self, mock_crawler_cls, tmp_path: Path
+    ) -> None:
+        seed_url = "https://example.com"
+        parent_a = "https://example.com/a"
+        parent_b = "https://example.com/b"
+        child_url = "https://example.com/child"
+        seed_html = '<main><a href="/a">A</a><a href="/b">B</a></main>'
+        parent_html = '<main><p>parent</p><a href="/child">Child</a></main>'
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            side_effect=[
+                _make_mock_result(seed_url, seed_html, "seed markdown content" * 4),
+                _make_mock_result(parent_a, parent_html, "parent a markdown" * 4),
+                _make_mock_result(parent_b, parent_html, "parent b markdown" * 4),
+                _make_mock_result(child_url, "<p>child</p>", "child markdown" * 4),
+            ]
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        crawler = self._crawler(tmp_path, self._crawler_config([seed_url], max_depth=3))
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        records = _records_by_url(crawler.output_dir)
+
+        assert len(records) == 4
+        assert records[child_url]["discovered_from"] == parent_a
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_pages_registry_moves_record_for_redirect(
+        self, mock_crawler_cls, tmp_path: Path
+    ) -> None:
+        source_url = "https://example.com/a"
+        redirected_url = "https://example.com/a/"
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result(
+                source_url,
+                "<p>redirected content</p>",
+                "redirected markdown" * 4,
+                redirected_url=redirected_url,
+            )
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        crawler = self._crawler(tmp_path, self._crawler_config([source_url], limit=1))
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        records = _records_by_url(crawler.output_dir)
+
+        assert set(records) == {redirected_url}
+        assert records[redirected_url]["status"] == "success"
+        assert records[redirected_url]["discovered_from"] is None
+        assert records[redirected_url]["depth"] == 0
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_pages_registry_removes_redirect_outside_filter(
+        self, mock_crawler_cls, tmp_path: Path
+    ) -> None:
+        source_url = "https://example.com/start"
+        redirected_url = "https://external.example/out"
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            return_value=_make_mock_result(
+                source_url,
+                "<p>external redirect</p>",
+                "external redirect markdown" * 4,
+                redirected_url=redirected_url,
+            )
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        crawler = self._crawler(tmp_path, self._crawler_config([source_url], limit=1))
+        results = crawler.crawl()
+
+        assert crawler.output_dir is not None
+        assert results == []
+        assert _read_pages_registry(crawler.output_dir) == []
 
 
 class TestPrintSummary:
