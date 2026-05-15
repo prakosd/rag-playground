@@ -53,6 +53,7 @@ Walk through every item. Flag violations with file + line.
 - Every code change has a test (happy path + key edge cases). Bug fixes need a reproducing test.
 - Tests are focused — flag tests that assert too many unrelated things.
 - No real network, no real filesystem outside `tmp_path` / fixtures.
+- For `apps/streamlit/**`, flag tests that only assert static Streamlit rendering, exact labels, widget existence, visual layout, styling, icons, or framework behavior. Prefer tests for pure helper logic, data processing, mocked integrations, critical user flows, and app-startup smoke coverage.
 
 ### 7. Readability
 - Function/method longer than ~40 lines and doing >1 thing? Suggest a split — but only if there is a real second use case or a clear cognitive boundary. Do NOT suggest splits that just create one-time helpers (that's bloat).

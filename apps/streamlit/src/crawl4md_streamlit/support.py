@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import mimetypes
 import os
 import queue
@@ -468,6 +469,28 @@ def format_eta_seconds(seconds: float | None, strings: Mapping[str, Any]) -> str
     if hours > 0:
         return str(strings["ETA_HOURS_MINUTES"]).format(h=hours, m=mins)
     return str(strings["ETA_MINUTES"]).format(n=mins)
+
+
+def format_status_row(
+    *,
+    url: str,
+    url_template: str,
+    right_text: str,
+    style: str,
+) -> str:
+    """Return status-row HTML with crawler-provided URL text escaped."""
+    escaped_url = html.escape(url, quote=True)
+    url_html = (
+        f'<a href="{escaped_url}" target="_blank" rel="noopener noreferrer">{escaped_url}</a>'
+        if url
+        else ""
+    )
+    left = url_template.format(url_html=url_html) if url else ""
+    return (
+        f'<div style="{html.escape(style, quote=True)}">'
+        f"<span>{left}</span><span>{html.escape(right_text, quote=True)}</span>"
+        "</div>"
+    )
 
 
 def count_new_log_entries(

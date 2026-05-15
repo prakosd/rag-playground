@@ -32,6 +32,7 @@ from crawl4md_streamlit.support import (
     ensure_within_root,
     find_latest_crawl_dir,
     format_eta_seconds,
+    format_status_row,
     generate_crawl_id,
     is_text_previewable,
     job_state_from_event,
@@ -926,14 +927,14 @@ def _render_status() -> None:
             frozen_elapsed=st.session_state.last_elapsed,
         )
         if current_url or elapsed_str:
-            url_html = (
-                f'<a href="{html.escape(current_url)}" target="_blank" rel="noopener noreferrer">'
-                f"{html.escape(current_url)}</a>"
-            )
-            left = strings["STATUS_CRAWLING"].format(url_html=url_html) if current_url else ""
             right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
             st.markdown(
-                f'<div style="{_STATUS_ROW_STYLE}"><span>{left}</span><span>{right}</span></div>',
+                format_status_row(
+                    url=current_url,
+                    url_template=strings["STATUS_CRAWLING"],
+                    right_text=right,
+                    style=_STATUS_ROW_STYLE,
+                ),
                 unsafe_allow_html=True,
             )
 
@@ -942,16 +943,13 @@ def _render_status() -> None:
         eta_seconds = float(eta_seconds_raw) if eta_seconds_raw is not None else None
         eta_text = format_eta_seconds(eta_seconds, strings)
         if next_url or eta_seconds is not None:
-            next_url_html = (
-                f'<a href="{html.escape(next_url)}" target="_blank" rel="noopener noreferrer">'
-                f"{html.escape(next_url)}</a>"
-                if next_url
-                else ""
-            )
-            left2 = strings["STATUS_NEXT_URL"].format(url_html=next_url_html) if next_url else ""
-            right2 = eta_text
             st.markdown(
-                f'<div style="{_STATUS_ROW_STYLE}"><span>{left2}</span><span>{right2}</span></div>',
+                format_status_row(
+                    url=next_url,
+                    url_template=strings["STATUS_NEXT_URL"],
+                    right_text=eta_text,
+                    style=_STATUS_ROW_STYLE,
+                ),
                 unsafe_allow_html=True,
             )
 

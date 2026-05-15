@@ -28,6 +28,7 @@ from crawl4md_streamlit.support import (
     estimate_progress,
     find_latest_crawl_dir,
     format_eta_seconds,
+    format_status_row,
     generate_crawl_id,
     generate_safe_id,
     is_text_previewable,
@@ -1009,3 +1010,32 @@ def test_format_eta_seconds_does_not_compute_from_processed_elapsed() -> None:
     result_id = format_eta_seconds(120.0, _id_strings())
     assert "2" in result_en and "2" in result_id
     assert result_en != result_id  # different languages produce different text
+
+
+# Risk: status rows render crawler-provided URL text as HTML. Type: unit.
+def test_format_status_row_builds_link_and_right_text() -> None:
+    markup = format_status_row(
+        url="https://example.com/path",
+        url_template="Next: {url_html}",
+        right_text="About 2 minute(s) left",
+        style="display:flex",
+    )
+
+    assert 'href="https://example.com/path"' in markup
+    assert "Next:" in markup
+    assert "About 2 minute(s) left" in markup
+
+
+# Risk: malicious URL or status text must not break out of status-row HTML. Type: unit.
+def test_format_status_row_escapes_url_and_right_text() -> None:
+    markup = format_status_row(
+        url='https://example.com/" onmouseover="alert(1)',
+        url_template="Crawling: {url_html}",
+        right_text='<script>alert("x")</script>',
+        style="display:flex",
+    )
+
+    assert '" onmouseover="' not in markup
+    assert "&quot; onmouseover=&quot;" in markup
+    assert "<script>" not in markup
+    assert "&lt;script&gt;alert(&quot;" in markup

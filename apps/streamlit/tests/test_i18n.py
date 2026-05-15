@@ -98,11 +98,6 @@ def test_files_downloads_in_progress_exists_in_all_locales() -> None:
     assert "FILES_DOWNLOADS_IN_PROGRESS" in STRINGS_ID
 
 
-def test_files_preview_title_is_filename_only() -> None:
-    assert STRINGS_EN["FILES_PREVIEW_DIALOG_TITLE"] == "{file}"
-    assert STRINGS_ID["FILES_PREVIEW_DIALOG_TITLE"] == "{file}"
-
-
 def test_files_preview_path_and_size_have_placeholders() -> None:
     assert "{path}" in STRINGS_EN["FILES_PREVIEW_PATH"]
     assert "{size_kib}" in STRINGS_EN["FILES_PREVIEW_SIZE"]
@@ -133,11 +128,6 @@ def test_files_preview_messages_keep_file_placeholder() -> None:
     for key in keys:
         assert "{file}" in STRINGS_EN[key]
         assert "{file}" in STRINGS_ID[key]
-
-
-def test_files_preview_button_label_is_icon_only() -> None:
-    assert STRINGS_EN["FILES_PREVIEW_BUTTON"] == ":material/visibility:"
-    assert STRINGS_ID["FILES_PREVIEW_BUTTON"] == ":material/visibility:"
 
 
 def test_eta_keys_exist_in_all_locales() -> None:
