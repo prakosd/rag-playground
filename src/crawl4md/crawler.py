@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import json
 import random
 import re
@@ -31,8 +32,10 @@ from crawl4md.progress import ProgressReporter
 from crawl4md.sorter import ContentSorter
 from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar, rename_files_with_total
 
-# Allow asyncio.run() inside Jupyter's already-running event loop
-nest_asyncio.apply()
+# Allow asyncio.run() inside Jupyter's already-running event loop.
+# Silently skip if the current loop type is unsupported (e.g. uvloop in Streamlit).
+with contextlib.suppress(ValueError):
+    nest_asyncio.apply()
 
 
 class _LazyModule:
