@@ -62,7 +62,10 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 
 Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run). The browser stores known session IDs and creation times in local storage so later page loads can select the newest existing session instead of creating a new one. Stopped crawls keep their generated files in that crawl folder, but no crawl state is kept for continuing later.
 
-The Streamlit agent skill and sub-skills used for development guidance in this repository come from the external Streamlit skills source: [Developing with Streamlit](https://skills.sh/streamlit/agent-skills/developing-with-streamlit).
+Development guidance in this repository uses external agent skills:
+
+- Streamlit app: [Developing with Streamlit](https://skills.sh/streamlit/agent-skills/developing-with-streamlit)
+- crawl4md library performance: [python-performance-optimization](https://www.skills.sh/wshobson/agents/python-performance-optimization)
 
 ## Building Another UI
 
