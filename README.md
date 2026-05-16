@@ -66,6 +66,9 @@ Development guidance in this repository uses external agent skills:
 
 - Streamlit app: [Developing with Streamlit](https://skills.sh/streamlit/agent-skills/developing-with-streamlit)
 - crawl4md library performance: [python-performance-optimization](https://www.skills.sh/wshobson/agents/python-performance-optimization)
+- Python design patterns: [python-design-patterns](https://www.skills.sh/wshobson/agents/python-design-patterns)
+- Python testing patterns: [python-testing-patterns](https://www.skills.sh/wshobson/agents/python-testing-patterns)
+- Python project structure: [python-project-structure](https://www.skills.sh/wshobson/agents/python-project-structure)
 
 ## Building Another UI
 
