@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse
 
 import mdformat
 import trafilatura
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 from markdownify import markdownify
 
 from crawl4md.config import CrawlResult, ExtractedPage, PageConfig
@@ -254,6 +254,8 @@ _SUBSTANTIAL_CONTENT_LEN = 80
 # Maximum label length for section-label promotion to heading
 _MAX_SECTION_LABEL_LEN = 60
 
+_HtmlOrSoup = str | BeautifulSoup
+
 
 class ContentExtractor:
     """Extracts readable Markdown content from crawled pages.
@@ -313,17 +315,18 @@ class ContentExtractor:
         Falls back to markdownify when trafilatura captures less than
         ``_COVERAGE_THRESHOLD`` of the page's visible text.
         """
-        html = result.html
-        html = self._strip_data_attributes(html)
+        soup = BeautifulSoup(result.html, _HTML_PARSER)
+        self._strip_data_attributes(soup)
         # Capture supplementary sections (e.g. FAQs) before trafilatura strips them.
-        supplements = self._extract_supplementary_sections(html)
-        html = self._filter_tags(html)
-        html = self._preserve_strikethrough(html)
-        html = self._space_heading_children(html)
-        html = self._populate_empty_links(html)
-        html = self._flatten_table_cells(html)
+        supplements = self._extract_supplementary_sections(str(soup))
+        self._filter_tags(soup)
+        self._preserve_strikethrough(soup)
+        self._space_heading_children(soup)
+        self._populate_empty_links(soup)
+        self._flatten_table_cells(soup)
         if self.page_config.separate_items:
-            html = self._insert_item_separators(html, use_sentinel=True)
+            self._insert_item_separators(soup, use_sentinel=True)
+        html = str(soup)
         extracted = trafilatura.extract(
             html,
             output_format="markdown",
@@ -378,14 +381,16 @@ class ContentExtractor:
 
     def _extract_full_html(self, result: CrawlResult) -> ExtractedPage:
         """Use markdownify on the (optionally tag-filtered) HTML."""
-        html = self._strip_data_attributes(result.html)
-        html = self._filter_tags(html)
-        html = self._preserve_strikethrough(html)
-        html = self._space_heading_children(html)
-        html = self._populate_empty_links(html)
-        html = self._flatten_table_cells(html)
+        soup = BeautifulSoup(result.html, _HTML_PARSER)
+        self._strip_data_attributes(soup)
+        self._filter_tags(soup)
+        self._preserve_strikethrough(soup)
+        self._space_heading_children(soup)
+        self._populate_empty_links(soup)
+        self._flatten_table_cells(soup)
         if self.page_config.separate_items:
-            html = self._insert_item_separators(html, use_sentinel=False)
+            self._insert_item_separators(soup, use_sentinel=False)
+        html = str(soup)
         md = markdownify(
             html,
             heading_style=_MARKDOWNIFY_HEADING_STYLE,
@@ -464,7 +469,17 @@ class ContentExtractor:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _strip_data_attributes(html: str) -> str:
+    def _coerce_soup(html: _HtmlOrSoup) -> tuple[BeautifulSoup, bool]:
+        if isinstance(html, BeautifulSoup):
+            return html, False
+        return BeautifulSoup(html, _HTML_PARSER), True
+
+    @staticmethod
+    def _return_html_or_soup(soup: BeautifulSoup, stringify: bool) -> _HtmlOrSoup:
+        return str(soup) if stringify else soup
+
+    @staticmethod
+    def _strip_data_attributes(html: _HtmlOrSoup) -> _HtmlOrSoup:
         """Remove all ``data-*`` attributes from HTML elements.
 
         CMS platforms (e.g. Adobe Experience Manager) embed JSON payloads
@@ -475,12 +490,12 @@ class ContentExtractor:
         the Markdown output.  Stripping ``data-*`` attributes prevents
         this at source; these attributes are never browser-visible.
         """
-        soup = BeautifulSoup(html, _HTML_PARSER)
+        soup, stringify = ContentExtractor._coerce_soup(html)
         for tag in soup.find_all(True):
             names = [a for a in tag.attrs if _DATA_ATTR_RE.match(a)]
             for name in names:
                 del tag[name]
-        return str(soup)
+        return ContentExtractor._return_html_or_soup(soup, stringify)
 
     # ------------------------------------------------------------------
     # Empty link population
@@ -506,7 +521,7 @@ class ContentExtractor:
         return _LINK_FALLBACK_TEXT
 
     @staticmethod
-    def _populate_empty_links(html: str) -> str:
+    def _populate_empty_links(html: _HtmlOrSoup) -> _HtmlOrSoup:
         """Give visible text to ``<a>`` tags that have ``href`` but no content.
 
         Many sites use empty ``<a>`` overlays (e.g. card-link patterns)
@@ -524,7 +539,7 @@ class ContentExtractor:
         *end* of its parent so that card content appears first and the
         reference link follows.
         """
-        soup = BeautifulSoup(html, _HTML_PARSER)
+        soup, stringify = ContentExtractor._coerce_soup(html)
         relocate: list[Tag] = []
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
@@ -574,14 +589,14 @@ class ContentExtractor:
             if parent is not None:
                 a.extract()
                 parent.append(a)
-        return str(soup)
+        return ContentExtractor._return_html_or_soup(soup, stringify)
 
     # ------------------------------------------------------------------
     # Heading child spacing
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _space_heading_children(html: str) -> str:
+    def _space_heading_children(html: _HtmlOrSoup) -> _HtmlOrSoup:
         """Insert whitespace between adjacent inline children in headings.
 
         Headings like ``<h6><span>Broadband</span><span>For seamless
@@ -590,10 +605,8 @@ class ContentExtractor:
         between the sibling elements.  This inserts a single space
         between consecutive inline Tag children to prevent concatenation.
         """
-        soup = BeautifulSoup(html, _HTML_PARSER)
+        soup, stringify = ContentExtractor._coerce_soup(html)
         from itertools import pairwise
-
-        from bs4.element import NavigableString
 
         for heading in soup.find_all(_HEADING_TAG_RE):
             children = list(heading.children)
@@ -606,14 +619,14 @@ class ContentExtractor:
                     # a text node between two Tags it will appear as a
                     # separate child and the pair won't be (Tag, Tag).)
                     a.insert_after(NavigableString(" "))
-        return str(soup)
+        return ContentExtractor._return_html_or_soup(soup, stringify)
 
     # ------------------------------------------------------------------
     # Strikethrough preservation
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _preserve_strikethrough(html: str) -> str:
+    def _preserve_strikethrough(html: _HtmlOrSoup) -> _HtmlOrSoup:
         """Convert ``<del>``, ``<s>``, and ``<strike>`` tags to ``~~text~~``.
 
         Trafilatura silently drops these tags, losing the visual
@@ -622,6 +635,12 @@ class ContentExtractor:
         Markdown strikethrough *before* extraction, the semantic is
         preserved in the final output.
         """
+        if isinstance(html, BeautifulSoup):
+            for tag in html.find_all(["del", "s", "strike"]):
+                tag.insert_before(NavigableString("~~"))
+                tag.insert_after(NavigableString("~~"))
+                tag.unwrap()
+            return html
         return _STRIKETHROUGH_RE.sub(
             _STRIKETHROUGH_MD,
             html,
@@ -632,7 +651,7 @@ class ContentExtractor:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _flatten_table_cells(html: str) -> str:
+    def _flatten_table_cells(html: _HtmlOrSoup) -> _HtmlOrSoup:
         """Flatten block-level content inside ``<td>`` and ``<th>`` elements.
 
         Markdown tables require each row to be a single line.  Block
@@ -643,7 +662,7 @@ class ContentExtractor:
         * Replaces ``<br>`` tags with a space.
         * Unwraps ``<p>`` and ``<div>`` wrappers (keeps inner content).
         """
-        soup = BeautifulSoup(html, _HTML_PARSER)
+        soup, stringify = ContentExtractor._coerce_soup(html)
         cells = soup.find_all(["td", "th"])
         if not cells:
             return html
@@ -658,13 +677,13 @@ class ContentExtractor:
                 modified = True
         if not modified:
             return html
-        return str(soup)
+        return ContentExtractor._return_html_or_soup(soup, stringify)
 
     # ------------------------------------------------------------------
     # Item separation (structured product/card grouping)
     # ------------------------------------------------------------------
 
-    def _insert_item_separators(self, html: str, *, use_sentinel: bool) -> str:
+    def _insert_item_separators(self, html: _HtmlOrSoup, *, use_sentinel: bool) -> _HtmlOrSoup:
         """Insert separators between repeated structural items in the HTML.
 
         When *use_sentinel* is ``True`` (trafilatura mode), a ``<p>`` with
@@ -677,7 +696,7 @@ class ContentExtractor:
         qualifying groups of repeated same-tag-and-class siblings and
         inserts separators into each group.
         """
-        soup = BeautifulSoup(html, _HTML_PARSER)
+        soup, stringify = ContentExtractor._coerce_soup(html)
 
         if self.page_config.item_selector:
             all_groups = [soup.select(self.page_config.item_selector)]
@@ -709,7 +728,7 @@ class ContentExtractor:
 
         if not modified:
             return html
-        return str(soup)
+        return ContentExtractor._return_html_or_soup(soup, stringify)
 
     @staticmethod
     def _find_repeated_items(soup: BeautifulSoup) -> list[list[Tag]]:
@@ -887,12 +906,32 @@ class ContentExtractor:
         out.insert(1, sep_row)
         return out
 
-    def _filter_tags(self, html: str) -> str:
+    def _filter_tags(self, html: _HtmlOrSoup) -> _HtmlOrSoup:
         """Remove or keep only specified HTML tags using simple parsing."""
         from html.parser import HTMLParser
         from io import StringIO
 
         if not self.page_config.include_only_tags and not self.page_config.exclude_tags:
+            return html
+
+        if isinstance(html, BeautifulSoup):
+            include_only = [t.lower() for t in self.page_config.include_only_tags]
+            exclude = [t.lower() for t in self.page_config.exclude_tags]
+            if exclude:
+                for tag in html.find_all(exclude):
+                    tag.decompose()
+                return html
+            included = [
+                tag
+                for tag in html.find_all(include_only)
+                if not any(
+                    parent.name in include_only for parent in tag.parents if isinstance(parent, Tag)
+                )
+            ]
+            included = [tag.extract() for tag in included]
+            html.clear()
+            for tag in included:
+                html.append(tag)
             return html
 
         class TagFilter(HTMLParser):

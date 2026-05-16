@@ -66,6 +66,36 @@ class TestCrawlerConfig:
         )
         assert cfg.include_only_paths == [r"/blog/.*"]
 
+    def test_compiled_path_patterns_are_cached_private_attrs(self):
+        cfg = CrawlerConfig(
+            urls=["https://example.com"],
+            exclude_paths=[r"/admin"],
+            include_only_paths=[r"/blog"],
+        )
+
+        assert cfg.compiled_exclude_paths[0].search("https://example.com/admin")
+        assert cfg.compiled_include_only_paths[0].search("https://example.com/blog")
+        dumped = cfg.model_dump(mode="json")
+        assert "compiled_exclude_paths" not in dumped
+        assert "compiled_include_only_paths" not in dumped
+
+    def test_compiled_path_patterns_refresh_after_mutation(self):
+        cfg = CrawlerConfig(urls=["https://example.com"], exclude_paths=[r"/admin"])
+
+        cfg.exclude_paths.append(r"/private")
+
+        assert [pattern.pattern for pattern in cfg.compiled_exclude_paths] == [
+            r"/admin",
+            r"/private",
+        ]
+
+    def test_compiled_path_patterns_refresh_after_model_copy_update(self):
+        cfg = CrawlerConfig(urls=["https://example.com"], exclude_paths=[r"/admin"])
+
+        updated = cfg.model_copy(update={"exclude_paths": [r"/private"]})
+
+        assert [pattern.pattern for pattern in updated.compiled_exclude_paths] == [r"/private"]
+
     def test_max_retries_default(self):
         cfg = CrawlerConfig(urls=["https://example.com"])
         assert cfg.max_retries == 2

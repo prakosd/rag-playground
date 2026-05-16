@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from bs4 import BeautifulSoup
+
 from crawl4md.config import CrawlResult, PageConfig
 from crawl4md.extractor import ContentExtractor
 from tests.conftest import MINIMAL_HTML, SIMPLE_HTML
@@ -60,6 +62,31 @@ class TestContentExtractor:
         filtered = extractor._filter_tags(html)
         assert "inside" in filtered
         assert "outside" not in filtered
+
+    def test_filter_tags_accepts_existing_soup_exclude(self):
+        config = PageConfig(exclude_tags=["nav", "footer"], include_only_tags=[])
+        extractor = ContentExtractor(config)
+        soup = BeautifulSoup(
+            "<div><nav>skip</nav><p>keep</p><footer>skip</footer></div>",
+            "html.parser",
+        )
+
+        filtered = extractor._filter_tags(soup)
+
+        assert filtered is soup
+        assert "skip" not in str(soup)
+        assert "keep" in str(soup)
+
+    def test_filter_tags_accepts_existing_soup_include_only(self):
+        config = PageConfig(exclude_tags=[], include_only_tags=["main"])
+        extractor = ContentExtractor(config)
+        soup = BeautifulSoup("<div>outside</div><main><p>inside</p></main>", "html.parser")
+
+        filtered = extractor._filter_tags(soup)
+
+        assert filtered is soup
+        assert "inside" in str(soup)
+        assert "outside" not in str(soup)
 
     def test_empty_html_produces_no_pages(self):
         result = CrawlResult(url="https://example.com", html="", success=True)

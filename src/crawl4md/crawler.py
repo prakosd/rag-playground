@@ -11,14 +11,13 @@ import sys
 import warnings
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 import httpx
 import nest_asyncio
-import pymupdf
-import pymupdf4llm
 from bs4 import BeautifulSoup
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
 from crawl4md.config import (
     _FALLBACK_WAIT_UNTIL,
@@ -34,6 +33,45 @@ from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar, rename_file
 
 # Allow asyncio.run() inside Jupyter's already-running event loop
 nest_asyncio.apply()
+
+
+class _LazyModule:
+    def __init__(self, module_name: str) -> None:
+        self._module_name = module_name
+        self._module: Any | None = None
+
+    def _load(self) -> Any:
+        if self._module is None:
+            self._module = import_module(self._module_name)
+        return self._module
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._load(), name)
+
+
+AsyncWebCrawler: Any | None = None
+BrowserConfig: Any | None = None
+CrawlerRunConfig: Any | None = None
+pymupdf: Any = _LazyModule("pymupdf")
+pymupdf4llm: Any = _LazyModule("pymupdf4llm")
+
+
+def _load_crawl4ai_classes() -> tuple[Any, Any, Any]:
+    global AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+    if AsyncWebCrawler is None or BrowserConfig is None or CrawlerRunConfig is None:
+        crawl4ai = import_module("crawl4ai")
+        async_web_crawler_cls = crawl4ai.AsyncWebCrawler
+        browser_config_cls = crawl4ai.BrowserConfig
+        crawler_run_config_cls = crawl4ai.CrawlerRunConfig
+
+        if AsyncWebCrawler is None:
+            AsyncWebCrawler = async_web_crawler_cls
+        if BrowserConfig is None:
+            BrowserConfig = browser_config_cls
+        if CrawlerRunConfig is None:
+            CrawlerRunConfig = crawler_run_config_cls
+    return AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+
 
 # Seconds to pause between retry rounds so the WAF can cool down
 _ROUND_COOLDOWN = 30
@@ -69,6 +107,10 @@ _BLOCK_SIGNATURES = (
     "checking your browser before accessing",
     "javascript is required",
 )
+_BLOCK_SIGNATURES_RE = re.compile(
+    "|".join(re.escape(signature) for signature in _BLOCK_SIGNATURES),
+    re.IGNORECASE,
+)
 
 # If the extracted markdown exceeds this length (in characters), the page
 # contains real content and should not be classified as a WAF block even
@@ -98,6 +140,7 @@ _FINAL_DIR_NAME = "final"
 
 # Prefix for per-round subdirectory names (e.g. "round_1")
 _ROUND_DIR_PREFIX = "round_"
+_ROUND_DIR_RE = re.compile(r"round_(\d+)$")
 
 # Suffix for successful-page file names (e.g. "success_content_001.txt")
 _SUCCESS_SUFFIX = "success_"
@@ -151,6 +194,8 @@ _PAGE_STATUS_SKIPPED = "skipped"
 
 # Regex to extract href attribute values from HTML anchor tags
 _HREF_RE = re.compile(r'href=["\']([^"\']+)["\']')
+# Regex to strip URL schemes in shortened display labels
+_HTTPS_PREFIX_RE = re.compile(r"^https?://")
 # Regex to detect template placeholders (${var}, {{var}}, {%var%})
 _TEMPLATE_PLACEHOLDER_RE = re.compile(r"\$\{|%7B%7B|\{\{|\{%")
 # Valid URL scheme prefixes for discovered links
@@ -235,7 +280,7 @@ def _shorten_url(url: str) -> str:
     if len(url) <= _SHORT_URL_MAX_LEN:
         return url
     # Strip scheme
-    display = re.sub(r"^https?://", "", url)
+    display = _HTTPS_PREFIX_RE.sub("", url)
     if len(display) <= _SHORT_URL_MAX_LEN:
         return display
     # Keep first 25 chars (domain) + … + last 30 chars (path tail)
@@ -373,22 +418,31 @@ class SiteCrawler:
             {
                 int(m.group(1))
                 for d in self.output_dir.iterdir()
-                if d.is_dir() and (m := re.match(r"round_(\d+)$", d.name))
+                if d.is_dir() and (m := _ROUND_DIR_RE.match(d.name))
             }
         )
         for rn in round_nums:
             rd = self.output_dir / f"{_ROUND_DIR_PREFIX}{rn}"
-            content = sorted(rd.glob(f"{_SUCCESS_SUFFIX}content_*"))
-            fail_content = sorted(rd.glob(f"{_FAIL_SUFFIX}content_*"))
-            url_files = sorted(rd.glob("*urls*.txt"))
+            round_files = sorted(rd.iterdir())
+            content = [f for f in round_files if f.name.startswith(f"{_SUCCESS_SUFFIX}content_")]
+            fail_content = [f for f in round_files if f.name.startswith(f"{_FAIL_SUFFIX}content_")]
+            url_files = [f for f in round_files if "urls" in f.name and f.suffix == ".txt"]
             print(f"--- Round {rn} ---")
             _print_files("Success content", content)
             _print_files("Fail content", fail_content)
             _print_files("URL lists", url_files)
 
-            sorted_content = sorted(rd.glob(f"{_SORTED_SUCCESS_PREFIX}content_*"))
-            sorted_fail_content = sorted(rd.glob(f"{_SORTED_FAIL_PREFIX}content_*"))
-            sorted_url_files = sorted(rd.glob("sorted_*urls*.txt"))
+            sorted_content = [
+                f for f in round_files if f.name.startswith(f"{_SORTED_SUCCESS_PREFIX}content_")
+            ]
+            sorted_fail_content = [
+                f for f in round_files if f.name.startswith(f"{_SORTED_FAIL_PREFIX}content_")
+            ]
+            sorted_url_files = [
+                f
+                for f in round_files
+                if f.name.startswith("sorted_") and "urls" in f.name and f.suffix == ".txt"
+            ]
             if sorted_content or sorted_fail_content:
                 print(f"--- Round {rn} (sorted) ---")
                 _print_files("Success content", sorted_content)
@@ -470,16 +524,17 @@ class SiteCrawler:
             }
         if self.config.headers:
             browser_kwargs["headers"] = dict(self.config.headers)
-        browser_cfg = BrowserConfig(**browser_kwargs)
-        run_cfg = self._build_run_config(CrawlerRunConfig)
-        fallback_run_cfg = self._build_fallback_run_config(CrawlerRunConfig)
+        async_web_crawler_cls, browser_config_cls, crawler_run_config_cls = _load_crawl4ai_classes()
+        browser_cfg = browser_config_cls(**browser_kwargs)
+        run_cfg = self._build_run_config(crawler_run_config_cls)
+        fallback_run_cfg = self._build_fallback_run_config(crawler_run_config_cls)
 
         # --- Round 1: full crawl with link discovery ---
         # Use a single browser instance across all rounds so that
         # cookies (including WAF challenge tokens) persist through retries.
         interrupted = False
         try:
-            async with AsyncWebCrawler(config=browser_cfg) as crawler:
+            async with async_web_crawler_cls(config=browser_cfg) as crawler:
                 round_dir = self._round_dir(1)
                 if self._writer is not None:
                     self._writer._output_dir = round_dir
@@ -854,7 +909,7 @@ class SiteCrawler:
     async def _crawl_urls_async(
         self,
         urls: list[str],
-        crawler: AsyncWebCrawler,
+        crawler: Any,
         run_cfg: object,
         *,
         discover_links: bool = True,
@@ -913,90 +968,309 @@ class SiteCrawler:
             max_log_entries=self._activity_log_size,
             log_dir=self.output_dir,
         )
-        discovery_limit_reached = len(generated) >= self.config.limit
+        try:
+            discovery_limit_reached = len(generated) >= self.config.limit
 
-        consecutive_blocks = 0
-        # Redirect storm tracking: count consecutive redirects to the
-        # same already-visited target.  Once the threshold is reached,
-        # subsequent pages are treated as failures instead of silent
-        # skips so they enter the retry pipeline.
-        consecutive_redirect_target: str | None = None
-        consecutive_redirect_count: int = 0
-        skipped_redirect_urls: list[str] = []
+            consecutive_blocks = 0
+            # Redirect storm tracking: count consecutive redirects to the
+            # same already-visited target.  Once the threshold is reached,
+            # subsequent pages are treated as failures instead of silent
+            # skips so they enter the retry pipeline.
+            consecutive_redirect_target: str | None = None
+            consecutive_redirect_count: int = 0
+            skipped_redirect_urls: list[str] = []
 
-        def _flush_skipped_redirects(error: str) -> None:
-            """Convert accumulated skipped-redirect URLs into failures.
+            def _flush_skipped_redirects(error: str) -> None:
+                """Convert accumulated skipped-redirect URLs into failures.
 
-            A single redirect to an already-visited URL is normal
-            navigation (e.g. /old → /new).  Only flush when two or more
-            URLs have been skipped, which indicates a suspicious pattern.
-            """
-            if len(skipped_redirect_urls) < 2:
+                A single redirect to an already-visited URL is normal
+                navigation (e.g. /old → /new).  Only flush when two or more
+                URLs have been skipped, which indicates a suspicious pattern.
+                """
+                if len(skipped_redirect_urls) < 2:
+                    for skipped_url in skipped_redirect_urls:
+                        norm_skipped = self._normalize_url(skipped_url, strip_www=_sw)
+                        generated.discard(norm_skipped)
+                        self._remove_page_record(
+                            norm_skipped,
+                            statuses={_PAGE_STATUS_DISCOVERED, _PAGE_STATUS_SKIPPED},
+                        )
+                    if skipped_redirect_urls:
+                        progress.total = max(len(generated), 1)
+                        self._emit_progress(
+                            {
+                                "event": _PROGRESS_EVENT_DISCOVERED,
+                                "queued_discovered_urls": len(generated),
+                                "current_url": skipped_redirect_urls[0],
+                                "limit": self.config.limit,
+                            }
+                        )
+                    skipped_redirect_urls.clear()
+                    return
                 for skipped_url in skipped_redirect_urls:
-                    norm_skipped = self._normalize_url(skipped_url, strip_www=_sw)
-                    generated.discard(norm_skipped)
-                    self._remove_page_record(
-                        norm_skipped,
-                        statuses={_PAGE_STATUS_DISCOVERED, _PAGE_STATUS_SKIPPED},
+                    skipped_result = CrawlResult(
+                        url=skipped_url,
+                        html="",
+                        markdown="",
+                        success=False,
+                        error=error,
                     )
-                if skipped_redirect_urls:
+                    results.append(skipped_result)
+                    self._record_page_terminal(
+                        source_url=skipped_url,
+                        crawl_result=skipped_result,
+                        page=None,
+                        round_num=round_num,
+                        crawl_depth=depth,
+                    )
+                    progress.update(skipped_url, success=False)
+                skipped_redirect_urls.clear()
+
+            while queue:
+                self._raise_if_cancelled()
+                url, depth = queue.pop(0)
+
+                norm_url = self._normalize_url(url, strip_www=_sw)
+                if norm_url in visited:
+                    generated.discard(norm_url)
+                    self._remove_page_record(norm_url, statuses={_PAGE_STATUS_DISCOVERED})
                     progress.total = max(len(generated), 1)
                     self._emit_progress(
                         {
                             "event": _PROGRESS_EVENT_DISCOVERED,
                             "queued_discovered_urls": len(generated),
-                            "current_url": skipped_redirect_urls[0],
+                            "current_url": url,
                             "limit": self.config.limit,
                         }
                     )
-                skipped_redirect_urls.clear()
-                return
-            for skipped_url in skipped_redirect_urls:
-                skipped_result = CrawlResult(
-                    url=skipped_url,
-                    html="",
-                    markdown="",
-                    success=False,
-                    error=error,
-                )
-                results.append(skipped_result)
-                self._record_page_terminal(
-                    source_url=skipped_url,
-                    crawl_result=skipped_result,
-                    page=None,
-                    round_num=round_num,
-                    crawl_depth=depth,
-                )
-                progress.update(skipped_url, success=False)
-            skipped_redirect_urls.clear()
+                    continue
+                visited.add(norm_url)
 
-        while queue:
-            self._raise_if_cancelled()
-            url, depth = queue.pop(0)
+                if not self._url_allowed(url):
+                    continue
 
-            norm_url = self._normalize_url(url, strip_www=_sw)
-            if norm_url in visited:
-                generated.discard(norm_url)
-                self._remove_page_record(norm_url, statuses={_PAGE_STATUS_DISCOVERED})
-                progress.total = max(len(generated), 1)
-                self._emit_progress(
-                    {
-                        "event": _PROGRESS_EVENT_DISCOVERED,
-                        "queued_discovered_urls": len(generated),
-                        "current_url": url,
-                        "limit": self.config.limit,
-                    }
-                )
-                continue
-            visited.add(norm_url)
+                # Fast path: download PDFs directly (bypass the browser).
+                if self._is_pdf_url(url):
+                    progress.set_activity(f"Downloading PDF {_shorten_url(url)}")
+                    crawl_result = await self._download_pdf(url)
+                    results.append(crawl_result)
+                    progress.update(crawl_result.url, success=crawl_result.success)
+                    self._emit_page_progress(
+                        results,
+                        generated=generated,
+                        prior_success=prior_success,
+                        prior_fail=prior_fail,
+                        current_url=crawl_result.url,
+                        next_url=queue[0][0] if queue else "",
+                        eta_remaining_seconds=progress.eta_remaining_seconds(),
+                    )
 
-            if not self._url_allowed(url):
-                continue
+                    terminal_page: ExtractedPage | None = None
+                    if crawl_result.success and self._extractor and self._writer:
+                        _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+                        progress.set_activity(f"Saving PDF content{_ocr_tag}")
+                        page = self._extractor._extract_page(crawl_result)
+                        if page.markdown.strip():
+                            self._writer.add(page)
+                            terminal_page = page
+                            if self._success_sidecar is not None:
+                                PageSidecar.append(page, self._success_sidecar)
+                        else:
+                            progress.set_activity(
+                                f"No content found on {_shorten_url(crawl_result.url)}"
+                            )
+                            crawl_result.success = False
+                            crawl_result.error = _EMPTY_EXTRACTION_ERROR
+                    elif not crawl_result.success and self._fail_writer is not None:
+                        fail_page = ExtractedPage(
+                            url=crawl_result.url,
+                            title=(
+                                f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
+                            ),
+                            markdown=(
+                                f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
+                            ),
+                        )
+                        self._fail_writer.add(fail_page)
+                        if self._fail_sidecar is not None:
+                            PageSidecar.append(fail_page, self._fail_sidecar)
 
-            # Fast path: download PDFs directly (bypass the browser).
-            if self._is_pdf_url(url):
-                progress.set_activity(f"Downloading PDF {_shorten_url(url)}")
-                crawl_result = await self._download_pdf(url)
+                    self._record_page_terminal(
+                        source_url=url,
+                        crawl_result=crawl_result,
+                        page=terminal_page,
+                        round_num=round_num,
+                        crawl_depth=depth,
+                    )
+
+                    # Flush periodically (same cadence as normal pages)
+                    if len(results) % self.config.flush_interval == 0:
+                        if self._writer is not None:
+                            self._writer.flush()
+                        if self._fail_writer is not None:
+                            self._fail_writer.flush()
+                        self._flush_site_graph()
+                        if round_dir is not None:
+                            success, fail = self._split_results(results)
+                            self._save_url_lists(success, fail, round_dir)
+
+                    # Free heavy payload — content is persisted in sidecar / writer
+                    crawl_result.html = ""
+                    crawl_result.markdown = ""
+
+                    if self.config.delay > 0:
+                        jitter = self.config.delay * random.uniform(
+                            _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
+                        )
+                        progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
+                        await self._sleep_with_cancel(jitter)
+
+                    continue
+                try:
+                    progress.set_activity(f"Reading page {_shorten_url(url)}")
+                    result = await crawler.arun(url=url, config=run_cfg)
+
+                    # Use the final URL after any redirects
+                    final_url = getattr(result, "redirected_url", None) or url
+                    redirected = final_url != url
+
+                    norm_final = self._normalize_url(final_url, strip_www=_sw)
+                    if redirected and norm_final in visited:
+                        # Track consecutive same-target redirects
+                        if norm_final == consecutive_redirect_target:
+                            consecutive_redirect_count += 1
+                        else:
+                            # Target changed — flush any prior skipped URLs
+                            # as unresolved before switching targets.
+                            _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
+                            consecutive_redirect_target = norm_final
+                            consecutive_redirect_count = 1
+
+                        if consecutive_redirect_count < _REDIRECT_STORM_THRESHOLD:
+                            skipped_redirect_urls.append(url)
+                            progress.set_activity(f"Skipped {_shorten_url(url)} (already visited)")
+                            continue
+
+                        # Storm detected — retroactively fail earlier skipped
+                        # pages, then treat the current page as failure too
+                        # so the retry pipeline can re-attempt all of them.
+                        _flush_skipped_redirects(_REDIRECT_STORM_ERROR)
+                        progress.set_activity(
+                            f"Possible block detected \u2014 skipping {_shorten_url(url)}"
+                        )
+                        crawl_result = CrawlResult(
+                            url=url,
+                            html="",
+                            markdown="",
+                            success=False,
+                            error=_REDIRECT_STORM_ERROR,
+                        )
+                        results.append(crawl_result)
+                        self._record_page_terminal(
+                            source_url=url,
+                            crawl_result=crawl_result,
+                            page=None,
+                            round_num=round_num,
+                            crawl_depth=depth,
+                        )
+                        progress.update(url, success=False)
+
+                        # Apply WAF-style back-off
+                        backoff = max(
+                            _WAF_BACKOFF_FLOOR,
+                            self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
+                        )
+                        progress.set_activity(
+                            f"Website is blocking us \u2014 waiting {backoff:.1f}s"
+                        )
+                        await self._sleep_with_cancel(backoff)
+                        continue
+
+                    # Non-redirect-skip result — reset storm counter
+                    consecutive_redirect_target = None
+                    consecutive_redirect_count = 0
+
+                    visited.add(norm_final)
+                    generated.add(norm_final)
+                    depths[norm_final] = depth
+
+                    if redirected and not self._url_allowed(final_url):
+                        # Undo the generated/visited adds above — the redirect target
+                        # is outside the filter and neither the original URL nor the
+                        # redirect destination should count as discovered.
+                        generated.discard(self._normalize_url(url, strip_www=_sw))
+                        generated.discard(norm_final)
+                        visited.discard(norm_final)
+                        self._remove_page_record(norm_url)
+                        self._remove_page_record(norm_final)
+                        self._emit_progress(
+                            {
+                                "event": _PROGRESS_EVENT_DISCOVERED,
+                                "queued_discovered_urls": len(generated),
+                                "current_url": url,
+                                "limit": self.config.limit,
+                            }
+                        )
+                        progress.set_activity(
+                            f"Skipped {_shorten_url(url)} (redirect outside filter)"
+                        )
+                        continue
+
+                    if redirected and norm_final != norm_url:
+                        # Keep discovered URL count aligned with processable URLs by
+                        # replacing the redirected source URL with its final target.
+                        generated.discard(norm_url)
+                        depths.pop(norm_url, None)
+                        progress.total = max(len(generated), 1)
+
+                    error_msg: str | None = None
+                    if not result.success:
+                        raw_err = (
+                            getattr(result, "error_message", None)
+                            or getattr(result, "error", None)
+                            or ""
+                        )
+                        status = getattr(result, "status_code", None)
+                        error_msg = str(raw_err) if raw_err else _UNKNOWN_ERROR_MSG
+                        if status is not None:
+                            error_msg += f" (HTTP {status})"
+
+                    crawl_result = CrawlResult(
+                        url=final_url,
+                        html=result.html or "",
+                        markdown=result.markdown or "",
+                        success=result.success,
+                        error=error_msg,
+                        redirected_url=final_url if redirected else None,
+                    )
+                except Exception as exc:
+                    crawl_result = CrawlResult(
+                        url=url,
+                        html="",
+                        markdown="",
+                        success=False,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+
+                # Detect WAF blocks (Incapsula etc. return HTTP 200 with block HTML).
+                # Only flag as blocked when the extracted markdown is short —
+                # pages with substantial content are not mere challenge pages.
+                # We measure content length *after* stripping boilerplate tags
+                # (nav, script, form, style) so that navigation chrome doesn't
+                # inflate the count and mask a failed JS render.
+                raw_markdown = crawl_result.markdown
+                waf_blocked = False
+                if (
+                    crawl_result.success
+                    and self._is_blocked(crawl_result.html)
+                    and self._content_length_without_chrome(crawl_result.html)
+                    < _BLOCK_MAX_CONTENT_LENGTH
+                ):
+                    crawl_result.success = False
+                    crawl_result.error = "Blocked by WAF"
+                    crawl_result.markdown = ""
+                    waf_blocked = True
+
                 results.append(crawl_result)
                 progress.update(crawl_result.url, success=crawl_result.success)
                 self._emit_page_progress(
@@ -1010,11 +1284,23 @@ class SiteCrawler:
                 )
 
                 terminal_page: ExtractedPage | None = None
+
+                # Extract and buffer content incrementally
                 if crawl_result.success and self._extractor and self._writer:
-                    _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-                    progress.set_activity(f"Saving PDF content{_ocr_tag}")
+                    progress.set_activity("Saving page content")
                     page = self._extractor._extract_page(crawl_result)
-                    if page.markdown.strip():
+                    # Post-extraction quality gate: if a block signature is
+                    # present and the *extracted* content is still thin,
+                    # demote to failure so the URL is retried.
+                    if (
+                        self._is_blocked(crawl_result.html)
+                        and len(page.markdown.strip()) < _BLOCK_MAX_CONTENT_LENGTH
+                    ):
+                        crawl_result.success = False
+                        crawl_result.error = "Blocked — page returned only boilerplate"
+                        crawl_result.markdown = raw_markdown
+                        waf_blocked = True
+                    elif page.markdown.strip():
                         self._writer.add(page)
                         terminal_page = page
                         if self._success_sidecar is not None:
@@ -1025,14 +1311,76 @@ class SiteCrawler:
                         )
                         crawl_result.success = False
                         crawl_result.error = _EMPTY_EXTRACTION_ERROR
-                elif not crawl_result.success and self._fail_writer is not None:
+                        crawl_result.markdown = raw_markdown
+
+                # PDF fallback: when a page returns very little content and is
+                # not a WAF block, check whether the URL actually serves a PDF.
+                # This catches dynamic URLs (e.g. /download?id=123) that return
+                # PDF content without a .pdf extension.
+                if (
+                    crawl_result.success
+                    and not waf_blocked
+                    and not crawl_result.is_pdf
+                    and len(crawl_result.markdown.strip()) < _PDF_FALLBACK_THRESHOLD
+                    and self._content_length_without_chrome(crawl_result.html)
+                    < _PDF_FALLBACK_THRESHOLD
+                ):
+                    is_pdf = await self._is_pdf_response(
+                        url, dict(self.config.headers) if self.config.headers else None
+                    )
+                    if is_pdf:
+                        progress.set_activity(f"Re-downloading as PDF {_shorten_url(url)}")
+                        pdf_result = await self._download_pdf(url)
+                        # Replace the original result in the list
+                        results[-1] = pdf_result
+                        crawl_result = pdf_result
+                        if pdf_result.success and self._extractor and self._writer:
+                            _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+                            progress.set_activity(f"Saving PDF content{_ocr_tag}")
+                            page = self._extractor._extract_page(pdf_result)
+                            if page.markdown.strip():
+                                self._writer.add(page)
+                                terminal_page = page
+                                if self._success_sidecar is not None:
+                                    PageSidecar.append(page, self._success_sidecar)
+                            else:
+                                progress.set_activity(
+                                    f"No content found on {_shorten_url(pdf_result.url)}"
+                                )
+                                pdf_result.success = False
+                                pdf_result.error = _EMPTY_EXTRACTION_ERROR
+
+                # WAF back-off: pause after a block so the WAF can cool down.
+                # Applies even when delay=0 (floor ensures a minimum pause).
+                if waf_blocked:
+                    consecutive_blocks += 1
+                    if consecutive_blocks >= _WAF_CONSECUTIVE_THRESHOLD:
+                        backoff = _WAF_BACKOFF_CAP
+                    else:
+                        backoff = max(
+                            _WAF_BACKOFF_FLOOR,
+                            self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
+                        )
+                    progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
+                    await self._sleep_with_cancel(backoff)
+                else:
+                    consecutive_blocks = 0
+
+                # A normal result (success or WAF block) breaks any redirect
+                # storm streak — flush skipped URLs and reset the counter.
+                _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
+                consecutive_redirect_target = None
+                consecutive_redirect_count = 0
+
+                # Buffer failed-page content for the fail content file
+                if not crawl_result.success and self._fail_writer is not None:
+                    raw_body = raw_markdown.strip() or crawl_result.html.strip() or "(no response)"
                     fail_page = ExtractedPage(
                         url=crawl_result.url,
-                        title=(
-                            f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
-                        ),
+                        title=f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}",
                         markdown=(
-                            f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
+                            f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}\n\n"
+                            f"{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
                         ),
                     )
                     self._fail_writer.add(fail_page)
@@ -1047,8 +1395,9 @@ class SiteCrawler:
                     crawl_depth=depth,
                 )
 
-                # Flush periodically (same cadence as normal pages)
+                # Flush content and URL lists periodically
                 if len(results) % self.config.flush_interval == 0:
+                    progress.set_activity(f"Writing files ({len(results)} pages)")
                     if self._writer is not None:
                         self._writer.flush()
                     if self._fail_writer is not None:
@@ -1058,93 +1407,66 @@ class SiteCrawler:
                         success, fail = self._split_results(results)
                         self._save_url_lists(success, fail, round_dir)
 
-                # Free heavy payload — content is persisted in sidecar / writer
-                crawl_result.html = ""
-                crawl_result.markdown = ""
-
+                # Throttle between pages — jitter mimics human browsing.
+                # Round 1 applies a light delay; retries apply a heavier one.
+                # Both require delay > 0 (default 0 keeps current fast behavior).
                 if self.config.delay > 0:
-                    jitter = self.config.delay * random.uniform(
-                        _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
-                    )
-                    progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
+                    if is_retry:
+                        jitter = self.config.delay * random.uniform(
+                            _JITTER_RETRY_MIN, _JITTER_RETRY_MAX
+                        )
+                        progress.set_activity(f"Waiting before retry ({jitter:.1f}s)")
+                    else:
+                        jitter = self.config.delay * random.uniform(
+                            _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
+                        )
+                        progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
                     await self._sleep_with_cancel(jitter)
 
-                continue
-            try:
-                progress.set_activity(f"Reading page {_shorten_url(url)}")
-                result = await crawler.arun(url=url, config=run_cfg)
-
-                # Use the final URL after any redirects
-                final_url = getattr(result, "redirected_url", None) or url
-                redirected = final_url != url
-
-                norm_final = self._normalize_url(final_url, strip_www=_sw)
-                if redirected and norm_final in visited:
-                    # Track consecutive same-target redirects
-                    if norm_final == consecutive_redirect_target:
-                        consecutive_redirect_count += 1
-                    else:
-                        # Target changed — flush any prior skipped URLs
-                        # as unresolved before switching targets.
-                        _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
-                        consecutive_redirect_target = norm_final
-                        consecutive_redirect_count = 1
-
-                    if consecutive_redirect_count < _REDIRECT_STORM_THRESHOLD:
-                        skipped_redirect_urls.append(url)
-                        progress.set_activity(f"Skipped {_shorten_url(url)} (already visited)")
-                        continue
-
-                    # Storm detected — retroactively fail earlier skipped
-                    # pages, then treat the current page as failure too
-                    # so the retry pipeline can re-attempt all of them.
-                    _flush_skipped_redirects(_REDIRECT_STORM_ERROR)
-                    progress.set_activity(
-                        f"Possible block detected \u2014 skipping {_shorten_url(url)}"
+                # Discover links for deeper crawling
+                if (
+                    discover_links
+                    and depth < self.config.max_depth
+                    and crawl_result.success
+                    and not discovery_limit_reached
+                ):
+                    progress.set_activity(f"Finding more pages on {_shorten_url(url)}")
+                    new_links = self._extract_links(crawl_result, crawl_result.url, strip_www=_sw)
+                    added = 0
+                    for link in new_links:
+                        norm_link = self._normalize_url(link, strip_www=_sw)
+                        if norm_link in generated:
+                            continue
+                        if not self._url_allowed(link):
+                            if (
+                                self._url_in_allowed_domain(link)
+                                and norm_link not in self._site_graph_records
+                            ):
+                                self._upsert_page_record(
+                                    normalized_url=norm_link,
+                                    url=link,
+                                    discovered_from=crawl_result.url,
+                                    status=_PAGE_STATUS_SKIPPED,
+                                    page_size_kb=None,
+                                    graph_depth=self._graph_depth(depth + 1),
+                                    round_num=round_num,
+                                )
+                            continue
+                        if norm_link in self._site_graph_records:
+                            continue
+                        generated.add(norm_link)
+                        depths[norm_link] = depth + 1
+                        self._record_page_discovered(
+                            normalized_url=norm_link,
+                            url=link,
+                            discovered_from=crawl_result.url,
+                            crawl_depth=depth + 1,
+                        )
+                        queue.append((link, depth + 1))
+                        added += 1
+                    progress.update_activity_label(
+                        f"Found {added} new pages on {_shorten_url(url)}"
                     )
-                    crawl_result = CrawlResult(
-                        url=url,
-                        html="",
-                        markdown="",
-                        success=False,
-                        error=_REDIRECT_STORM_ERROR,
-                    )
-                    results.append(crawl_result)
-                    self._record_page_terminal(
-                        source_url=url,
-                        crawl_result=crawl_result,
-                        page=None,
-                        round_num=round_num,
-                        crawl_depth=depth,
-                    )
-                    progress.update(url, success=False)
-
-                    # Apply WAF-style back-off
-                    backoff = max(
-                        _WAF_BACKOFF_FLOOR,
-                        self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
-                    )
-                    progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
-                    await self._sleep_with_cancel(backoff)
-                    continue
-
-                # Non-redirect-skip result — reset storm counter
-                consecutive_redirect_target = None
-                consecutive_redirect_count = 0
-
-                visited.add(norm_final)
-                generated.add(norm_final)
-                depths[norm_final] = depth
-
-                if redirected and not self._url_allowed(final_url):
-                    # Undo the generated/visited adds above — the redirect target
-                    # is outside the filter and neither the original URL nor the
-                    # redirect destination should count as discovered.
-                    generated.discard(self._normalize_url(url, strip_www=_sw))
-                    generated.discard(norm_final)
-                    visited.discard(norm_final)
-                    self._remove_page_record(norm_url)
-                    self._remove_page_record(norm_final)
                     self._emit_progress(
                         {
                             "event": _PROGRESS_EVENT_DISCOVERED,
@@ -1153,289 +1475,34 @@ class SiteCrawler:
                             "limit": self.config.limit,
                         }
                     )
-                    progress.set_activity(f"Skipped {_shorten_url(url)} (redirect outside filter)")
-                    continue
-
-                if redirected and norm_final != norm_url:
-                    # Keep discovered URL count aligned with processable URLs by
-                    # replacing the redirected source URL with its final target.
-                    generated.discard(norm_url)
-                    depths.pop(norm_url, None)
+                    if len(generated) >= self.config.limit:
+                        discovery_limit_reached = True
+                    # Update progress total to reflect discovered pages
                     progress.total = max(len(generated), 1)
 
-                error_msg: str | None = None
-                if not result.success:
-                    raw_err = (
-                        getattr(result, "error_message", None)
-                        or getattr(result, "error", None)
-                        or ""
-                    )
-                    status = getattr(result, "status_code", None)
-                    error_msg = str(raw_err) if raw_err else _UNKNOWN_ERROR_MSG
-                    if status is not None:
-                        error_msg += f" (HTTP {status})"
-
-                crawl_result = CrawlResult(
-                    url=final_url,
-                    html=result.html or "",
-                    markdown=result.markdown or "",
-                    success=result.success,
-                    error=error_msg,
-                    redirected_url=final_url if redirected else None,
-                )
-            except Exception as exc:
-                crawl_result = CrawlResult(
-                    url=url,
-                    html="",
-                    markdown="",
-                    success=False,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-
-            # Detect WAF blocks (Incapsula etc. return HTTP 200 with block HTML).
-            # Only flag as blocked when the extracted markdown is short —
-            # pages with substantial content are not mere challenge pages.
-            # We measure content length *after* stripping boilerplate tags
-            # (nav, script, form, style) so that navigation chrome doesn't
-            # inflate the count and mask a failed JS render.
-            raw_markdown = crawl_result.markdown
-            waf_blocked = False
-            if (
-                crawl_result.success
-                and self._is_blocked(crawl_result.html)
-                and self._content_length_without_chrome(crawl_result.html)
-                < _BLOCK_MAX_CONTENT_LENGTH
-            ):
-                crawl_result.success = False
-                crawl_result.error = "Blocked by WAF"
+                # Free heavy payload — content is persisted in sidecar / writer
+                crawl_result.html = ""
                 crawl_result.markdown = ""
-                waf_blocked = True
 
-            results.append(crawl_result)
-            progress.update(crawl_result.url, success=crawl_result.success)
-            self._emit_page_progress(
-                results,
-                generated=generated,
-                prior_success=prior_success,
-                prior_fail=prior_fail,
-                current_url=crawl_result.url,
-                next_url=queue[0][0] if queue else "",
-                eta_remaining_seconds=progress.eta_remaining_seconds(),
-            )
-
-            terminal_page: ExtractedPage | None = None
-
-            # Extract and buffer content incrementally
-            if crawl_result.success and self._extractor and self._writer:
-                progress.set_activity("Saving page content")
-                page = self._extractor._extract_page(crawl_result)
-                # Post-extraction quality gate: if a block signature is
-                # present and the *extracted* content is still thin,
-                # demote to failure so the URL is retried.
-                if (
-                    self._is_blocked(crawl_result.html)
-                    and len(page.markdown.strip()) < _BLOCK_MAX_CONTENT_LENGTH
-                ):
-                    crawl_result.success = False
-                    crawl_result.error = "Blocked — page returned only boilerplate"
-                    crawl_result.markdown = raw_markdown
-                    waf_blocked = True
-                elif page.markdown.strip():
-                    self._writer.add(page)
-                    terminal_page = page
-                    if self._success_sidecar is not None:
-                        PageSidecar.append(page, self._success_sidecar)
-                else:
-                    progress.set_activity(f"No content found on {_shorten_url(crawl_result.url)}")
-                    crawl_result.success = False
-                    crawl_result.error = _EMPTY_EXTRACTION_ERROR
-                    crawl_result.markdown = raw_markdown
-
-            # PDF fallback: when a page returns very little content and is
-            # not a WAF block, check whether the URL actually serves a PDF.
-            # This catches dynamic URLs (e.g. /download?id=123) that return
-            # PDF content without a .pdf extension.
-            if (
-                crawl_result.success
-                and not waf_blocked
-                and not crawl_result.is_pdf
-                and len(crawl_result.markdown.strip()) < _PDF_FALLBACK_THRESHOLD
-                and self._content_length_without_chrome(crawl_result.html) < _PDF_FALLBACK_THRESHOLD
-            ):
-                is_pdf = await self._is_pdf_response(
-                    url, dict(self.config.headers) if self.config.headers else None
-                )
-                if is_pdf:
-                    progress.set_activity(f"Re-downloading as PDF {_shorten_url(url)}")
-                    pdf_result = await self._download_pdf(url)
-                    # Replace the original result in the list
-                    results[-1] = pdf_result
-                    crawl_result = pdf_result
-                    if pdf_result.success and self._extractor and self._writer:
-                        _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-                        progress.set_activity(f"Saving PDF content{_ocr_tag}")
-                        page = self._extractor._extract_page(pdf_result)
-                        if page.markdown.strip():
-                            self._writer.add(page)
-                            terminal_page = page
-                            if self._success_sidecar is not None:
-                                PageSidecar.append(page, self._success_sidecar)
-                        else:
-                            progress.set_activity(
-                                f"No content found on {_shorten_url(pdf_result.url)}"
-                            )
-                            pdf_result.success = False
-                            pdf_result.error = _EMPTY_EXTRACTION_ERROR
-
-            # WAF back-off: pause after a block so the WAF can cool down.
-            # Applies even when delay=0 (floor ensures a minimum pause).
-            if waf_blocked:
-                consecutive_blocks += 1
-                if consecutive_blocks >= _WAF_CONSECUTIVE_THRESHOLD:
-                    backoff = _WAF_BACKOFF_CAP
-                else:
-                    backoff = max(
-                        _WAF_BACKOFF_FLOOR,
-                        self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
-                    )
-                progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
-                await self._sleep_with_cancel(backoff)
-            else:
-                consecutive_blocks = 0
-
-            # A normal result (success or WAF block) breaks any redirect
-            # storm streak — flush skipped URLs and reset the counter.
+            # Flush any remaining skipped-redirect URLs as failures so they
+            # appear in the fail list for manual review.
             _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
-            consecutive_redirect_target = None
-            consecutive_redirect_count = 0
 
-            # Buffer failed-page content for the fail content file
-            if not crawl_result.success and self._fail_writer is not None:
-                raw_body = raw_markdown.strip() or crawl_result.html.strip() or "(no response)"
-                fail_page = ExtractedPage(
-                    url=crawl_result.url,
-                    title=f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}",
-                    markdown=(
-                        f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}\n\n"
-                        f"{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
-                    ),
-                )
-                self._fail_writer.add(fail_page)
-                if self._fail_sidecar is not None:
-                    PageSidecar.append(fail_page, self._fail_sidecar)
+            # Flush the last open activity so it appears in the disk log.
+            progress.close()
 
-            self._record_page_terminal(
-                source_url=url,
-                crawl_result=crawl_result,
-                page=terminal_page,
-                round_num=round_num,
-                crawl_depth=depth,
-            )
+            # Snap the bar to 100%: silently-skipped URLs (e.g. redirects to
+            # already-visited targets, redirects outside the include filter)
+            # were counted into ``progress.total`` via ``generated`` but never
+            # call ``progress.update``, so the bar would otherwise end below
+            # 100%.  Sync ``total`` to the actual number processed.
+            progress.total = max(progress.count, 1)
+            if progress._use_notebook:
+                progress._refresh_display(force=True)
 
-            # Flush content and URL lists periodically
-            if len(results) % self.config.flush_interval == 0:
-                progress.set_activity(f"Writing files ({len(results)} pages)")
-                if self._writer is not None:
-                    self._writer.flush()
-                if self._fail_writer is not None:
-                    self._fail_writer.flush()
-                self._flush_site_graph()
-                if round_dir is not None:
-                    success, fail = self._split_results(results)
-                    self._save_url_lists(success, fail, round_dir)
-
-            # Throttle between pages — jitter mimics human browsing.
-            # Round 1 applies a light delay; retries apply a heavier one.
-            # Both require delay > 0 (default 0 keeps current fast behavior).
-            if self.config.delay > 0:
-                if is_retry:
-                    jitter = self.config.delay * random.uniform(
-                        _JITTER_RETRY_MIN, _JITTER_RETRY_MAX
-                    )
-                    progress.set_activity(f"Waiting before retry ({jitter:.1f}s)")
-                else:
-                    jitter = self.config.delay * random.uniform(
-                        _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
-                    )
-                    progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
-                await self._sleep_with_cancel(jitter)
-
-            # Discover links for deeper crawling
-            if (
-                discover_links
-                and depth < self.config.max_depth
-                and crawl_result.success
-                and not discovery_limit_reached
-            ):
-                progress.set_activity(f"Finding more pages on {_shorten_url(url)}")
-                new_links = self._extract_links(crawl_result, crawl_result.url, strip_www=_sw)
-                added = 0
-                for link in new_links:
-                    norm_link = self._normalize_url(link, strip_www=_sw)
-                    if norm_link in generated:
-                        continue
-                    if not self._url_allowed(link):
-                        if (
-                            self._url_in_allowed_domain(link)
-                            and norm_link not in self._site_graph_records
-                        ):
-                            self._upsert_page_record(
-                                normalized_url=norm_link,
-                                url=link,
-                                discovered_from=crawl_result.url,
-                                status=_PAGE_STATUS_SKIPPED,
-                                page_size_kb=None,
-                                graph_depth=self._graph_depth(depth + 1),
-                                round_num=round_num,
-                            )
-                        continue
-                    if norm_link in self._site_graph_records:
-                        continue
-                    generated.add(norm_link)
-                    depths[norm_link] = depth + 1
-                    self._record_page_discovered(
-                        normalized_url=norm_link,
-                        url=link,
-                        discovered_from=crawl_result.url,
-                        crawl_depth=depth + 1,
-                    )
-                    queue.append((link, depth + 1))
-                    added += 1
-                progress.update_activity_label(f"Found {added} new pages on {_shorten_url(url)}")
-                self._emit_progress(
-                    {
-                        "event": _PROGRESS_EVENT_DISCOVERED,
-                        "queued_discovered_urls": len(generated),
-                        "current_url": url,
-                        "limit": self.config.limit,
-                    }
-                )
-                if len(generated) >= self.config.limit:
-                    discovery_limit_reached = True
-                # Update progress total to reflect discovered pages
-                progress.total = max(len(generated), 1)
-
-            # Free heavy payload — content is persisted in sidecar / writer
-            crawl_result.html = ""
-            crawl_result.markdown = ""
-
-        # Flush any remaining skipped-redirect URLs as failures so they
-        # appear in the fail list for manual review.
-        _flush_skipped_redirects(_UNRESOLVED_REDIRECT_ERROR)
-
-        # Flush the last open activity so it appears in the disk log.
-        progress._close_activity()
-
-        # Snap the bar to 100%: silently-skipped URLs (e.g. redirects to
-        # already-visited targets, redirects outside the include filter)
-        # were counted into ``progress.total`` via ``generated`` but never
-        # call ``progress.update``, so the bar would otherwise end below
-        # 100%.  Sync ``total`` to the actual number processed.
-        progress.total = max(progress.count, 1)
-        if progress._use_notebook:
-            progress._refresh_display()
-
-        return results
+            return results
+        finally:
+            progress.close()
 
     # ------------------------------------------------------------------
     # Block detection
@@ -1446,8 +1513,7 @@ class SiteCrawler:
         """Return True if the HTML looks like a WAF/bot-protection block page."""
         if not html:
             return False
-        html_lower = html.lower()
-        return any(sig in html_lower for sig in _BLOCK_SIGNATURES)
+        return _BLOCK_SIGNATURES_RE.search(html) is not None
 
     @staticmethod
     def _content_length_without_chrome(html: str) -> int:
@@ -1519,7 +1585,7 @@ class SiteCrawler:
                 is_pdf=True,
             )
 
-    def _pdf_to_markdown(self, doc: pymupdf.Document) -> str:
+    def _pdf_to_markdown(self, doc: Any) -> str:
         """Convert a PyMuPDF document to Markdown, with optional OCR."""
         langs = self.page_config.ocr_languages
         if not langs:
@@ -1946,13 +2012,14 @@ class SiteCrawler:
         ):
             return False
 
-        if self.config.include_only_paths and not any(
-            re.search(p, url) for p in self.config.include_only_paths
+        if self.config.compiled_include_only_paths and not any(
+            pattern.search(url) for pattern in self.config.compiled_include_only_paths
         ):
             return False
 
         return not (
-            self.config.exclude_paths and any(re.search(p, url) for p in self.config.exclude_paths)
+            self.config.compiled_exclude_paths
+            and any(pattern.search(url) for pattern in self.config.compiled_exclude_paths)
         )
 
     # File extensions that are never useful pages to crawl
@@ -2085,8 +2152,8 @@ class SiteCrawler:
         """Build run-level metadata used in output-file YAML front matter."""
         assert self.output_dir is not None
         crawl_parameters: dict[str, object] = {
-            "crawler_config": json.loads(self.config.model_dump_json()),
-            "page_config": json.loads(self.page_config.model_dump_json()),
+            "crawler_config": self.config.model_dump(mode="json"),
+            "page_config": self.page_config.model_dump(mode="json"),
         }
         return {
             "crawl_start_datetime": datetime.now().isoformat(timespec="seconds"),

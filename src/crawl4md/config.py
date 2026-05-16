@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, PrivateAttr, field_validator, model_validator
 
 # Accepted URL schemes for seed URLs.
 _VALID_URL_SCHEMES = ("http://", "https://")
@@ -19,6 +19,11 @@ _MIN_RETRIES = 2
 
 class CrawlerConfig(BaseModel):
     """Configuration for the web crawler."""
+
+    _compiled_exclude_paths: tuple[re.Pattern[str], ...] = PrivateAttr(default_factory=tuple)
+    _compiled_include_only_paths: tuple[re.Pattern[str], ...] = PrivateAttr(default_factory=tuple)
+    _compiled_exclude_source: tuple[str, ...] = PrivateAttr(default_factory=tuple)
+    _compiled_include_only_source: tuple[str, ...] = PrivateAttr(default_factory=tuple)
 
     urls: list[str]
     exclude_paths: list[str] = []
@@ -67,6 +72,31 @@ class CrawlerConfig(BaseModel):
             except re.error as e:
                 raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
         return v
+
+    @model_validator(mode="after")
+    def compile_path_patterns(self) -> CrawlerConfig:
+        self._refresh_compiled_path_patterns()
+        return self
+
+    @property
+    def compiled_exclude_paths(self) -> tuple[re.Pattern[str], ...]:
+        self._refresh_compiled_path_patterns()
+        return self._compiled_exclude_paths
+
+    @property
+    def compiled_include_only_paths(self) -> tuple[re.Pattern[str], ...]:
+        self._refresh_compiled_path_patterns()
+        return self._compiled_include_only_paths
+
+    def _refresh_compiled_path_patterns(self) -> None:
+        exclude_source = tuple(self.exclude_paths)
+        include_source = tuple(self.include_only_paths)
+        if exclude_source != self._compiled_exclude_source:
+            self._compiled_exclude_paths = tuple(re.compile(p) for p in exclude_source)
+            self._compiled_exclude_source = exclude_source
+        if include_source != self._compiled_include_only_source:
+            self._compiled_include_only_paths = tuple(re.compile(p) for p in include_source)
+            self._compiled_include_only_source = include_source
 
     @field_validator("limit", "max_depth", "flush_interval")
     @classmethod

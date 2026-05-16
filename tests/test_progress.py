@@ -11,6 +11,7 @@ from unittest.mock import patch
 from crawl4md.progress import (
     _ACTIVITY_LOG_CSV_FILE,
     _ACTIVITY_LOG_CSV_HEADER,
+    _ACTIVITY_LOG_FLUSH_EVERY,
     _ACTIVITY_LOG_TXT_FILE,
     _BAR_GRADIENTS,
     _DARK_COLORS,
@@ -253,7 +254,7 @@ class TestProgressReporter:
             reporter.finish()
 
             assert reporter.count == 2
-            assert reporter._activity_log == []
+            assert list(reporter._activity_log) == []
 
     def test_custom_max_log_entries(self):
         """Custom max_log_entries is respected."""
@@ -335,7 +336,7 @@ class TestProgressReporter:
 
             reporter.set_activity("First activity")
             assert reporter._current_activity == "First activity"
-            assert reporter._activity_log == []
+            assert list(reporter._activity_log) == []
 
     def test_close_activity_noop_when_empty(self):
         """_close_activity on empty state is a no-op."""
@@ -344,7 +345,7 @@ class TestProgressReporter:
             reporter._use_notebook = False
 
             reporter._close_activity()
-            assert reporter._activity_log == []
+            assert list(reporter._activity_log) == []
             assert reporter._current_activity == ""
 
     def test_repr_html_activity_with_est_duration(self):
@@ -519,17 +520,19 @@ class TestActivityLogDisk:
             reporter.set_activity("Reading page example.com")
             time.sleep(0.05)
             reporter.set_activity("Saving page content")  # closes previous
+            reporter.close()
 
         txt_path = tmp_path / _ACTIVITY_LOG_TXT_FILE
         assert txt_path.exists()
         lines = txt_path.read_text(encoding="utf-8").splitlines()
-        assert len(lines) == 1
+        assert len(lines) == 2
         line = lines[0]
         assert "[First pass]" in line
         assert "\U0001f310" in line  # 🌐 crawl icon
         assert "Reading page example.com" in line
         # Duration in parentheses at end
         assert line.endswith(")")
+        assert "Saving page content" in lines[1]
 
     def test_activity_log_appends_csv_to_disk(self, tmp_path: Path):
         """Closing an activity writes a CSV row to activity_log.csv."""
@@ -538,17 +541,19 @@ class TestActivityLogDisk:
             reporter.set_activity("Reading page example.com")
             time.sleep(0.05)
             reporter.set_activity("Saving page content")  # closes previous
+            reporter.close()
 
         csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
         assert csv_path.exists()
         with csv_path.open(encoding="utf-8", newline="") as fh:
             reader = list(csv.reader(fh))
-        assert len(reader) == 2  # header + 1 data row
+        assert len(reader) == 3  # header + 2 data rows
         assert reader[0] == _ACTIVITY_LOG_CSV_HEADER.split(",")
         row = reader[1]
         assert row[1] == "First pass"
         assert row[2] == "Reading page example.com"
         assert float(row[3]) >= 0.0  # duration is a valid float
+        assert reader[2][2] == "Saving page content"
 
     def test_csv_header_written_once(self, tmp_path: Path):
         """Multiple activities produce only one CSV header row."""
@@ -556,7 +561,7 @@ class TestActivityLogDisk:
             reporter = ProgressReporter(10, log_dir=tmp_path)
             for i in range(4):
                 reporter.set_activity(f"Activity {i}")
-            reporter._close_activity()  # close the last one
+            reporter.close()
 
         csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
         with csv_path.open(encoding="utf-8", newline="") as fh:
@@ -566,13 +571,53 @@ class TestActivityLogDisk:
         header_rows = [r for r in reader if r == _ACTIVITY_LOG_CSV_HEADER.split(",")]
         assert len(header_rows) == 1
 
+    def test_existing_csv_header_not_rewritten(self, tmp_path: Path):
+        """Appending to an existing CSV log does not duplicate its header."""
+        csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
+        csv_path.write_text(_ACTIVITY_LOG_CSV_HEADER + "\n", encoding="utf-8")
+
+        with patch("crawl4md.progress._in_notebook", return_value=False):
+            reporter = ProgressReporter(10, log_dir=tmp_path)
+            for i in range(3):
+                reporter.set_activity(f"Activity {i}")
+            reporter.close()
+
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            reader = list(csv.reader(fh))
+
+        header_rows = [r for r in reader if r == _ACTIVITY_LOG_CSV_HEADER.split(",")]
+        assert len(reader) == 4
+        assert len(header_rows) == 1
+
+    def test_disk_log_keeps_handles_open_between_entries(self, tmp_path: Path):
+        """Repeated activity writes reuse one TXT and one CSV file handle."""
+        open_calls: list[str] = []
+        original_open = Path.open
+
+        def counting_open(path: Path, *args, **kwargs):
+            if path.name in {_ACTIVITY_LOG_TXT_FILE, _ACTIVITY_LOG_CSV_FILE}:
+                open_calls.append(path.name)
+            return original_open(path, *args, **kwargs)
+
+        with (
+            patch("crawl4md.progress._in_notebook", return_value=False),
+            patch.object(Path, "open", counting_open),
+        ):
+            reporter = ProgressReporter(20, log_dir=tmp_path)
+            for i in range(_ACTIVITY_LOG_FLUSH_EVERY + 2):
+                reporter.set_activity(f"Activity {i}")
+            reporter.close()
+
+        assert open_calls.count(_ACTIVITY_LOG_TXT_FILE) == 1
+        assert open_calls.count(_ACTIVITY_LOG_CSV_FILE) == 1
+
     def test_disk_log_unlimited(self, tmp_path: Path):
         """Disk logs capture all activities even when in-memory list is capped."""
         with patch("crawl4md.progress._in_notebook", return_value=False):
             reporter = ProgressReporter(20, max_log_entries=3, log_dir=tmp_path)
             for i in range(5):
                 reporter.set_activity(f"Activity {i}")
-            reporter._close_activity()
+            reporter.close()
 
         # In-memory log is capped at 3
         assert len(reporter._activity_log) == 3
@@ -594,7 +639,7 @@ class TestActivityLogDisk:
             reporter.set_activity("Reading page something")
             time.sleep(0.01)
             reporter.set_activity("Saving page content")
-            reporter._close_activity()
+            reporter.close()
 
         # No activity log files anywhere
         assert not (tmp_path / _ACTIVITY_LOG_TXT_FILE).exists()
@@ -607,7 +652,7 @@ class TestActivityLogDisk:
             reporter = ProgressReporter(5, log_dir=tmp_path)
             reporter.set_activity(label)
             time.sleep(0.01)
-            reporter._close_activity()
+            reporter.close()
 
         csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
         with csv_path.open(encoding="utf-8", newline="") as fh:
@@ -880,6 +925,66 @@ class TestSpiderWander:
 
 class TestColabDisplayPath:
     """Tests that Colab uses display(HTML(...)) while regular Jupyter uses display(widget)."""
+
+    def test_refresh_display_debounces_rapid_updates(self):
+        from unittest.mock import MagicMock
+
+        reporter = ProgressReporter(total=5)
+        reporter._use_notebook = True
+        reporter._use_colab = False
+        widget = object()
+        mock_display = MagicMock()
+        mock_clear = MagicMock()
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "IPython": MagicMock(),
+                    "IPython.display": MagicMock(display=mock_display, clear_output=mock_clear),
+                },
+            ),
+            patch.object(reporter, "_build_widget", return_value=widget),
+            patch("crawl4md.progress.time.time") as mock_time,
+        ):
+            mock_time.return_value = 100.0
+            reporter._refresh_display()
+            mock_time.return_value = 100.1
+            reporter._refresh_display()
+            mock_time.return_value = 100.2
+            reporter._refresh_display()
+            mock_time.return_value = 100.3
+            reporter._refresh_display()
+
+        assert mock_display.call_count == 2
+        assert mock_clear.call_count == 2
+
+    def test_refresh_display_force_bypasses_debounce(self):
+        from unittest.mock import MagicMock
+
+        reporter = ProgressReporter(total=5)
+        reporter._use_notebook = True
+        reporter._use_colab = False
+        widget = object()
+        mock_display = MagicMock()
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "IPython": MagicMock(),
+                    "IPython.display": MagicMock(display=mock_display, clear_output=MagicMock()),
+                },
+            ),
+            patch.object(reporter, "_build_widget", return_value=widget),
+            patch("crawl4md.progress.time.time") as mock_time,
+        ):
+            mock_time.return_value = 100.0
+            reporter._refresh_display()
+            mock_time.return_value = 100.1
+            reporter._refresh_display(force=True)
+
+        assert mock_display.call_count == 2
 
     @patch("crawl4md.progress._in_notebook", return_value=True)
     @patch("crawl4md.progress._in_colab", return_value=True)

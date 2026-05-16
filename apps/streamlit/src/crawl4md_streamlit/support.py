@@ -9,6 +9,7 @@ import queue
 import secrets
 import shutil
 import threading
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,7 @@ _DEFAULT_ACTIVITY_LOG_SIZE = 10
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _DEFAULT_RETENTION_DAYS = 7
+_GENERATED_FILES_CACHE_MAX_ENTRIES = 8
 _DEFAULT_SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
 _ID_BYTES = 9
 _LOCK_STALE_SECONDS = 60 * 60
@@ -110,6 +112,26 @@ class TextPreview:
 
     text: str
     truncated: bool
+
+
+@dataclass(frozen=True)
+class _ScannedGeneratedFile:
+    path: Path
+    relative_path: str
+    name: str
+    size_bytes: int
+    modified_at: datetime
+    mtime_ns: int
+    file_type: str
+
+
+_GeneratedFilesCacheKey = tuple[str, str, int]
+_GeneratedFilesFingerprint = tuple[tuple[str, int, int], ...]
+_GENERATED_FILES_CACHE: OrderedDict[
+    _GeneratedFilesCacheKey,
+    tuple[_GeneratedFilesFingerprint, tuple[GeneratedFile, ...]],
+] = OrderedDict()
+_GENERATED_FILES_CACHE_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -375,33 +397,85 @@ def list_generated_files(
     """List generated files under the current session only."""
     root = Path(session_root).resolve()
     target_root = ensure_within_root(root, search_root or root)
-    files: list[GeneratedFile] = []
     if not target_root.exists():
-        return files
-    for path in sorted(target_root.rglob("*")):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(root)
-        if any(part.startswith(_HIDDEN_FILE_PREFIX) for part in relative.parts):
-            continue
-        try:
-            safe_path = ensure_within_root(root, path)
-        except ValueError:
-            continue
-        stat = safe_path.stat()
-        file_type = safe_path.suffix.lower().lstrip(".") or "file"
-        files.append(
-            GeneratedFile(
-                path=safe_path,
-                relative_path=relative.as_posix(),
-                name=safe_path.name,
-                size_bytes=stat.st_size,
-                modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-                file_type=file_type,
-                download_allowed=stat.st_size <= download_limit_bytes,
-            )
+        return []
+
+    scanned = _scan_generated_files(root, target_root)
+    fingerprint: _GeneratedFilesFingerprint = tuple(
+        (file.relative_path, file.size_bytes, file.mtime_ns) for file in scanned
+    )
+    cache_key: _GeneratedFilesCacheKey = (
+        root.as_posix(),
+        target_root.as_posix(),
+        download_limit_bytes,
+    )
+    with _GENERATED_FILES_CACHE_LOCK:
+        cached = _GENERATED_FILES_CACHE.get(cache_key)
+        if cached is not None and cached[0] == fingerprint:
+            _GENERATED_FILES_CACHE.move_to_end(cache_key)
+            return list(cached[1])
+
+    files = tuple(
+        GeneratedFile(
+            path=file.path,
+            relative_path=file.relative_path,
+            name=file.name,
+            size_bytes=file.size_bytes,
+            modified_at=file.modified_at,
+            file_type=file.file_type,
+            download_allowed=file.size_bytes <= download_limit_bytes,
         )
-    return files
+        for file in scanned
+    )
+    with _GENERATED_FILES_CACHE_LOCK:
+        _GENERATED_FILES_CACHE[cache_key] = (fingerprint, files)
+        _GENERATED_FILES_CACHE.move_to_end(cache_key)
+        while len(_GENERATED_FILES_CACHE) > _GENERATED_FILES_CACHE_MAX_ENTRIES:
+            _GENERATED_FILES_CACHE.popitem(last=False)
+    return list(files)
+
+
+def _scan_generated_files(root: Path, target_root: Path) -> list[_ScannedGeneratedFile]:
+    scanned: list[_ScannedGeneratedFile] = []
+    stack = [target_root]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                dir_entries = sorted(entries, key=lambda entry: entry.name)
+        except OSError:
+            continue
+        for entry in dir_entries:
+            entry_path = Path(entry.path)
+            try:
+                safe_path = ensure_within_root(root, entry_path)
+            except ValueError:
+                continue
+            relative = safe_path.relative_to(root)
+            if any(part.startswith(_HIDDEN_FILE_PREFIX) for part in relative.parts):
+                continue
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(safe_path)
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                stat = entry.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            file_type = safe_path.suffix.lower().lstrip(".") or "file"
+            scanned.append(
+                _ScannedGeneratedFile(
+                    path=safe_path,
+                    relative_path=relative.as_posix(),
+                    name=safe_path.name,
+                    size_bytes=stat.st_size,
+                    modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                    mtime_ns=stat.st_mtime_ns,
+                    file_type=file_type,
+                )
+            )
+    return sorted(scanned, key=lambda file: file.relative_path)
 
 
 def is_text_previewable(path_or_name: Path | str) -> bool:

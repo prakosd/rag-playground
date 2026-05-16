@@ -210,6 +210,25 @@ class TestFileWriterIncremental:
         assert out.exists()
         assert len(files) == 1
 
+    def test_appends_to_non_empty_file_without_rewriting_front_matter(self, tmp_path: Path):
+        metadata = {
+            "crawl_start_datetime": "2026-05-16T12:00:00",
+            "session_id": "session_1",
+            "crawl_parameters": {"limit": 2},
+        }
+        writer = FileWriter(output_dir=tmp_path, max_file_size_mb=15.0, run_metadata=metadata)
+
+        writer.add(ExtractedPage(url="https://example.com/a", markdown="first"))
+        files = writer.flush()
+        writer.add(ExtractedPage(url="https://example.com/b", markdown="second"))
+        writer.flush()
+
+        content = files[0].read_text(encoding="utf-8")
+        assert content.count("crawl_start_datetime:") == 1
+        assert content.count("session_id:") == 1
+        assert "https://example.com/a" in content
+        assert "https://example.com/b" in content
+
 
 class TestFileWriterPrefix:
     """Tests for the prefix and reset() API."""

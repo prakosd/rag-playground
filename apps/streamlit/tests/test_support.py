@@ -397,6 +397,23 @@ def test_list_generated_files_respects_download_size_limit(tmp_path: Path) -> No
     assert files[0].download_allowed is False
 
 
+def test_list_generated_files_cache_invalidates_when_file_changes(tmp_path: Path) -> None:
+    session_path = prepare_session_dir(tmp_path, "abc123")
+    output_path = prepare_crawl_output_base(tmp_path, "abc123", "run_123")
+    generated = output_path / "final" / "content.md"
+    generated.parent.mkdir()
+    generated.write_text("old", encoding="utf-8")
+
+    first = list_generated_files(session_path, output_path, download_limit_bytes=5)
+    generated.write_text("new content", encoding="utf-8")
+    second = list_generated_files(session_path, output_path, download_limit_bytes=5)
+
+    assert first[0].size_bytes == 3
+    assert first[0].download_allowed is True
+    assert second[0].size_bytes == 11
+    assert second[0].download_allowed is False
+
+
 def test_list_generated_files_accepts_relative_session_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

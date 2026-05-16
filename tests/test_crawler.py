@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from crawl4md.config import CrawlerConfig, PageConfig
-from crawl4md.crawler import SiteCrawler
+from crawl4md.crawler import _BLOCK_SIGNATURES, SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter
 from tests.conftest import _make_mock_result
@@ -48,6 +48,18 @@ class TestSiteCrawler:
         crawler = SiteCrawler(config)
         assert crawler._url_allowed("https://example.com/blog/post1") is True
         assert crawler._url_allowed("https://example.com/about") is False
+
+    def test_url_allowed_uses_cached_regex_patterns(self):
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            include_only_paths=[r"/blog"],
+            exclude_paths=[r"/admin"],
+        )
+        crawler = SiteCrawler(config)
+
+        with patch("crawl4md.crawler.re.search", side_effect=AssertionError):
+            assert crawler._url_allowed("https://example.com/blog/post1") is True
+            assert crawler._url_allowed("https://example.com/blog/admin") is False
 
     def test_extract_links(self):
         from crawl4md.config import CrawlResult
@@ -548,6 +560,11 @@ class TestSiteCrawler:
 
 class TestIsBlocked:
     """Tests for WAF/bot-protection block detection."""
+
+    def test_detects_all_configured_signatures(self):
+        for signature in _BLOCK_SIGNATURES:
+            html = f"<html><body>{signature.upper()}</body></html>"
+            assert SiteCrawler._is_blocked(html) is True
 
     def test_detects_incapsula(self):
         html = "<html><body>Request unsuccessful. Incapsula incident ID: 123</body></html>"
@@ -1215,6 +1232,34 @@ class TestRedirectStorm:
         crawler.crawl()
 
         assert any(event.get("event") == _PROGRESS_EVENT_INTERRUPTED for event in events)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_progress_closed_when_cancelled_before_first_page(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        from crawl4md.progress import ProgressReporter
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock()
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        close_calls: list[ProgressReporter] = []
+        original_close = ProgressReporter.close
+
+        def close_spy(progress: ProgressReporter) -> None:
+            close_calls.append(progress)
+            original_close(progress)
+
+        config = CrawlerConfig(urls=["https://example.com/a"], limit=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, should_cancel=lambda: True)
+
+        with patch("crawl4md.crawler.ProgressReporter.close", autospec=True) as mock_close:
+            mock_close.side_effect = close_spy
+            crawler.crawl()
+
+        assert close_calls
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_counter_resets_on_successful_crawl(self, mock_crawler_cls, tmp_path: Path):

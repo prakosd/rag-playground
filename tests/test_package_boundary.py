@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import ast
+import os
 import pkgutil
+import subprocess
+import sys
 from pathlib import Path
 
 import crawl4md
@@ -40,6 +43,28 @@ def test_core_package_excludes_streamlit_helper_modules() -> None:
 
     assert _STREAMLIT_CONTROL_MODULE not in module_names
     assert _STREAMLIT_SUPPORT_MODULE not in module_names
+
+
+def test_package_import_does_not_eagerly_load_crawl_or_pdf_engines() -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        part for part in (str(_CORE_SRC.parent), env.get("PYTHONPATH", "")) if part
+    )
+    code = (
+        "import sys; import crawl4md; "
+        "loaded = [m for m in ('crawl4ai', 'pymupdf', 'pymupdf4llm') if m in sys.modules]; "
+        "raise SystemExit(loaded or 0)"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        env=env,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_core_sources_do_not_import_streamlit_app_modules() -> None:

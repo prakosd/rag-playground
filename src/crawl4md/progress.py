@@ -6,8 +6,11 @@ import csv
 import math
 import sys
 import time
+from collections import deque
+from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TextIO
 
 # Maximum number of recent activities shown in the activity log.
 _MAX_LOG_ENTRIES = 10
@@ -72,6 +75,10 @@ _ACTIVITY_LOG_TXT_FILE = "activity_log.txt"
 _ACTIVITY_LOG_CSV_FILE = "activity_log.csv"
 # CSV header row (written once when the file is created).
 _ACTIVITY_LOG_CSV_HEADER = "timestamp,round,activity,duration_seconds"
+# Number of activity rows to buffer before flushing log files to disk.
+_ACTIVITY_LOG_FLUSH_EVERY = 10
+# Minimum seconds between notebook widget refreshes during active crawling.
+_DISPLAY_MIN_INTERVAL_S = 0.25
 
 # Separator string used to join header parts (e.g. "Round 1 · Page 5 / 10")
 _HEADER_SEPARATOR = " · "
@@ -269,7 +276,18 @@ class ProgressReporter:
         # Activity tracking
         self._current_activity: str = ""
         self._activity_start: float = 0.0
-        self._activity_log: list[tuple[datetime, str, float]] = []
+        self._activity_log: deque[tuple[datetime, str, float]] = deque(
+            maxlen=max_log_entries if max_log_entries > 0 else None
+        )
+        self._csv_header_written = False
+        self._txt_fh: TextIO | None = None
+        self._csv_fh: TextIO | None = None
+        self._pending_disk_log_entries = 0
+        self._last_refresh_ts = 0.0
+
+    def __del__(self) -> None:
+        with suppress(Exception):
+            self._close_disk_log_handles()
 
     def _elapsed(self) -> str:
         seconds = int(time.time() - self._start_time)
@@ -339,39 +357,74 @@ class ProgressReporter:
             ts = datetime.now()
             self._activity_log.append((ts, self._current_activity, duration))
             self._append_to_disk(ts, self._current_activity, duration)
-            if len(self._activity_log) > self._max_log_entries:
-                self._activity_log = self._activity_log[-self._max_log_entries :]
         self._current_activity = ""
         self._activity_start = 0.0
 
     def _append_to_disk(self, ts: datetime, label: str, duration: float) -> None:
         """Append one activity entry to the TXT and CSV log files on disk."""
-        if self._log_dir is None:
+        handles = self._ensure_disk_log_handles()
+        if handles is None:
             return
+        txt_fh, csv_fh = handles
 
         icon = _ProgressWidget._activity_icon(label)
         dur_str = _ProgressWidget._fmt_duration(duration)
         round_part = f" [{self._round_label}]" if self._round_label else ""
         txt_line = f"[{ts:%H:%M:%S}]{round_part} {icon} {label} ({dur_str})\n"
 
+        txt_fh.write(txt_line)
+
+        writer = csv.writer(csv_fh)
+        writer.writerow(
+            [
+                ts.isoformat(timespec="seconds"),
+                self._round_label,
+                label,
+                f"{duration:.3f}",
+            ]
+        )
+
+        self._pending_disk_log_entries += 1
+        if self._pending_disk_log_entries >= _ACTIVITY_LOG_FLUSH_EVERY:
+            self._flush_disk_logs()
+
+    def _ensure_disk_log_handles(self) -> tuple[TextIO, TextIO] | None:
+        if self._log_dir is None:
+            return None
+
+        self._log_dir.mkdir(parents=True, exist_ok=True)
         txt_path = self._log_dir / _ACTIVITY_LOG_TXT_FILE
-        with txt_path.open("a", encoding="utf-8") as fh:
-            fh.write(txt_line)
+        if self._txt_fh is None or self._txt_fh.closed:
+            self._txt_fh = txt_path.open("a", encoding="utf-8")
 
         csv_path = self._log_dir / _ACTIVITY_LOG_CSV_FILE
-        write_header = not csv_path.exists() or csv_path.stat().st_size == 0
-        with csv_path.open("a", encoding="utf-8", newline="") as fh:
-            writer = csv.writer(fh)
+        if self._csv_fh is None or self._csv_fh.closed:
+            write_header = False
+            if not self._csv_header_written:
+                write_header = not csv_path.exists() or csv_path.stat().st_size == 0
+                self._csv_header_written = True
+            self._csv_fh = csv_path.open("a", encoding="utf-8", newline="")
             if write_header:
-                writer.writerow(_ACTIVITY_LOG_CSV_HEADER.split(","))
-            writer.writerow(
-                [
-                    ts.isoformat(timespec="seconds"),
-                    self._round_label,
-                    label,
-                    f"{duration:.3f}",
-                ]
-            )
+                csv.writer(self._csv_fh).writerow(_ACTIVITY_LOG_CSV_HEADER.split(","))
+        return self._txt_fh, self._csv_fh
+
+    def _flush_disk_logs(self) -> None:
+        for handle in (self._txt_fh, self._csv_fh):
+            if handle is not None and not handle.closed:
+                handle.flush()
+        self._pending_disk_log_entries = 0
+
+    def _close_disk_log_handles(self) -> None:
+        self._flush_disk_logs()
+        for attr in ("_txt_fh", "_csv_fh"):
+            handle = getattr(self, attr)
+            if handle is not None and not handle.closed:
+                handle.close()
+            setattr(self, attr, None)
+
+    def close(self) -> None:
+        self._close_activity()
+        self._close_disk_log_handles()
 
     def update_activity_label(self, label: str) -> None:
         """Update the label of the current activity without closing it."""
@@ -383,10 +436,18 @@ class ProgressReporter:
     # Display
     # ------------------------------------------------------------------
 
-    def _refresh_display(self) -> None:
+    def _refresh_display(self, *, force: bool = False) -> None:
         """Refresh the Jupyter widget (notebook mode only)."""
         if not self._use_notebook:
             return
+        now = time.time()
+        if (
+            not force
+            and self._last_refresh_ts > 0
+            and now - self._last_refresh_ts < _DISPLAY_MIN_INTERVAL_S
+        ):
+            return
+        self._last_refresh_ts = now
         from IPython.display import HTML, clear_output, display  # type: ignore[import-untyped]
 
         clear_output(wait=True)
@@ -481,12 +542,12 @@ class ProgressReporter:
 
     def finish(self, output_dir: str | None = None) -> None:
         """Report that processing is complete."""
-        self._close_activity()
+        self.close()
         msg = f"\nDone! {self.action} {self.count} page(s) in {self._elapsed()}."
         if output_dir:
             msg += f"\nOutput folder: {output_dir}"
         if self._use_notebook:
-            self._refresh_display()
+            self._refresh_display(force=True)
             print(msg)
         else:
             print(msg)

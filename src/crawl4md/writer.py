@@ -274,8 +274,11 @@ class FileWriter:
 
     def _write_file_header_if_needed(self, path: Path) -> None:
         """Write YAML front matter once at the top of each new content file."""
-        if path.exists() and path.stat().st_size > 0:
-            return
+        try:
+            if path.stat().st_size > 0:
+                return
+        except FileNotFoundError:
+            pass
 
         front_matter = self._build_front_matter(path.parent)
         if not front_matter:
