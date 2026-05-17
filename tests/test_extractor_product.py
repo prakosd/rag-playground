@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from crawl4md._internal.product_metadata import ProductMetadataExtractor
 from crawl4md.config import CrawlResult, PageConfig
 from crawl4md.extractor import _WRAPPER_LINK_LABEL, ContentExtractor
 
@@ -179,6 +180,38 @@ class TestBadgeVsNameHeuristic:
 
 class TestProductHeaderRecovery:
     """Tests for _extract_product_header — JSON-LD and OG meta product detection."""
+
+    def test_product_metadata_extractor_jsonld_product(self):
+        html = """
+        <script type="application/ld+json">
+        {"@type": "Product", "name": "Pixel 12", "brand": "Google",
+         "offers": {"price": "1299"}}
+        </script>
+        """
+        result = ProductMetadataExtractor.extract(html)
+        assert result == {
+            "name": "Pixel 12",
+            "brand": "Google",
+            "price": "1299",
+            "high_price": "",
+        }
+
+    def test_product_metadata_extractor_dom_without_discount_is_none(self):
+        html = "<h1>Pixel 12</h1><p>Price $1299</p>"
+        assert ProductMetadataExtractor.from_dom(html) is None
+
+    def test_product_metadata_extractor_dom_listing_discounts_are_none(self):
+        html = """
+        <section>
+          <article><h2>Phone A</h2><del>$1200</del><span>$999</span></article>
+          <article><h2>Phone B</h2><del>$1100</del><span>$899</span></article>
+        </section>
+        """
+        assert ProductMetadataExtractor.from_dom(html) is None
+
+    def test_product_metadata_extractor_formats_discount_price(self):
+        product = {"price": "1828", "high_price": "2128"}
+        assert ProductMetadataExtractor.format_price(product) == "~~$2128~~ $1828"
 
     def test_jsonld_product_extracted(self):
         html = """

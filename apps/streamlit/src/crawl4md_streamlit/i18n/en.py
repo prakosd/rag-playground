@@ -156,7 +156,6 @@ STRINGS_EN: Strings = {
     "FILES_DOWNLOADS_IN_PROGRESS": "Crawl in progress — files generated so far are shown below.",
     "FILES_PREVIEW_BUTTON": ":material/visibility:",
     "FILES_PREVIEW_HELP": "Preview {file}",
-    "FILES_PREVIEW_DIALOG_TITLE": "{file}",
     "FILES_PREVIEW_PATH": "Path: {path}",
     "FILES_PREVIEW_SIZE": "Size: {size_kib} KiB",
     "FILES_PREVIEW_MODIFIED_AT": "Last modified: {value}",

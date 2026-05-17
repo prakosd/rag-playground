@@ -5,19 +5,21 @@ import mimetypes
 import re
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
 from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
 
-from crawl4md_streamlit.controls import crawl_action_buttons
+from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
+from crawl4md_streamlit.form_ui import render_crawl_form
+from crawl4md_streamlit.generated_files import build_download_tree
 from crawl4md_streamlit.i18n import CATALOG, get_strings
 from crawl4md_streamlit.support import (
-    _DEFAULT_ACTIVITY_LOG_SIZE,
-    _DEFAULT_SESSION_LANGUAGE,
-    _PLAYWRIGHT_MISSING_BROWSER_MESSAGE,
+    DEFAULT_ACTIVITY_LOG_SIZE,
+    DEFAULT_SESSION_LANGUAGE,
+    PLAYWRIGHT_MISSING_BROWSER_MESSAGE,
     CrawlJob,
     GeneratedFile,
     SessionRecord,
@@ -25,7 +27,6 @@ from crawl4md_streamlit.support import (
     bootstrap_gate_state,
     build_configs,
     cleanup_old_sessions_with_lock,
-    count_new_log_entries,
     create_session_record,
     drain_events,
     elapsed_time_display,
@@ -49,24 +50,12 @@ from crawl4md_streamlit.support import (
 )
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
-_DEFAULT_DELAY = 3.0
-_DEFAULT_EXCLUDE_PATHS = "ato.gov.au/api/"
-_DEFAULT_EXCLUDE_TAGS = "nav, script, form, style"
-_DEFAULT_FLUSH_INTERVAL = 5
-_DEFAULT_INCLUDE_ONLY_PATHS = "ato.gov.au"
-_DEFAULT_LIMIT = 10
-_DEFAULT_MAX_DEPTH = 5
-_DEFAULT_MAX_FILE_SIZE_MB = 10.0
-_DEFAULT_MAX_RETRIES = 5
-_DEFAULT_TIMEOUT = 60.0
-_DEFAULT_URLS = "https://www.ato.gov.au/"
-_DEFAULT_WAIT_FOR = 3.0
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = "7s"
+_DIALOG_PLACEHOLDER_TITLE = " "
 _ICON_BUTTON_WIDTH_PX = 44
 _LIVE_AREA_REFRESH_INTERVAL = "3s"
 _PREVIEW_DIALOG_WIDTH = "large"
-_PREVIEW_DIALOG_TITLE = "File Preview"
 # Adjust this percentage to resize the preview modal relative to the viewport.
 _PREVIEW_DIALOG_VIEWPORT_PERCENT = 70
 _PREVIEW_DIALOG_VIEWPORT_WIDTH = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vw"
@@ -75,9 +64,8 @@ _PREVIEW_DIALOG_SCOPE_CLASS = "crawl4md-preview-dialog-scope"
 _PREVIEW_LIMIT_BYTES = 256 * 1024
 _PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
 _UTC_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
-_OUTPUT_EXTENSION_OPTIONS = [".md", ".txt"]
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
-_DEFAULT_LANGUAGE = _DEFAULT_SESSION_LANGUAGE
+_DEFAULT_LANGUAGE = DEFAULT_SESSION_LANGUAGE
 _TOAST_PAGE_SUCCESS_ICON = "✅"
 _TOAST_PAGE_FAIL_ICON = "❌"
 _TOAST_PAGE_DISCOVERED_ICON = "🔎"
@@ -221,10 +209,10 @@ def _init_state() -> None:
     st.session_state.setdefault("active_output_dir", "")
     st.session_state.setdefault("started_at", None)
     st.session_state.setdefault("last_elapsed", "")
-    st.session_state.setdefault("activity_log_size", _DEFAULT_ACTIVITY_LOG_SIZE)
+    st.session_state.setdefault("activity_log_size", DEFAULT_ACTIVITY_LOG_SIZE)
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("preview_file_relative_path", "")
-    st.session_state.setdefault("form_defaults", _default_form_values())
+    st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
     st.session_state.setdefault("language", _DEFAULT_LANGUAGE)
 
@@ -428,27 +416,6 @@ def _session_selector_index(options: list[str]) -> int:
     return 0
 
 
-def _default_form_values() -> dict[str, Any]:
-    return {
-        "urls": _DEFAULT_URLS,
-        "include_only_paths": _DEFAULT_INCLUDE_ONLY_PATHS,
-        "exclude_paths": _DEFAULT_EXCLUDE_PATHS,
-        "limit": _DEFAULT_LIMIT,
-        "max_depth": _DEFAULT_MAX_DEPTH,
-        "flush_interval": _DEFAULT_FLUSH_INTERVAL,
-        "delay": _DEFAULT_DELAY,
-        "max_retries": _DEFAULT_MAX_RETRIES,
-        "exclude_tags": _DEFAULT_EXCLUDE_TAGS,
-        "include_only_tags": "",
-        "wait_for": _DEFAULT_WAIT_FOR,
-        "timeout": _DEFAULT_TIMEOUT,
-        "max_file_size_mb": _DEFAULT_MAX_FILE_SIZE_MB,
-        "extract_main_content": True,
-        "output_extension": ".md",
-        "activity_log_size": _DEFAULT_ACTIVITY_LOG_SIZE,
-    }
-
-
 def _job_is_alive(job: CrawlJob | None = None) -> bool:
     current_job = st.session_state.job if job is None else job
     return bool(current_job is not None and current_job.thread.is_alive())
@@ -485,7 +452,7 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
                 st.session_state.last_elapsed = str(elapsed).split(".")[0]
             st.session_state.started_at = None
             st.session_state.job = None
-            st.session_state.form_defaults = _default_form_values()
+            st.session_state.form_defaults = default_form_values()
     return state_changed
 
 
@@ -494,185 +461,6 @@ def _session_root(session_id: str | None = None) -> Path:
     if not current_session_id:
         return _SESSIONS_ROOT
     return session_dir(_SESSIONS_ROOT, current_session_id)
-
-
-def _form_values(
-    *,
-    fields_disabled: bool,
-    state: str,
-    job_alive: bool,
-) -> dict[str, Any]:
-    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    defaults = st.session_state.form_defaults
-    with st.form("crawl_settings", enter_to_submit=False):
-        st.subheader(strings["FORM_SUBHEADER"])
-        st.caption(strings["FORM_CAPTION"])
-        urls = st.text_area(
-            strings["FORM_URLS_LABEL"],
-            value=str(defaults.get("urls", _DEFAULT_URLS)),
-            height=68,
-            help=strings["FORM_URLS_HELP"],
-            disabled=fields_disabled,
-        )
-        include_only_paths = st.text_area(
-            strings["FORM_INCLUDE_PATHS_LABEL"],
-            value=str(defaults.get("include_only_paths", _DEFAULT_INCLUDE_ONLY_PATHS)),
-            height=68,
-            help=strings["FORM_INCLUDE_PATHS_HELP"],
-            disabled=fields_disabled,
-        )
-        exclude_paths = st.text_area(
-            strings["FORM_EXCLUDE_PATHS_LABEL"],
-            value=str(defaults.get("exclude_paths", _DEFAULT_EXCLUDE_PATHS)),
-            height=68,
-            help=strings["FORM_EXCLUDE_PATHS_HELP"],
-            disabled=fields_disabled,
-        )
-        basic_cols = st.columns(3)
-        with basic_cols[0]:
-            limit = st.number_input(
-                strings["FORM_LIMIT_LABEL"],
-                min_value=1,
-                value=int(defaults.get("limit", _DEFAULT_LIMIT)),
-                help=strings["FORM_LIMIT_HELP"],
-                disabled=fields_disabled,
-            )
-            delay = st.number_input(
-                strings["FORM_DELAY_LABEL"],
-                min_value=0.0,
-                value=float(defaults.get("delay", _DEFAULT_DELAY)),
-                step=0.5,
-                help=strings["FORM_DELAY_HELP"],
-                disabled=fields_disabled,
-            )
-        with basic_cols[1]:
-            max_depth = st.number_input(
-                strings["FORM_DEPTH_LABEL"],
-                min_value=1,
-                value=int(defaults.get("max_depth", _DEFAULT_MAX_DEPTH)),
-                help=strings["FORM_DEPTH_HELP"],
-                disabled=fields_disabled,
-            )
-            max_retries = st.number_input(
-                strings["FORM_RETRIES_LABEL"],
-                min_value=2,
-                value=int(defaults.get("max_retries", _DEFAULT_MAX_RETRIES)),
-                help=strings["FORM_RETRIES_HELP"],
-                disabled=fields_disabled,
-            )
-        with basic_cols[2]:
-            output_extension = st.segmented_control(
-                strings["FORM_OUTPUT_FORMAT_LABEL"],
-                _OUTPUT_EXTENSION_OPTIONS,
-                default=str(defaults.get("output_extension", ".md")),
-                help=strings["FORM_OUTPUT_FORMAT_HELP"],
-                disabled=fields_disabled,
-            )
-            extract_main_content = st.checkbox(
-                strings["FORM_EXTRACT_MAIN_LABEL"],
-                value=bool(defaults.get("extract_main_content", True)),
-                help=strings["FORM_EXTRACT_MAIN_HELP"],
-                disabled=fields_disabled,
-            )
-
-        with st.expander(strings["FORM_ADVANCED_LABEL"]):
-            advanced_cols = st.columns(3)
-            with advanced_cols[0]:
-                flush_interval = st.number_input(
-                    strings["FORM_FLUSH_LABEL"],
-                    min_value=1,
-                    value=int(defaults.get("flush_interval", _DEFAULT_FLUSH_INTERVAL)),
-                    help=strings["FORM_FLUSH_HELP"],
-                    disabled=fields_disabled,
-                )
-                max_file_size_mb = st.number_input(
-                    strings["FORM_MAX_FILE_SIZE_LABEL"],
-                    min_value=0.1,
-                    value=float(defaults.get("max_file_size_mb", _DEFAULT_MAX_FILE_SIZE_MB)),
-                    step=0.5,
-                    help=strings["FORM_MAX_FILE_SIZE_HELP"],
-                    disabled=fields_disabled,
-                )
-            with advanced_cols[1]:
-                wait_for = st.number_input(
-                    strings["FORM_WAIT_FOR_LABEL"],
-                    min_value=0.0,
-                    value=float(defaults.get("wait_for", _DEFAULT_WAIT_FOR)),
-                    step=0.5,
-                    help=strings["FORM_WAIT_FOR_HELP"],
-                    disabled=fields_disabled,
-                )
-                timeout = st.number_input(
-                    strings["FORM_TIMEOUT_LABEL"],
-                    min_value=0.0,
-                    value=float(defaults.get("timeout", _DEFAULT_TIMEOUT)),
-                    step=5.0,
-                    help=strings["FORM_TIMEOUT_HELP"],
-                    disabled=fields_disabled,
-                )
-            with advanced_cols[2]:
-                activity_log_size = st.number_input(
-                    strings["FORM_ACTIVITY_LOG_LABEL"],
-                    min_value=1,
-                    value=int(
-                        defaults.get("activity_log_size", st.session_state.activity_log_size)
-                    ),
-                    help=strings["FORM_ACTIVITY_LOG_HELP"],
-                    disabled=fields_disabled,
-                )
-            exclude_tags = st.text_input(
-                strings["FORM_EXCLUDE_TAGS_LABEL"],
-                value=str(defaults.get("exclude_tags", _DEFAULT_EXCLUDE_TAGS)),
-                help=strings["FORM_EXCLUDE_TAGS_HELP"],
-                disabled=fields_disabled,
-            )
-            include_only_tags = st.text_input(
-                strings["FORM_INCLUDE_ONLY_TAGS_LABEL"],
-                value=str(defaults.get("include_only_tags", "")),
-                help=strings["FORM_INCLUDE_ONLY_TAGS_HELP"],
-                disabled=fields_disabled,
-            )
-
-        submitted = False
-        stop_submitted = False
-        action_cols = st.columns([1.5, 3], vertical_alignment="bottom")
-        for action_col, action_button in zip(
-            action_cols,
-            crawl_action_buttons(state, job_alive=job_alive, strings=strings),
-            strict=False,
-        ):
-            with action_col:
-                pressed = st.form_submit_button(
-                    action_button.label,
-                    type=action_button.button_type,
-                    icon=action_button.icon,
-                    disabled=action_button.disabled,
-                    key=action_button.action.capitalize(),
-                )
-            if action_button.action == "start":
-                submitted = pressed
-            elif action_button.action == "stop":
-                stop_submitted = pressed
-    return {
-        "submitted": submitted,
-        "stop_submitted": stop_submitted,
-        "urls": urls,
-        "include_only_paths": include_only_paths,
-        "exclude_paths": exclude_paths,
-        "limit": limit,
-        "max_depth": max_depth,
-        "flush_interval": flush_interval,
-        "delay": delay,
-        "max_retries": max_retries,
-        "exclude_tags": exclude_tags,
-        "include_only_tags": include_only_tags,
-        "wait_for": wait_for,
-        "timeout": timeout,
-        "max_file_size_mb": max_file_size_mb,
-        "extract_main_content": extract_main_content,
-        "output_extension": output_extension or ".md",
-        "activity_log_size": activity_log_size,
-    }
 
 
 def _start_job(values: dict[str, Any]) -> None:
@@ -714,7 +502,7 @@ def _stop_job() -> None:
     st.warning(strings["ERROR_NO_ACTIVE_CRAWL"])
 
 
-@st.dialog("Stop crawl?", width="small")
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small")
 def _stop_confirmation_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     st.markdown(
@@ -916,7 +704,7 @@ def _render_status() -> None:
     st.session_state.prev_successful_pages = successful_pages
     st.session_state.prev_failed_pages = failed_pages
     st.session_state.prev_discovered_pages = discovered_pages
-    limit = int(latest.get("limit", _DEFAULT_LIMIT) or _DEFAULT_LIMIT)
+    limit = int(latest.get("limit", DEFAULT_LIMIT) or DEFAULT_LIMIT)
 
     def _render_status_content() -> None:
         render_progress_and_files(
@@ -965,7 +753,7 @@ def _render_status() -> None:
 
     if st.session_state.job_state == _STATE_FAILED:
         err = str(latest.get("error", ""))
-        if err == _PLAYWRIGHT_MISSING_BROWSER_MESSAGE:
+        if err == PLAYWRIGHT_MISSING_BROWSER_MESSAGE:
             st.error(strings["ERROR_PLAYWRIGHT_MISSING"])
         else:
             st.error(err or strings["ERROR_CRAWL_FAILED_FALLBACK"])
@@ -1003,11 +791,7 @@ def _render_activity_log() -> None:
     log_path = activity_log_path(_active_file_root())
     max_lines = int(st.session_state.activity_log_size)
     lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
-    new_entries, latest_line = count_new_log_entries(
-        lines,
-        st.session_state.activity_log_latest_line,
-    )
-    st.session_state.activity_log_latest_line = latest_line
+    st.session_state.activity_log_latest_line = lines[-1] if lines else None
     if lines:
         st.write("")
         st.markdown(f"**{strings['ACTIVITY_LOG_HEADER']}**")
@@ -1033,7 +817,11 @@ def _on_preview_dismiss() -> None:
     st.session_state.preview_file_relative_path = ""
 
 
-@st.dialog(_PREVIEW_DIALOG_TITLE, width=_PREVIEW_DIALOG_WIDTH, on_dismiss=_on_preview_dismiss)
+@st.dialog(
+    _DIALOG_PLACEHOLDER_TITLE,
+    width=_PREVIEW_DIALOG_WIDTH,
+    on_dismiss=_on_preview_dismiss,
+)
 def _file_preview_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     preview_relative_path = str(st.session_state.get("preview_file_relative_path", ""))
@@ -1227,19 +1015,6 @@ def render_generated_file_download(file: GeneratedFile) -> None:
             )
 
 
-def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
-    tree: dict[str, Any] = {}
-    for file in files:
-        parts = PurePosixPath(file.relative_path).parts
-        if not parts:
-            continue
-        node = tree
-        for folder in parts[:-1]:
-            node = node.setdefault(folder, {})
-        node[parts[-1]] = file
-    return tree
-
-
 def render_download_tree(tree: Mapping[str, Any]) -> None:
     entries = sorted(
         tree.items(), key=lambda item: (not isinstance(item[1], dict), item[0].lower())
@@ -1426,10 +1201,13 @@ with language_col, st.container(horizontal_alignment="right"):
         args=(language_widget_key,),
     )
 
-values = _form_values(
+values = render_crawl_form(
     fields_disabled=fields_disabled,
     state=current_state,
     job_alive=job_alive,
+    strings=strings,
+    defaults=st.session_state.form_defaults,
+    activity_log_size=int(st.session_state.activity_log_size),
 )
 if values["submitted"]:
     st.session_state.stop_confirmation_open = False

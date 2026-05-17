@@ -161,7 +161,6 @@ STRINGS_ID: Strings = {
     "FILES_DOWNLOADS_IN_PROGRESS": "Proses crawl sedang berjalan — file yang sudah dibuat ditampilkan di bawah.",
     "FILES_PREVIEW_BUTTON": ":material/visibility:",
     "FILES_PREVIEW_HELP": "Pratinjau {file}",
-    "FILES_PREVIEW_DIALOG_TITLE": "{file}",
     "FILES_PREVIEW_PATH": "Path: {path}",
     "FILES_PREVIEW_SIZE": "Ukuran: {size_kib} KiB",
     "FILES_PREVIEW_MODIFIED_AT": "Terakhir dimodifikasi: {value}",

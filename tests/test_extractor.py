@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 
+from crawl4md._internal.html_preprocess import HTMLPreprocessor
+from crawl4md._internal.markdown_pipeline import MarkdownPipeline
 from crawl4md.config import CrawlResult, PageConfig
 from crawl4md.extractor import ContentExtractor
 from tests.conftest import MINIMAL_HTML, SIMPLE_HTML
@@ -87,6 +89,29 @@ class TestContentExtractor:
         assert filtered is soup
         assert "inside" in str(soup)
         assert "outside" not in str(soup)
+
+    def test_html_preprocessor_preprocesses_existing_soup(self):
+        config = PageConfig(exclude_tags=["nav"], include_only_tags=[])
+        preprocessor = HTMLPreprocessor(config)
+        soup = BeautifulSoup(
+            "<main><nav>skip</nav><h2><span>Hello</span><span>World</span></h2>"
+            '<a href="/plans"></a></main>',
+            "html.parser",
+        )
+
+        result = preprocessor.preprocess_soup(soup)
+
+        assert result is soup
+        assert "skip" not in str(soup)
+        heading_text = " ".join(soup.find("h2").get_text(" ").split())
+        assert heading_text == "Hello World"
+        assert "Plans" in soup.get_text(" ")
+
+    def test_html_preprocessor_strips_data_attributes(self):
+        html = '<div data-cmp-data-layer="payload" class="keep">Text</div>'
+        result = HTMLPreprocessor.strip_data_attributes(html)
+        assert "data-cmp-data-layer" not in result
+        assert 'class="keep"' in result
 
     def test_empty_html_produces_no_pages(self):
         result = CrawlResult(url="https://example.com", html="", success=True)
@@ -179,6 +204,18 @@ class TestCleanMarkdown:
         text = "Hello\n\n\n\n\nWorld\n\n\n\nEnd"
         result = ContentExtractor._collapse_blank_lines(text)
         assert result == "Hello\n\nWorld\n\nEnd"
+
+    def test_markdown_pipeline_clean_runs_ordered_transforms(self):
+        text = "Alpha\n\n\nAlpha\n\nBeta\n\nGamma\n\nDelta"
+        result = MarkdownPipeline.clean(text)
+        assert "\n\n\n" not in result
+        assert result.count("Alpha") == 1
+        assert "- Beta" in result
+
+    def test_markdown_pipeline_formats_faq_questions(self):
+        text = "What is included?\n\nA plan detail."
+        result = MarkdownPipeline.format_faq_questions(text)
+        assert result.startswith("### What is included?")
 
     def test_collapse_blank_lines_preserves_single(self):
         text = "A\n\nB\n\nC"
@@ -354,8 +391,6 @@ class TestStripDataAttributes:
         assert "data-cmp-data-layer" not in md
         count = md.count("Emergency resources")
         assert count <= 2, f"Duplicated content: found {count} occurrences"
-
-    """Tests for automatic trafilatura-to-markdownify fallback on low coverage."""
 
     def test_fallback_triggers_on_low_coverage(self):
         """When trafilatura returns very little, markdownify is used instead."""

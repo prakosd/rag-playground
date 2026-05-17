@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import math
 import sys
 import time
@@ -10,7 +9,22 @@ from collections import deque
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TextIO
+
+from crawl4md._internal.activity_log import (
+    _ACTIVITY_LOG_CSV_FILE as _ACTIVITY_LOG_CSV_FILE,
+)
+from crawl4md._internal.activity_log import (
+    _ACTIVITY_LOG_CSV_HEADER as _ACTIVITY_LOG_CSV_HEADER,
+)
+from crawl4md._internal.activity_log import (
+    _ACTIVITY_LOG_FLUSH_EVERY as _ACTIVITY_LOG_FLUSH_EVERY,
+)
+from crawl4md._internal.activity_log import (
+    _ACTIVITY_LOG_TXT_FILE as _ACTIVITY_LOG_TXT_FILE,
+)
+from crawl4md._internal.activity_log import (
+    ActivityLogger,
+)
 
 # Maximum number of recent activities shown in the activity log.
 _MAX_LOG_ENTRIES = 10
@@ -66,17 +80,6 @@ _ACTIVITY_ICONS: dict[str, str] = {
 # Fallback icon when no keyword matches.
 _ACTIVITY_ICON_DEFAULT = "⚙️"
 
-# ---------------------------------------------------------------------------
-# Activity log disk files
-# ---------------------------------------------------------------------------
-# Filename for the human-readable activity log written to the output directory.
-_ACTIVITY_LOG_TXT_FILE = "activity_log.txt"
-# Filename for the machine-readable CSV activity log.
-_ACTIVITY_LOG_CSV_FILE = "activity_log.csv"
-# CSV header row (written once when the file is created).
-_ACTIVITY_LOG_CSV_HEADER = "timestamp,round,activity,duration_seconds"
-# Number of activity rows to buffer before flushing log files to disk.
-_ACTIVITY_LOG_FLUSH_EVERY = 10
 # Minimum seconds between notebook widget refreshes during active crawling.
 _DISPLAY_MIN_INTERVAL_S = 0.25
 
@@ -279,10 +282,12 @@ class ProgressReporter:
         self._activity_log: deque[tuple[datetime, str, float]] = deque(
             maxlen=max_log_entries if max_log_entries > 0 else None
         )
-        self._csv_header_written = False
-        self._txt_fh: TextIO | None = None
-        self._csv_fh: TextIO | None = None
-        self._pending_disk_log_entries = 0
+        self._activity_logger = ActivityLogger(
+            log_dir=log_dir,
+            round_label=round_label,
+            icon_for_label=_ProgressWidget._activity_icon,
+            format_duration=_ProgressWidget._fmt_duration,
+        )
         self._last_refresh_ts = 0.0
 
     def __del__(self) -> None:
@@ -362,65 +367,16 @@ class ProgressReporter:
 
     def _append_to_disk(self, ts: datetime, label: str, duration: float) -> None:
         """Append one activity entry to the TXT and CSV log files on disk."""
-        handles = self._ensure_disk_log_handles()
-        if handles is None:
-            return
-        txt_fh, csv_fh = handles
+        self._activity_logger.append(ts, label, duration)
 
-        icon = _ProgressWidget._activity_icon(label)
-        dur_str = _ProgressWidget._fmt_duration(duration)
-        round_part = f" [{self._round_label}]" if self._round_label else ""
-        txt_line = f"[{ts:%H:%M:%S}]{round_part} {icon} {label} ({dur_str})\n"
-
-        txt_fh.write(txt_line)
-
-        writer = csv.writer(csv_fh)
-        writer.writerow(
-            [
-                ts.isoformat(timespec="seconds"),
-                self._round_label,
-                label,
-                f"{duration:.3f}",
-            ]
-        )
-
-        self._pending_disk_log_entries += 1
-        if self._pending_disk_log_entries >= _ACTIVITY_LOG_FLUSH_EVERY:
-            self._flush_disk_logs()
-
-    def _ensure_disk_log_handles(self) -> tuple[TextIO, TextIO] | None:
-        if self._log_dir is None:
-            return None
-
-        self._log_dir.mkdir(parents=True, exist_ok=True)
-        txt_path = self._log_dir / _ACTIVITY_LOG_TXT_FILE
-        if self._txt_fh is None or self._txt_fh.closed:
-            self._txt_fh = txt_path.open("a", encoding="utf-8")
-
-        csv_path = self._log_dir / _ACTIVITY_LOG_CSV_FILE
-        if self._csv_fh is None or self._csv_fh.closed:
-            write_header = False
-            if not self._csv_header_written:
-                write_header = not csv_path.exists() or csv_path.stat().st_size == 0
-                self._csv_header_written = True
-            self._csv_fh = csv_path.open("a", encoding="utf-8", newline="")
-            if write_header:
-                csv.writer(self._csv_fh).writerow(_ACTIVITY_LOG_CSV_HEADER.split(","))
-        return self._txt_fh, self._csv_fh
+    def _ensure_disk_log_handles(self):
+        return self._activity_logger.ensure_handles()
 
     def _flush_disk_logs(self) -> None:
-        for handle in (self._txt_fh, self._csv_fh):
-            if handle is not None and not handle.closed:
-                handle.flush()
-        self._pending_disk_log_entries = 0
+        self._activity_logger.flush()
 
     def _close_disk_log_handles(self) -> None:
-        self._flush_disk_logs()
-        for attr in ("_txt_fh", "_csv_fh"):
-            handle = getattr(self, attr)
-            if handle is not None and not handle.closed:
-                handle.close()
-            setattr(self, attr, None)
+        self._activity_logger.close()
 
     def close(self) -> None:
         self._close_activity()
@@ -657,6 +613,64 @@ class _ProgressWidget:
         pair = _PULSE_COLORS.get(category, _PULSE_COLOR_DEFAULT)
         return pair[1] if dark else pair[0]
 
+    @staticmethod
+    def _web_svg(web_color: str, *, display_block: bool = False) -> str:
+        """Render the small web decoration used by Jupyter and Colab widgets."""
+        style_attr = ' style="display:block"' if display_block else ""
+        return (
+            f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
+            f"{style_attr}"
+            f' xmlns="http://www.w3.org/2000/svg">'
+            f'<path d="M0 0 Q0 14 14 14" stroke="{web_color}" stroke-width="0.8" fill="none"/>'
+            f'<path d="M0 0 Q0 21 21 21" stroke="{web_color}" stroke-width="0.8" fill="none"/>'
+            f'<path d="M0 0 Q0 28 28 28" stroke="{web_color}" stroke-width="0.8" fill="none"/>'
+            f'<line x1="0" y1="0" x2="14" y2="0" stroke="{web_color}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="0" y2="14" stroke="{web_color}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="10" y2="10" stroke="{web_color}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="4" y2="13" stroke="{web_color}" stroke-width="0.8"/>'
+            f'<line x1="0" y1="0" x2="13" y2="4" stroke="{web_color}" stroke-width="0.8"/>'
+            f"</svg>"
+        )
+
+    def _activity_log_row_html(
+        self,
+        ts: datetime,
+        label: str,
+        duration: float,
+        *,
+        colab: bool,
+        colors: dict[str, str],
+    ) -> str:
+        icon = self._activity_icon(label)
+        display_label = (
+            label if len(label) <= _LOG_LABEL_MAX_LEN else label[:_LOG_LABEL_TRUNC] + "…"
+        )
+        ts_str = ts.strftime("%H:%M:%S")
+        is_fail = label.startswith("\u274c")
+        if colab:
+            label_color = f"color:{colors['log_fail']}" if is_fail else ""
+            return (
+                f"<tr>"
+                f'<td style="white-space:nowrap;font-family:monospace;'
+                f"color:{colors['log_time']};"
+                f'font-size:11px;width:58px;padding:1px 4px">{ts_str}</td>'
+                f'<td style="width:18px;text-align:center;padding:1px 4px">{icon}</td>'
+                f'<td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+                f'max-width:460px;padding:1px 4px;{label_color}">{display_label}</td>'
+                f'<td style="text-align:right;color:{colors["log_dur"]};white-space:nowrap;'
+                f'padding:1px 4px">{self._fmt_duration(duration)}</td>'
+                f"</tr>"
+            )
+        label_cls = "c4md-log-label c4md-log-fail" if is_fail else "c4md-log-label"
+        return (
+            f"<tr>"
+            f'<td class="c4md-log-time">{ts_str}</td>'
+            f'<td class="c4md-log-icon">{icon}</td>'
+            f'<td class="{label_cls}">{display_label}</td>'
+            f'<td class="c4md-log-dur">{self._fmt_duration(duration)}</td>'
+            f"</tr>"
+        )
+
     def _repr_html_(self) -> str:
         if self.colab:
             return self._repr_html_colab()
@@ -710,20 +724,12 @@ class _ProgressWidget:
         if self.activity_log:
             rows = ""
             for ts, label, dur in reversed(self.activity_log):
-                icon = self._activity_icon(label)
-                display_label = (
-                    label if len(label) <= _LOG_LABEL_MAX_LEN else label[:_LOG_LABEL_TRUNC] + "…"
-                )
-                ts_str = ts.strftime("%H:%M:%S")
-                is_fail = label.startswith("\u274c")
-                label_cls = "c4md-log-label c4md-log-fail" if is_fail else "c4md-log-label"
-                rows += (
-                    f"<tr>"
-                    f'<td class="c4md-log-time">{ts_str}</td>'
-                    f'<td class="c4md-log-icon">{icon}</td>'
-                    f'<td class="{label_cls}">{display_label}</td>'
-                    f'<td class="c4md-log-dur">{self._fmt_duration(dur)}</td>'
-                    f"</tr>"
+                rows += self._activity_log_row_html(
+                    ts,
+                    label,
+                    dur,
+                    colab=False,
+                    colors=_LIGHT_COLORS,
                 )
             log_html = (
                 f'<div class="c4md-log">'
@@ -958,17 +964,7 @@ class _ProgressWidget:
             # Bar + spider + thread + web decoration + milestone marks
             f'<div class="c4md-bar-wrap">'
             f'<div class="c4md-web">'
-            f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
-            f' xmlns="http://www.w3.org/2000/svg">'
-            f'<path d="M0 0 Q0 14 14 14" stroke="{lt["web"]}" stroke-width="0.8" fill="none"/>'
-            f'<path d="M0 0 Q0 21 21 21" stroke="{lt["web"]}" stroke-width="0.8" fill="none"/>'
-            f'<path d="M0 0 Q0 28 28 28" stroke="{lt["web"]}" stroke-width="0.8" fill="none"/>'
-            f'<line x1="0" y1="0" x2="14" y2="0" stroke="{lt["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="0" y2="14" stroke="{lt["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="10" y2="10" stroke="{lt["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="4" y2="13" stroke="{lt["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="13" y2="4" stroke="{lt["web"]}" stroke-width="0.8"/>'
-            f"</svg></div>"
+            f"{self._web_svg(lt['web'])}</div>"
             f"{milestone_marks}"
             f'<div class="c4md-thread" style="width:{max(pct, 0)}%;"></div>'
             f'<div class="c4md-bar" style="width:{pct}%;"></div>'
@@ -1073,27 +1069,7 @@ class _ProgressWidget:
         if self.activity_log:
             rows = ""
             for ts, label, dur in reversed(self.activity_log):
-                icon = self._activity_icon(label)
-                display_label = (
-                    label
-                    if len(label) <= _LOG_LABEL_MAX_LEN
-                    else label[:_LOG_LABEL_TRUNC] + "\u2026"
-                )
-                ts_str = ts.strftime("%H:%M:%S")
-                is_fail = label.startswith("\u274c")
-                label_color = f"color:{c['log_fail']}" if is_fail else ""
-                rows += (
-                    f"<tr>"
-                    f'<td style="white-space:nowrap;font-family:monospace;'
-                    f"color:{c['log_time']};"
-                    f'font-size:11px;width:58px;padding:1px 4px">{ts_str}</td>'
-                    f'<td style="width:18px;text-align:center;padding:1px 4px">{icon}</td>'
-                    f'<td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-                    f'max-width:460px;padding:1px 4px;{label_color}">{display_label}</td>'
-                    f'<td style="text-align:right;color:{c["log_dur"]};white-space:nowrap;'
-                    f'padding:1px 4px">{self._fmt_duration(dur)}</td>'
-                    f"</tr>"
-                )
+                rows += self._activity_log_row_html(ts, label, dur, colab=True, colors=c)
             log_html = (
                 f'<div style="margin-top:4px;max-height:200px;overflow-y:auto">'
                 f'<div style="font-size:11.5px;font-weight:600;color:{c["log_heading"]};'
@@ -1129,20 +1105,7 @@ class _ProgressWidget:
             else f"display:inline-block;transform:rotate(-{_SPIDER_TILT_DEG}deg)"
         )
         # Spider web SVG (inline, overlaps bar via negative margin)
-        web_svg = (
-            f'<svg width="28" height="28" viewBox="0 0 28 28" fill="none"'
-            f' style="display:block"'
-            f' xmlns="http://www.w3.org/2000/svg">'
-            f'<path d="M0 0 Q0 14 14 14" stroke="{c["web"]}" stroke-width="0.8" fill="none"/>'
-            f'<path d="M0 0 Q0 21 21 21" stroke="{c["web"]}" stroke-width="0.8" fill="none"/>'
-            f'<path d="M0 0 Q0 28 28 28" stroke="{c["web"]}" stroke-width="0.8" fill="none"/>'
-            f'<line x1="0" y1="0" x2="14" y2="0" stroke="{c["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="0" y2="14" stroke="{c["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="10" y2="10" stroke="{c["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="4" y2="13" stroke="{c["web"]}" stroke-width="0.8"/>'
-            f'<line x1="0" y1="0" x2="13" y2="4" stroke="{c["web"]}" stroke-width="0.8"/>'
-            f"</svg>"
-        )
+        web_svg = self._web_svg(c["web"], display_block=True)
 
         # Milestone markers below bar (flex row — Colab-safe, no position:absolute)
         milestone_row = ""

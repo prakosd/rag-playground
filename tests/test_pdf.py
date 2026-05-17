@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from crawl4md.config import CrawlResult, PageConfig
+from crawl4md.config import CrawlerConfig, CrawlResult, PageConfig
 from crawl4md.crawler import _OCR_UNAVAILABLE_WARNING, SiteCrawler
 from crawl4md.extractor import ContentExtractor
+from crawl4md.writer import FileWriter, PageSidecar
 
 # ------------------------------------------------------------------
 # CrawlResult.is_pdf field
@@ -264,6 +265,50 @@ class TestDownloadPdf:
         mock_client.get.assert_awaited_once_with("https://example.com/doc.pdf")
         mock_cls.assert_not_called()
         mock_open.assert_called_once_with(stream=b"fake-pdf-bytes", filetype="pdf")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_direct_pdf_empty_extraction_writes_fail_sidecar(self, mock_crawler_cls, tmp_path):
+        pdf_url = "https://example.com/empty.pdf"
+        mock_browser = AsyncMock()
+        mock_browser.__aenter__ = AsyncMock(return_value=mock_browser)
+        mock_browser.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_browser
+
+        mock_response = MagicMock()
+        mock_response.content = b"fake-pdf-bytes"
+        mock_response.raise_for_status = MagicMock()
+        mock_pdf_client = AsyncMock()
+        mock_pdf_client.get = AsyncMock(return_value=mock_response)
+        mock_pdf_client.__aenter__ = AsyncMock(return_value=mock_pdf_client)
+        mock_pdf_client.__aexit__ = AsyncMock(return_value=False)
+        mock_doc = MagicMock()
+
+        page_config = PageConfig(extract_main_content=False, ocr_languages=[])
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+        crawler = SiteCrawler(
+            CrawlerConfig(urls=[pdf_url], limit=1, max_retries=0, flush_interval=1),
+            page_config,
+            output_base=tmp_path,
+            extractor=extractor,
+            writer=writer,
+        )
+
+        with (
+            patch("crawl4md.crawler.httpx.AsyncClient", return_value=mock_pdf_client),
+            patch("crawl4md.crawler.pymupdf.open", return_value=mock_doc),
+            patch("crawl4md.crawler.pymupdf4llm.to_markdown", return_value="   "),
+        ):
+            results = crawler.crawl()
+
+        assert crawler.output_dir is not None
+        assert results[0].success is False
+        assert results[0].error == "No extractable content"
+        fail_sidecar = crawler.output_dir / "round_1" / "fail_pages.jsonl"
+        assert [entry.url for entry in PageSidecar.iter_index(fail_sidecar)] == [pdf_url]
+        final_dir = crawler.output_dir / "final"
+        assert (final_dir / "fail_urls.txt").read_text(encoding="utf-8") == pdf_url
+        assert pdf_url in next(final_dir.glob("fail_content_*.txt")).read_text(encoding="utf-8")
 
 
 # ------------------------------------------------------------------

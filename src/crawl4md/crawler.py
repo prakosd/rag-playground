@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import json
 import random
 import re
 import sys
-import warnings
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from importlib import import_module
@@ -17,8 +15,121 @@ from typing import Any
 
 import httpx
 import nest_asyncio
-from bs4 import BeautifulSoup
 
+from crawl4md._internal.block_detector import (
+    _BLOCK_MAX_CONTENT_LENGTH,
+)
+from crawl4md._internal.block_detector import (
+    _BLOCK_SIGNATURES as _BLOCK_DETECTOR_SIGNATURES,
+)
+from crawl4md._internal.block_detector import (
+    content_length_without_chrome as _content_length_without_chrome_impl,
+)
+from crawl4md._internal.block_detector import (
+    is_blocked as _is_blocked_impl,
+)
+from crawl4md._internal.crawler_progress import (
+    _PROGRESS_EVENT_COMPLETED as _INTERNAL_PROGRESS_EVENT_COMPLETED,
+)
+from crawl4md._internal.crawler_progress import (
+    _PROGRESS_EVENT_DISCOVERED as _INTERNAL_PROGRESS_EVENT_DISCOVERED,
+)
+from crawl4md._internal.crawler_progress import (
+    _PROGRESS_EVENT_INTERRUPTED as _INTERNAL_PROGRESS_EVENT_INTERRUPTED,
+)
+from crawl4md._internal.crawler_progress import (
+    _PROGRESS_EVENT_PAGE as _INTERNAL_PROGRESS_EVENT_PAGE,
+)
+from crawl4md._internal.crawler_progress import (
+    _PROGRESS_EVENT_STARTED as _INTERNAL_PROGRESS_EVENT_STARTED,
+)
+from crawl4md._internal.crawler_progress import (
+    emit_page_progress as _emit_page_progress_impl,
+)
+from crawl4md._internal.crawler_progress import (
+    emit_progress as _emit_progress_impl,
+)
+from crawl4md._internal.final_output import FinalOutputWriter
+from crawl4md._internal.pdf import (
+    _OCR_UNAVAILABLE_WARNING as _PDF_OCR_UNAVAILABLE_WARNING,
+)
+from crawl4md._internal.pdf import (
+    _PDF_DOWNLOAD_TIMEOUT,
+    _PDF_FALLBACK_THRESHOLD,
+)
+from crawl4md._internal.pdf import (
+    download_pdf as _download_pdf_impl,
+)
+from crawl4md._internal.pdf import (
+    is_pdf_response as _is_pdf_response_impl,
+)
+from crawl4md._internal.pdf import (
+    is_pdf_url as _is_pdf_url_impl,
+)
+from crawl4md._internal.pdf import (
+    pdf_to_markdown as _pdf_to_markdown_impl,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_RECORD_DEPTH as _INTERNAL_PAGE_RECORD_DEPTH,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_RECORD_DISCOVERED_FROM as _INTERNAL_PAGE_RECORD_DISCOVERED_FROM,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_RECORD_PAGE_SIZE_KB as _INTERNAL_PAGE_RECORD_PAGE_SIZE_KB,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_RECORD_ROUND_NUM as _INTERNAL_PAGE_RECORD_ROUND_NUM,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_RECORD_STATUS as _INTERNAL_PAGE_RECORD_STATUS,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_RECORD_URL as _INTERNAL_PAGE_RECORD_URL,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_SIZE_DECIMAL_PLACES as _INTERNAL_PAGE_SIZE_DECIMAL_PLACES,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_STATUS_DISCOVERED as _INTERNAL_PAGE_STATUS_DISCOVERED,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_STATUS_FAIL as _INTERNAL_PAGE_STATUS_FAIL,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_STATUS_SKIPPED as _INTERNAL_PAGE_STATUS_SKIPPED,
+)
+from crawl4md._internal.site_graph import (
+    _PAGE_STATUS_SUCCESS as _INTERNAL_PAGE_STATUS_SUCCESS,
+)
+from crawl4md._internal.site_graph import (
+    _PAGES_REGISTRY_TMP_SUFFIX as _INTERNAL_PAGES_REGISTRY_TMP_SUFFIX,
+)
+from crawl4md._internal.site_graph import (
+    _SITE_GRAPH_FILE as _INTERNAL_SITE_GRAPH_FILE,
+)
+from crawl4md._internal.site_graph import SiteGraphRecorder
+from crawl4md._internal.url_filter import (
+    _BOILERPLATE_DOMAINS as _URL_FILTER_BOILERPLATE_DOMAINS,
+)
+from crawl4md._internal.url_filter import (
+    _STATIC_ASSET_EXTENSIONS as _URL_FILTER_STATIC_ASSET_EXTENSIONS,
+)
+from crawl4md._internal.url_filter import (
+    extract_base_domains as _extract_base_domains_impl,
+)
+from crawl4md._internal.url_filter import (
+    extract_links as _extract_links_impl,
+)
+from crawl4md._internal.url_filter import (
+    normalize_url as _normalize_url_impl,
+)
+from crawl4md._internal.url_filter import (
+    url_allowed as _url_allowed_impl,
+)
+from crawl4md._internal.url_filter import (
+    url_in_allowed_domain as _url_in_allowed_domain_impl,
+)
 from crawl4md.config import (
     _FALLBACK_WAIT_UNTIL,
     CrawlerConfig,
@@ -28,8 +139,7 @@ from crawl4md.config import (
 )
 from crawl4md.extractor import ContentExtractor
 from crawl4md.progress import ProgressReporter
-from crawl4md.sorter import ContentSorter
-from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar, rename_files_with_total
+from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar
 
 # Applied lazily by SiteCrawler._run_rounds_sync so Streamlit's uvloop is never
 # patched at import time.
@@ -110,30 +220,6 @@ _ROUND_COOLDOWN_JITTER_MIN = 0.8
 _ROUND_COOLDOWN_JITTER_MAX = 1.5
 
 
-# Known WAF / bot-protection block signatures (matched case-insensitively)
-_BLOCK_SIGNATURES = (
-    "incapsula incident",
-    "access denied</title>",
-    "attention required! | cloudflare",
-    "please turn javascript on and reload the page",
-    "checking your browser before accessing",
-    "javascript is required",
-)
-_BLOCK_SIGNATURES_RE = re.compile(
-    "|".join(re.escape(signature) for signature in _BLOCK_SIGNATURES),
-    re.IGNORECASE,
-)
-
-# If the extracted markdown exceeds this length (in characters), the page
-# contains real content and should not be classified as a WAF block even
-# when a block signature is present in the raw HTML.
-_BLOCK_MAX_CONTENT_LENGTH = 500
-
-# ------------------------------------------------------------------
-# Content-length measurement: tags stripped before counting visible text
-# ------------------------------------------------------------------
-_CHROME_STRIP_TAGS = ["nav", "script", "style", "form", "header", "footer", "noscript"]
-
 # ------------------------------------------------------------------
 # Browser configuration defaults
 # ------------------------------------------------------------------
@@ -186,32 +272,26 @@ _SUCCESS_SIDECAR_SUFFIX = "success_pages.jsonl"
 _FAIL_SIDECAR_SUFFIX = "fail_pages.jsonl"
 
 # Root-level deduped page registry for future site-tree graph data.
-_SITE_GRAPH_FILE = "site_graph.jsonl"
-_PAGES_REGISTRY_TMP_SUFFIX = ".tmp"
-_PAGE_RECORD_URL = "url"
-_PAGE_RECORD_DISCOVERED_FROM = "discovered_from"
-_PAGE_RECORD_PAGE_SIZE_KB = "page_size_kb"
-_PAGE_RECORD_STATUS = "status"
-_PAGE_RECORD_DEPTH = "depth"
-_PAGE_RECORD_ROUND_NUM = "round_num"
-_PAGE_SIZE_DECIMAL_PLACES = 2
-_PAGE_STATUS_DISCOVERED = "discovered"
-_PAGE_STATUS_SUCCESS = "success"
-_PAGE_STATUS_FAIL = "fail"
-_PAGE_STATUS_SKIPPED = "skipped"
+_SITE_GRAPH_FILE = _INTERNAL_SITE_GRAPH_FILE
+_PAGES_REGISTRY_TMP_SUFFIX = _INTERNAL_PAGES_REGISTRY_TMP_SUFFIX
+_PAGE_RECORD_URL = _INTERNAL_PAGE_RECORD_URL
+_PAGE_RECORD_DISCOVERED_FROM = _INTERNAL_PAGE_RECORD_DISCOVERED_FROM
+_PAGE_RECORD_PAGE_SIZE_KB = _INTERNAL_PAGE_RECORD_PAGE_SIZE_KB
+_PAGE_RECORD_STATUS = _INTERNAL_PAGE_RECORD_STATUS
+_PAGE_RECORD_DEPTH = _INTERNAL_PAGE_RECORD_DEPTH
+_PAGE_RECORD_ROUND_NUM = _INTERNAL_PAGE_RECORD_ROUND_NUM
+_PAGE_SIZE_DECIMAL_PLACES = _INTERNAL_PAGE_SIZE_DECIMAL_PLACES
+_PAGE_STATUS_DISCOVERED = _INTERNAL_PAGE_STATUS_DISCOVERED
+_PAGE_STATUS_SUCCESS = _INTERNAL_PAGE_STATUS_SUCCESS
+_PAGE_STATUS_FAIL = _INTERNAL_PAGE_STATUS_FAIL
+_PAGE_STATUS_SKIPPED = _INTERNAL_PAGE_STATUS_SKIPPED
 
 # ------------------------------------------------------------------
 # Link extraction patterns
 # ------------------------------------------------------------------
 
-# Regex to extract href attribute values from HTML anchor tags
-_HREF_RE = re.compile(r'href=["\']([^"\']+)["\']')
 # Regex to strip URL schemes in shortened display labels
 _HTTPS_PREFIX_RE = re.compile(r"^https?://")
-# Regex to detect template placeholders (${var}, {{var}}, {%var%})
-_TEMPLATE_PLACEHOLDER_RE = re.compile(r"\$\{|%7B%7B|\{\{|\{%")
-# Valid URL scheme prefixes for discovered links
-_URL_SCHEMES = ("http://", "https://")
 
 # ------------------------------------------------------------------
 # Timestamp format
@@ -234,20 +314,6 @@ _ERROR_SECTION_HEADER = "**Error:**"
 _RAW_RESPONSE_HEADER = "**Raw response:**"
 
 # ------------------------------------------------------------------
-# PDF handling constants
-# ------------------------------------------------------------------
-
-# File extension used to detect PDF URLs by path
-_PDF_EXTENSION = ".pdf"
-# Content-Type prefix returned by servers for PDF responses
-_PDF_CONTENT_TYPE = "application/pdf"
-# Timeout (seconds) for httpx PDF downloads and HEAD requests
-_PDF_DOWNLOAD_TIMEOUT = 60
-# When a crawled page yields fewer characters than this and is not a WAF
-# block, a HEAD request is issued to check whether the URL is actually a PDF.
-_PDF_FALLBACK_THRESHOLD = 50
-
-# ------------------------------------------------------------------
 # Skip / empty-extraction log labels
 # ------------------------------------------------------------------
 
@@ -266,25 +332,27 @@ _REDIRECT_STORM_ERROR = "Suspected anti-bot redirect"
 # Error message for redirect-skipped pages that never triggered a storm
 # (queue ended or pattern broke before threshold was reached)
 _UNRESOLVED_REDIRECT_ERROR = "Redirect to already-visited URL (unresolved)"
-# Warning emitted once when Tesseract is not installed and OCR is requested
-_OCR_UNAVAILABLE_WARNING = (
-    "Tesseract OCR is not installed — scanned/image-only PDFs will not be "
-    "extracted. Install Tesseract and the required language packs for OCR "
-    "support, or set ocr_languages=[] to silence this warning."
-)
-
 # Maximum character length for shortened URLs displayed in activity labels
 _SHORT_URL_MAX_LEN = 60
 
 # Seconds between cancellation checks during long sleeps.
 _CANCEL_POLL_INTERVAL = 0.2
 
-# Progress event names emitted for optional UI integrations.
-_PROGRESS_EVENT_COMPLETED = "crawl_completed"
-_PROGRESS_EVENT_DISCOVERED = "urls_discovered"
-_PROGRESS_EVENT_INTERRUPTED = "crawl_interrupted"
-_PROGRESS_EVENT_PAGE = "page_processed"
-_PROGRESS_EVENT_STARTED = "crawl_started"
+# Compatibility re-export for tests and callers that imported the private
+# block signature tuple from this module before detection moved internally.
+_BLOCK_SIGNATURES = _BLOCK_DETECTOR_SIGNATURES
+
+# Compatibility re-exports for tests and UI adapters that imported private
+# progress event names from this module before emission moved internally.
+_PROGRESS_EVENT_COMPLETED = _INTERNAL_PROGRESS_EVENT_COMPLETED
+_PROGRESS_EVENT_DISCOVERED = _INTERNAL_PROGRESS_EVENT_DISCOVERED
+_PROGRESS_EVENT_INTERRUPTED = _INTERNAL_PROGRESS_EVENT_INTERRUPTED
+_PROGRESS_EVENT_PAGE = _INTERNAL_PROGRESS_EVENT_PAGE
+_PROGRESS_EVENT_STARTED = _INTERNAL_PROGRESS_EVENT_STARTED
+
+# Compatibility re-export for tests and callers that imported the private
+# warning constant from this module before PDF handling moved internally.
+_OCR_UNAVAILABLE_WARNING = _PDF_OCR_UNAVAILABLE_WARNING
 
 
 def _shorten_url(url: str) -> str:
@@ -347,10 +415,32 @@ class SiteCrawler:
         self._success_sidecar: Path | None = None
         self._fail_sidecar: Path | None = None
         self._run_metadata: dict[str, object] = {}
-        self._site_graph_path: Path | None = None
-        self._site_graph_records: dict[str, dict[str, object]] = {}
-        self._site_graph_dirty: bool = False
+        self._site_graph = SiteGraphRecorder()
         self._pdf_client: httpx.AsyncClient | None = None
+
+    @property
+    def _site_graph_path(self) -> Path | None:
+        return self._site_graph.path
+
+    @_site_graph_path.setter
+    def _site_graph_path(self, path: Path | None) -> None:
+        self._site_graph.path = path
+
+    @property
+    def _site_graph_records(self) -> dict[str, dict[str, object]]:
+        return self._site_graph.records
+
+    @_site_graph_records.setter
+    def _site_graph_records(self, records: dict[str, dict[str, object]]) -> None:
+        self._site_graph.records = records
+
+    @property
+    def _site_graph_dirty(self) -> bool:
+        return self._site_graph.dirty
+
+    @_site_graph_dirty.setter
+    def _site_graph_dirty(self, dirty: bool) -> None:
+        self._site_graph.dirty = dirty
 
     # ------------------------------------------------------------------
     # Public API
@@ -374,9 +464,7 @@ class SiteCrawler:
         """
         self.output_dir = self._create_output_dir()
         self._run_metadata = self._build_run_metadata()
-        self._site_graph_path = self.output_dir / _SITE_GRAPH_FILE
-        self._site_graph_records = {}
-        self._site_graph_dirty = False
+        self._site_graph.reset(self.output_dir)
         self._emit_progress(
             {
                 "event": _PROGRESS_EVENT_STARTED,
@@ -745,9 +833,7 @@ class SiteCrawler:
 
     def _emit_progress(self, event: Mapping[str, object]) -> None:
         """Send a progress event to an optional UI integration."""
-        if self._progress_callback is None:
-            return
-        self._progress_callback(event)
+        _emit_progress_impl(self._progress_callback, event)
 
     def _emit_page_progress(
         self,
@@ -761,21 +847,17 @@ class SiteCrawler:
         eta_remaining_seconds: float | None = None,
     ) -> None:
         """Emit a compact page-progress event."""
-        success_count = sum(1 for result in results if result.success)
-        fail_count = len(results) - success_count
-        self._emit_progress(
-            {
-                "event": _PROGRESS_EVENT_PAGE,
-                "processed_pages": prior_success + prior_fail + len(results),
-                "successful_pages": prior_success + success_count,
-                "failed_pages": prior_fail + fail_count,
-                "queued_discovered_urls": len(generated),
-                "current_url": current_url,
-                "next_url": next_url,
-                "eta_remaining_seconds": eta_remaining_seconds,
-                "output_dir": str(self.output_dir) if self.output_dir else "",
-                "limit": self.config.limit,
-            }
+        _emit_page_progress_impl(
+            self._progress_callback,
+            results,
+            generated=generated,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
+            current_url=current_url,
+            output_dir=self.output_dir,
+            limit=self.config.limit,
+            next_url=next_url,
+            eta_remaining_seconds=eta_remaining_seconds,
         )
 
     async def _flush_writer_buffers_async(self) -> None:
@@ -789,7 +871,7 @@ class SiteCrawler:
 
     @staticmethod
     def _graph_depth(crawl_depth: int) -> int:
-        return max(crawl_depth - 1, 0)
+        return SiteGraphRecorder.graph_depth(crawl_depth)
 
     def _record_page_discovered(
         self,
@@ -799,16 +881,11 @@ class SiteCrawler:
         discovered_from: str | None,
         crawl_depth: int,
     ) -> None:
-        if normalized_url in self._site_graph_records:
-            return
-        self._upsert_page_record(
+        self._site_graph.record_discovered(
             normalized_url=normalized_url,
             url=url,
             discovered_from=discovered_from,
-            status=_PAGE_STATUS_DISCOVERED,
-            page_size_kb=None,
-            graph_depth=self._graph_depth(crawl_depth),
-            round_num=None,
+            crawl_depth=crawl_depth,
         )
 
     def _upsert_page_record(
@@ -822,27 +899,18 @@ class SiteCrawler:
         graph_depth: int,
         round_num: int | None,
     ) -> None:
-        existing = self._site_graph_records.get(normalized_url, {})
-        parent = existing.get(_PAGE_RECORD_DISCOVERED_FROM, discovered_from)
-        depth = existing.get(_PAGE_RECORD_DEPTH, graph_depth)
-        self._site_graph_records[normalized_url] = {
-            _PAGE_RECORD_URL: url,
-            _PAGE_RECORD_DISCOVERED_FROM: parent,
-            _PAGE_RECORD_PAGE_SIZE_KB: page_size_kb,
-            _PAGE_RECORD_STATUS: status,
-            _PAGE_RECORD_DEPTH: depth,
-            _PAGE_RECORD_ROUND_NUM: round_num,
-        }
-        self._site_graph_dirty = True
+        self._site_graph.upsert_record(
+            normalized_url=normalized_url,
+            url=url,
+            discovered_from=discovered_from,
+            status=status,
+            page_size_kb=page_size_kb,
+            graph_depth=graph_depth,
+            round_num=round_num,
+        )
 
     def _remove_page_record(self, normalized_url: str, *, statuses: set[str] | None = None) -> None:
-        existing = self._site_graph_records.get(normalized_url)
-        if existing is None:
-            return
-        if statuses is not None and existing.get(_PAGE_RECORD_STATUS) not in statuses:
-            return
-        del self._site_graph_records[normalized_url]
-        self._site_graph_dirty = True
+        self._site_graph.remove_record(normalized_url, statuses=statuses)
 
     def _move_page_record_for_redirect(
         self,
@@ -851,17 +919,11 @@ class SiteCrawler:
         target_normalized_url: str,
         target_url: str,
     ) -> None:
-        if source_normalized_url == target_normalized_url:
-            return
-        source_record = self._site_graph_records.pop(source_normalized_url, None)
-        if source_record is None:
-            return
-        if target_normalized_url in self._site_graph_records:
-            self._site_graph_dirty = True
-            return
-        source_record[_PAGE_RECORD_URL] = target_url
-        self._site_graph_records[target_normalized_url] = source_record
-        self._site_graph_dirty = True
+        self._site_graph.move_record_for_redirect(
+            source_normalized_url=source_normalized_url,
+            target_normalized_url=target_normalized_url,
+            target_url=target_url,
+        )
 
     def _record_page_terminal(
         self,
@@ -872,62 +934,42 @@ class SiteCrawler:
         round_num: int,
         crawl_depth: int,
     ) -> None:
-        normalized_source = self._normalize_url(source_url, strip_www=self.config.strip_www)
-        normalized_result = self._normalize_url(
-            crawl_result.url,
+        self._site_graph.record_terminal(
+            source_url=source_url,
+            crawl_result=crawl_result,
+            page=page,
+            round_num=round_num,
+            crawl_depth=crawl_depth,
             strip_www=self.config.strip_www,
         )
-        self._move_page_record_for_redirect(
-            source_normalized_url=normalized_source,
-            target_normalized_url=normalized_result,
-            target_url=crawl_result.url,
-        )
-        existing = self._site_graph_records.get(normalized_result, {})
-        parent_value = existing.get(_PAGE_RECORD_DISCOVERED_FROM)
-        discovered_from = parent_value if isinstance(parent_value, str) else None
-        depth_value = existing.get(_PAGE_RECORD_DEPTH)
-        graph_depth = (
-            depth_value if isinstance(depth_value, int) else self._graph_depth(crawl_depth)
-        )
-        markdown = page.markdown if page is not None else crawl_result.markdown
-        page_size_kb = (
-            round(len(markdown.encode("utf-8")) / 1024, _PAGE_SIZE_DECIMAL_PLACES)
-            if crawl_result.success and markdown.strip()
-            else None
-        )
-        self._upsert_page_record(
-            normalized_url=normalized_result,
+
+    def _record_failed_page_content(
+        self,
+        crawl_result: CrawlResult,
+        *,
+        raw_response: str | None = None,
+    ) -> ExtractedPage | None:
+        if self._fail_writer is None:
+            return None
+
+        error = crawl_result.error or _UNKNOWN_ERROR_MSG
+        markdown = f"{_ERROR_SECTION_HEADER} {error}"
+        raw_body = raw_response.strip() if raw_response else ""
+        if raw_body:
+            markdown = f"{markdown}\n\n{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
+
+        fail_page = ExtractedPage(
             url=crawl_result.url,
-            discovered_from=discovered_from,
-            status=_PAGE_STATUS_SUCCESS if crawl_result.success else _PAGE_STATUS_FAIL,
-            page_size_kb=page_size_kb,
-            graph_depth=graph_depth,
-            round_num=round_num,
+            title=f"{_FAILED_TITLE_PREFIX} {error}",
+            markdown=markdown,
         )
+        self._fail_writer.add(fail_page)
+        if self._fail_sidecar is not None:
+            PageSidecar.append(fail_page, self._fail_sidecar)
+        return fail_page
 
     def _flush_site_graph(self) -> None:
-        if not self._site_graph_dirty or self._site_graph_path is None:
-            return
-        path = self._site_graph_path
-        temp_path = path.with_name(f"{path.name}{_PAGES_REGISTRY_TMP_SUFFIX}")
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            records = sorted(
-                self._site_graph_records.values(),
-                key=lambda record: str(record[_PAGE_RECORD_URL]),
-            )
-            with temp_path.open("w", encoding="utf-8") as handle:
-                for record in records:
-                    handle.write(json.dumps(record, ensure_ascii=False))
-                    handle.write("\n")
-            temp_path.replace(path)
-            self._site_graph_dirty = False
-        except Exception as exc:  # noqa: BLE001 - registry is best-effort output.
-            temp_path.unlink(missing_ok=True)
-            warnings.warn(
-                f"Could not write {_SITE_GRAPH_FILE}: {type(exc).__name__}: {exc}",
-                stacklevel=2,
-            )
+        self._site_graph.flush()
 
     def _cancel_requested(self) -> bool:
         return bool(self._should_cancel is not None and self._should_cancel())
@@ -952,6 +994,46 @@ class SiteCrawler:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    async def _dispatch_static_crawl(
+        self,
+        *,
+        urls: list[str],
+        crawler: Any,
+        run_cfg: object,
+        discover_links: bool,
+        is_retry: bool,
+        round_dir: Path | None,
+        prior_success: int,
+        prior_fail: int,
+        skip_urls: frozenset[str],
+        round_label: str,
+        all_generated: set[str] | None,
+        url_depths: dict[str, int] | None,
+        round_num: int,
+        allow_concurrency: bool,
+    ) -> list[CrawlResult] | None:
+        if not self._should_prefetch_static_urls(
+            urls=urls,
+            discover_links=discover_links,
+            is_retry=is_retry,
+            skip_urls=skip_urls,
+            all_generated=all_generated,
+            allow_concurrency=allow_concurrency,
+        ):
+            return None
+        return await self._crawl_static_urls_concurrently(
+            urls=urls,
+            crawler=crawler,
+            run_cfg=run_cfg,
+            round_dir=round_dir,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
+            round_label=round_label,
+            all_generated=all_generated,
+            url_depths=url_depths,
+            round_num=round_num,
+        )
 
     async def _crawl_urls_async(
         self,
@@ -986,26 +1068,24 @@ class SiteCrawler:
         maps each URL to its crawl depth so retried pages and their
         discovered links use the correct depth.
         """
-        if self._should_prefetch_static_urls(
+        static_results = await self._dispatch_static_crawl(
             urls=urls,
+            crawler=crawler,
+            run_cfg=run_cfg,
             discover_links=discover_links,
             is_retry=is_retry,
+            round_dir=round_dir,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
             skip_urls=skip_urls,
+            round_label=round_label,
             all_generated=all_generated,
+            url_depths=url_depths,
+            round_num=round_num,
             allow_concurrency=_allow_concurrency,
-        ):
-            return await self._crawl_static_urls_concurrently(
-                urls=urls,
-                crawler=crawler,
-                run_cfg=run_cfg,
-                round_dir=round_dir,
-                prior_success=prior_success,
-                prior_fail=prior_fail,
-                round_label=round_label,
-                all_generated=all_generated,
-                url_depths=url_depths,
-                round_num=round_num,
-            )
+        )
+        if static_results is not None:
+            return static_results
 
         results: list[CrawlResult] = []
         _sw = self.config.strip_www
@@ -1050,50 +1130,19 @@ class SiteCrawler:
             skipped_redirect_urls: list[str] = []
 
             def _flush_skipped_redirects(error: str) -> None:
-                """Convert accumulated skipped-redirect URLs into failures.
-
-                A single redirect to an already-visited URL is normal
-                navigation (e.g. /old → /new).  Only flush when two or more
-                URLs have been skipped, which indicates a suspicious pattern.
-                """
-                if len(skipped_redirect_urls) < 2:
-                    for skipped_url in skipped_redirect_urls:
-                        norm_skipped = self._normalize_url(skipped_url, strip_www=_sw)
-                        generated.discard(norm_skipped)
-                        self._remove_page_record(
-                            norm_skipped,
-                            statuses={_PAGE_STATUS_DISCOVERED, _PAGE_STATUS_SKIPPED},
-                        )
-                    if skipped_redirect_urls:
-                        progress.total = max(len(generated), 1)
-                        self._emit_progress(
-                            {
-                                "event": _PROGRESS_EVENT_DISCOVERED,
-                                "queued_discovered_urls": len(generated),
-                                "current_url": skipped_redirect_urls[0],
-                                "limit": self.config.limit,
-                            }
-                        )
-                    skipped_redirect_urls.clear()
-                    return
-                for skipped_url in skipped_redirect_urls:
-                    skipped_result = CrawlResult(
-                        url=skipped_url,
-                        html="",
-                        markdown="",
-                        success=False,
-                        error=error,
-                    )
-                    results.append(skipped_result)
-                    self._record_page_terminal(
-                        source_url=skipped_url,
-                        crawl_result=skipped_result,
-                        page=None,
-                        round_num=round_num,
-                        crawl_depth=depth,
-                    )
-                    progress.update(skipped_url, success=False)
-                skipped_redirect_urls.clear()
+                crawl_depth = depth if skipped_redirect_urls else 1
+                self._flush_skipped_redirects(
+                    skipped_redirect_urls=skipped_redirect_urls,
+                    error=error,
+                    results=results,
+                    generated=generated,
+                    progress=progress,
+                    prior_success=prior_success,
+                    prior_fail=prior_fail,
+                    round_num=round_num,
+                    crawl_depth=crawl_depth,
+                    strip_www=_sw,
+                )
 
             while queue:
                 self._raise_if_cancelled()
@@ -1120,77 +1169,18 @@ class SiteCrawler:
 
                 # Fast path: download PDFs directly (bypass the browser).
                 if self._is_pdf_url(url):
-                    progress.set_activity(f"Downloading PDF {_shorten_url(url)}")
-                    crawl_result = await self._download_pdf(url)
-                    results.append(crawl_result)
-                    progress.update(crawl_result.url, success=crawl_result.success)
-                    self._emit_page_progress(
-                        results,
+                    await self._handle_direct_pdf_url(
+                        url=url,
+                        results=results,
                         generated=generated,
                         prior_success=prior_success,
                         prior_fail=prior_fail,
-                        current_url=crawl_result.url,
-                        next_url=queue[0][0] if queue else "",
-                        eta_remaining_seconds=progress.eta_remaining_seconds(),
-                    )
-
-                    terminal_page: ExtractedPage | None = None
-                    if crawl_result.success and self._extractor and self._writer:
-                        _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-                        progress.set_activity(f"Saving PDF content{_ocr_tag}")
-                        page = self._extractor._extract_page(crawl_result)
-                        if page.markdown.strip():
-                            self._writer.add(page)
-                            terminal_page = page
-                            if self._success_sidecar is not None:
-                                PageSidecar.append(page, self._success_sidecar)
-                        else:
-                            progress.set_activity(
-                                f"No content found on {_shorten_url(crawl_result.url)}"
-                            )
-                            crawl_result.success = False
-                            crawl_result.error = _EMPTY_EXTRACTION_ERROR
-                    elif not crawl_result.success and self._fail_writer is not None:
-                        fail_page = ExtractedPage(
-                            url=crawl_result.url,
-                            title=(
-                                f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
-                            ),
-                            markdown=(
-                                f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}"
-                            ),
-                        )
-                        self._fail_writer.add(fail_page)
-                        if self._fail_sidecar is not None:
-                            PageSidecar.append(fail_page, self._fail_sidecar)
-
-                    self._record_page_terminal(
-                        source_url=url,
-                        crawl_result=crawl_result,
-                        page=terminal_page,
+                        queue=queue,
+                        progress=progress,
                         round_num=round_num,
                         crawl_depth=depth,
+                        round_dir=round_dir,
                     )
-
-                    # Flush periodically (same cadence as normal pages)
-                    if len(results) % self.config.flush_interval == 0:
-                        await self._flush_writer_buffers_async()
-                        await self._flush_site_graph_async()
-                        if round_dir is not None:
-                            success, fail = self._split_results(results)
-                            await asyncio.to_thread(self._save_url_lists, success, fail, round_dir)
-
-                    # Free heavy payload — content is persisted in sidecar / writer
-                    crawl_result.html = ""
-                    crawl_result.markdown = ""
-
-                    if self.config.delay > 0:
-                        jitter = self.config.delay * random.uniform(
-                            _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
-                        )
-                        progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
-                        await self._sleep_with_cancel(jitter)
-
                     continue
                 try:
                     progress.set_activity(f"Reading page {_shorten_url(url)}")
@@ -1221,35 +1211,17 @@ class SiteCrawler:
                         # pages, then treat the current page as failure too
                         # so the retry pipeline can re-attempt all of them.
                         _flush_skipped_redirects(_REDIRECT_STORM_ERROR)
-                        progress.set_activity(
-                            f"Possible block detected \u2014 skipping {_shorten_url(url)}"
-                        )
-                        crawl_result = CrawlResult(
+                        await self._handle_redirect_storm_page(
                             url=url,
-                            html="",
-                            markdown="",
-                            success=False,
-                            error=_REDIRECT_STORM_ERROR,
-                        )
-                        results.append(crawl_result)
-                        self._record_page_terminal(
-                            source_url=url,
-                            crawl_result=crawl_result,
-                            page=None,
+                            results=results,
+                            generated=generated,
+                            prior_success=prior_success,
+                            prior_fail=prior_fail,
+                            queue=queue,
+                            progress=progress,
                             round_num=round_num,
                             crawl_depth=depth,
                         )
-                        progress.update(url, success=False)
-
-                        # Apply WAF-style back-off
-                        backoff = max(
-                            _WAF_BACKOFF_FLOOR,
-                            self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
-                        )
-                        progress.set_activity(
-                            f"Website is blocking us \u2014 waiting {backoff:.1f}s"
-                        )
-                        await self._sleep_with_cancel(backoff)
                         continue
 
                     # Non-redirect-skip result — reset storm counter
@@ -1338,17 +1310,6 @@ class SiteCrawler:
                     waf_blocked = True
 
                 results.append(crawl_result)
-                progress.update(crawl_result.url, success=crawl_result.success)
-                self._emit_page_progress(
-                    results,
-                    generated=generated,
-                    prior_success=prior_success,
-                    prior_fail=prior_fail,
-                    current_url=crawl_result.url,
-                    next_url=queue[0][0] if queue else "",
-                    eta_remaining_seconds=progress.eta_remaining_seconds(),
-                )
-
                 terminal_page: ExtractedPage | None = None
 
                 # Extract and buffer content incrementally
@@ -1391,32 +1352,24 @@ class SiteCrawler:
                     and self._content_length_without_chrome(crawl_result.html)
                     < _PDF_FALLBACK_THRESHOLD
                 ):
-                    is_pdf = await self._is_pdf_response(
-                        url,
-                        dict(self.config.headers) if self.config.headers else None,
-                        client=self._pdf_client,
+                    crawl_result, terminal_page = await self._handle_pdf_fallback(
+                        url=url,
+                        crawl_result=crawl_result,
+                        results=results,
+                        terminal_page=terminal_page,
+                        progress=progress,
                     )
-                    if is_pdf:
-                        progress.set_activity(f"Re-downloading as PDF {_shorten_url(url)}")
-                        pdf_result = await self._download_pdf(url)
-                        # Replace the original result in the list
-                        results[-1] = pdf_result
-                        crawl_result = pdf_result
-                        if pdf_result.success and self._extractor and self._writer:
-                            _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-                            progress.set_activity(f"Saving PDF content{_ocr_tag}")
-                            page = self._extractor._extract_page(pdf_result)
-                            if page.markdown.strip():
-                                self._writer.add(page)
-                                terminal_page = page
-                                if self._success_sidecar is not None:
-                                    PageSidecar.append(page, self._success_sidecar)
-                            else:
-                                progress.set_activity(
-                                    f"No content found on {_shorten_url(pdf_result.url)}"
-                                )
-                                pdf_result.success = False
-                                pdf_result.error = _EMPTY_EXTRACTION_ERROR
+
+                progress.update(crawl_result.url, success=crawl_result.success)
+                self._emit_page_progress(
+                    results,
+                    generated=generated,
+                    prior_success=prior_success,
+                    prior_fail=prior_fail,
+                    current_url=crawl_result.url,
+                    next_url=queue[0][0] if queue else "",
+                    eta_remaining_seconds=progress.eta_remaining_seconds(),
+                )
 
                 # WAF back-off: pause after a block so the WAF can cool down.
                 # Applies even when delay=0 (floor ensures a minimum pause).
@@ -1441,19 +1394,9 @@ class SiteCrawler:
                 consecutive_redirect_count = 0
 
                 # Buffer failed-page content for the fail content file
-                if not crawl_result.success and self._fail_writer is not None:
+                if not crawl_result.success:
                     raw_body = raw_markdown.strip() or crawl_result.html.strip() or "(no response)"
-                    fail_page = ExtractedPage(
-                        url=crawl_result.url,
-                        title=f"{_FAILED_TITLE_PREFIX} {crawl_result.error or _UNKNOWN_ERROR_MSG}",
-                        markdown=(
-                            f"{_ERROR_SECTION_HEADER} {crawl_result.error or _UNKNOWN_ERROR_MSG}\n\n"
-                            f"{_RAW_RESPONSE_HEADER}\n\n{raw_body}"
-                        ),
-                    )
-                    self._fail_writer.add(fail_page)
-                    if self._fail_sidecar is not None:
-                        PageSidecar.append(fail_page, self._fail_sidecar)
+                    self._record_failed_page_content(crawl_result, raw_response=raw_body)
 
                 self._record_page_terminal(
                     source_url=url,
@@ -1495,55 +1438,16 @@ class SiteCrawler:
                     and crawl_result.success
                     and not discovery_limit_reached
                 ):
-                    progress.set_activity(f"Finding more pages on {_shorten_url(url)}")
-                    new_links = self._extract_links(crawl_result, crawl_result.url, strip_www=_sw)
-                    added = 0
-                    for link in new_links:
-                        norm_link = self._normalize_url(link, strip_www=_sw)
-                        if norm_link in generated:
-                            continue
-                        if not self._url_allowed(link):
-                            if (
-                                self._url_in_allowed_domain(link)
-                                and norm_link not in self._site_graph_records
-                            ):
-                                self._upsert_page_record(
-                                    normalized_url=norm_link,
-                                    url=link,
-                                    discovered_from=crawl_result.url,
-                                    status=_PAGE_STATUS_SKIPPED,
-                                    page_size_kb=None,
-                                    graph_depth=self._graph_depth(depth + 1),
-                                    round_num=round_num,
-                                )
-                            continue
-                        if norm_link in self._site_graph_records:
-                            continue
-                        generated.add(norm_link)
-                        depths[norm_link] = depth + 1
-                        self._record_page_discovered(
-                            normalized_url=norm_link,
-                            url=link,
-                            discovered_from=crawl_result.url,
-                            crawl_depth=depth + 1,
-                        )
-                        queue.append((link, depth + 1))
-                        added += 1
-                    progress.update_activity_label(
-                        f"Found {added} new pages on {_shorten_url(url)}"
+                    discovery_limit_reached = self._discover_links_from_result(
+                        url=url,
+                        depth=depth,
+                        crawl_result=crawl_result,
+                        generated=generated,
+                        depths=depths,
+                        queue=queue,
+                        progress=progress,
+                        round_num=round_num,
                     )
-                    self._emit_progress(
-                        {
-                            "event": _PROGRESS_EVENT_DISCOVERED,
-                            "queued_discovered_urls": len(generated),
-                            "current_url": url,
-                            "limit": self.config.limit,
-                        }
-                    )
-                    if len(generated) >= self.config.limit:
-                        discovery_limit_reached = True
-                    # Update progress total to reflect discovered pages
-                    progress.total = max(len(generated), 1)
 
                 # Free heavy payload — content is persisted in sidecar / writer
                 crawl_result.html = ""
@@ -1568,6 +1472,283 @@ class SiteCrawler:
             return results
         finally:
             progress.close()
+
+    async def _handle_pdf_fallback(
+        self,
+        *,
+        url: str,
+        crawl_result: CrawlResult,
+        results: list[CrawlResult],
+        terminal_page: ExtractedPage | None,
+        progress: ProgressReporter,
+    ) -> tuple[CrawlResult, ExtractedPage | None]:
+        is_pdf = await self._is_pdf_response(
+            url,
+            dict(self.config.headers) if self.config.headers else None,
+            client=self._pdf_client,
+        )
+        if not is_pdf:
+            return crawl_result, terminal_page
+
+        progress.set_activity(f"Re-downloading as PDF {_shorten_url(url)}")
+        pdf_result = await self._download_pdf(url)
+        results[-1] = pdf_result
+        crawl_result = pdf_result
+        if pdf_result.success and self._extractor and self._writer:
+            ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+            progress.set_activity(f"Saving PDF content{ocr_tag}")
+            page = self._extractor._extract_page(pdf_result)
+            if page.markdown.strip():
+                self._writer.add(page)
+                terminal_page = page
+                if self._success_sidecar is not None:
+                    PageSidecar.append(page, self._success_sidecar)
+            else:
+                progress.set_activity(f"No content found on {_shorten_url(pdf_result.url)}")
+                pdf_result.success = False
+                pdf_result.error = _EMPTY_EXTRACTION_ERROR
+        return crawl_result, terminal_page
+
+    async def _handle_direct_pdf_url(
+        self,
+        *,
+        url: str,
+        results: list[CrawlResult],
+        generated: set[str],
+        prior_success: int,
+        prior_fail: int,
+        queue: list[tuple[str, int]],
+        progress: ProgressReporter,
+        round_num: int,
+        crawl_depth: int,
+        round_dir: Path | None,
+    ) -> None:
+        progress.set_activity(f"Downloading PDF {_shorten_url(url)}")
+        crawl_result = await self._download_pdf(url)
+        results.append(crawl_result)
+
+        terminal_page: ExtractedPage | None = None
+        if crawl_result.success and self._extractor and self._writer:
+            _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+            progress.set_activity(f"Saving PDF content{_ocr_tag}")
+            page = self._extractor._extract_page(crawl_result)
+            if page.markdown.strip():
+                self._writer.add(page)
+                terminal_page = page
+                if self._success_sidecar is not None:
+                    PageSidecar.append(page, self._success_sidecar)
+            else:
+                progress.set_activity(f"No content found on {_shorten_url(crawl_result.url)}")
+                crawl_result.success = False
+                crawl_result.error = _EMPTY_EXTRACTION_ERROR
+
+        if not crawl_result.success:
+            raw_body = crawl_result.markdown.strip() or crawl_result.html.strip() or None
+            self._record_failed_page_content(crawl_result, raw_response=raw_body)
+
+        progress.update(crawl_result.url, success=crawl_result.success)
+        self._emit_page_progress(
+            results,
+            generated=generated,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
+            current_url=crawl_result.url,
+            next_url=queue[0][0] if queue else "",
+            eta_remaining_seconds=progress.eta_remaining_seconds(),
+        )
+
+        self._record_page_terminal(
+            source_url=url,
+            crawl_result=crawl_result,
+            page=terminal_page,
+            round_num=round_num,
+            crawl_depth=crawl_depth,
+        )
+
+        if len(results) % self.config.flush_interval == 0:
+            await self._flush_writer_buffers_async()
+            await self._flush_site_graph_async()
+            if round_dir is not None:
+                success, fail = self._split_results(results)
+                await asyncio.to_thread(self._save_url_lists, success, fail, round_dir)
+
+        crawl_result.html = ""
+        crawl_result.markdown = ""
+
+        if self.config.delay > 0:
+            jitter = self.config.delay * random.uniform(_JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX)
+            progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
+            await self._sleep_with_cancel(jitter)
+
+    def _flush_skipped_redirects(
+        self,
+        *,
+        skipped_redirect_urls: list[str],
+        error: str,
+        results: list[CrawlResult],
+        generated: set[str],
+        progress: ProgressReporter,
+        prior_success: int,
+        prior_fail: int,
+        round_num: int,
+        crawl_depth: int,
+        strip_www: bool,
+    ) -> None:
+        if len(skipped_redirect_urls) < 2:
+            for skipped_url in skipped_redirect_urls:
+                norm_skipped = self._normalize_url(skipped_url, strip_www=strip_www)
+                generated.discard(norm_skipped)
+                self._remove_page_record(
+                    norm_skipped,
+                    statuses={_PAGE_STATUS_DISCOVERED, _PAGE_STATUS_SKIPPED},
+                )
+            if skipped_redirect_urls:
+                progress.total = max(len(generated), 1)
+                self._emit_progress(
+                    {
+                        "event": _PROGRESS_EVENT_DISCOVERED,
+                        "queued_discovered_urls": len(generated),
+                        "current_url": skipped_redirect_urls[0],
+                        "limit": self.config.limit,
+                    }
+                )
+            skipped_redirect_urls.clear()
+            return
+        for skipped_url in skipped_redirect_urls:
+            skipped_result = CrawlResult(
+                url=skipped_url,
+                html="",
+                markdown="",
+                success=False,
+                error=error,
+            )
+            results.append(skipped_result)
+            self._record_failed_page_content(skipped_result)
+            self._record_page_terminal(
+                source_url=skipped_url,
+                crawl_result=skipped_result,
+                page=None,
+                round_num=round_num,
+                crawl_depth=crawl_depth,
+            )
+            progress.update(skipped_url, success=False)
+            self._emit_page_progress(
+                results,
+                generated=generated,
+                prior_success=prior_success,
+                prior_fail=prior_fail,
+                current_url=skipped_url,
+                eta_remaining_seconds=progress.eta_remaining_seconds(),
+            )
+        skipped_redirect_urls.clear()
+
+    async def _handle_redirect_storm_page(
+        self,
+        *,
+        url: str,
+        results: list[CrawlResult],
+        generated: set[str],
+        prior_success: int,
+        prior_fail: int,
+        queue: list[tuple[str, int]],
+        progress: ProgressReporter,
+        round_num: int,
+        crawl_depth: int,
+    ) -> None:
+        progress.set_activity(f"Possible block detected \u2014 skipping {_shorten_url(url)}")
+        crawl_result = CrawlResult(
+            url=url,
+            html="",
+            markdown="",
+            success=False,
+            error=_REDIRECT_STORM_ERROR,
+        )
+        results.append(crawl_result)
+        self._record_failed_page_content(crawl_result)
+        self._record_page_terminal(
+            source_url=url,
+            crawl_result=crawl_result,
+            page=None,
+            round_num=round_num,
+            crawl_depth=crawl_depth,
+        )
+        progress.update(url, success=False)
+        self._emit_page_progress(
+            results,
+            generated=generated,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
+            current_url=url,
+            next_url=queue[0][0] if queue else "",
+            eta_remaining_seconds=progress.eta_remaining_seconds(),
+        )
+
+        backoff = max(
+            _WAF_BACKOFF_FLOOR,
+            self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
+        )
+        progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
+        await self._sleep_with_cancel(backoff)
+
+    def _discover_links_from_result(
+        self,
+        *,
+        url: str,
+        depth: int,
+        crawl_result: CrawlResult,
+        generated: set[str],
+        depths: dict[str, int],
+        queue: list[tuple[str, int]],
+        progress: ProgressReporter,
+        round_num: int,
+    ) -> bool:
+        progress.set_activity(f"Finding more pages on {_shorten_url(url)}")
+        next_depth = depth + 1
+        new_links = self._extract_links(
+            crawl_result,
+            crawl_result.url,
+            strip_www=self.config.strip_www,
+        )
+        added = 0
+        for link in new_links:
+            norm_link = self._normalize_url(link, strip_www=self.config.strip_www)
+            if norm_link in generated:
+                continue
+            if not self._url_allowed(link):
+                if self._url_in_allowed_domain(link) and norm_link not in self._site_graph_records:
+                    self._upsert_page_record(
+                        normalized_url=norm_link,
+                        url=link,
+                        discovered_from=crawl_result.url,
+                        status=_PAGE_STATUS_SKIPPED,
+                        page_size_kb=None,
+                        graph_depth=self._graph_depth(next_depth),
+                        round_num=round_num,
+                    )
+                continue
+            if norm_link in self._site_graph_records:
+                continue
+            generated.add(norm_link)
+            depths[norm_link] = next_depth
+            self._record_page_discovered(
+                normalized_url=norm_link,
+                url=link,
+                discovered_from=crawl_result.url,
+                crawl_depth=next_depth,
+            )
+            queue.append((link, next_depth))
+            added += 1
+        progress.update_activity_label(f"Found {added} new pages on {_shorten_url(url)}")
+        self._emit_progress(
+            {
+                "event": _PROGRESS_EVENT_DISCOVERED,
+                "queued_discovered_urls": len(generated),
+                "current_url": url,
+                "limit": self.config.limit,
+            }
+        )
+        progress.total = max(len(generated), 1)
+        return len(generated) >= self.config.limit
 
     def _should_prefetch_static_urls(
         self,
@@ -1644,9 +1825,7 @@ class SiteCrawler:
     @staticmethod
     def _is_blocked(html: str) -> bool:
         """Return True if the HTML looks like a WAF/bot-protection block page."""
-        if not html:
-            return False
-        return _BLOCK_SIGNATURES_RE.search(html) is not None
+        return _is_blocked_impl(html)
 
     @staticmethod
     def _content_length_without_chrome(html: str) -> int:
@@ -1656,12 +1835,7 @@ class SiteCrawler:
         ``<footer>``, and ``<noscript>`` so that navigation chrome does not
         inflate the content measurement used by WAF detection.
         """
-        if not html:
-            return 0
-        soup = BeautifulSoup(html, "html.parser")
-        for tag in soup.find_all(_CHROME_STRIP_TAGS):
-            tag.decompose()
-        return len(soup.get_text(separator=" ", strip=True))
+        return _content_length_without_chrome_impl(html)
 
     # ------------------------------------------------------------------
     # PDF handling
@@ -1670,9 +1844,7 @@ class SiteCrawler:
     @staticmethod
     def _is_pdf_url(url: str) -> bool:
         """Return True if the URL path ends with ``.pdf`` (case-insensitive)."""
-        from urllib.parse import urlparse
-
-        return urlparse(url).path.lower().endswith(_PDF_EXTENSION)
+        return _is_pdf_url_impl(url)
 
     @staticmethod
     async def _is_pdf_response(
@@ -1682,71 +1854,36 @@ class SiteCrawler:
         client: httpx.AsyncClient | None = None,
     ) -> bool:
         """Issue a HEAD request and return True if Content-Type is PDF."""
-        try:
-            if client is not None:
-                resp = await client.head(url)
-                content_type = resp.headers.get("content-type", "")
-                return content_type.lower().startswith(_PDF_CONTENT_TYPE)
-            async with httpx.AsyncClient(
-                headers=headers or {},
-                timeout=_PDF_DOWNLOAD_TIMEOUT,
-                follow_redirects=True,
-            ) as client:
-                resp = await client.head(url)
-                content_type = resp.headers.get("content-type", "")
-                return content_type.lower().startswith(_PDF_CONTENT_TYPE)
-        except httpx.HTTPError:
-            return False
+        return await _is_pdf_response_impl(
+            url,
+            headers,
+            client=client,
+            http_client_cls=httpx.AsyncClient,
+        )
 
     async def _download_pdf(self, url: str) -> CrawlResult:
         """Download a PDF and convert it to Markdown via pymupdf4llm."""
-        try:
-            client = getattr(self, "_pdf_client", None)
-            if client is None:
-                async with httpx.AsyncClient(
-                    headers=dict(self.config.headers) if self.config.headers else {},
-                    timeout=_PDF_DOWNLOAD_TIMEOUT,
-                    follow_redirects=True,
-                ) as fallback_client:
-                    resp = await fallback_client.get(url)
-                    resp.raise_for_status()
-            else:
-                resp = await client.get(url)
-                resp.raise_for_status()
-
-            doc = pymupdf.open(stream=resp.content, filetype="pdf")
-            md = self._pdf_to_markdown(doc)
-            doc.close()
-
-            return CrawlResult(
-                url=url,
-                markdown=md,
-                success=True,
-                is_pdf=True,
-            )
-        except Exception as exc:
-            return CrawlResult(
-                url=url,
-                success=False,
-                error=f"PDF download failed: {type(exc).__name__}: {exc}",
-                is_pdf=True,
-            )
+        result, self._ocr_warned = await _download_pdf_impl(
+            url,
+            headers=dict(self.config.headers) if self.config.headers else {},
+            ocr_languages=self.page_config.ocr_languages,
+            ocr_warned=self._ocr_warned,
+            open_pdf=pymupdf.open,
+            to_markdown=pymupdf4llm.to_markdown,
+            client=getattr(self, "_pdf_client", None),
+            http_client_cls=httpx.AsyncClient,
+        )
+        return result
 
     def _pdf_to_markdown(self, doc: Any) -> str:
         """Convert a PyMuPDF document to Markdown, with optional OCR."""
-        langs = self.page_config.ocr_languages
-        if not langs:
-            return pymupdf4llm.to_markdown(doc)
-
-        try:
-            return pymupdf4llm.to_markdown(doc, use_ocr=True, ocr_language="+".join(langs))
-        except (RuntimeError, FileNotFoundError, TypeError):
-            # RuntimeError / FileNotFoundError: Tesseract not installed.
-            # TypeError: pymupdf4llm version too old for use_ocr kwarg.
-            if not self._ocr_warned:
-                self._ocr_warned = True
-                warnings.warn(_OCR_UNAVAILABLE_WARNING, stacklevel=3)
-            return pymupdf4llm.to_markdown(doc)
+        markdown, self._ocr_warned = _pdf_to_markdown_impl(
+            doc,
+            ocr_languages=self.page_config.ocr_languages,
+            ocr_warned=self._ocr_warned,
+            to_markdown=pymupdf4llm.to_markdown,
+        )
+        return markdown
 
     # ------------------------------------------------------------------
     # Result helpers
@@ -1759,6 +1896,15 @@ class SiteCrawler:
         fail = [r for r in results if not r.success]
         return success, fail
 
+    def _final_output_writer(self) -> FinalOutputWriter:
+        assert self.output_dir is not None
+        return FinalOutputWriter(
+            output_dir=self.output_dir,
+            output_extension=self.page_config.output_extension,
+            max_file_size_mb=self.page_config.max_file_size_mb,
+            run_metadata=self._run_metadata,
+        )
+
     def _save_url_lists(
         self,
         success: list[CrawlResult],
@@ -1766,12 +1912,7 @@ class SiteCrawler:
         dir: Path,
     ) -> None:
         """Write per-round success and fail URL lists to *dir*."""
-        if success:
-            (dir / _SUCCESS_URLS_FILE).write_text(
-                "\n".join(r.url for r in success), encoding="utf-8"
-            )
-        if fail:
-            (dir / _FAIL_URLS_FILE).write_text("\n".join(r.url for r in fail), encoding="utf-8")
+        self._final_output_writer().save_url_lists(success, fail, dir)
 
     def _write_round_success_files(self, round_num: int, round_dir: Path) -> None:
         """Write cumulative round success content as a round-end snapshot.
@@ -1781,17 +1922,7 @@ class SiteCrawler:
         """
         if self._writer is None or self.output_dir is None:
             return
-
-        ext = self.page_config.output_extension
-        pattern = f"{_SUCCESS_SUFFIX}content_*{ext}"
-        for existing in round_dir.glob(pattern):
-            existing.unlink()
-
-        entries = self._index_success(round_num)
-        if not entries:
-            return
-
-        self._stream_entries_to_writer(entries, prefix=_SUCCESS_SUFFIX, output_dir=round_dir)
+        self._final_output_writer().write_round_success_files(round_num, round_dir)
 
     def _write_sorted_round_files(self, round_num: int, round_dir: Path) -> None:
         """Write sorted content and URL files for one round.
@@ -1806,74 +1937,22 @@ class SiteCrawler:
             return
         if self._writer is None or self.output_dir is None:
             return
-        ext = self.page_config.output_extension
-
-        # --- Sorted success (cumulative, deduplicated) ---
-        success_entries = ContentSorter.sort_keys(self._index_success(round_num))
-        if success_entries:
-            # Remove stale files from prior writes
-            for f in round_dir.glob(f"{_SORTED_SUCCESS_PREFIX}content_*{ext}"):
-                f.unlink()
-            self._stream_entries_to_writer(
-                success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=round_dir
-            )
-            path = round_dir / _SORTED_SUCCESS_URLS_FILE
-            path.write_text("\n".join(e.url for e in success_entries), encoding="utf-8")
-
-        # --- Sorted fail (this round only, deduplicated) ---
-        fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
-        fail_seen: set[str] = set()
-        fail_entries: list[PageIndexEntry] = []
-        for entry in PageSidecar.iter_index(fail_sidecar):
-            if entry.url not in fail_seen:
-                fail_seen.add(entry.url)
-                fail_entries.append(entry)
-        fail_entries = ContentSorter.sort_keys(fail_entries)
-        if fail_entries:
-            self._stream_entries_to_writer(
-                fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=round_dir
-            )
-            path = round_dir / _SORTED_FAIL_URLS_FILE
-            path.write_text("\n".join(e.url for e in fail_entries), encoding="utf-8")
+        self._final_output_writer().write_sorted_round_files(round_num, round_dir)
 
     def _clear_final_content_files(self, *, sorted_files: bool) -> None:
         """Remove stale final content files before regenerating a final view."""
-        assert self.output_dir is not None
-        final_dir = self.output_dir / _FINAL_DIR_NAME
-        if not final_dir.exists():
-            return
-        extension = self.page_config.output_extension
-        prefixes = (
-            (_SORTED_SUCCESS_PREFIX, _SORTED_FAIL_PREFIX)
-            if sorted_files
-            else (_SUCCESS_SUFFIX, _FAIL_SUFFIX)
-        )
-        for prefix in prefixes:
-            for file_path in final_dir.glob(f"{prefix}content_*{extension}"):
-                if file_path.is_file():
-                    file_path.unlink()
+        self._final_output_writer().clear_final_content_files(sorted_files=sorted_files)
 
     def _saved_results_from_sidecars(self) -> tuple[list[CrawlResult], list[CrawlResult]]:
         """Return lightweight result metadata for every page already persisted."""
         if self.output_dir is None:
             return [], []
-        success_results = [
-            CrawlResult(url=entry.url, html="", markdown="", success=True)
-            for entry in self._index_success()
-        ]
-        fail_results = [
-            CrawlResult(url=entry.url, html="", markdown="", success=False)
-            for entry in self._index_fail()
-        ]
-        return success_results, fail_results
+        return self._final_output_writer().saved_results_from_sidecars()
 
     @staticmethod
     def _write_url_file(path: Path, urls: list[str]) -> None:
         """Write a URL list, or remove a stale list when no URLs remain."""
-        if urls:
-            path.write_text("\n".join(urls), encoding="utf-8")
-            return
-        path.unlink(missing_ok=True)
+        FinalOutputWriter.write_url_file(path, urls)
 
     def _write_final_files(
         self,
@@ -1886,41 +1965,11 @@ class SiteCrawler:
         (only ``.url`` is needed).  Content files are read from the JSONL
         sidecar files written during each round — no re-extraction needed.
         """
-        assert self.output_dir is not None
-        final_dir = self.output_dir / _FINAL_DIR_NAME
-        final_dir.mkdir(parents=True, exist_ok=True)
-        self._clear_final_content_files(sorted_files=False)
-
-        # success_urls.txt — all successful URLs across all rounds (deduplicated)
-        unique_urls: list[str] = []
-        if all_success:
-            seen: set[str] = set()
-            for r in all_success:
-                if r.url not in seen:
-                    seen.add(r.url)
-                    unique_urls.append(r.url)
-        self._write_url_file(final_dir / _SUCCESS_URLS_FILE, unique_urls)
-
-        # fail_urls.txt — URLs that still failed after all retries (deduplicated)
-        remaining_fail_urls = [r.url for r in all_fail]
-        unique_fail = list(dict.fromkeys(remaining_fail_urls))
-        self._write_url_file(final_dir / _FAIL_URLS_FILE, unique_fail)
-
-        # success_content_*.ext — unsorted merged content from sidecars
-        if self._writer is not None:
-            success_entries = self._index_success()
-            if success_entries:
-                self._stream_entries_to_writer(
-                    success_entries, prefix=_SUCCESS_SUFFIX, output_dir=final_dir
-                )
-
-        # fail_content_*.ext — unsorted fail content from sidecars
-        if self._writer is not None:
-            fail_entries = self._index_fail()
-            if fail_entries:
-                self._stream_entries_to_writer(
-                    fail_entries, prefix=_FAIL_SUFFIX, output_dir=final_dir
-                )
+        self._final_output_writer().write_final_files(
+            all_success,
+            all_fail,
+            write_content=self._writer is not None,
+        )
 
     def _write_sorted_files(
         self,
@@ -1936,41 +1985,11 @@ class SiteCrawler:
         """
         if self._writer is None:
             return
-        assert self.output_dir is not None
-        final_dir = self.output_dir / _FINAL_DIR_NAME
-        final_dir.mkdir(parents=True, exist_ok=True)
-        self._clear_final_content_files(sorted_files=True)
-
-        # Sorted success content (deduplicated by URL, keeping first occurrence)
-        success_entries = ContentSorter.sort_keys(self._index_success())
-        self._write_url_file(
-            final_dir / _SORTED_SUCCESS_URLS_FILE,
-            [entry.url for entry in success_entries],
-        )
-        if success_entries:
-            files = self._stream_entries_to_writer(
-                success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=final_dir
-            )
-            rename_files_with_total(files)
-
-        # Sorted fail content (deduplicated by URL, keeping first occurrence)
-        fail_entries = ContentSorter.sort_keys(self._index_fail())
-        self._write_url_file(
-            final_dir / _SORTED_FAIL_URLS_FILE,
-            [entry.url for entry in fail_entries],
-        )
-        if fail_entries:
-            files = self._stream_entries_to_writer(
-                fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=final_dir
-            )
-            rename_files_with_total(files)
+        self._final_output_writer().write_sorted_files()
 
     def _get_final_content_files(self) -> list[Path]:
         """Return sorted list of final content files."""
-        assert self.output_dir is not None
-        final_dir = self.output_dir / _FINAL_DIR_NAME
-        pattern = f"{_SORTED_SUCCESS_PREFIX}content_*{self.page_config.output_extension}"
-        return sorted(final_dir.glob(pattern)) if final_dir.exists() else []
+        return self._final_output_writer().get_final_content_files()
 
     # ------------------------------------------------------------------
     # Sidecar helpers — build lightweight indexes for streaming sort
@@ -1982,56 +2001,14 @@ class SiteCrawler:
         When *up_to_round* is given, only includes rounds 1..N (for
         cumulative round snapshots).  Otherwise includes all rounds.
         """
-        assert self.output_dir is not None
-        sidecar_files = sorted(
-            self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}")
-        )
-        seen: set[str] = set()
-        entries: list[PageIndexEntry] = []
-        for sf in sidecar_files:
-            if up_to_round is not None:
-                # Extract round number from parent directory name like "round_2"
-                try:
-                    rn = int(sf.parent.name.split("_")[1])
-                except (IndexError, ValueError):
-                    continue
-                if rn > up_to_round:
-                    continue
-            for entry in PageSidecar.iter_index(sf):
-                if entry.url not in seen:
-                    seen.add(entry.url)
-                    entries.append(entry)
-        return entries
+        return self._final_output_writer().index_success(up_to_round)
 
     def _index_fail(self, up_to_round: int | None = None) -> list[PageIndexEntry]:
         """Build a deduplicated fail index, excluding any URL that succeeded.
 
         When *up_to_round* is given, only includes rounds 1..N.
         """
-        assert self.output_dir is not None
-
-        # Collect success URLs so we can filter them out of fail entries
-        success_urls: set[str] = set()
-        for sf in self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}"):
-            for entry in PageSidecar.iter_index(sf):
-                success_urls.add(entry.url)
-
-        sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_FAIL_SIDECAR_SUFFIX}"))
-        seen: set[str] = set()
-        entries: list[PageIndexEntry] = []
-        for sf in sidecar_files:
-            if up_to_round is not None:
-                try:
-                    rn = int(sf.parent.name.split("_")[1])
-                except (IndexError, ValueError):
-                    continue
-                if rn > up_to_round:
-                    continue
-            for entry in PageSidecar.iter_index(sf):
-                if entry.url not in seen and entry.url not in success_urls:
-                    seen.add(entry.url)
-                    entries.append(entry)
-        return entries
+        return self._final_output_writer().index_fail(up_to_round)
 
     def _stream_entries_to_writer(
         self,
@@ -2044,22 +2021,11 @@ class SiteCrawler:
         Pages are loaded one at a time via :meth:`PageSidecar.read_page_at`,
         so the full corpus never lives in RAM.
         """
-        assert self.output_dir is not None
-        target_dir = output_dir if output_dir is not None else self.output_dir
-        ext = self.page_config.output_extension
-        writer = FileWriter(
-            output_dir=target_dir,
-            max_file_size_mb=self.page_config.max_file_size_mb,
-            file_extension=ext,
+        return self._final_output_writer().stream_entries_to_writer(
+            entries,
             prefix=prefix,
-            run_metadata=self._run_metadata,
+            output_dir=output_dir,
         )
-        for entry in entries:
-            page = PageSidecar.read_page_at(
-                entry.sidecar_path, entry.byte_offset, entry.byte_length
-            )
-            writer.add(page)
-        return writer.flush()
 
     def _build_run_config(self, run_config_cls: type) -> object:
         """Map PageConfig to a Crawl4AI CrawlerRunConfig."""
@@ -2128,165 +2094,37 @@ class SiteCrawler:
 
     def _url_in_allowed_domain(self, url: str) -> bool:
         """Check whether a URL belongs to the configured crawl domain(s)."""
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        netloc = parsed.netloc.lower()
-        bare_netloc = netloc[4:] if netloc.startswith("www.") else netloc
-
-        # Restrict to the same base domain(s) as the seed URLs
-        # Always strip www. from both sides — domain matching is www-insensitive
-        return not self._allowed_domains or any(
-            bare_netloc == bare_d or bare_netloc.endswith("." + bare_d)
-            for d in self._allowed_domains
-            for bare_d in (d[4:] if d.startswith("www.") else d,)
-        )
+        return _url_in_allowed_domain_impl(url, self._allowed_domains)
 
     def _url_allowed(self, url: str) -> bool:
         """Check whether a URL passes include/exclude filters."""
-        from urllib.parse import urlparse
-
-        if not self._url_in_allowed_domain(url):
-            return False
-
-        parsed = urlparse(url)
-
-        # Block boilerplate browser-upgrade domains
-        netloc_path = parsed.netloc + parsed.path
-        if any(
-            netloc_path.startswith(d) or netloc_path.startswith("www." + d)
-            for d in self._BOILERPLATE_DOMAINS
-        ):
-            return False
-
-        if self.config.compiled_include_only_paths and not any(
-            pattern.search(url) for pattern in self.config.compiled_include_only_paths
-        ):
-            return False
-
-        return not (
-            self.config.compiled_exclude_paths
-            and any(pattern.search(url) for pattern in self.config.compiled_exclude_paths)
-        )
+        return _url_allowed_impl(url, self.config, self._allowed_domains)
 
     # File extensions that are never useful pages to crawl
-    _STATIC_ASSET_EXTENSIONS = frozenset(
-        (
-            ".css",
-            ".js",
-            ".ico",
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".svg",
-            ".webp",
-            ".bmp",
-            ".tiff",
-            ".woff",
-            ".woff2",
-            ".ttf",
-            ".eot",
-            ".otf",
-            ".mp3",
-            ".mp4",
-            ".avi",
-            ".mov",
-            ".webm",
-            ".ogg",
-            ".zip",
-            ".gz",
-            ".tar",
-            ".rar",
-            ".7z",
-            ".xml",
-            ".json",
-            ".rss",
-            ".atom",
-            ".axd",
-            ".ashx",
-            ".asmx",
-        )
-    )
+    _STATIC_ASSET_EXTENSIONS = _URL_FILTER_STATIC_ASSET_EXTENSIONS
 
     # Domains that appear as boilerplate "upgrade your browser" links on
     # many websites and are never useful crawl targets.
-    _BOILERPLATE_DOMAINS = frozenset(
-        (
-            "browsehappy.com",
-            "google.com",
-        )
-    )
+    _BOILERPLATE_DOMAINS = _URL_FILTER_BOILERPLATE_DOMAINS
 
     @staticmethod
     def _normalize_url(url: str, *, strip_www: bool = True) -> str:
         """Normalize a URL to reduce duplicate crawling.
 
         Applies: ``http`` → ``https``, optionally strips ``www.`` prefix,
-        lowercases scheme + host.  The path, query and fragment are
-        preserved as-is.
+        lowercases scheme + host, preserves path/query, and drops fragments.
         """
-        from urllib.parse import urlparse, urlunparse
-
-        parsed = urlparse(url)
-        scheme = "https"
-        netloc = parsed.netloc.lower()
-        if strip_www and netloc.startswith("www."):
-            netloc = netloc[4:]
-        return urlunparse((scheme, netloc, parsed.path, parsed.params, parsed.query, ""))
+        return _normalize_url_impl(url, strip_www=strip_www)
 
     @staticmethod
     def _extract_base_domains(urls: list[str], *, strip_www: bool = True) -> set[str]:
         """Derive base domains from seed URLs (e.g. 'starhub.com' from 'www.starhub.com')."""
-        from urllib.parse import urlparse
-
-        domains: set[str] = set()
-        for url in urls:
-            netloc = urlparse(url).netloc.lower()
-            if strip_www and netloc.startswith("www."):
-                netloc = netloc[4:]
-            domains.add(netloc)
-        return domains
+        return _extract_base_domains_impl(urls, strip_www=strip_www)
 
     @staticmethod
     def _extract_links(result: CrawlResult, base_url: str, *, strip_www: bool = True) -> list[str]:
         """Extract absolute http(s) links from crawled HTML."""
-        from urllib.parse import urljoin, urlparse
-
-        links: list[str] = []
-        for match in _HREF_RE.finditer(result.html):
-            href = match.group(1)
-            # Skip unresolved template placeholders (e.g. ${var}, {{var}}, {%var%})
-            if _TEMPLATE_PLACEHOLDER_RE.search(href):
-                continue
-            absolute = urljoin(base_url, href)
-            if absolute.startswith(_URL_SCHEMES):
-                # Strip fragments
-                absolute = absolute.split("#")[0]
-                # Skip boilerplate browser-upgrade links
-                parsed = urlparse(absolute)
-                netloc_path = parsed.netloc + parsed.path
-                if any(
-                    netloc_path.startswith(d) or netloc_path.startswith("www." + d)
-                    for d in SiteCrawler._BOILERPLATE_DOMAINS
-                ):
-                    continue
-                # Skip static asset URLs
-                path = parsed.path.lower()
-                if any(path.endswith(ext) for ext in SiteCrawler._STATIC_ASSET_EXTENSIONS):
-                    continue
-                if absolute not in links:
-                    links.append(absolute)
-        # Normalize all discovered links and deduplicate (different raw URLs
-        # may normalize to the same canonical form).
-        seen: set[str] = set()
-        normalized: list[str] = []
-        for lnk in links:
-            norm = SiteCrawler._normalize_url(lnk, strip_www=strip_www)
-            if norm not in seen:
-                seen.add(norm)
-                normalized.append(norm)
-        return normalized
+        return _extract_links_impl(result, base_url, strip_www=strip_www)
 
     def _create_output_dir(self) -> Path:
         """Create and return a timestamped output directory."""

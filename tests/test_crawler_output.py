@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from crawl4md.config import CrawlerConfig, CrawlResult, ExtractedPage, PageConfig
-from crawl4md.crawler import SiteCrawler
+from crawl4md.crawler import _PROGRESS_EVENT_PAGE, SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter, PageSidecar
 from tests.conftest import _make_mock_result
@@ -29,6 +29,117 @@ def _records_by_url(output_dir: Path) -> dict[str, dict[str, object]]:
 
 class TestFailContentFiles:
     """Tests for fail content file generation (symmetrical with success content)."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_progress_event_counts_empty_extraction_as_failure(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        class EmptyExtractor:
+            def _extract_page(self, crawl_result: CrawlResult) -> ExtractedPage:
+                return ExtractedPage(url=crawl_result.url, title="Empty", markdown="")
+
+        events: list[dict[str, object]] = []
+        mock_result = _make_mock_result(
+            "https://example.com/empty",
+            "<main><p>Visible page text with enough length to avoid PDF fallback.</p></main>",
+            "Visible page text with enough length to avoid PDF fallback. " * 2,
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=mock_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/empty"], limit=1, max_retries=0, flush_interval=1
+        )
+        writer = FileWriter(max_file_size_mb=15.0)
+        crawler = SiteCrawler(
+            config,
+            PageConfig(extract_main_content=False),
+            output_base=tmp_path,
+            extractor=EmptyExtractor(),
+            writer=writer,
+            progress_callback=events.append,
+        )
+
+        results = crawler.crawl()
+
+        page_events = [event for event in events if event.get("event") == _PROGRESS_EVENT_PAGE]
+        assert results[0].success is False
+        assert page_events[0]["successful_pages"] == 0
+        assert page_events[0]["failed_pages"] == 1
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_redirect_storm_failures_have_sidecar_backed_final_content(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        events: list[dict[str, object]] = []
+        target_url = "https://example.com/target"
+        redirect_urls = [
+            "https://example.com/redirect-1",
+            "https://example.com/redirect-2",
+            "https://example.com/redirect-3",
+        ]
+        target_result = _make_mock_result(
+            target_url,
+            "<main><p>Target page content long enough for extraction.</p></main>",
+            "Target page content long enough for extraction. " * 2,
+        )
+        redirect_results = [
+            _make_mock_result(redirect_url, redirected_url=target_url)
+            for redirect_url in redirect_urls
+        ]
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[target_result, *redirect_results])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[target_url, *redirect_urls],
+            limit=4,
+            max_depth=1,
+            max_retries=0,
+            flush_interval=1,
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config,
+            page_config,
+            output_base=tmp_path,
+            extractor=extractor,
+            writer=writer,
+            progress_callback=events.append,
+        )
+        results = crawler.crawl()
+
+        assert crawler.output_dir is not None
+        assert [result.url for result in results if not result.success] == redirect_urls
+        fail_sidecar = crawler.output_dir / "round_1" / "fail_pages.jsonl"
+        assert [entry.url for entry in PageSidecar.iter_index(fail_sidecar)] == redirect_urls
+
+        final_dir = crawler.output_dir / "final"
+        assert (final_dir / "fail_urls.txt").read_text(
+            encoding="utf-8"
+        ).splitlines() == redirect_urls
+        final_fail_content = "\n".join(
+            path.read_text(encoding="utf-8") for path in final_dir.glob("fail_content_*.txt")
+        )
+        for redirect_url in redirect_urls:
+            assert redirect_url in final_fail_content
+
+        page_events = [event for event in events if event.get("event") == _PROGRESS_EVENT_PAGE]
+        redirect_page_events = [
+            event for event in page_events if event.get("current_url") in redirect_urls
+        ]
+        assert [event["current_url"] for event in redirect_page_events[:3]] == redirect_urls
+        assert [event["failed_pages"] for event in redirect_page_events[:3]] == [1, 2, 3]
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_fail_content_file_created_for_blocked_page(self, mock_crawler_cls, tmp_path: Path):

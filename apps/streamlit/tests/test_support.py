@@ -20,7 +20,6 @@ from crawl4md_streamlit.support import (
     build_configs,
     cleanup_old_sessions,
     cleanup_old_sessions_with_lock,
-    count_new_log_entries,
     crawl_output_base,
     create_session_record,
     drain_events,
@@ -397,7 +396,7 @@ def test_list_generated_files_respects_download_size_limit(tmp_path: Path) -> No
     assert files[0].download_allowed is False
 
 
-def test_list_generated_files_cache_invalidates_when_file_changes(tmp_path: Path) -> None:
+def test_list_generated_files_reflects_file_changes(tmp_path: Path) -> None:
     session_path = prepare_session_dir(tmp_path, "abc123")
     output_path = prepare_crawl_output_base(tmp_path, "abc123", "run_123")
     generated = output_path / "final" / "content.md"
@@ -583,33 +582,6 @@ def test_read_recent_lines_handles_missing_file_and_non_positive_limit(tmp_path:
     assert read_recent_lines(log_path, max_lines=0) == []
 
 
-def test_count_new_log_entries_initializes_without_toast() -> None:
-    lines = ["entry 1", "entry 2"]
-
-    new_count, latest = count_new_log_entries(lines, None)
-
-    assert new_count == 0
-    assert latest == "entry 2"
-
-
-def test_count_new_log_entries_counts_tail_appends() -> None:
-    lines = ["entry 1", "entry 2", "entry 3", "entry 4"]
-
-    new_count, latest = count_new_log_entries(lines, "entry 2")
-
-    assert new_count == 2
-    assert latest == "entry 4"
-
-
-def test_count_new_log_entries_handles_window_shift() -> None:
-    lines = ["entry 8", "entry 9", "entry 10"]
-
-    new_count, latest = count_new_log_entries(lines, "entry 7")
-
-    assert new_count == 1
-    assert latest == "entry 10"
-
-
 def test_cleanup_old_sessions_removes_only_expired_safe_sessions(tmp_path: Path) -> None:
     now = datetime(2026, 5, 4, tzinfo=timezone.utc)
     old_session = prepare_session_dir(tmp_path, "old123")
@@ -731,7 +703,7 @@ def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
             )
             return [type("Result", (), {"success": True})()]
 
-    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -769,7 +741,7 @@ def test_start_crawl_job_reports_success_and_failure_counts(
                 type("Result", (), {"success": False})(),
             ]
 
-    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values(limit=2))
 
     job = start_crawl_job(
@@ -807,7 +779,7 @@ def test_start_crawl_job_reports_missing_playwright_browser_hint(
                 "playwright install"
             )
 
-    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -836,7 +808,7 @@ def test_start_crawl_job_reports_generic_error_details(
         def crawl(self) -> list[object]:
             raise ValueError("boom")
 
-    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -881,7 +853,7 @@ def test_start_crawl_job_reports_cancelled_after_request(
             assert should_cancel()
             return [type("Result", (), {"success": True})()]
 
-    monkeypatch.setattr("crawl4md_streamlit.support.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(

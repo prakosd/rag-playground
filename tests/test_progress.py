@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from crawl4md._internal.activity_log import ActivityLogger
 from crawl4md.progress import (
     _ACTIVITY_LOG_CSV_FILE,
     _ACTIVITY_LOG_CSV_HEADER,
@@ -151,6 +152,42 @@ class TestProgressWidget:
         assert "c4md-web" in html
         assert "<svg" in html
         assert '<path d="M0 0 Q0 14 14 14"' in html
+
+    def test_web_svg_uses_color(self):
+        html = _ProgressWidget._web_svg("#abc")
+        assert 'stroke="#abc"' in html
+        assert html.count("<path") == 3
+        assert html.count("<line") == 5
+
+    def test_web_svg_colab_display_block(self):
+        html = _ProgressWidget._web_svg("#abc", display_block=True)
+        assert 'style="display:block"' in html
+
+    def test_activity_log_row_jupyter_failure_class(self):
+        widget = _ProgressWidget(current=1, total=2)
+        html = widget._activity_log_row_html(
+            datetime(2026, 1, 2, 3, 4, 5),
+            "❌ FAILED — Reading page x",
+            1.2,
+            colab=False,
+            colors=_LIGHT_COLORS,
+        )
+        assert "c4md-log-fail" in html
+        assert "03:04:05" in html
+        assert "1.2s" in html
+
+    def test_activity_log_row_colab_uses_inline_styles(self):
+        widget = _ProgressWidget(current=1, total=2)
+        html = widget._activity_log_row_html(
+            datetime(2026, 1, 2, 3, 4, 5),
+            "Reading page x",
+            1.2,
+            colab=True,
+            colors=_LIGHT_COLORS,
+        )
+        assert 'class="' not in html
+        assert "style=" in html
+        assert _LIGHT_COLORS["log_time"] in html
 
     def test_repr_html_contains_bar_glow(self):
         """Standard Jupyter HTML includes the pulsating bar glow animation."""
@@ -512,6 +549,26 @@ class TestProgressReporter:
 
 class TestActivityLogDisk:
     """Tests for flushing the activity log to disk (TXT + CSV)."""
+
+    def test_activity_logger_writes_txt_and_csv(self, tmp_path: Path):
+        logger = ActivityLogger(
+            log_dir=tmp_path,
+            round_label="First pass",
+            icon_for_label=lambda _label: "*",
+            format_duration=lambda _duration: "0.1s",
+        )
+
+        logger.append(datetime(2026, 1, 2, 3, 4, 5), "Reading page", 0.123)
+        logger.close()
+
+        txt_path = tmp_path / _ACTIVITY_LOG_TXT_FILE
+        assert "[First pass] * Reading page (0.1s)" in txt_path.read_text(encoding="utf-8")
+
+        csv_path = tmp_path / _ACTIVITY_LOG_CSV_FILE
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            rows = list(csv.reader(fh))
+        assert rows[0] == _ACTIVITY_LOG_CSV_HEADER.split(",")
+        assert rows[1] == ["2026-01-02T03:04:05", "First pass", "Reading page", "0.123"]
 
     def test_activity_log_appends_txt_to_disk(self, tmp_path: Path):
         """Closing an activity writes a human-readable line to activity_log.txt."""
