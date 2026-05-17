@@ -49,14 +49,14 @@ class ProductMetadataExtractor:
     """Extract product detail metadata from structured data, Open Graph, or DOM hints."""
 
     @staticmethod
-    def extract(html: str) -> _ProductMetadata | None:
+    def extract(html: str, *, soup: BeautifulSoup | None = None) -> _ProductMetadata | None:
         result = ProductMetadataExtractor.from_jsonld(html)
         if result:
             return result
         result = ProductMetadataExtractor.from_open_graph(html)
         if result:
             return result
-        return ProductMetadataExtractor.from_dom(html)
+        return ProductMetadataExtractor.from_dom(html, soup=soup)
 
     @staticmethod
     def from_jsonld(html: str) -> _ProductMetadata | None:
@@ -142,10 +142,11 @@ class ProductMetadataExtractor:
         return match.group(1).strip() if match else ""
 
     @staticmethod
-    def from_dom(html: str) -> _ProductMetadata | None:
-        soup = BeautifulSoup(html, _HTML_PARSER)
-        for tag in soup.find_all(_NON_VISIBLE_TAGS):
-            tag.decompose()
+    def from_dom(html: str, *, soup: BeautifulSoup | None = None) -> _ProductMetadata | None:
+        if soup is None:
+            soup = BeautifulSoup(html, _HTML_PARSER)
+            for tag in soup.find_all(_NON_VISIBLE_TAGS):
+                tag.decompose()
 
         strike_tag = ProductMetadataExtractor._find_strike_price_tag(soup)
         if not strike_tag:
@@ -170,12 +171,20 @@ class ProductMetadataExtractor:
         price_tags: list[Tag] = []
         for tag_name in _STRIKE_TAGS:
             for tag in soup.find_all(tag_name):
+                if ProductMetadataExtractor._has_non_visible_ancestor(tag):
+                    continue
                 text = tag.get_text(strip=True)
                 if _PRICE_DETECT_RE.search(text):
                     price_tags.append(tag)
         if len(price_tags) != 1:
             return None
         return price_tags[0]
+
+    @staticmethod
+    def _has_non_visible_ancestor(tag: Tag) -> bool:
+        return any(
+            isinstance(parent, Tag) and parent.name in _NON_VISIBLE_TAGS for parent in tag.parents
+        )
 
     @staticmethod
     def _high_price_from_strike(strike_tag: Tag) -> str:

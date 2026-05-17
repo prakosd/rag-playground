@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from crawl4md._internal.html_preprocess import _WRAPPER_LINK_LABEL
 from crawl4md.config import CrawlResult, PageConfig
-from crawl4md.extractor import _WRAPPER_LINK_LABEL, ContentExtractor
+from crawl4md.extractor import ContentExtractor
 
 
 class TestPopulateEmptyLinks:

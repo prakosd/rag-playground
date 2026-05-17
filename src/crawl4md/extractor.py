@@ -11,7 +11,7 @@ import trafilatura
 from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
 
-from crawl4md._internal.html_preprocess import _WRAPPER_LINK_LABEL, HTMLPreprocessor
+from crawl4md._internal.html_preprocess import HTMLPreprocessor
 from crawl4md._internal.markdown_pipeline import MarkdownPipeline
 from crawl4md._internal.product_metadata import ProductMetadataExtractor
 from crawl4md.config import CrawlResult, ExtractedPage, PageConfig
@@ -20,6 +20,7 @@ from crawl4md.progress import ProgressReporter
 # Sentinel inserted between repeated items *before* trafilatura extraction.
 # trafilatura strips <hr> but preserves plain text in <p> tags.
 _ITEM_SENTINEL = "CRAWL4MD_ITEM_BREAK"
+_ITEM_SENTINEL_MARKDOWN_RE = re.compile(r"(?m)^[ \t]*(?:[-*+]\s*)?CRAWL4MD\\?_ITEM\\?_BREAK[ \t]*$")
 
 # Regex that strips Markdown syntax characters but keeps content tokens
 # (words, numbers, currency signs, punctuation used in prose).
@@ -39,6 +40,8 @@ _MARKDOWNIFY_STRIP_TAGS = ["img"]
 _MARKDOWNIFY_HEADING_STYLE = "ATX"
 # BeautifulSoup parser used throughout the extractor
 _HTML_PARSER = "html.parser"
+# Tags excluded from visible-text coverage calculations
+_NON_VISIBLE_TEXT_TAGS = frozenset({"script", "style", "noscript"})
 # mdformat extension for GitHub Flavoured Markdown validation
 _MDFORMAT_EXTENSIONS = ("gfm",)
 # Markdown separator replacing item sentinels after extraction
@@ -58,19 +61,6 @@ _MIN_INTERSTITIAL_LEN = 20
 _ITEM_SKIP_TAGS = frozenset({"nav", "header", "footer", "table", "thead", "tbody", "tfoot"})
 
 # ------------------------------------------------------------------
-# Product parsing thresholds
-# ------------------------------------------------------------------
-
-# Maximum chars for a line to be considered a product name
-_MAX_PRODUCT_NAME_LEN = 80
-# Maximum chars for unclassified short lines treated as badges
-_MAX_BADGE_LINE_LEN = 60
-# Minimum consecutive product entries needed to trigger reformatting
-_MIN_PRODUCT_ENTRIES = 3
-# Minimum number of --- separators (sections - 1) to activate item reformatting
-_MIN_SEPARATED_SECTIONS = 4
-
-# ------------------------------------------------------------------
 # Supplementary / FAQ detection thresholds
 # ------------------------------------------------------------------
 
@@ -78,50 +68,8 @@ _MIN_SEPARATED_SECTIONS = 4
 _MIN_SUPPLEMENT_TEXT_LEN = 30
 # Minimum <details> siblings to trigger FAQ/accordion grouping
 _MIN_FAQ_DETAILS = 3
-# Maximum question line length for FAQ heading promotion
-_MAX_FAQ_QUESTION_LEN = 200
 # Minimum URL slug length for title derivation
 _MIN_SLUG_LEN = 3
-
-# ------------------------------------------------------------------
-# Short-paragraph compaction
-# ------------------------------------------------------------------
-
-# Maximum single-line paragraph length before it's excluded from compaction
-_MAX_SHORT_PARAGRAPH_LEN = 120
-
-# ------------------------------------------------------------------
-# Markdown structure detection regexes (shared across multiple methods)
-# ------------------------------------------------------------------
-
-# Matches Markdown heading lines (# through ######)
-_MD_HEADING_LINE_RE = re.compile(r"^#{1,6}\s")
-# Matches Markdown horizontal rules (three or more dashes)
-_MD_HORIZONTAL_RULE_RE = re.compile(r"^---+$")
-# Matches Markdown unordered list items (-, *, or +)
-_MD_LIST_ITEM_RE = re.compile(r"^[-*+]\s")
-# Splits text on two or more consecutive newlines (paragraph boundaries)
-_PARAGRAPH_SPLIT_RE = re.compile(r"\n\n+")
-# Splits text on two or more newlines (variant for dedup, matches \n{2,})
-_PARAGRAPH_SPLIT_2_RE = re.compile(r"\n{2,}")
-
-# Unicode Line Separator (U+2028) and Paragraph Separator (U+2029) —
-# introduced by PDF extraction (pymupdf4llm); normalised to \n early
-# so downstream regex patterns (which expect only \n) work correctly.
-_UNICODE_LINE_SEP_RE = re.compile("[\u2028\u2029]")
-
-# Matches leaked CMS attribute debris in Markdown output, e.g.
-# ``\r\n"}}}" id="text-abc123" class="cmp-text">``
-_CMS_ATTR_JUNK_RE = re.compile(
-    r"(?:\\r\\n|\r\n|\r|\n)*"
-    r'["\'}\]\)]*\}\}["\'>]*'
-    r'(?:\s+[a-z][a-z\-]*="[^"]*")*'
-    r"\s*>",
-)
-
-# Matches literal escaped CRLF sequences (4-char ``\r\n``) that leak
-# from CMS JSON payloads embedded in HTML data attributes.
-_LITERAL_CRLF_RE = re.compile(r"\\r\\n")
 
 # ------------------------------------------------------------------
 # Fragment link resolution
@@ -155,15 +103,6 @@ _H1_TAG_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
 _HTML_TAG_STRIP_RE = re.compile(r"<[^>]+>")
 
 # ------------------------------------------------------------------
-# Table normalization regexes
-# ------------------------------------------------------------------
-
-# Matches a line containing at least one pipe separator (potential table row)
-_PIPE_LINE_RE = re.compile(r"^\|?.+\|.+\|?\s*$")
-# Matches a Markdown table separator row (e.g. | --- | --- |)
-_TABLE_SEPARATOR_RE = re.compile(r"^\|?(\s*-{3,}\s*\|)+\s*-{3,}\s*\|?\s*$")
-
-# ------------------------------------------------------------------
 # FAQ / supplementary section detection regexes
 # ------------------------------------------------------------------
 
@@ -171,16 +110,8 @@ _TABLE_SEPARATOR_RE = re.compile(r"^\|?(\s*-{3,}\s*\|)+\s*-{3,}\s*\|?\s*$")
 _FAQ_HEADING_RANGE_RE = re.compile(r"^h[2-4]$")
 # Matches text containing "FAQ" or "Frequently Asked" keywords
 _FAQ_KEYWORD_RE = re.compile(r"\bfaq\b|frequently\s+asked", re.IGNORECASE)
-
-# ------------------------------------------------------------------
-# Price detection regexes (compact product listing)
-# ------------------------------------------------------------------
-
-# Matches a full product price line (from $XX.XX/mth, or ~~$XX.XX~~$XX.XX, etc.)
-_PRICE_LINE_RE = re.compile(
-    r"^(?:from\s+)?(?:or\s*)?(?:~~)?\$\$?[\d,]+(?:\.\d{2})?(?:~~)?"
-    r"(?:/mth)?(?:\$\$?[\d,]+(?:\.\d{2})?)?$"
-)
+# Matches Schema.org FAQ itemtype values
+_FAQ_SCHEMA_RE = re.compile(r"FAQPage", re.IGNORECASE)
 # ------------------------------------------------------------------
 # Product metadata string constants
 # ------------------------------------------------------------------
@@ -191,13 +122,6 @@ _RETAIL_PRICE_PREFIX = "Retail price: "
 # ------------------------------------------------------------------
 # DOM / content thresholds
 # ------------------------------------------------------------------
-
-# Lines shorter than this in badges/short-line detection are compacted
-_BADGE_SHORT_LINE_THRESHOLD = 40
-# Minimum content length (chars) for a section to be considered substantial
-_SUBSTANTIAL_CONTENT_LEN = 80
-# Maximum label length for section-label promotion to heading
-_MAX_SECTION_LABEL_LEN = 60
 
 _HtmlOrSoup = str | BeautifulSoup
 
@@ -233,6 +157,23 @@ class ContentExtractor:
             return self._extract_main_content(result)
         return self._extract_full_html(result)
 
+    def _prepare_soup(
+        self,
+        result: CrawlResult,
+        *,
+        use_sentinel: bool,
+        recover_supplements: bool = False,
+    ) -> tuple[BeautifulSoup, list[str], dict | None]:
+        preprocessor = HTMLPreprocessor(self.page_config)
+        soup = BeautifulSoup(result.html, _HTML_PARSER)
+        preprocessor.strip_data_attributes(soup)
+        product = self._extract_product_header(result.html, soup=soup)
+        supplements = self._extract_supplementary_sections(soup) if recover_supplements else []
+        preprocessor.preprocess_soup(soup)
+        if self.page_config.separate_items:
+            self._insert_item_separators(soup, use_sentinel=use_sentinel)
+        return soup, supplements, product
+
     def _extract_pdf_page(self, result: CrawlResult) -> ExtractedPage:
         """Extract content from a PDF crawl result.
 
@@ -260,14 +201,11 @@ class ContentExtractor:
         Falls back to markdownify when trafilatura captures less than
         ``_COVERAGE_THRESHOLD`` of the page's visible text.
         """
-        preprocessor = HTMLPreprocessor(self.page_config)
-        soup = BeautifulSoup(result.html, _HTML_PARSER)
-        preprocessor.strip_data_attributes(soup)
-        # Capture supplementary sections (e.g. FAQs) before trafilatura strips them.
-        supplements = self._extract_supplementary_sections(str(soup))
-        preprocessor.preprocess_soup(soup)
-        if self.page_config.separate_items:
-            self._insert_item_separators(soup, use_sentinel=True)
+        soup, supplements, product = self._prepare_soup(
+            result,
+            use_sentinel=True,
+            recover_supplements=True,
+        )
         html = str(soup)
         extracted = trafilatura.extract(
             html,
@@ -278,13 +216,13 @@ class ContentExtractor:
         )
         md = self._fix_markdown_tables(extracted or "")
         if self.page_config.separate_items:
-            md = md.replace(_ITEM_SENTINEL, _ITEM_SEPARATOR_MD)
+            md = self._replace_item_sentinels(md)
         md = self._clean_markdown(md)
 
         # Fall back to markdownify when trafilatura captured too little.
-        visible_len = self._visible_text_length(result.html)
+        visible_len = self._visible_text_length_from_soup(soup)
         if visible_len > 0 and len(md.strip()) / visible_len < _COVERAGE_THRESHOLD:
-            return self._extract_full_html(result)
+            return self._extract_full_html(result, soup=soup, product=product, product_checked=True)
 
         for fragment in supplements:
             formatted = self._format_faq_questions(fragment)
@@ -292,16 +230,25 @@ class ContentExtractor:
             if cleaned.strip():
                 md = md.rstrip() + _ITEM_SEPARATOR_MD + cleaned
 
-        return self._finalize_extracted_page(result=result, markdown=md)
+        return self._finalize_extracted_page(
+            result=result,
+            markdown=md,
+            product=product,
+            product_checked=True,
+        )
 
-    def _extract_full_html(self, result: CrawlResult) -> ExtractedPage:
+    def _extract_full_html(
+        self,
+        result: CrawlResult,
+        *,
+        soup: BeautifulSoup | None = None,
+        product: dict | None = None,
+        product_checked: bool = False,
+    ) -> ExtractedPage:
         """Use markdownify on the (optionally tag-filtered) HTML."""
-        preprocessor = HTMLPreprocessor(self.page_config)
-        soup = BeautifulSoup(result.html, _HTML_PARSER)
-        preprocessor.strip_data_attributes(soup)
-        preprocessor.preprocess_soup(soup)
-        if self.page_config.separate_items:
-            self._insert_item_separators(soup, use_sentinel=False)
+        if soup is None:
+            soup, _, product = self._prepare_soup(result, use_sentinel=False)
+            product_checked = True
         html = str(soup)
         md = markdownify(
             html,
@@ -309,12 +256,26 @@ class ContentExtractor:
             strip=_MARKDOWNIFY_STRIP_TAGS,
             table_infer_header=True,
         )
+        md = self._replace_item_sentinels(md)
         md = self._clean_markdown(md)
 
-        return self._finalize_extracted_page(result=result, markdown=md)
+        return self._finalize_extracted_page(
+            result=result,
+            markdown=md,
+            product=product,
+            product_checked=product_checked,
+        )
 
-    def _finalize_extracted_page(self, *, result: CrawlResult, markdown: str) -> ExtractedPage:
-        product = self._extract_product_header(result.html)
+    def _finalize_extracted_page(
+        self,
+        *,
+        result: CrawlResult,
+        markdown: str,
+        product: dict | None = None,
+        product_checked: bool = False,
+    ) -> ExtractedPage:
+        if not product_checked:
+            product = self._extract_product_header(result.html)
         title = self._extract_title(result.html, url=result.url)
         if product:
             product_name = product.get("name", "")
@@ -652,23 +613,10 @@ class ContentExtractor:
     def _clean_markdown(text: str) -> str:
         return MarkdownPipeline.clean(text)
 
-    # Patterns matching leaked SPA / OutSystems template variables.
-    _TEMPLATE_VAR_RE = re.compile(
-        r"^[-*]?\s*"
-        r"(?:"
-        r"(?:Var_|In_|TrueVar_|FalseVar_)\w+"
-        r"|PayLaterOptionList\.\w+"
-        r"|(?:Var_|In_)?\w*(?:ErrorCode|Error|MaxMonthOfInstallment"
-        r"|PayLaterStatus|IsEligible|IsProcessing|BNPLErrorCode)"
-        r"|NumberOfMonths"
-        r"|isOutOfStock"
-        r")\s*[:.].*$",
-        re.IGNORECASE,
-    )
-    _CONCATENATED_VARS_RE = re.compile(
-        r"(?:Var_|In_|True|False)\w+:.*(?:Var_|In_|True|False)\w+:",
-        re.IGNORECASE,
-    )
+    @staticmethod
+    def _replace_item_sentinels(text: str) -> str:
+        text = _ITEM_SENTINEL_MARKDOWN_RE.sub(_ITEM_SEPARATOR_MD, text)
+        return text.replace(_ITEM_SENTINEL, _ITEM_SEPARATOR_MD)
 
     @staticmethod
     def _strip_template_variables(text: str) -> str:
@@ -681,31 +629,6 @@ class ContentExtractor:
     # ------------------------------------------------------------------
     # Separated-item reformatter (product cards split by ---)
     # ------------------------------------------------------------------
-
-    # Shared patterns for product field classification
-    _MONTHLY_PRICE_RE = re.compile(
-        r"^(?:from\s+)?\$[\d,]+(?:\.\d{2})?/mth$",
-        re.IGNORECASE,
-    )
-    _OUTRIGHT_PRICE_RE = re.compile(
-        r"^(?:or\s*)?(?:~~)?\$\$?[\d,]+(?:\.\d{2})?(?:~~)?"
-        r"(?:\$\$?[\d,]+(?:\.\d{2})?)?$",
-        re.IGNORECASE,
-    )
-    _OFFERS_RE = re.compile(r"^\d+\s+offers?\s+available$", re.IGNORECASE)
-    _BADGE_KEYWORDS = re.compile(
-        r"^(?:Preorder|Pre-order|New|LNY\s+Offers?|Exclusive\s+Bundle|"
-        r"Limited[- ]time\s+only|StarHub\s+[Ee]xclusive|PWP\s+Offers?|"
-        r"Wi-Fi\s+Only|eSIM\s+Exclusive|Trending\s+Brands|Best\s+value"
-        r"(?:\s+with\s+device)?|Best\s+Deal|Trade[- ]in\s+Bonus|Top\s+Seller)$",
-        re.IGNORECASE,
-    )
-    _UI_ACTION_RE = re.compile(
-        r"^(?:Compare|Compare\s+selected\s+products|Add\s+to\s+cart|"
-        r"Add\s+to\s+bag|Buy\s+now|Select\s+options|View\s+details|Shop\s+now)$",
-        re.IGNORECASE,
-    )
-    _MORE_LINK_RE = re.compile(rf"^\[{re.escape(_WRAPPER_LINK_LABEL)}\]\((.+)\)$")
 
     @staticmethod
     def _reformat_separated_items(text: str) -> str:
@@ -749,9 +672,24 @@ class ContentExtractor:
     def _visible_text_length(html: str) -> int:
         """Approximate the length of human-visible text in HTML."""
         soup = BeautifulSoup(html, _HTML_PARSER)
-        for tag in soup.find_all(["script", "style", "noscript"]):
-            tag.decompose()
-        return len(soup.get_text(separator=" ", strip=True))
+        return ContentExtractor._visible_text_length_from_soup(soup)
+
+    @staticmethod
+    def _visible_text_length_from_soup(soup: BeautifulSoup) -> int:
+        parts: list[str] = []
+        for text_node in soup.find_all(string=True):
+            parent = text_node.parent
+            if parent is None:
+                continue
+            if any(
+                getattr(ancestor, "name", None) in _NON_VISIBLE_TEXT_TAGS
+                for ancestor in (parent, *parent.parents)
+            ):
+                continue
+            text = text_node.strip()
+            if text:
+                parts.append(text)
+        return len(" ".join(parts))
 
     # ------------------------------------------------------------------
     # FAQ formatting
@@ -771,14 +709,14 @@ class ContentExtractor:
     )
 
     @staticmethod
-    def _extract_supplementary_sections(html: str) -> list[str]:
+    def _extract_supplementary_sections(html: _HtmlOrSoup) -> list[str]:
         """Detect FAQ / accordion sections that trafilatura would strip.
 
         Returns a list of Markdown fragments (one per detected section).
         Uses four heuristics, deduplicates by element identity, and
         converts each matched subtree to Markdown via *markdownify*.
         """
-        soup = BeautifulSoup(html, _HTML_PARSER)
+        soup, _ = ContentExtractor._coerce_soup(html)
         seen_ids: set[int] = set()
         sections: list[str] = []
 
@@ -800,7 +738,7 @@ class ContentExtractor:
                 sections.append(md)
 
         # 1. Schema.org FAQPage structured data
-        for el in soup.find_all(attrs={"itemtype": re.compile(r"FAQPage", re.I)}):
+        for el in soup.find_all(attrs={"itemtype": _FAQ_SCHEMA_RE}):
             if isinstance(el, Tag):
                 _add(el)
 
@@ -914,8 +852,8 @@ class ContentExtractor:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _extract_product_header(html: str) -> dict | None:
-        return ProductMetadataExtractor.extract(html)
+    def _extract_product_header(html: str, *, soup: BeautifulSoup | None = None) -> dict | None:
+        return ProductMetadataExtractor.extract(html, soup=soup)
 
     @staticmethod
     def _product_from_jsonld(html: str) -> dict | None:

@@ -15,6 +15,7 @@ _ACTIVITY_LOG_FILE = "activity_log.txt"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
+_MISSING_CACHE_TOKEN = (0.0, 0)
 _TEXT_PREVIEW_EXTENSIONS = frozenset(
     {
         ".cfg",
@@ -94,6 +95,15 @@ def list_generated_files(
         )
         for file in _scan_generated_files(root, target_root)
     ]
+
+
+def generated_files_cache_token(path: Path | str) -> tuple[float, int]:
+    """Return a cheap cache token for Streamlit generated-file listings."""
+    try:
+        stat_result = Path(path).stat()
+    except OSError:
+        return _MISSING_CACHE_TOKEN
+    return (stat_result.st_mtime, stat_result.st_size)
 
 
 def _scan_generated_files(root: Path, target_root: Path) -> list[_ScannedGeneratedFile]:

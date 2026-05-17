@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
+
 from crawl4md.config import CrawlResult, PageConfig
 from crawl4md.extractor import ContentExtractor
 
@@ -63,6 +65,22 @@ class TestSupplementarySections:
         </body></html>
         """
         sections = ContentExtractor._extract_supplementary_sections(html)
+        assert len(sections) == 1
+        assert "payment methods" in sections[0]
+
+    def test_existing_soup_faqpage_detected(self):
+        html = """
+        <html><body>
+        <div itemscope itemtype="https://schema.org/FAQPage">
+          <h3>What payment methods do you accept?</h3>
+          <p>We accept Visa, Mastercard, and PayPal.</p>
+        </div>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+
+        sections = ContentExtractor._extract_supplementary_sections(soup)
+
         assert len(sections) == 1
         assert "payment methods" in sections[0]
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import mimetypes
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,7 +14,7 @@ from streamlit.components.v2 import component as component_v2
 
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.form_ui import render_crawl_form
-from crawl4md_streamlit.generated_files import build_download_tree
+from crawl4md_streamlit.generated_files import build_download_tree, generated_files_cache_token
 from crawl4md_streamlit.i18n import CATALOG, get_strings
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
@@ -52,6 +52,7 @@ from crawl4md_streamlit.support import (
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = "7s"
+_GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
 _DIALOG_PLACEHOLDER_TITLE = " "
 _ICON_BUTTON_WIDTH_PX = 44
 _LIVE_AREA_REFRESH_INTERVAL = "3s"
@@ -85,6 +86,12 @@ _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
 _STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:1"
 _SESSION_STORAGE_COMPONENT_KEY = "browser_session_storage"
+_SESSION_RECORDS_CACHE_STATE = "normalized_session_records_cache"
+_SESSION_RECORDS_CACHE_MAX_ENTRIES = 8
+_SESSION_RECORDS_FIELD = "sessions"
+_SESSION_ID_FIELD = "session_id"
+_SESSION_CREATED_AT_FIELD = "created_at"
+_SESSION_LANGUAGE_FIELD = "language"
 _SESSION_STORAGE_KEY = "crawl4md.streamlit.sessions.v1"
 _SESSION_STORAGE_HTML = """
 <div id="crawl4md-session-storage" hidden></div>
@@ -215,13 +222,83 @@ def _init_state() -> None:
     st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
     st.session_state.setdefault("language", _DEFAULT_LANGUAGE)
+    st.session_state.setdefault(_SESSION_RECORDS_CACHE_STATE, {})
+
+
+def _session_records_cache_key(payload: object) -> tuple[tuple[str, str, str, str], ...]:
+    raw_records = (
+        payload.get(_SESSION_RECORDS_FIELD, []) if isinstance(payload, Mapping) else payload
+    )
+    if isinstance(raw_records, (str, bytes)) or not isinstance(raw_records, Iterable):
+        return ()
+
+    key_parts: list[tuple[str, str, str, str]] = []
+    for raw_record in raw_records:
+        if isinstance(raw_record, SessionRecord):
+            key_parts.append(
+                (
+                    "record",
+                    raw_record.session_id,
+                    raw_record.created_at.isoformat(),
+                    raw_record.language,
+                )
+            )
+            continue
+        if isinstance(raw_record, Mapping):
+            key_parts.append(
+                (
+                    "mapping",
+                    str(raw_record.get(_SESSION_ID_FIELD, "")),
+                    str(raw_record.get(_SESSION_CREATED_AT_FIELD, "")),
+                    str(raw_record.get(_SESSION_LANGUAGE_FIELD, "")),
+                )
+            )
+            continue
+        key_parts.append(("other", repr(raw_record), "", ""))
+    return tuple(key_parts)
+
+
+def _cached_normalize_session_records(payload: object) -> list[SessionRecord]:
+    cache_key = _session_records_cache_key(payload)
+    cache = st.session_state.get(_SESSION_RECORDS_CACHE_STATE)
+    if not isinstance(cache, dict):
+        cache = {}
+        st.session_state[_SESSION_RECORDS_CACHE_STATE] = cache
+    cached_records = cache.get(cache_key)
+    if cached_records is not None:
+        return list(cached_records)
+
+    records = normalize_session_records(payload)
+    if len(cache) >= _SESSION_RECORDS_CACHE_MAX_ENTRIES:
+        cache.clear()
+    cache[cache_key] = tuple(records)
+    return records
+
+
+@st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
+def _cached_list_generated_files(
+    session_root: str,
+    search_root: str,
+    download_limit_bytes: int,
+    cache_token: tuple[float, int],
+) -> list[GeneratedFile]:
+    return list_generated_files(
+        Path(session_root),
+        Path(search_root),
+        download_limit_bytes=download_limit_bytes,
+    )
+
+
+@st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
+def _cached_download_tree(files: tuple[GeneratedFile, ...]) -> dict[str, Any]:
+    return build_download_tree(list(files))
 
 
 def _browser_session_records() -> list[SessionRecord]:
     records = st.session_state.get("browser_session_records", [])
     if isinstance(records, list) and all(isinstance(record, SessionRecord) for record in records):
         return records
-    return normalize_session_records(records)
+    return _cached_normalize_session_records(records)
 
 
 def _component_field(result: Any, field: str) -> Any:
@@ -260,9 +337,10 @@ def _mount_session_storage() -> None:
 def _apply_session_storage_result(result: Any) -> None:
     records_payload = _component_field(result, "records")
     if records_payload is not None:
-        st.session_state.browser_session_records = normalize_session_records(
+        normalized_payload = _cached_normalize_session_records(records_payload)
+        st.session_state.browser_session_records = _cached_normalize_session_records(
             [
-                *serialize_session_records(normalize_session_records(records_payload)),
+                *serialize_session_records(normalized_payload),
                 *st.session_state.pending_browser_session_records,
             ]
         )
@@ -272,10 +350,12 @@ def _apply_session_storage_result(result: Any) -> None:
     if _component_field(result, "hydrated") is True:
         st.session_state.browser_sessions_hydrated = True
 
-    pending = normalize_session_records(st.session_state.pending_browser_session_records)
+    pending = _cached_normalize_session_records(st.session_state.pending_browser_session_records)
     stored_payload = _component_result_field(result, "stored_records")
     if pending and stored_payload is not None:
-        stored_ids = {record.session_id for record in normalize_session_records(stored_payload)}
+        stored_ids = {
+            record.session_id for record in _cached_normalize_session_records(stored_payload)
+        }
         if {record.session_id for record in pending}.issubset(stored_ids):
             st.session_state.pending_browser_session_records = []
         if st.session_state.pending_bootstrap_session_id in stored_ids:
@@ -335,13 +415,13 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
 def _create_new_session() -> None:
     record = create_session_record()
     st.session_state.language = record.language
-    records = normalize_session_records(
+    records = _cached_normalize_session_records(
         [
             *serialize_session_records(_browser_session_records()),
             *serialize_session_records([record]),
         ]
     )
-    pending_records = normalize_session_records(
+    pending_records = _cached_normalize_session_records(
         [
             *st.session_state.pending_browser_session_records,
             *serialize_session_records([record]),
@@ -397,7 +477,7 @@ def _on_language_change(widget_key: str) -> None:
     st.session_state.browser_session_records = updated
     updated_record = next((r for r in updated if r.session_id == session_id), None)
     if updated_record is not None:
-        pending = normalize_session_records(
+        pending = _cached_normalize_session_records(
             [
                 *st.session_state.pending_browser_session_records,
                 *serialize_session_records([updated_record]),
@@ -1042,11 +1122,14 @@ def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
 def _render_downloads() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
-    files = list_generated_files(
-        session_folder,
-        session_folder,
-        download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
+    session_folder_str = str(session_folder.resolve())
+    files = _cached_list_generated_files(
+        session_folder_str,
+        session_folder_str,
+        _DOWNLOAD_LIMIT_BYTES,
+        generated_files_cache_token(session_folder),
     )
+    download_tree = _cached_download_tree(tuple(files))
     if files:
         st.markdown(f"**{strings['FILES_HEADER']}**")
         rows = [
@@ -1065,10 +1148,10 @@ def _render_downloads() -> None:
         st.caption(strings["FILES_DOWNLOADS_IN_PROGRESS"])
         if files:
             with st.expander(f"📁 {session_folder.name}", expanded=True):
-                render_download_tree(build_download_tree(files))
+                render_download_tree(download_tree)
     elif session_folder.exists():
         with st.expander(f"📁 {session_folder.name}", expanded=True):
-            render_download_tree(build_download_tree(files))
+            render_download_tree(download_tree)
         st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
     else:
         st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))

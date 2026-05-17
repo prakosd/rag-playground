@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+from bs4 import BeautifulSoup
+
+from crawl4md._internal.html_preprocess import _WRAPPER_LINK_LABEL
 from crawl4md._internal.product_metadata import ProductMetadataExtractor
 from crawl4md.config import CrawlResult, PageConfig
-from crawl4md.extractor import _WRAPPER_LINK_LABEL, ContentExtractor
+from crawl4md.extractor import ContentExtractor
 
 
 class TestMultiPriceProductListings:
@@ -492,6 +497,39 @@ class TestProductFromDom:
         assert result["name"] == "Galaxy S26 Ultra 5G"
         assert result["high_price"] == "2,128.00"
         assert result["price"] == "1,828.00"
+
+    def test_product_metadata_extractor_uses_existing_soup_for_dom_fallback(self):
+        html = """
+        <html><head><title>Product PLP/PDP</title></head>
+        <body>
+        <h2>Galaxy S26 Ultra 5G</h2>
+        <div><del>$2,128.00</del> $1,828.00</div>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+
+        with patch(
+            "crawl4md._internal.product_metadata.BeautifulSoup",
+            side_effect=AssertionError("should not parse when soup is provided"),
+        ):
+            result = ProductMetadataExtractor.extract(html, soup=soup)
+
+        assert result is not None
+        assert result["name"] == "Galaxy S26 Ultra 5G"
+        assert result["price"] == "1,828.00"
+
+    def test_product_metadata_existing_soup_ignores_noscript_prices(self):
+        html = """
+        <html><body>
+        <h1>Galaxy S26 Ultra 5G</h1>
+        <noscript><div><del>$2,128.00</del> $1,828.00</div></noscript>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+
+        result = ProductMetadataExtractor.extract(html, soup=soup)
+
+        assert result is None
 
     def test_jsonld_still_preferred_over_dom(self):
         """JSON-LD takes priority even when DOM has strikethrough prices."""

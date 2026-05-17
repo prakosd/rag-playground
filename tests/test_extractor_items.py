@@ -93,6 +93,22 @@ class TestInsertItemSeparators:
         assert "Galaxy S26" in page.markdown
         assert "iPhone 17" in page.markdown
 
+    def test_low_coverage_fallback_converts_sentinels_to_separators(self):
+        config = PageConfig(separate_items=True, extract_main_content=True, exclude_tags=[])
+        extractor = ContentExtractor(config)
+        result_obj = CrawlResult(
+            url="https://example.com",
+            html=self.PRODUCT_CARDS_HTML,
+            success=True,
+        )
+
+        with patch("crawl4md.extractor.trafilatura") as mock_traf:
+            mock_traf.extract.return_value = "tiny"
+            page = extractor._extract_page(result_obj)
+
+        assert _ITEM_SENTINEL not in page.markdown
+        assert page.markdown.count("---") >= 3
+
     def test_integration_markdownify_with_separators(self):
         """Full pipeline: separate_items=True with markdownify mode."""
         config = PageConfig(
