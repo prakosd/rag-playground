@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import contextlib
 import json
 import random
 import re
@@ -32,10 +31,8 @@ from crawl4md.progress import ProgressReporter
 from crawl4md.sorter import ContentSorter
 from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar, rename_files_with_total
 
-# Allow asyncio.run() inside Jupyter's already-running event loop.
-# Silently skip if the current loop type is unsupported (e.g. uvloop in Streamlit).
-with contextlib.suppress(ValueError):
-    nest_asyncio.apply()
+# Applied lazily by SiteCrawler._run_rounds_sync so Streamlit's uvloop is never
+# patched at import time.
 
 
 class _LazyModule:
@@ -50,6 +47,18 @@ class _LazyModule:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._load(), name)
+
+
+class _PrefetchedCrawler:
+    def __init__(self, results_by_url: Mapping[str, object]) -> None:
+        self._results_by_url = results_by_url
+
+    async def arun(self, *, url: str, **kwargs: object) -> object:
+        _ = kwargs["config"]
+        result = self._results_by_url[url]
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
 
 AsyncWebCrawler: Any | None = None
@@ -341,6 +350,7 @@ class SiteCrawler:
         self._site_graph_path: Path | None = None
         self._site_graph_records: dict[str, dict[str, object]] = {}
         self._site_graph_dirty: bool = False
+        self._pdf_client: httpx.AsyncClient | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -384,11 +394,7 @@ class SiteCrawler:
             self._fail_writer._output_dir = self.output_dir
             self._fail_writer.set_run_metadata(self._run_metadata)
         try:
-            if sys.platform == "win32":
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    all_results = pool.submit(self._run_rounds_in_proactor_loop).result()
-            else:
-                all_results = asyncio.run(self._run_rounds_async())
+            all_results = self._run_rounds_sync()
         except KeyboardInterrupt:
             # _run_rounds_async already flushed and wrote final files;
             # this catches any residual interrupt from asyncio teardown.
@@ -502,6 +508,33 @@ class SiteCrawler:
         finally:
             loop.close()
 
+    def _run_rounds_in_new_loop(self) -> list[CrawlResult]:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(self._run_rounds_async())
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
+
+    def _run_rounds_sync(self) -> list[CrawlResult]:
+        if sys.platform == "win32":
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(self._run_rounds_in_proactor_loop).result()
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._run_rounds_async())
+
+        try:
+            nest_asyncio.apply(loop)
+        except ValueError:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(self._run_rounds_in_new_loop).result()
+
+        return loop.run_until_complete(self._run_rounds_async())
+
     # ------------------------------------------------------------------
     # Round orchestration
     # ------------------------------------------------------------------
@@ -531,13 +564,22 @@ class SiteCrawler:
         browser_cfg = browser_config_cls(**browser_kwargs)
         run_cfg = self._build_run_config(crawler_run_config_cls)
         fallback_run_cfg = self._build_fallback_run_config(crawler_run_config_cls)
+        pdf_headers = dict(self.config.headers) if self.config.headers else {}
 
         # --- Round 1: full crawl with link discovery ---
         # Use a single browser instance across all rounds so that
         # cookies (including WAF challenge tokens) persist through retries.
         interrupted = False
         try:
-            async with async_web_crawler_cls(config=browser_cfg) as crawler:
+            async with (
+                async_web_crawler_cls(config=browser_cfg) as crawler,
+                httpx.AsyncClient(
+                    headers=pdf_headers,
+                    timeout=_PDF_DOWNLOAD_TIMEOUT,
+                    follow_redirects=True,
+                ) as pdf_client,
+            ):
+                self._pdf_client = pdf_client
                 round_dir = self._round_dir(1)
                 if self._writer is not None:
                     self._writer._output_dir = round_dir
@@ -554,7 +596,7 @@ class SiteCrawler:
                     urls=self.config.urls,
                     crawler=crawler,
                     run_cfg=run_cfg,
-                    discover_links=True,
+                    discover_links=self.config.max_depth > 1,
                     round_dir=round_dir,
                     prior_success=0,
                     prior_fail=0,
@@ -564,16 +606,13 @@ class SiteCrawler:
                     round_num=1,
                 )
                 success, fail = self._split_results(round_results)
-                if self._writer is not None:
-                    self._writer.flush()
-                if self._fail_writer is not None:
-                    self._fail_writer.flush()
+                await self._flush_writer_buffers_async()
                 all_success.extend(success)
                 succeeded_urls.update(r.url for r in success)
                 all_fail.extend(fail)
-                self._save_url_lists(all_success, fail, round_dir)
-                self._write_round_success_files(1, round_dir)
-                self._write_sorted_round_files(1, round_dir)
+                await asyncio.to_thread(self._save_url_lists, all_success, fail, round_dir)
+                await asyncio.to_thread(self._write_round_success_files, 1, round_dir)
+                await asyncio.to_thread(self._write_sorted_round_files, 1, round_dir)
 
                 failed_urls = [r.url for r in all_fail]
 
@@ -607,7 +646,7 @@ class SiteCrawler:
                         urls=failed_urls,
                         crawler=crawler,
                         run_cfg=fallback_run_cfg,
-                        discover_links=True,
+                        discover_links=self.config.max_depth > 1,
                         is_retry=True,
                         round_dir=round_dir,
                         prior_success=len(all_success),
@@ -619,10 +658,7 @@ class SiteCrawler:
                         round_num=round_num,
                     )
                     success, fail = self._split_results(round_results)
-                    if self._writer is not None:
-                        self._writer.flush()
-                    if self._fail_writer is not None:
-                        self._fail_writer.flush()
+                    await self._flush_writer_buffers_async()
                     # Deduplicate: only add genuinely new successes
                     new_success = [r for r in success if r.url not in succeeded_urls]
                     all_success.extend(new_success)
@@ -633,9 +669,9 @@ class SiteCrawler:
                     existing_fail_urls = {r.url for r in all_fail}
                     all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
                     failed_urls = [r.url for r in fail]
-                    self._save_url_lists(all_success, fail, round_dir)
-                    self._write_round_success_files(round_num, round_dir)
-                    self._write_sorted_round_files(round_num, round_dir)
+                    await asyncio.to_thread(self._save_url_lists, all_success, fail, round_dir)
+                    await asyncio.to_thread(self._write_round_success_files, round_num, round_dir)
+                    await asyncio.to_thread(self._write_sorted_round_files, round_num, round_dir)
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True
@@ -657,20 +693,19 @@ class SiteCrawler:
                     "eta_remaining_seconds": None,
                 }
             )
+        finally:
+            self._pdf_client = None
 
         # --- Flush any remaining buffered content ---
-        if self._writer is not None:
-            self._writer.flush()
-        if self._fail_writer is not None:
-            self._fail_writer.flush()
-        self._flush_site_graph()
+        await self._flush_writer_buffers_async()
+        await self._flush_site_graph_async()
 
         # --- Final merged files (unsorted) ---
-        self._write_final_files(all_success, all_fail)
+        await asyncio.to_thread(self._write_final_files, all_success, all_fail)
 
         # --- Sorted final files (grouped by URL path) ---
-        self._write_sorted_files(all_success, all_fail)
-        self.content_files = self._get_final_content_files()
+        await asyncio.to_thread(self._write_sorted_files, all_success, all_fail)
+        self.content_files = await asyncio.to_thread(self._get_final_content_files)
 
         total_crawled = len(all_success) + len(all_fail)
         label = "Interrupted" if interrupted else "Done"
@@ -742,6 +777,15 @@ class SiteCrawler:
                 "limit": self.config.limit,
             }
         )
+
+    async def _flush_writer_buffers_async(self) -> None:
+        if self._writer is not None:
+            await asyncio.to_thread(self._writer.flush)
+        if self._fail_writer is not None:
+            await asyncio.to_thread(self._fail_writer.flush)
+
+    async def _flush_site_graph_async(self) -> None:
+        await asyncio.to_thread(self._flush_site_graph)
 
     @staticmethod
     def _graph_depth(crawl_depth: int) -> int:
@@ -925,6 +969,7 @@ class SiteCrawler:
         all_generated: set[str] | None = None,
         url_depths: dict[str, int] | None = None,
         round_num: int = 1,
+        _allow_concurrency: bool = True,
     ) -> list[CrawlResult]:
         """Crawl a list of URLs and return per-page results.
 
@@ -941,6 +986,27 @@ class SiteCrawler:
         maps each URL to its crawl depth so retried pages and their
         discovered links use the correct depth.
         """
+        if self._should_prefetch_static_urls(
+            urls=urls,
+            discover_links=discover_links,
+            is_retry=is_retry,
+            skip_urls=skip_urls,
+            all_generated=all_generated,
+            allow_concurrency=_allow_concurrency,
+        ):
+            return await self._crawl_static_urls_concurrently(
+                urls=urls,
+                crawler=crawler,
+                run_cfg=run_cfg,
+                round_dir=round_dir,
+                prior_success=prior_success,
+                prior_fail=prior_fail,
+                round_label=round_label,
+                all_generated=all_generated,
+                url_depths=url_depths,
+                round_num=round_num,
+            )
+
         results: list[CrawlResult] = []
         _sw = self.config.strip_www
         visited: set[str] = set(self._normalize_url(u, strip_www=_sw) for u in skip_urls)
@@ -962,7 +1028,7 @@ class SiteCrawler:
                 )
             generated.add(norm_seed)
             queue.append((seed_url, depths.get(norm_seed, 1)))
-        self._flush_site_graph()
+        await self._flush_site_graph_async()
         progress = ProgressReporter(
             max(len(queue), 1),
             prior_success=prior_success,
@@ -1108,14 +1174,11 @@ class SiteCrawler:
 
                     # Flush periodically (same cadence as normal pages)
                     if len(results) % self.config.flush_interval == 0:
-                        if self._writer is not None:
-                            self._writer.flush()
-                        if self._fail_writer is not None:
-                            self._fail_writer.flush()
-                        self._flush_site_graph()
+                        await self._flush_writer_buffers_async()
+                        await self._flush_site_graph_async()
                         if round_dir is not None:
                             success, fail = self._split_results(results)
-                            self._save_url_lists(success, fail, round_dir)
+                            await asyncio.to_thread(self._save_url_lists, success, fail, round_dir)
 
                     # Free heavy payload — content is persisted in sidecar / writer
                     crawl_result.html = ""
@@ -1329,7 +1392,9 @@ class SiteCrawler:
                     < _PDF_FALLBACK_THRESHOLD
                 ):
                     is_pdf = await self._is_pdf_response(
-                        url, dict(self.config.headers) if self.config.headers else None
+                        url,
+                        dict(self.config.headers) if self.config.headers else None,
+                        client=self._pdf_client,
                     )
                     if is_pdf:
                         progress.set_activity(f"Re-downloading as PDF {_shorten_url(url)}")
@@ -1401,14 +1466,11 @@ class SiteCrawler:
                 # Flush content and URL lists periodically
                 if len(results) % self.config.flush_interval == 0:
                     progress.set_activity(f"Writing files ({len(results)} pages)")
-                    if self._writer is not None:
-                        self._writer.flush()
-                    if self._fail_writer is not None:
-                        self._fail_writer.flush()
-                    self._flush_site_graph()
+                    await self._flush_writer_buffers_async()
+                    await self._flush_site_graph_async()
                     if round_dir is not None:
                         success, fail = self._split_results(results)
-                        self._save_url_lists(success, fail, round_dir)
+                        await asyncio.to_thread(self._save_url_lists, success, fail, round_dir)
 
                 # Throttle between pages — jitter mimics human browsing.
                 # Round 1 applies a light delay; retries apply a heavier one.
@@ -1507,6 +1569,74 @@ class SiteCrawler:
         finally:
             progress.close()
 
+    def _should_prefetch_static_urls(
+        self,
+        *,
+        urls: list[str],
+        discover_links: bool,
+        is_retry: bool,
+        skip_urls: frozenset[str],
+        all_generated: set[str] | None,
+        allow_concurrency: bool,
+    ) -> bool:
+        if not allow_concurrency or self.config.max_concurrent <= 1:
+            return False
+        if discover_links or is_retry or skip_urls or self.config.delay > 0:
+            return False
+        if all_generated is None or all_generated:
+            return False
+        if len(urls) <= 1:
+            return False
+        eligible_urls = urls[: self.config.limit]
+        normalized_urls = [
+            self._normalize_url(url, strip_www=self.config.strip_www) for url in eligible_urls
+        ]
+        if len(set(normalized_urls)) != len(normalized_urls):
+            return False
+        return all(self._url_allowed(url) and not self._is_pdf_url(url) for url in eligible_urls)
+
+    async def _crawl_static_urls_concurrently(
+        self,
+        *,
+        urls: list[str],
+        crawler: Any,
+        run_cfg: object,
+        round_dir: Path | None,
+        prior_success: int,
+        prior_fail: int,
+        round_label: str,
+        all_generated: set[str] | None,
+        url_depths: dict[str, int] | None,
+        round_num: int,
+    ) -> list[CrawlResult]:
+        semaphore = asyncio.Semaphore(self.config.max_concurrent)
+        urls_to_fetch = urls[: self.config.limit]
+
+        async def _fetch(url: str) -> object:
+            async with semaphore:
+                self._raise_if_cancelled()
+                return await crawler.arun(url=url, config=run_cfg)
+
+        raw_results = await asyncio.gather(
+            *(_fetch(url) for url in urls_to_fetch),
+            return_exceptions=True,
+        )
+        prefetched_crawler = _PrefetchedCrawler(dict(zip(urls_to_fetch, raw_results, strict=True)))
+        return await self._crawl_urls_async(
+            urls=urls_to_fetch,
+            crawler=prefetched_crawler,
+            run_cfg=run_cfg,
+            discover_links=False,
+            round_dir=round_dir,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
+            round_label=round_label,
+            all_generated=all_generated,
+            url_depths=url_depths,
+            round_num=round_num,
+            _allow_concurrency=False,
+        )
+
     # ------------------------------------------------------------------
     # Block detection
     # ------------------------------------------------------------------
@@ -1545,9 +1675,18 @@ class SiteCrawler:
         return urlparse(url).path.lower().endswith(_PDF_EXTENSION)
 
     @staticmethod
-    async def _is_pdf_response(url: str, headers: dict[str, str] | None = None) -> bool:
+    async def _is_pdf_response(
+        url: str,
+        headers: dict[str, str] | None = None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> bool:
         """Issue a HEAD request and return True if Content-Type is PDF."""
         try:
+            if client is not None:
+                resp = await client.head(url)
+                content_type = resp.headers.get("content-type", "")
+                return content_type.lower().startswith(_PDF_CONTENT_TYPE)
             async with httpx.AsyncClient(
                 headers=headers or {},
                 timeout=_PDF_DOWNLOAD_TIMEOUT,
@@ -1562,11 +1701,16 @@ class SiteCrawler:
     async def _download_pdf(self, url: str) -> CrawlResult:
         """Download a PDF and convert it to Markdown via pymupdf4llm."""
         try:
-            async with httpx.AsyncClient(
-                headers=dict(self.config.headers) if self.config.headers else {},
-                timeout=_PDF_DOWNLOAD_TIMEOUT,
-                follow_redirects=True,
-            ) as client:
+            client = getattr(self, "_pdf_client", None)
+            if client is None:
+                async with httpx.AsyncClient(
+                    headers=dict(self.config.headers) if self.config.headers else {},
+                    timeout=_PDF_DOWNLOAD_TIMEOUT,
+                    follow_redirects=True,
+                ) as fallback_client:
+                    resp = await fallback_client.get(url)
+                    resp.raise_for_status()
+            else:
                 resp = await client.get(url)
                 resp.raise_for_status()
 

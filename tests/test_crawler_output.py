@@ -314,6 +314,33 @@ class TestPagesRegistry:
             **kwargs,
         )
 
+    def test_async_flush_site_graph_writes_registry(self, tmp_path: Path) -> None:
+        crawler = SiteCrawler(self._crawler_config(["https://example.com"]), output_base=tmp_path)
+        crawler.output_dir = tmp_path
+        crawler._site_graph_path = tmp_path / _SITE_GRAPH_FILE
+        crawler._upsert_page_record(
+            normalized_url="https://example.com/a",
+            url="https://example.com/a",
+            discovered_from="https://example.com",
+            status="success",
+            page_size_kb=1.25,
+            graph_depth=1,
+            round_num=1,
+        )
+
+        asyncio.run(crawler._flush_site_graph_async())
+
+        assert _read_pages_registry(tmp_path) == [
+            {
+                "url": "https://example.com/a",
+                "discovered_from": "https://example.com",
+                "page_size_kb": 1.25,
+                "status": "success",
+                "depth": 1,
+                "round_num": 1,
+            }
+        ]
+
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_pages_registry_records_successful_discovery(
         self, mock_crawler_cls, tmp_path: Path

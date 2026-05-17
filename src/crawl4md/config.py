@@ -30,6 +30,7 @@ class CrawlerConfig(BaseModel):
     include_only_paths: list[str] = []
     limit: int = 1
     max_depth: int = 1
+    max_concurrent: int = 1
     flush_interval: int = 10
     delay: float = 0
     stealth: bool = True
@@ -98,7 +99,7 @@ class CrawlerConfig(BaseModel):
             self._compiled_include_only_paths = tuple(re.compile(p) for p in include_source)
             self._compiled_include_only_source = include_source
 
-    @field_validator("limit", "max_depth", "flush_interval")
+    @field_validator("limit", "max_depth", "max_concurrent", "flush_interval")
     @classmethod
     def validate_positive(cls, v: int) -> int:
         if v < 1:

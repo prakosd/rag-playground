@@ -142,6 +142,24 @@ class TestIsPdfResponse:
         call_kwargs = mock_cls.call_args
         assert call_kwargs.kwargs["headers"] == {"Authorization": "Bearer x"}
 
+    @pytest.mark.asyncio
+    async def test_uses_provided_client(self):
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/pdf"}
+
+        mock_client = AsyncMock()
+        mock_client.head = AsyncMock(return_value=mock_response)
+
+        with patch("crawl4md.crawler.httpx.AsyncClient") as mock_cls:
+            result = await SiteCrawler._is_pdf_response(
+                "https://example.com/report",
+                client=mock_client,
+            )
+
+        assert result is True
+        mock_client.head.assert_awaited_once_with("https://example.com/report")
+        mock_cls.assert_not_called()
+
 
 # ------------------------------------------------------------------
 # SiteCrawler._download_pdf
@@ -213,6 +231,39 @@ class TestDownloadPdf:
         assert result.success is False
         assert result.is_pdf is True
         assert "PDF download failed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_download_uses_shared_pdf_client(self):
+        config = MagicMock()
+        config.headers = {"User-Agent": "test"}
+
+        crawler = SiteCrawler.__new__(SiteCrawler)
+        crawler.config = config
+        crawler.page_config = PageConfig(ocr_languages=[])
+        crawler._ocr_warned = False
+
+        mock_response = MagicMock()
+        mock_response.content = b"fake-pdf-bytes"
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        crawler._pdf_client = mock_client
+
+        mock_doc = MagicMock()
+
+        with (
+            patch("crawl4md.crawler.httpx.AsyncClient") as mock_cls,
+            patch("crawl4md.crawler.pymupdf.open", return_value=mock_doc) as mock_open,
+            patch("crawl4md.crawler.pymupdf4llm.to_markdown", return_value="PDF content"),
+        ):
+            result = await crawler._download_pdf("https://example.com/doc.pdf")
+
+        assert result.success is True
+        assert result.markdown == "PDF content"
+        mock_client.get.assert_awaited_once_with("https://example.com/doc.pdf")
+        mock_cls.assert_not_called()
+        mock_open.assert_called_once_with(stream=b"fake-pdf-bytes", filetype="pdf")
 
 
 # ------------------------------------------------------------------

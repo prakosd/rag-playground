@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -11,6 +12,88 @@ from crawl4md.crawler import _BLOCK_SIGNATURES, SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter
 from tests.conftest import _make_mock_result
+
+
+def test_run_rounds_sync_reuses_supported_running_loop() -> None:
+    crawler = SiteCrawler(CrawlerConfig(urls=["https://example.com"]))
+    loop = asyncio.new_event_loop()
+
+    async def fake_run_rounds_async() -> list[str]:
+        return ["ok"]
+
+    crawler._run_rounds_async = fake_run_rounds_async  # type: ignore[method-assign]
+
+    try:
+        with (
+            patch("crawl4md.crawler.asyncio.get_running_loop", return_value=loop),
+            patch("crawl4md.crawler.nest_asyncio.apply") as mock_apply,
+        ):
+            assert crawler._run_rounds_sync() == ["ok"]
+
+        mock_apply.assert_called_once_with(loop)
+    finally:
+        loop.close()
+
+
+def test_run_rounds_sync_uses_worker_loop_for_unsupported_running_loop() -> None:
+    crawler = SiteCrawler(CrawlerConfig(urls=["https://example.com"]))
+
+    class _ImmediateFuture:
+        def __init__(self, value: list[str]) -> None:
+            self._value = value
+
+        def result(self) -> list[str]:
+            return self._value
+
+    class _ImmediateExecutor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def submit(self, fn):
+            return _ImmediateFuture(fn())
+
+    unsupported_loop = object()
+
+    with (
+        patch("crawl4md.crawler.asyncio.get_running_loop", return_value=unsupported_loop),
+        patch(
+            "crawl4md.crawler.nest_asyncio.apply", side_effect=ValueError("unsupported")
+        ) as mock_apply,
+        patch(
+            "crawl4md.crawler.concurrent.futures.ThreadPoolExecutor",
+            return_value=_ImmediateExecutor(),
+        ) as mock_executor,
+        patch.object(crawler, "_run_rounds_in_new_loop", return_value=["ok"]) as mock_runner,
+    ):
+        assert crawler._run_rounds_sync() == ["ok"]
+
+    mock_apply.assert_called_once_with(unsupported_loop)
+    mock_executor.assert_called_once_with(max_workers=1)
+    mock_runner.assert_called_once_with()
+
+
+def test_run_rounds_sync_uses_asyncio_run_without_running_loop() -> None:
+    crawler = SiteCrawler(CrawlerConfig(urls=["https://example.com"]))
+
+    async def fake_run_rounds_async() -> list[str]:
+        return ["ok"]
+
+    crawler._run_rounds_async = fake_run_rounds_async  # type: ignore[method-assign]
+
+    def fake_asyncio_run(coroutine):
+        coroutine.close()
+        return ["ok"]
+
+    with (
+        patch("crawl4md.crawler.asyncio.get_running_loop", side_effect=RuntimeError),
+        patch("crawl4md.crawler.asyncio.run", side_effect=fake_asyncio_run) as mock_run,
+    ):
+        assert crawler._run_rounds_sync() == ["ok"]
+
+    mock_run.assert_called_once()
 
 
 class TestSiteCrawler:
@@ -142,6 +225,146 @@ class TestSiteCrawler:
         assert urls_file.exists()
         lines = urls_file.read_text(encoding="utf-8").splitlines()
         assert lines == ["https://example.com/a", "https://example.com/b"]
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_default_static_crawl_remains_serial(self, mock_crawler_cls, tmp_path: Path):
+        active_calls = 0
+        max_active_calls = 0
+        events: list[tuple[str, str]] = []
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_calls, max_active_calls
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            events.append(("start", url))
+            await asyncio.sleep(0)
+            events.append(("end", url))
+            active_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        urls = ["https://example.com/a", "https://example.com/b"]
+        config = CrawlerConfig(urls=urls, limit=2, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        crawler.crawl()
+
+        assert max_active_calls == 1
+        assert events == [
+            ("start", urls[0]),
+            ("end", urls[0]),
+            ("start", urls[1]),
+            ("end", urls[1]),
+        ]
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_static_urls_run_together(self, mock_crawler_cls, tmp_path: Path):
+        active_calls = 0
+        max_active_calls = 0
+        release: asyncio.Event | None = None
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_calls, max_active_calls, release
+            if release is None:
+                release = asyncio.Event()
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            if max_active_calls == 3:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        urls = [
+            "https://example.com/a",
+            "https://example.com/b",
+            "https://example.com/c",
+        ]
+        config = CrawlerConfig(urls=urls, limit=3, max_concurrent=3, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        results = crawler.crawl()
+
+        assert max_active_calls == 3
+        assert mock_instance.arun.await_count == 3
+        assert [result.url for result in results if result.success] == urls
+
+    def test_static_prefetch_disabled_for_order_sensitive_cases(self):
+        urls = ["https://example.com/a", "https://example.com/b"]
+        scenarios = [
+            (
+                CrawlerConfig(urls=urls, limit=2, max_depth=2, max_concurrent=2),
+                urls,
+                True,
+            ),
+            (
+                CrawlerConfig(urls=urls, limit=2, max_concurrent=2, delay=0.1),
+                urls,
+                False,
+            ),
+            (
+                CrawlerConfig(
+                    urls=["https://example.com/a.pdf", "https://example.com/b"],
+                    limit=2,
+                    max_concurrent=2,
+                ),
+                ["https://example.com/a.pdf", "https://example.com/b"],
+                False,
+            ),
+        ]
+
+        for config, candidate_urls, discover_links in scenarios:
+            crawler = SiteCrawler(config)
+            assert not crawler._should_prefetch_static_urls(
+                urls=candidate_urls,
+                discover_links=discover_links,
+                is_retry=False,
+                skip_urls=frozenset(),
+                all_generated=set(),
+                allow_concurrency=True,
+            )
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_static_url_exception_becomes_failure(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            if url.endswith("/bad"):
+                raise RuntimeError("boom")
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        urls = ["https://example.com/good", "https://example.com/bad"]
+        config = CrawlerConfig(urls=urls, limit=2, max_concurrent=2, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        results = crawler.crawl()
+
+        successes = [result for result in results if result.success]
+        failures = [result for result in results if not result.success]
+        assert [result.url for result in successes] == ["https://example.com/good"]
+        assert len(failures) == 1
+        assert failures[0].url == "https://example.com/bad"
+        assert failures[0].error == "RuntimeError: boom"
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_crawl_single_page(self, mock_crawler_cls, tmp_path: Path):

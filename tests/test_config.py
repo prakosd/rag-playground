@@ -32,6 +32,7 @@ class TestCrawlerConfig:
         assert cfg.max_depth == 1
         assert cfg.exclude_paths == []
         assert cfg.include_only_paths == []
+        assert cfg.max_concurrent == 1
         assert cfg.stealth is True
         assert cfg.headers == {}
 
@@ -50,6 +51,16 @@ class TestCrawlerConfig:
     def test_max_depth_must_be_positive(self):
         with pytest.raises(ValueError, match="at least 1"):
             CrawlerConfig(urls=["https://example.com"], max_depth=0)
+
+    @pytest.mark.parametrize("value", [0, -1])
+    def test_max_concurrent_must_be_positive(self, value: int):
+        with pytest.raises(ValueError, match="at least 1"):
+            CrawlerConfig(urls=["https://example.com"], max_concurrent=value)
+
+    @pytest.mark.parametrize("value", [1, 5])
+    def test_max_concurrent_accepts_positive_values(self, value: int):
+        cfg = CrawlerConfig(urls=["https://example.com"], max_concurrent=value)
+        assert cfg.max_concurrent == value
 
     def test_exclude_paths_from_string(self):
         cfg = CrawlerConfig(urls=["https://example.com"], exclude_paths="/admin, /login")

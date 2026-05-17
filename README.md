@@ -65,6 +65,7 @@ Output files are saved under `outputs/streamlit_sessions/` (one subfolder per br
 Development guidance in this repository uses external agent skills:
 
 - Streamlit app: [Developing with Streamlit](https://skills.sh/streamlit/agent-skills/developing-with-streamlit)
+- Async Python patterns: [async-python-patterns](https://www.skills.sh/wshobson/agents/async-python-patterns)
 - crawl4md library performance: [python-performance-optimization](https://www.skills.sh/wshobson/agents/python-performance-optimization)
 - Python design patterns: [python-design-patterns](https://www.skills.sh/wshobson/agents/python-design-patterns)
 - Python testing patterns: [python-testing-patterns](https://www.skills.sh/wshobson/agents/python-testing-patterns)
@@ -201,6 +202,7 @@ SiteCrawler.crawl()
 | `urls` | `list[str]` | *(required)* | Seed URLs to crawl (comma-separated string also accepted) |
 | `limit` | `int` | `1` | Maximum pages to crawl |
 | `max_depth` | `int` | `1` | How many clicks deep to follow links |
+| `max_concurrent` | `int` | `1` | Maximum concurrent page fetches for static one-depth crawls when `max_depth=1` and `delay=0`. `1` preserves the default serial, WAF-friendly crawl order. |
 | `exclude_paths` | `list[str]` | `[]` | Regex patterns for URLs to skip |
 | `include_only_paths` | `list[str]` | `[]` | Regex patterns for URLs to keep (skip everything else) |
 | `delay` | `float` | `0` | Seconds to wait between page crawls — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
@@ -296,6 +298,7 @@ crawl_parameters:
       - "ato.gov.au"
     limit: 2000
     max_depth: 5
+    max_concurrent: 1
     flush_interval: 1
     delay: 3.0
     stealth: true
