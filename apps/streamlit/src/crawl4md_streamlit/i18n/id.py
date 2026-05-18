@@ -66,6 +66,15 @@ STRINGS_ID: Strings = {
     "FORM_ACTIVITY_LOG_HELP": (
         "Mengontrol berapa banyak entri terbaru yang ditampilkan di panel Log Aktivitas."
     ),
+    "FORM_MAX_CONCURRENT_LABEL": "Pengambilan paralel",
+    "FORM_MAX_CONCURRENT_HELP": (
+        "Mengambil hingga N halaman secara bersamaan. 1 (default) mengirim satu "
+        "permintaan pada satu waktu dan paling aman untuk sebagian besar situs. "
+        "2-3 dapat mempercepat crawl besar pada situs yang permisif. Risiko: "
+        "nilai lebih tinggi meningkatkan kemungkinan dibatasi kecepatannya atau "
+        "diblokir. Hanya aktif saat Kedalaman tautan adalah 1 dan Jeda adalah 0. "
+        "Minimum: 1. Direkomendasikan: 1-3."
+    ),
     "FORM_EXCLUDE_TAGS_LABEL": "Tag HTML yang dihapus",
     "FORM_EXCLUDE_TAGS_HELP": (
         "Nilai umum menghapus menu, skrip, formulir, dan gaya dari teks yang diekstrak."

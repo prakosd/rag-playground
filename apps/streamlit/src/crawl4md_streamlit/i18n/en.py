@@ -64,6 +64,14 @@ STRINGS_EN: Strings = {
     "FORM_ACTIVITY_LOG_HELP": (
         "Controls how many newest entries are shown in the Activity log panel."
     ),
+    "FORM_MAX_CONCURRENT_LABEL": "Parallel fetches",
+    "FORM_MAX_CONCURRENT_HELP": (
+        "Fetches up to N pages at the same time. 1 (default) sends one request "
+        "at a time and is safest for most sites. 2-3 can speed up large crawls "
+        "on permissive sites. Trade-off: higher values increase the chance of "
+        "rate limits or blocks. Only active when Link depth is 1 and Delay is 0. "
+        "Minimum: 1. Recommended: 1-3."
+    ),
     "FORM_EXCLUDE_TAGS_LABEL": "HTML tags to remove",
     "FORM_EXCLUDE_TAGS_HELP": (
         "Common values remove menus, scripts, forms, and styles from extracted text."

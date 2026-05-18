@@ -53,6 +53,7 @@ def _form_values(*, urls: str = "https://example.com", limit: int = 1) -> dict[s
         "urls": urls,
         "limit": limit,
         "max_depth": 1,
+        "max_concurrent": 1,
         "flush_interval": 1,
         "delay": 0,
         "max_retries": 2,
@@ -910,6 +911,17 @@ def test_build_configs_surfaces_validation_errors() -> None:
         )
 
 
+def test_build_configs_passes_max_concurrent_to_crawler_config() -> None:
+    crawler_config, _, _ = build_configs(
+        {
+            **_form_values(),
+            "max_concurrent": 3,
+        }
+    )
+
+    assert crawler_config.max_concurrent == 3
+
+
 def test_build_configs_rejects_non_positive_activity_log_size() -> None:
     with pytest.raises(ValueError, match="Activity log size must be at least 1"):
         build_configs(
@@ -925,16 +937,16 @@ def test_build_configs_rejects_non_positive_activity_log_size() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _en_strings() -> dict[str, str]:
+def _en_strings() -> Mapping[str, object]:
     from crawl4md_streamlit.i18n import STRINGS_EN
 
-    return dict(STRINGS_EN)
+    return STRINGS_EN
 
 
-def _id_strings() -> dict[str, str]:
+def _id_strings() -> Mapping[str, object]:
     from crawl4md_streamlit.i18n import STRINGS_ID
 
-    return dict(STRINGS_ID)
+    return STRINGS_ID
 
 
 def test_format_eta_seconds_none_returns_estimating_en() -> None:

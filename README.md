@@ -51,7 +51,7 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 
 **What it does:**
 
-- Fill in the crawl URL, page limit, depth, and optional filters via a form
+- Fill in the crawl URL, page limit, depth, parallel fetches, and optional filters via a form
 - Click **Start** to run the crawl in the background
 - While a crawl is running, settings are locked and the action changes to **Stop**
 - Click **Stop** to request a cooperative stop; crawl4md writes final files for pages completed so far

@@ -82,8 +82,10 @@ Streamlit environment.
 ### `form_defaults.py` and `form_ui.py` — crawl settings
 
 `form_defaults.py` is pure Python and owns the default crawl settings used when the form first
-loads or resets after a terminal crawl state. `form_ui.py` is a UI module: it imports Streamlit,
-renders the crawl settings form, and returns the submitted values to `streamlit_app.py`.
+loads or resets after a terminal crawl state. That includes advanced crawler controls that map
+directly into `CrawlerConfig`, such as the `max_concurrent` parallel fetch setting. `form_ui.py`
+is a UI module: it imports Streamlit, renders the crawl settings form, and returns the submitted
+values to `streamlit_app.py`.
 
 `streamlit_app.py` still owns `st.session_state`; it passes the active strings, defaults, and
 disabled state into `render_crawl_form()`.

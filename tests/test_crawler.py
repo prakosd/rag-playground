@@ -25,6 +25,7 @@ def test_run_rounds_sync_reuses_supported_running_loop() -> None:
 
     try:
         with (
+            patch("crawl4md.crawler.sys.platform", "linux"),
             patch("crawl4md.crawler.asyncio.get_running_loop", return_value=loop),
             patch("crawl4md.crawler.nest_asyncio.apply") as mock_apply,
         ):
@@ -58,6 +59,7 @@ def test_run_rounds_sync_uses_worker_loop_for_unsupported_running_loop() -> None
     unsupported_loop = object()
 
     with (
+        patch("crawl4md.crawler.sys.platform", "linux"),
         patch("crawl4md.crawler.asyncio.get_running_loop", return_value=unsupported_loop),
         patch(
             "crawl4md.crawler.nest_asyncio.apply", side_effect=ValueError("unsupported")
@@ -88,12 +90,47 @@ def test_run_rounds_sync_uses_asyncio_run_without_running_loop() -> None:
         return ["ok"]
 
     with (
+        patch("crawl4md.crawler.sys.platform", "linux"),
         patch("crawl4md.crawler.asyncio.get_running_loop", side_effect=RuntimeError),
         patch("crawl4md.crawler.asyncio.run", side_effect=fake_asyncio_run) as mock_run,
     ):
         assert crawler._run_rounds_sync() == ["ok"]
 
     mock_run.assert_called_once()
+
+
+def test_run_rounds_sync_uses_proactor_worker_on_windows() -> None:
+    crawler = SiteCrawler(CrawlerConfig(urls=["https://example.com"]))
+
+    class _ImmediateFuture:
+        def __init__(self, value: list[str]) -> None:
+            self._value = value
+
+        def result(self) -> list[str]:
+            return self._value
+
+    class _ImmediateExecutor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def submit(self, fn):
+            return _ImmediateFuture(fn())
+
+    with (
+        patch("crawl4md.crawler.sys.platform", "win32"),
+        patch(
+            "crawl4md.crawler.concurrent.futures.ThreadPoolExecutor",
+            return_value=_ImmediateExecutor(),
+        ) as mock_executor,
+        patch.object(crawler, "_run_rounds_in_proactor_loop", return_value=["ok"]) as mock_runner,
+    ):
+        assert crawler._run_rounds_sync() == ["ok"]
+
+    mock_executor.assert_called_once_with(max_workers=1)
+    mock_runner.assert_called_once_with()
 
 
 class TestSiteCrawler:

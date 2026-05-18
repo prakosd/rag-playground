@@ -14,6 +14,7 @@ from crawl4md_streamlit.form_defaults import (
     DEFAULT_FLUSH_INTERVAL,
     DEFAULT_INCLUDE_ONLY_PATHS,
     DEFAULT_LIMIT,
+    DEFAULT_MAX_CONCURRENT,
     DEFAULT_MAX_DEPTH,
     DEFAULT_MAX_FILE_SIZE_MB,
     DEFAULT_MAX_RETRIES,
@@ -150,6 +151,13 @@ def render_crawl_form(
                     help=strings["FORM_ACTIVITY_LOG_HELP"],
                     disabled=fields_disabled,
                 )
+                max_concurrent = st.number_input(
+                    strings["FORM_MAX_CONCURRENT_LABEL"],
+                    min_value=1,
+                    value=int(defaults.get("max_concurrent", DEFAULT_MAX_CONCURRENT)),
+                    help=strings["FORM_MAX_CONCURRENT_HELP"],
+                    disabled=fields_disabled,
+                )
             exclude_tags = st.text_input(
                 strings["FORM_EXCLUDE_TAGS_LABEL"],
                 value=str(defaults.get("exclude_tags", DEFAULT_EXCLUDE_TAGS)),
@@ -191,6 +199,7 @@ def render_crawl_form(
         "exclude_paths": exclude_paths,
         "limit": limit,
         "max_depth": max_depth,
+        "max_concurrent": max_concurrent,
         "flush_interval": flush_interval,
         "delay": delay,
         "max_retries": max_retries,

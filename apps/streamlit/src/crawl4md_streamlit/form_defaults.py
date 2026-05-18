@@ -12,6 +12,7 @@ DEFAULT_FLUSH_INTERVAL = 5
 DEFAULT_INCLUDE_ONLY_PATHS = "ato.gov.au"
 DEFAULT_LIMIT = 10
 DEFAULT_MAX_DEPTH = 5
+DEFAULT_MAX_CONCURRENT = 1
 DEFAULT_MAX_FILE_SIZE_MB = 10.0
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_OUTPUT_EXTENSION = ".md"
@@ -29,6 +30,7 @@ def default_form_values() -> dict[str, Any]:
         "exclude_paths": DEFAULT_EXCLUDE_PATHS,
         "limit": DEFAULT_LIMIT,
         "max_depth": DEFAULT_MAX_DEPTH,
+        "max_concurrent": DEFAULT_MAX_CONCURRENT,
         "flush_interval": DEFAULT_FLUSH_INTERVAL,
         "delay": DEFAULT_DELAY,
         "max_retries": DEFAULT_MAX_RETRIES,

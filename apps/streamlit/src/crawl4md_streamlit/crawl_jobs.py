@@ -16,7 +16,10 @@ from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter
 
-from crawl4md_streamlit.form_defaults import DEFAULT_ACTIVITY_LOG_SIZE
+from crawl4md_streamlit.form_defaults import (
+    DEFAULT_ACTIVITY_LOG_SIZE,
+    DEFAULT_MAX_CONCURRENT,
+)
 from crawl4md_streamlit.session_manager import (
     DEFAULT_SESSIONS_ROOT,
     SESSION_PREFIX,
@@ -69,6 +72,7 @@ def build_configs(values: Mapping[str, Any]) -> tuple[CrawlerConfig, PageConfig,
         include_only_paths=values.get("include_only_paths", ""),
         limit=int(values.get("limit", 1)),
         max_depth=int(values.get("max_depth", 1)),
+        max_concurrent=int(values.get("max_concurrent", DEFAULT_MAX_CONCURRENT)),
         flush_interval=int(values.get("flush_interval", 1)),
         delay=float(values.get("delay", 0)),
         max_retries=int(values.get("max_retries", 2)),
