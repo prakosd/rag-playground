@@ -55,3 +55,34 @@ def test_emit_page_progress_counts_results_and_metadata(tmp_path: Path) -> None:
             "limit": 10,
         }
     ]
+
+
+def test_emit_page_progress_includes_optional_concurrency_metadata(tmp_path: Path) -> None:
+    events: list[object] = []
+    results = [CrawlResult(url="https://example.com/a", success=True)]
+
+    emit_page_progress(
+        events.append,
+        results,
+        generated={"a", "b"},
+        prior_success=0,
+        prior_fail=0,
+        current_url="https://example.com/a",
+        output_dir=tmp_path,
+        limit=10,
+        next_url="https://example.com/b",
+        eta_remaining_seconds=3.5,
+        active_urls=["https://example.com/a"],
+        active_url_count=4,
+        next_urls=["https://example.com/b"],
+        next_url_count=6,
+        max_concurrent=20,
+    )
+
+    event = events[0]
+    assert isinstance(event, dict)
+    assert event["active_urls"] == ["https://example.com/a"]
+    assert event["active_url_count"] == 4
+    assert event["next_urls"] == ["https://example.com/b"]
+    assert event["next_url_count"] == 6
+    assert event["max_concurrent"] == 20

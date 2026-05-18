@@ -62,8 +62,8 @@ Everything the user sees and interacts with. Responsibilities:
 - Translates button presses into job start / stop calls.
 - Drains background-thread events every Streamlit rerun and maps them to UI state
   (`_drain_job_events`).
-- Renders progress metrics and the activity log (`_render_live_area`, refreshed every 3 seconds
-  via `@st.fragment(run_every="3s")`).
+- Renders progress metrics, active/next URL previews, and the activity log (`_render_live_area`,
+  refreshed every 3 seconds via `@st.fragment(run_every="3s")`).
 - Renders the selected session's generated-file table and a per-file download + preview tree separately
   (`_render_downloads`, refreshed every 7 seconds).
 - Runs a one-time startup cleanup of old session folders (`_run_startup_cleanup`, cached with
@@ -116,6 +116,7 @@ rerun by `_drain_job_events`.
 Background thread                    st.session_state.job_state
 ──────────────────                   ──────────────────────────
 starts          → emits "started"  → "running"
+fetch batch     → emits "crawl_status" (no state change)
 page done       → emits "page_processed" (no state change)
 stop signal     → emits "cancel_requested" → "cancel_requested"
 thread ends     → emits "cancelled"  → "stopped"
@@ -133,6 +134,11 @@ Full `job_state` values and the transitions that produce them:
 | `stopped` | Thread confirmed cancellation after a Stop request |
 | `completed` | Thread finished all pages successfully |
 | `failed` | Thread threw an unhandled exception |
+
+Parallel crawl progress uses generic event fields from the core crawler. `active_url_count` and
+`next_url_count` are authoritative counts; `active_urls` and `next_urls` are capped previews for
+display. The app renders counts plus previews so any supported Parallel fetches value stays compact.
+Activity logs record concurrent reads as batch entries such as `Reading page batch (5 concurrent)`.
 
 ---
 
@@ -225,7 +231,7 @@ start_crawl_job()       creates output dirs, spawns background thread
 _drain_job_events()     dequeues events, updates st.session_state
   │
   ▼
-_render_status()        progress bar, metrics, current URL, elapsed time
+_render_status()        progress bar, metrics, active/next URLs, elapsed time
 _render_activity_log()  tail of activity_log.txt from the output dir
 _render_downloads()     dataframe + download/preview buttons for the selected session
 ```

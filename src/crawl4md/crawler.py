@@ -45,6 +45,9 @@ from crawl4md._internal.crawler_progress import (
     _PROGRESS_EVENT_STARTED as _INTERNAL_PROGRESS_EVENT_STARTED,
 )
 from crawl4md._internal.crawler_progress import (
+    _PROGRESS_EVENT_STATUS as _INTERNAL_PROGRESS_EVENT_STATUS,
+)
+from crawl4md._internal.crawler_progress import (
     emit_page_progress as _emit_page_progress_impl,
 )
 from crawl4md._internal.crawler_progress import (
@@ -323,6 +326,8 @@ _REDIRECT_STORM_ERROR = "Suspected anti-bot redirect"
 _UNRESOLVED_REDIRECT_ERROR = "Redirect to already-visited URL (unresolved)"
 # Maximum character length for shortened URLs displayed in activity labels
 _SHORT_URL_MAX_LEN = 60
+# Maximum URLs included in progress event previews. Counts remain uncapped.
+_PROGRESS_URL_PREVIEW_LIMIT = 5
 
 # Seconds between cancellation checks during long sleeps.
 _CANCEL_POLL_INTERVAL = 0.2
@@ -338,6 +343,7 @@ _PROGRESS_EVENT_DISCOVERED = _INTERNAL_PROGRESS_EVENT_DISCOVERED
 _PROGRESS_EVENT_INTERRUPTED = _INTERNAL_PROGRESS_EVENT_INTERRUPTED
 _PROGRESS_EVENT_PAGE = _INTERNAL_PROGRESS_EVENT_PAGE
 _PROGRESS_EVENT_STARTED = _INTERNAL_PROGRESS_EVENT_STARTED
+_PROGRESS_EVENT_STATUS = _INTERNAL_PROGRESS_EVENT_STATUS
 
 # Compatibility re-export for tests and callers that imported the private
 # warning constant from this module before PDF handling moved internally.
@@ -459,8 +465,14 @@ class SiteCrawler:
                 "event": _PROGRESS_EVENT_STARTED,
                 "output_dir": str(self.output_dir),
                 "limit": self.config.limit,
+                "current_url": "",
                 "next_url": "",
                 "eta_remaining_seconds": None,
+                "active_url_count": 0,
+                "active_urls": [],
+                "next_url_count": 0,
+                "next_urls": [],
+                "max_concurrent": self.config.max_concurrent,
             }
         )
         # Attach output_dir to writer so incremental flushes land there
@@ -766,8 +778,14 @@ class SiteCrawler:
                     "failed_pages": len(all_fail),
                     "processed_pages": len(all_success) + len(all_fail),
                     "limit": self.config.limit,
+                    "current_url": "",
                     "next_url": "",
                     "eta_remaining_seconds": None,
+                    "active_url_count": 0,
+                    "active_urls": [],
+                    "next_url_count": 0,
+                    "next_urls": [],
+                    "max_concurrent": self.config.max_concurrent,
                 }
             )
         finally:
@@ -810,8 +828,14 @@ class SiteCrawler:
                 "processed_pages": total_crawled,
                 "queued_discovered_urls": total_crawled,
                 "limit": self.config.limit,
+                "current_url": "",
                 "next_url": "",
                 "eta_remaining_seconds": None,
+                "active_url_count": 0,
+                "active_urls": [],
+                "next_url_count": 0,
+                "next_urls": [],
+                "max_concurrent": self.config.max_concurrent,
             }
         )
         if self.output_dir is not None:
@@ -834,6 +858,10 @@ class SiteCrawler:
         current_url: str,
         next_url: str = "",
         eta_remaining_seconds: float | None = None,
+        active_urls: list[str] | None = None,
+        active_url_count: int | None = None,
+        next_urls: list[str] | None = None,
+        next_url_count: int | None = None,
     ) -> None:
         """Emit a compact page-progress event."""
         _emit_page_progress_impl(
@@ -847,6 +875,11 @@ class SiteCrawler:
             limit=self.config.limit,
             next_url=next_url,
             eta_remaining_seconds=eta_remaining_seconds,
+            active_urls=active_urls,
+            active_url_count=active_url_count,
+            next_urls=next_urls,
+            next_url_count=next_url_count,
+            max_concurrent=self.config.max_concurrent,
         )
 
     async def _flush_writer_buffers_async(self) -> None:
@@ -1010,6 +1043,41 @@ class SiteCrawler:
         progress.set_activity(f"Pausing to avoid blocks ({wait_seconds:.1f}s)")
         await self._sleep_with_cancel(wait_seconds)
 
+    @staticmethod
+    def _preview_progress_urls(urls: list[str]) -> list[str]:
+        return urls[:_PROGRESS_URL_PREVIEW_LIMIT]
+
+    def _next_progress_urls(self, queue: list[tuple[str, int]]) -> list[str]:
+        if not queue:
+            return []
+        next_count = min(len(queue), self.config.max_concurrent)
+        return [url for url, _ in queue[:next_count]]
+
+    def _emit_active_fetch_progress(
+        self,
+        *,
+        active_urls: list[str],
+        next_urls: list[str],
+        eta_remaining_seconds: float | None = None,
+    ) -> None:
+        active_preview = self._preview_progress_urls(active_urls)
+        next_preview = self._preview_progress_urls(next_urls)
+        self._emit_progress(
+            {
+                "event": _PROGRESS_EVENT_STATUS,
+                "current_url": active_preview[0] if active_preview else "",
+                "next_url": next_preview[0] if next_preview else "",
+                "active_url_count": len(active_urls),
+                "active_urls": active_preview,
+                "next_url_count": len(next_urls),
+                "next_urls": next_preview,
+                "max_concurrent": self.config.max_concurrent,
+                "limit": self.config.limit,
+                "eta_remaining_seconds": eta_remaining_seconds,
+                "output_dir": str(self.output_dir) if self.output_dir else "",
+            }
+        )
+
     def _next_concurrent_frontier(
         self,
         queue: list[tuple[str, int]],
@@ -1059,6 +1127,7 @@ class SiteCrawler:
         progress: ProgressReporter,
         is_retry: bool,
         next_start_at: float,
+        next_urls: list[str],
     ) -> tuple[dict[str, Any], float]:
         tasks: list[asyncio.Task[Any]] = []
         started_urls: list[str] = []
@@ -1069,14 +1138,19 @@ class SiteCrawler:
                     progress=progress,
                 )
                 self._raise_if_cancelled()
-                progress.set_activity(f"Reading page {_shorten_url(url)}")
                 tasks.append(
                     asyncio.create_task(
                         self._fetch_html_url(url=url, crawler=crawler, run_cfg=run_cfg)
                     )
                 )
                 started_urls.append(url)
+                self._emit_active_fetch_progress(
+                    active_urls=started_urls,
+                    next_urls=next_urls,
+                    eta_remaining_seconds=progress.eta_remaining_seconds(),
+                )
                 next_start_at = self._next_fetch_start_after_delay(is_retry=is_retry)
+            progress.set_activity(f"Reading page batch ({len(started_urls)} concurrent)")
             raw_results = await asyncio.gather(*tasks, return_exceptions=True)
         except asyncio.CancelledError:
             raw_results = await asyncio.gather(*tasks, return_exceptions=True) if tasks else []
@@ -1187,6 +1261,7 @@ class SiteCrawler:
                         prefetched_urls=set(prefetched_results),
                     )
                     if frontier:
+                        next_progress_urls = self._next_progress_urls(queue[len(frontier) :])
                         (
                             new_prefetched,
                             next_fetch_start_at,
@@ -1197,6 +1272,7 @@ class SiteCrawler:
                             progress=progress,
                             is_retry=is_retry,
                             next_start_at=next_fetch_start_at,
+                            next_urls=next_progress_urls,
                         )
                         prefetched_results.update(new_prefetched)
 
@@ -1440,14 +1516,19 @@ class SiteCrawler:
                     )
 
                 progress.update(crawl_result.url, success=crawl_result.success)
+                next_progress_urls = self._next_progress_urls(queue)
                 self._emit_page_progress(
                     results,
                     generated=generated,
                     prior_success=prior_success,
                     prior_fail=prior_fail,
                     current_url=crawl_result.url,
-                    next_url=queue[0][0] if queue else "",
+                    next_url=next_progress_urls[0] if next_progress_urls else "",
                     eta_remaining_seconds=progress.eta_remaining_seconds(),
+                    active_urls=[],
+                    active_url_count=0,
+                    next_urls=self._preview_progress_urls(next_progress_urls),
+                    next_url_count=len(next_progress_urls),
                 )
 
                 # WAF back-off: pause after a block so the WAF can cool down.
@@ -1622,14 +1703,19 @@ class SiteCrawler:
             self._record_failed_page_content(crawl_result, raw_response=raw_body)
 
         progress.update(crawl_result.url, success=crawl_result.success)
+        next_progress_urls = self._next_progress_urls(queue)
         self._emit_page_progress(
             results,
             generated=generated,
             prior_success=prior_success,
             prior_fail=prior_fail,
             current_url=crawl_result.url,
-            next_url=queue[0][0] if queue else "",
+            next_url=next_progress_urls[0] if next_progress_urls else "",
             eta_remaining_seconds=progress.eta_remaining_seconds(),
+            active_urls=[],
+            active_url_count=0,
+            next_urls=self._preview_progress_urls(next_progress_urls),
+            next_url_count=len(next_progress_urls),
         )
 
         self._record_page_terminal(
@@ -1717,6 +1803,10 @@ class SiteCrawler:
                 prior_fail=prior_fail,
                 current_url=skipped_url,
                 eta_remaining_seconds=progress.eta_remaining_seconds(),
+                active_urls=[],
+                active_url_count=0,
+                next_urls=[],
+                next_url_count=0,
             )
         skipped_redirect_urls.clear()
 
@@ -1751,14 +1841,19 @@ class SiteCrawler:
             crawl_depth=crawl_depth,
         )
         progress.update(url, success=False)
+        next_progress_urls = self._next_progress_urls(queue)
         self._emit_page_progress(
             results,
             generated=generated,
             prior_success=prior_success,
             prior_fail=prior_fail,
             current_url=url,
-            next_url=queue[0][0] if queue else "",
+            next_url=next_progress_urls[0] if next_progress_urls else "",
             eta_remaining_seconds=progress.eta_remaining_seconds(),
+            active_urls=[],
+            active_url_count=0,
+            next_urls=self._preview_progress_urls(next_progress_urls),
+            next_url_count=len(next_progress_urls),
         )
 
         backoff = max(

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from crawl4md.config import CrawlerConfig, PageConfig
-from crawl4md.crawler import _BLOCK_SIGNATURES, SiteCrawler
+from crawl4md.crawler import _BLOCK_SIGNATURES, _PROGRESS_EVENT_STATUS, SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.writer import FileWriter
 from tests.conftest import _make_mock_result
@@ -338,6 +339,180 @@ class TestSiteCrawler:
         assert max_active_calls == 3
         assert mock_instance.arun.await_count == 3
         assert [result.url for result in results if result.success] == urls
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_progress_events_show_active_and_next_urls(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        active_calls = 0
+        max_active_calls = 0
+        release: asyncio.Event | None = None
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_calls, max_active_calls, release
+            if release is None:
+                release = asyncio.Event()
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            if max_active_calls == 3:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict[str, object]] = []
+
+        def collect_event(event: Mapping[str, object]) -> None:
+            events.append(dict(event))
+
+        urls = [
+            "https://example.com/a",
+            "https://example.com/b",
+            "https://example.com/c",
+            "https://example.com/d",
+        ]
+        config = CrawlerConfig(urls=urls, limit=4, max_concurrent=3, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=collect_event)
+
+        crawler.crawl()
+
+        status_events = [event for event in events if event.get("event") == _PROGRESS_EVENT_STATUS]
+        assert status_events
+        full_batch_event = next(
+            event for event in status_events if event.get("active_url_count") == 3
+        )
+        assert full_batch_event["active_urls"] == urls[:3]
+        assert full_batch_event["next_url_count"] == 1
+        assert full_batch_event["next_urls"] == [urls[3]]
+
+        page_events = [event for event in events if event.get("event") == "page_processed"]
+        assert page_events[0]["active_url_count"] == 0
+        assert page_events[0]["active_urls"] == []
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_progress_preview_is_capped_for_large_ui_value(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        active_calls = 0
+        max_active_calls = 0
+        release: asyncio.Event | None = None
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_calls, max_active_calls, release
+            if release is None:
+                release = asyncio.Event()
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            if max_active_calls == 20:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict[str, object]] = []
+
+        def collect_event(event: Mapping[str, object]) -> None:
+            events.append(dict(event))
+
+        urls = [f"https://example.com/page-{index}" for index in range(25)]
+        config = CrawlerConfig(urls=urls, limit=25, max_concurrent=20, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=collect_event)
+
+        crawler.crawl()
+
+        status_events = [event for event in events if event.get("event") == _PROGRESS_EVENT_STATUS]
+        large_batch_event = next(
+            event for event in status_events if event.get("active_url_count") == 20
+        )
+        assert large_batch_event["max_concurrent"] == 20
+        assert large_batch_event["active_url_count"] == 20
+        assert large_batch_event["active_urls"] == urls[:5]
+        assert large_batch_event["next_url_count"] == 5
+        assert large_batch_event["next_urls"] == urls[20:25]
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_one_does_not_emit_active_batch_status(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(
+            side_effect=[
+                _make_mock_result("https://example.com/a", "<p>a</p>", "a"),
+                _make_mock_result("https://example.com/b", "<p>b</p>", "b"),
+            ]
+        )
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict[str, object]] = []
+
+        def collect_event(event: Mapping[str, object]) -> None:
+            events.append(dict(event))
+
+        urls = ["https://example.com/a", "https://example.com/b"]
+        config = CrawlerConfig(urls=urls, limit=2, max_concurrent=1, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=collect_event)
+
+        crawler.crawl()
+
+        status_events = [event for event in events if event.get("event") == _PROGRESS_EVENT_STATUS]
+        assert status_events == []
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_activity_log_records_batch_entry(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        active_calls = 0
+        max_active_calls = 0
+        release: asyncio.Event | None = None
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_calls, max_active_calls, release
+            if release is None:
+                release = asyncio.Event()
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            if max_active_calls == 3:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        urls = [
+            "https://example.com/a",
+            "https://example.com/b",
+            "https://example.com/c",
+        ]
+        config = CrawlerConfig(urls=urls, limit=3, max_concurrent=3, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        log_text = (crawler.output_dir / "activity_log.txt").read_text(encoding="utf-8")
+        assert "Reading page batch (3 concurrent)" in log_text
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_max_concurrent_prefetched_pages_drain_after_cancel_request(
@@ -2226,7 +2401,7 @@ class TestProgressEventFields:
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_started_completed_events_have_safe_defaults(self, mock_crawler_cls, tmp_path: Path):
-        """crawl_started and crawl_completed events carry next_url='' and eta_remaining_seconds=None."""
+        """crawl_started and crawl_completed events clear URL and ETA status fields."""
         mock_instance = AsyncMock()
         mock_instance.arun = AsyncMock(
             return_value=_make_mock_result("https://example.com", "<p>ok</p>", "ok")
@@ -2244,10 +2419,12 @@ class TestProgressEventFields:
         completed = next((e for e in events if e.get("event") == "crawl_completed"), None)
 
         assert started is not None
+        assert started["current_url"] == ""
         assert started["next_url"] == ""
         assert started["eta_remaining_seconds"] is None
 
         assert completed is not None
+        assert completed["current_url"] == ""
         assert completed["next_url"] == ""
         assert completed["eta_remaining_seconds"] is None
 

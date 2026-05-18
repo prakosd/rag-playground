@@ -16,7 +16,9 @@ elapsed_time_display = _crawl_jobs.elapsed_time_display
 estimate_progress = _crawl_jobs.estimate_progress
 format_eta_seconds = _crawl_jobs.format_eta_seconds
 format_status_row = _crawl_jobs.format_status_row
+format_status_url_preview = _crawl_jobs.format_status_url_preview
 job_state_from_event = _crawl_jobs.job_state_from_event
+normalize_event_urls = _crawl_jobs.normalize_event_urls
 request_cancel = _crawl_jobs.request_cancel
 start_crawl_job = _crawl_jobs.start_crawl_job
 
@@ -75,12 +77,14 @@ __all__ = [
     "find_latest_crawl_dir",
     "format_eta_seconds",
     "format_status_row",
+    "format_status_url_preview",
     "generate_crawl_id",
     "generate_safe_id",
     "is_text_previewable",
     "job_state_from_event",
     "latest_session_id",
     "list_generated_files",
+    "normalize_event_urls",
     "normalize_session_records",
     "prepare_crawl_output_base",
     "prepare_session_dir",

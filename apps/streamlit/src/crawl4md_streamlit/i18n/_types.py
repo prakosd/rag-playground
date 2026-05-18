@@ -96,6 +96,9 @@ class Strings(TypedDict):
     STATUS_CRAWLING: str  # template: {url_html}
     STATUS_ELAPSED: str  # template: {elapsed}
     STATUS_NEXT_URL: str  # template: {url_html}
+    STATUS_ACTIVE_FETCHES: str  # template: {count}, {max}
+    STATUS_NEXT_FETCHES: str  # template: {count}
+    STATUS_MORE_URLS: str  # template: {count}
     # ── ETA phrases ───────────────────────────────────────────────────────
     ETA_ESTIMATING: str
     ETA_LESS_THAN_MINUTE: str

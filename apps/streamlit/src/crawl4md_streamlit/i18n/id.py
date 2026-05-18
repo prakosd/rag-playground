@@ -134,6 +134,9 @@ STRINGS_ID: Strings = {
     "STATUS_CRAWLING": "Merayapi: {url_html}",
     "STATUS_ELAPSED": "Waktu berlalu: {elapsed}",
     "STATUS_NEXT_URL": "Berikutnya: {url_html}",
+    "STATUS_ACTIVE_FETCHES": "Pengambilan aktif ({count} dari {max} dikonfigurasi)",
+    "STATUS_NEXT_FETCHES": "Berikutnya ({count})",
+    "STATUS_MORE_URLS": "+{count} lainnya",
     # ── ETA phrases ───────────────────────────────────────────────────────
     "ETA_ESTIMATING": "Mengestimasi...",
     "ETA_LESS_THAN_MINUTE": "Kurang dari satu menit lagi",

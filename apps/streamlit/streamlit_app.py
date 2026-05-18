@@ -34,11 +34,13 @@ from crawl4md_streamlit.support import (
     find_latest_crawl_dir,
     format_eta_seconds,
     format_status_row,
+    format_status_url_preview,
     generate_crawl_id,
     is_text_previewable,
     job_state_from_event,
     latest_session_id,
     list_generated_files,
+    normalize_event_urls,
     normalize_session_records,
     preview_created_timestamp,
     read_recent_lines,
@@ -797,13 +799,47 @@ def _render_status() -> None:
         )
 
         current_url = str(latest.get("current_url", ""))
+        active_urls = normalize_event_urls(latest.get("active_urls", []))
+        active_url_count = max(
+            int(latest.get("active_url_count", len(active_urls)) or 0),
+            len(active_urls),
+        )
+        max_concurrent = max(
+            int(latest.get("max_concurrent", active_url_count or 1) or 1),
+            active_url_count,
+        )
         elapsed_str = elapsed_time_display(
             started_at=st.session_state.started_at,
             job_state=st.session_state.job_state,
             frozen_elapsed=st.session_state.last_elapsed,
         )
-        if current_url or elapsed_str:
-            right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
+        right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
+        if active_url_count > 1:
+            st.markdown(
+                format_status_url_preview(
+                    label=strings["STATUS_ACTIVE_FETCHES"].format(
+                        count=active_url_count,
+                        max=max_concurrent,
+                    ),
+                    urls=active_urls,
+                    total_count=active_url_count,
+                    right_text=right,
+                    style=_STATUS_ROW_STYLE,
+                    overflow_template=strings["STATUS_MORE_URLS"],
+                ),
+                unsafe_allow_html=True,
+            )
+        elif active_url_count == 1 and active_urls:
+            st.markdown(
+                format_status_row(
+                    url=active_urls[0],
+                    url_template=strings["STATUS_CRAWLING"],
+                    right_text=right,
+                    style=_STATUS_ROW_STYLE,
+                ),
+                unsafe_allow_html=True,
+            )
+        elif current_url or elapsed_str:
             st.markdown(
                 format_status_row(
                     url=current_url,
@@ -815,13 +851,32 @@ def _render_status() -> None:
             )
 
         next_url = str(latest.get("next_url", ""))
+        next_urls = normalize_event_urls(latest.get("next_urls", []))
+        if not next_urls and next_url:
+            next_urls = [next_url]
+        next_url_count = max(
+            int(latest.get("next_url_count", len(next_urls)) or 0),
+            len(next_urls),
+        )
         eta_seconds_raw = latest.get("eta_remaining_seconds")
         eta_seconds = float(eta_seconds_raw) if eta_seconds_raw is not None else None
         eta_text = format_eta_seconds(eta_seconds, strings)
-        if next_url or eta_seconds is not None:
+        if next_url_count > 1:
+            st.markdown(
+                format_status_url_preview(
+                    label=strings["STATUS_NEXT_FETCHES"].format(count=next_url_count),
+                    urls=next_urls,
+                    total_count=next_url_count,
+                    right_text=eta_text,
+                    style=_STATUS_ROW_STYLE,
+                    overflow_template=strings["STATUS_MORE_URLS"],
+                ),
+                unsafe_allow_html=True,
+            )
+        elif next_urls or eta_seconds is not None:
             st.markdown(
                 format_status_row(
-                    url=next_url,
+                    url=next_urls[0] if next_urls else "",
                     url_template=strings["STATUS_NEXT_URL"],
                     right_text=eta_text,
                     style=_STATUS_ROW_STYLE,

@@ -28,12 +28,14 @@ from crawl4md_streamlit.support import (
     find_latest_crawl_dir,
     format_eta_seconds,
     format_status_row,
+    format_status_url_preview,
     generate_crawl_id,
     generate_safe_id,
     is_text_previewable,
     job_state_from_event,
     latest_session_id,
     list_generated_files,
+    normalize_event_urls,
     normalize_session_records,
     prepare_crawl_output_base,
     prepare_session_dir,
@@ -762,6 +764,14 @@ def test_start_crawl_job_reports_success_and_failure_counts(
     assert completed["processed_pages"] == 2
     assert completed["successful_pages"] == 1
     assert completed["failed_pages"] == 1
+    assert completed["current_url"] == ""
+    assert completed["next_url"] == ""
+    assert completed["eta_remaining_seconds"] is None
+    assert completed["active_url_count"] == 0
+    assert completed["active_urls"] == []
+    assert completed["next_url_count"] == 0
+    assert completed["next_urls"] == []
+    assert completed["max_concurrent"] == crawler_config.max_concurrent
 
 
 def test_start_crawl_job_reports_missing_playwright_browser_hint(
@@ -826,6 +836,14 @@ def test_start_crawl_job_reports_generic_error_details(
 
     assert [event["event"] for event in events] == ["started", "failed"]
     assert events[-1]["error"] == "ValueError: boom"
+    assert events[-1]["current_url"] == ""
+    assert events[-1]["next_url"] == ""
+    assert events[-1]["eta_remaining_seconds"] is None
+    assert events[-1]["active_url_count"] == 0
+    assert events[-1]["active_urls"] == []
+    assert events[-1]["next_url_count"] == 0
+    assert events[-1]["next_urls"] == []
+    assert events[-1]["max_concurrent"] == crawler_config.max_concurrent
 
 
 def test_start_crawl_job_reports_cancelled_after_request(
@@ -1038,5 +1056,33 @@ def test_format_status_row_escapes_url_and_right_text() -> None:
 
     assert '" onmouseover="' not in markup
     assert "&quot; onmouseover=&quot;" in markup
+    assert "<script>" not in markup
+    assert "&lt;script&gt;alert(&quot;" in markup
+
+
+def test_normalize_event_urls_accepts_strings_and_iterables() -> None:
+    assert normalize_event_urls("https://example.com/a") == ["https://example.com/a"]
+    assert normalize_event_urls(["https://example.com/a", "", 123]) == ["https://example.com/a"]
+    assert normalize_event_urls({"url": "https://example.com/a"}) == []
+
+
+# Risk: active/next URL previews render crawler-provided values as HTML. Type: unit.
+def test_format_status_url_preview_escapes_links_and_overflow() -> None:
+    markup = format_status_url_preview(
+        label="Active fetches (2 of 5 configured)",
+        urls=[
+            "https://example.com/a",
+            'https://example.com/" onclick="alert(1)',
+        ],
+        total_count=4,
+        right_text='<script>alert("x")</script>',
+        style="display:flex",
+        overflow_template="+{count} more",
+    )
+
+    assert 'href="https://example.com/a"' in markup
+    assert 'onclick="alert' not in markup
+    assert "&quot; onclick=&quot;alert" in markup
+    assert "+2 more" in markup
     assert "<script>" not in markup
     assert "&lt;script&gt;alert(&quot;" in markup

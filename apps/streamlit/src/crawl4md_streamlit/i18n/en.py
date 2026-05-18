@@ -129,6 +129,9 @@ STRINGS_EN: Strings = {
     "STATUS_CRAWLING": "Crawling: {url_html}",
     "STATUS_ELAPSED": "Elapsed time: {elapsed}",
     "STATUS_NEXT_URL": "Next: {url_html}",
+    "STATUS_ACTIVE_FETCHES": "Active fetches ({count} of {max} configured)",
+    "STATUS_NEXT_FETCHES": "Next up ({count})",
+    "STATUS_MORE_URLS": "+{count} more",
     # ── ETA phrases ───────────────────────────────────────────────────────
     "ETA_ESTIMATING": "Estimating...",
     "ETA_LESS_THAN_MINUTE": "Less than a minute left",

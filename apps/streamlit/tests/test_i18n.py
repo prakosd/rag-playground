@@ -163,3 +163,20 @@ def test_eta_hours_minutes_has_h_and_m_placeholders() -> None:
 def test_status_next_url_has_url_html_placeholder() -> None:
     assert "{url_html}" in STRINGS_EN["STATUS_NEXT_URL"]
     assert "{url_html}" in STRINGS_ID["STATUS_NEXT_URL"]
+
+
+def test_status_active_fetches_has_count_and_max_placeholders() -> None:
+    assert "{count}" in STRINGS_EN["STATUS_ACTIVE_FETCHES"]
+    assert "{max}" in STRINGS_EN["STATUS_ACTIVE_FETCHES"]
+    assert "{count}" in STRINGS_ID["STATUS_ACTIVE_FETCHES"]
+    assert "{max}" in STRINGS_ID["STATUS_ACTIVE_FETCHES"]
+
+
+def test_status_next_fetches_has_count_placeholder() -> None:
+    assert "{count}" in STRINGS_EN["STATUS_NEXT_FETCHES"]
+    assert "{count}" in STRINGS_ID["STATUS_NEXT_FETCHES"]
+
+
+def test_status_more_urls_has_count_placeholder() -> None:
+    assert "{count}" in STRINGS_EN["STATUS_MORE_URLS"]
+    assert "{count}" in STRINGS_ID["STATUS_MORE_URLS"]

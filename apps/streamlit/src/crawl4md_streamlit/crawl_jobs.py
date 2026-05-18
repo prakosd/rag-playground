@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import queue
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +36,11 @@ _ELAPSED_ACTIVE_STATES = frozenset({_STATE_RUNNING, _EVENT_CANCEL_REQUESTED})
 
 _PLAYWRIGHT_INSTALL_HINT = "playwright install"
 _PLAYWRIGHT_MISSING_EXECUTABLE_MARKER = "BrowserType.launch: Executable doesn't exist at"
+_STATUS_URL_ITEM_STYLE = "display:block;overflow-wrap:anywhere;line-height:1.35"
+_STATUS_URL_LABEL_STYLE = "font-weight:600"
+_STATUS_URL_LIST_STYLE = "min-width:0"
+_STATUS_URL_OVERFLOW_STYLE = "display:block;opacity:0.75"
+_STATUS_URL_RIGHT_STYLE = "white-space:nowrap;margin-left:1rem"
 PLAYWRIGHT_MISSING_BROWSER_MESSAGE = (
     "Playwright browser binaries are missing in this Python environment. "
     "Install Chromium and then retry the crawl:\n"
@@ -158,6 +163,71 @@ def format_status_row(
     )
 
 
+def normalize_event_urls(value: object) -> list[str]:
+    """Return URL strings from a progress-event value."""
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, Mapping) or not isinstance(value, Iterable):
+        return []
+    urls: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item:
+            urls.append(item)
+    return urls
+
+
+def format_status_url_preview(
+    *,
+    label: str,
+    urls: list[str],
+    total_count: int,
+    right_text: str,
+    style: str,
+    overflow_template: str,
+) -> str:
+    """Return status-row HTML for a capped list of crawler-provided URLs."""
+    escaped_label = html.escape(label, quote=True)
+    escaped_right = html.escape(right_text, quote=True)
+    escaped_style = html.escape(style, quote=True)
+    url_items = "".join(
+        f'<span style="{_STATUS_URL_ITEM_STYLE}">'
+        f'<a href="{html.escape(url, quote=True)}" target="_blank" '
+        f'rel="noopener noreferrer">{html.escape(url)}</a>'
+        "</span>"
+        for url in urls
+    )
+    overflow_count = max(total_count - len(urls), 0)
+    overflow_html = ""
+    if overflow_count:
+        overflow_html = (
+            f'<span style="{_STATUS_URL_OVERFLOW_STYLE}">'
+            f"{html.escape(overflow_template.format(count=overflow_count), quote=True)}"
+            "</span>"
+        )
+    return (
+        f'<div style="{escaped_style}">'
+        f'<span style="{_STATUS_URL_LIST_STYLE}">'
+        f'<span style="{_STATUS_URL_LABEL_STYLE}">{escaped_label}</span>'
+        f"{url_items}{overflow_html}"
+        "</span>"
+        f'<span style="{_STATUS_URL_RIGHT_STYLE}">{escaped_right}</span>'
+        "</div>"
+    )
+
+
+def _cleared_concurrent_progress(crawler_config: CrawlerConfig) -> dict[str, object]:
+    return {
+        "current_url": "",
+        "next_url": "",
+        "eta_remaining_seconds": None,
+        "active_url_count": 0,
+        "active_urls": [],
+        "next_url_count": 0,
+        "next_urls": [],
+        "max_concurrent": crawler_config.max_concurrent,
+    }
+
+
 def start_crawl_job(
     *,
     session_id: str,
@@ -216,6 +286,7 @@ def start_crawl_job(
                     "successful_pages": success_count,
                     "failed_pages": fail_count,
                     "limit": crawler_config.limit,
+                    **_cleared_concurrent_progress(crawler_config),
                 }
             )
         except Exception as exc:  # noqa: BLE001 - surface background errors to the UI.
@@ -226,6 +297,7 @@ def start_crawl_job(
                     "crawl_id": crawl_id,
                     "error": _format_crawl_error(exc),
                     "limit": crawler_config.limit,
+                    **_cleared_concurrent_progress(crawler_config),
                 }
             )
 

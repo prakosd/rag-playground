@@ -130,7 +130,7 @@ class TestRetryRounds:
         mock_instance.__aexit__ = AsyncMock(return_value=False)
         mock_crawler_cls.return_value = mock_instance
 
-        config = CrawlerConfig(urls=[original, target], limit=10)
+        config = CrawlerConfig(urls=[original, target], limit=10, max_concurrent=1)
         crawler = SiteCrawler(config, output_base=tmp_path)
         results = crawler.crawl()
 
@@ -139,6 +139,31 @@ class TestRetryRounds:
         assert results[0].url == target
         # arun should be called only once (the second URL is skipped before crawling)
         assert mock_instance.arun.call_count == 1
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_redirect_deduplicates_when_both_seed_urls_prefetched(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """Concurrent seeds may both start, but redirect targets still collapse to one result."""
+        original = "https://example.com/old"
+        target = "https://example.com/new"
+
+        mock_result_redirect = _make_mock_result(original, redirected_url=target)
+        mock_result_direct = _make_mock_result(target)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=[mock_result_redirect, mock_result_direct])
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=[original, target], limit=10, max_concurrent=2)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        assert len(results) == 1
+        assert results[0].url == target
+        assert mock_instance.arun.call_count == 2
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_redirect_deduplicates_reverse_order(self, mock_crawler_cls, tmp_path: Path):

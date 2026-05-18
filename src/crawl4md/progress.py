@@ -341,7 +341,7 @@ class ProgressReporter:
         if self.count == 0:
             return None
         elapsed = time.time() - self._start_time
-        return elapsed / self.count * (self.total - self.count)
+        return elapsed / self.count * max(self.total - self.count, 0)
 
     # ------------------------------------------------------------------
     # Activity tracking
