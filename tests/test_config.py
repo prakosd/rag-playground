@@ -32,7 +32,7 @@ class TestCrawlerConfig:
         assert cfg.max_depth == 1
         assert cfg.exclude_paths == []
         assert cfg.include_only_paths == []
-        assert cfg.max_concurrent == 1
+        assert cfg.max_concurrent == 5
         assert cfg.stealth is True
         assert cfg.headers == {}
 

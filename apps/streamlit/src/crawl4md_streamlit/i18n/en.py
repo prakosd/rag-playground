@@ -67,11 +67,11 @@ STRINGS_EN: Strings = {
     "FORM_MAX_CONCURRENT_LABEL": "Parallel fetches",
     "FORM_MAX_CONCURRENT_HELP": (
         "Fetches up to N already discovered pages at the same time during the "
-        "initial crawl. 1 (default) sends one request at a time and is safest "
-        "for most sites. 2-3 can speed up large crawls on permissive sites. "
+        "initial crawl. 5 (default) can speed up large crawls on permissive "
+        "sites. Use 1 for strict or easily rate-limited sites. "
         "Delay still spaces request starts; retries stay serial for WAF safety. "
         "Trade-off: higher values increase the chance of rate limits or blocks. "
-        "Minimum: 1. Recommended: 1-3."
+        "Minimum: 1. Recommended: 1-5."
     ),
     "FORM_EXCLUDE_TAGS_LABEL": "HTML tags to remove",
     "FORM_EXCLUDE_TAGS_HELP": (

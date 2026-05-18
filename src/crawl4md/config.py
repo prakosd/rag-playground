@@ -30,7 +30,7 @@ class CrawlerConfig(BaseModel):
     include_only_paths: list[str] = []
     limit: int = 1
     max_depth: int = 1
-    max_concurrent: int = 1
+    max_concurrent: int = 5
     flush_interval: int = 10
     delay: float = 0
     stealth: bool = True

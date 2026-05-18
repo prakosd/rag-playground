@@ -69,12 +69,12 @@ STRINGS_ID: Strings = {
     "FORM_MAX_CONCURRENT_LABEL": "Pengambilan paralel",
     "FORM_MAX_CONCURRENT_HELP": (
         "Mengambil hingga N halaman yang sudah ditemukan secara bersamaan pada "
-        "crawl awal. 1 (default) mengirim satu permintaan pada satu waktu dan "
-        "paling aman untuk sebagian besar situs. 2-3 dapat mempercepat crawl "
-        "besar pada situs yang permisif. Jeda tetap memberi jarak awal "
+        "crawl awal. 5 (default) dapat mempercepat crawl besar pada situs yang "
+        "permisif. Gunakan 1 untuk situs yang ketat atau mudah terkena batas "
+        "laju. Jeda tetap memberi jarak awal "
         "permintaan; retry tetap serial demi keamanan WAF. Risiko: nilai lebih "
         "tinggi meningkatkan kemungkinan dibatasi kecepatannya atau diblokir. "
-        "Minimum: 1. Direkomendasikan: 1-3."
+        "Minimum: 1. Direkomendasikan: 1-5."
     ),
     "FORM_EXCLUDE_TAGS_LABEL": "Tag HTML yang dihapus",
     "FORM_EXCLUDE_TAGS_HELP": (

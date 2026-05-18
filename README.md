@@ -202,7 +202,7 @@ SiteCrawler.crawl()
 | `urls` | `list[str]` | *(required)* | Seed URLs to crawl (comma-separated string also accepted) |
 | `limit` | `int` | `1` | Maximum pages to crawl |
 | `max_depth` | `int` | `1` | How many clicks deep to follow links |
-| `max_concurrent` | `int` | `1` | Maximum simultaneous page fetches among URLs already discovered in the initial crawl. `1` preserves the default serial, WAF-friendly crawl order. Higher values can speed permissive sites; `delay` still spaces request starts. Retry rounds remain serial for WAF safety. |
+| `max_concurrent` | `int` | `5` | Maximum simultaneous page fetches among URLs already discovered in the initial crawl. `5` is the default and can speed permissive sites; use `1` for strict or easily rate-limited sites. `delay` still spaces request starts. Retry rounds remain serial for WAF safety. |
 | `exclude_paths` | `list[str]` | `[]` | Regex patterns for URLs to skip |
 | `include_only_paths` | `list[str]` | `[]` | Regex patterns for URLs to keep (skip everything else) |
 | `delay` | `float` | `0` | Seconds to space page-fetch starts — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
@@ -298,7 +298,7 @@ crawl_parameters:
       - "ato.gov.au"
     limit: 2000
     max_depth: 5
-    max_concurrent: 1
+    max_concurrent: 5
     flush_interval: 1
     delay: 3.0
     stealth: true
