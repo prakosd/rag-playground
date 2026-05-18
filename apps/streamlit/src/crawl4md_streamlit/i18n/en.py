@@ -40,7 +40,7 @@ STRINGS_EN: Strings = {
         "all already discovered pages."
     ),
     "FORM_DELAY_LABEL": "Delay between pages",
-    "FORM_DELAY_HELP": "Adds a pause between pages to reduce blocking by websites.",
+    "FORM_DELAY_HELP": "Spaces out page starts to reduce blocking by websites.",
     "FORM_DEPTH_LABEL": "Link depth",
     "FORM_DEPTH_HELP": "How many clicks deep to follow links.",
     "FORM_RETRIES_LABEL": "Retry rounds",
@@ -66,10 +66,11 @@ STRINGS_EN: Strings = {
     ),
     "FORM_MAX_CONCURRENT_LABEL": "Parallel fetches",
     "FORM_MAX_CONCURRENT_HELP": (
-        "Fetches up to N pages at the same time. 1 (default) sends one request "
-        "at a time and is safest for most sites. 2-3 can speed up large crawls "
-        "on permissive sites. Trade-off: higher values increase the chance of "
-        "rate limits or blocks. Only active when Link depth is 1 and Delay is 0. "
+        "Fetches up to N already discovered pages at the same time during the "
+        "initial crawl. 1 (default) sends one request at a time and is safest "
+        "for most sites. 2-3 can speed up large crawls on permissive sites. "
+        "Delay still spaces request starts; retries stay serial for WAF safety. "
+        "Trade-off: higher values increase the chance of rate limits or blocks. "
         "Minimum: 1. Recommended: 1-3."
     ),
     "FORM_EXCLUDE_TAGS_LABEL": "HTML tags to remove",

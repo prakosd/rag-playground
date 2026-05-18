@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import warnings
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from crawl4md.config import CrawlerConfig, CrawlResult, PageConfig
-from crawl4md.crawler import _OCR_UNAVAILABLE_WARNING, SiteCrawler
+from crawl4md.crawler import (
+    _JITTER_RETRY_MAX,
+    _JITTER_RETRY_MIN,
+    _OCR_UNAVAILABLE_WARNING,
+    SiteCrawler,
+)
 from crawl4md.extractor import ContentExtractor
+from crawl4md.progress import ProgressReporter
 from crawl4md.writer import FileWriter, PageSidecar
+from tests.conftest import _make_mock_result
 
 # ------------------------------------------------------------------
 # CrawlResult.is_pdf field
@@ -309,6 +317,114 @@ class TestDownloadPdf:
         final_dir = crawler.output_dir / "final"
         assert (final_dir / "fail_urls.txt").read_text(encoding="utf-8") == pdf_url
         assert pdf_url in next(final_dir.glob("fail_content_*.txt")).read_text(encoding="utf-8")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_direct_pdf_honors_concurrent_delay_start_slot(self, mock_crawler_cls, tmp_path):
+        page_url = "https://example.com/page"
+        pdf_url = "https://example.com/doc.pdf"
+        events: list[tuple[str, str | float]] = []
+
+        async def mock_arun(url, config):
+            _ = config
+            events.append(("page", url))
+            return _make_mock_result(url, "<p>page</p>", "page markdown" * 4)
+
+        async def fake_sleep(seconds: float) -> None:
+            events.append(("sleep", seconds))
+
+        async def mock_get(url):
+            events.append(("pdf", url))
+            mock_response = MagicMock()
+            mock_response.content = b"fake-pdf-bytes"
+            mock_response.raise_for_status = MagicMock()
+            return mock_response
+
+        mock_browser = AsyncMock()
+        mock_browser.arun = AsyncMock(side_effect=mock_arun)
+        mock_browser.__aenter__ = AsyncMock(return_value=mock_browser)
+        mock_browser.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_browser
+
+        mock_pdf_client = AsyncMock()
+        mock_pdf_client.get = AsyncMock(side_effect=mock_get)
+        mock_pdf_client.__aenter__ = AsyncMock(return_value=mock_pdf_client)
+        mock_pdf_client.__aexit__ = AsyncMock(return_value=False)
+        mock_doc = MagicMock()
+
+        page_config = PageConfig(extract_main_content=False, ocr_languages=[])
+        crawler = SiteCrawler(
+            CrawlerConfig(
+                urls=[page_url, pdf_url],
+                limit=2,
+                max_concurrent=2,
+                delay=3,
+                max_retries=0,
+            ),
+            page_config,
+            output_base=tmp_path,
+            extractor=ContentExtractor(page_config),
+            writer=FileWriter(max_file_size_mb=15.0),
+        )
+
+        with (
+            patch("crawl4md.crawler.random.uniform", return_value=1.0),
+            patch("crawl4md.crawler.asyncio.sleep", side_effect=fake_sleep),
+            patch("crawl4md.crawler.httpx.AsyncClient", return_value=mock_pdf_client),
+            patch("crawl4md.crawler.pymupdf.open", return_value=mock_doc),
+            patch("crawl4md.crawler.pymupdf4llm.to_markdown", return_value="PDF content"),
+        ):
+            results = crawler.crawl()
+
+        pdf_start = events.index(("pdf", pdf_url))
+        sleeps_before_pdf = [
+            event
+            for event in events[:pdf_start]
+            if event[0] == "sleep" and isinstance(event[1], float) and event[1] > 0
+        ]
+        assert len(sleeps_before_pdf) >= 2
+        assert [result.url for result in results if result.success] == [page_url, pdf_url]
+
+    def test_direct_pdf_retry_delay_uses_retry_jitter(self, tmp_path):
+        pdf_url = "https://example.com/retry.pdf"
+        config = CrawlerConfig(urls=[pdf_url], delay=5, max_retries=0)
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.output_dir = tmp_path
+        crawler._download_pdf = AsyncMock(
+            return_value=CrawlResult(
+                url=pdf_url,
+                markdown="PDF content",
+                success=True,
+                is_pdf=True,
+            )
+        )
+        progress = ProgressReporter(1, log_dir=tmp_path)
+        results: list[CrawlResult] = []
+
+        async def run_direct_pdf_retry() -> None:
+            await crawler._handle_direct_pdf_url(
+                url=pdf_url,
+                results=results,
+                generated={pdf_url},
+                prior_success=0,
+                prior_fail=0,
+                queue=[],
+                progress=progress,
+                round_num=2,
+                crawl_depth=1,
+                round_dir=None,
+                is_retry=True,
+            )
+
+        with (
+            patch("crawl4md.crawler.random.uniform", return_value=2.0) as mock_uniform,
+            patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            asyncio.run(run_direct_pdf_retry())
+
+        progress.close()
+        mock_uniform.assert_called_once_with(_JITTER_RETRY_MIN, _JITTER_RETRY_MAX)
+        mock_sleep.assert_awaited_once_with(10.0)
+        assert [result.url for result in results] == [pdf_url]
 
 
 # ------------------------------------------------------------------

@@ -7,6 +7,7 @@ import concurrent.futures
 import random
 import re
 import sys
+import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from importlib import import_module
@@ -157,18 +158,6 @@ class _LazyModule:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._load(), name)
-
-
-class _PrefetchedCrawler:
-    def __init__(self, results_by_url: Mapping[str, object]) -> None:
-        self._results_by_url = results_by_url
-
-    async def arun(self, *, url: str, **kwargs: object) -> object:
-        _ = kwargs["config"]
-        result = self._results_by_url[url]
-        if isinstance(result, BaseException):
-            raise result
-        return result
 
 
 AsyncWebCrawler: Any | None = None
@@ -995,45 +984,106 @@ class SiteCrawler:
     # Internals
     # ------------------------------------------------------------------
 
-    async def _dispatch_static_crawl(
+    async def _fetch_html_url(self, *, url: str, crawler: Any, run_cfg: object) -> Any:
+        return await crawler.arun(url=url, config=run_cfg)
+
+    def _crawl_delay_seconds(self, *, is_retry: bool) -> float:
+        if self.config.delay <= 0:
+            return 0.0
+        if is_retry:
+            return self.config.delay * random.uniform(_JITTER_RETRY_MIN, _JITTER_RETRY_MAX)
+        return self.config.delay * random.uniform(_JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX)
+
+    def _next_fetch_start_after_delay(self, *, is_retry: bool) -> float:
+        delay_seconds = self._crawl_delay_seconds(is_retry=is_retry)
+        return time.monotonic() + delay_seconds if delay_seconds > 0 else 0.0
+
+    async def _wait_for_fetch_start_slot(
+        self,
+        *,
+        next_start_at: float,
+        progress: ProgressReporter,
+    ) -> None:
+        wait_seconds = max(0.0, next_start_at - time.monotonic())
+        if wait_seconds <= 0:
+            return
+        progress.set_activity(f"Pausing to avoid blocks ({wait_seconds:.1f}s)")
+        await self._sleep_with_cancel(wait_seconds)
+
+    def _next_concurrent_frontier(
+        self,
+        queue: list[tuple[str, int]],
+        visited: set[str],
+        *,
+        strip_www: bool,
+        prefetched_urls: set[str],
+    ) -> list[str]:
+        if self.config.max_concurrent <= 1 or len(queue) <= 1:
+            return []
+
+        first_url, first_depth = queue[0]
+        if first_url in prefetched_urls:
+            return []
+
+        frontier: list[str] = []
+        frontier_normalized_urls: set[str] = set()
+        for candidate_url, candidate_depth in queue:
+            if len(frontier) >= self.config.max_concurrent:
+                break
+            if candidate_depth != first_depth:
+                break
+            if candidate_url in prefetched_urls:
+                break
+            normalized_url = self._normalize_url(candidate_url, strip_www=strip_www)
+            if normalized_url in visited:
+                break
+            if normalized_url in frontier_normalized_urls:
+                break
+            if not self._url_allowed(candidate_url):
+                break
+            if self._is_pdf_url(candidate_url):
+                break
+            frontier.append(candidate_url)
+            frontier_normalized_urls.add(normalized_url)
+
+        if len(frontier) <= 1:
+            return []
+        return frontier
+
+    async def _prefetch_concurrent_frontier(
         self,
         *,
         urls: list[str],
         crawler: Any,
         run_cfg: object,
-        discover_links: bool,
+        progress: ProgressReporter,
         is_retry: bool,
-        round_dir: Path | None,
-        prior_success: int,
-        prior_fail: int,
-        skip_urls: frozenset[str],
-        round_label: str,
-        all_generated: set[str] | None,
-        url_depths: dict[str, int] | None,
-        round_num: int,
-        allow_concurrency: bool,
-    ) -> list[CrawlResult] | None:
-        if not self._should_prefetch_static_urls(
-            urls=urls,
-            discover_links=discover_links,
-            is_retry=is_retry,
-            skip_urls=skip_urls,
-            all_generated=all_generated,
-            allow_concurrency=allow_concurrency,
-        ):
-            return None
-        return await self._crawl_static_urls_concurrently(
-            urls=urls,
-            crawler=crawler,
-            run_cfg=run_cfg,
-            round_dir=round_dir,
-            prior_success=prior_success,
-            prior_fail=prior_fail,
-            round_label=round_label,
-            all_generated=all_generated,
-            url_depths=url_depths,
-            round_num=round_num,
-        )
+        next_start_at: float,
+    ) -> tuple[dict[str, Any], float]:
+        tasks: list[asyncio.Task[Any]] = []
+        started_urls: list[str] = []
+        try:
+            for url in urls:
+                await self._wait_for_fetch_start_slot(
+                    next_start_at=next_start_at,
+                    progress=progress,
+                )
+                self._raise_if_cancelled()
+                progress.set_activity(f"Reading page {_shorten_url(url)}")
+                tasks.append(
+                    asyncio.create_task(
+                        self._fetch_html_url(url=url, crawler=crawler, run_cfg=run_cfg)
+                    )
+                )
+                started_urls.append(url)
+                next_start_at = self._next_fetch_start_after_delay(is_retry=is_retry)
+            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            raw_results = await asyncio.gather(*tasks, return_exceptions=True) if tasks else []
+            if not tasks or not self._cancel_requested():
+                raise
+
+        return dict(zip(started_urls, raw_results, strict=True)), next_start_at
 
     async def _crawl_urls_async(
         self,
@@ -1051,7 +1101,6 @@ class SiteCrawler:
         all_generated: set[str] | None = None,
         url_depths: dict[str, int] | None = None,
         round_num: int = 1,
-        _allow_concurrency: bool = True,
     ) -> list[CrawlResult]:
         """Crawl a list of URLs and return per-page results.
 
@@ -1068,25 +1117,6 @@ class SiteCrawler:
         maps each URL to its crawl depth so retried pages and their
         discovered links use the correct depth.
         """
-        static_results = await self._dispatch_static_crawl(
-            urls=urls,
-            crawler=crawler,
-            run_cfg=run_cfg,
-            discover_links=discover_links,
-            is_retry=is_retry,
-            round_dir=round_dir,
-            prior_success=prior_success,
-            prior_fail=prior_fail,
-            skip_urls=skip_urls,
-            round_label=round_label,
-            all_generated=all_generated,
-            url_depths=url_depths,
-            round_num=round_num,
-            allow_concurrency=_allow_concurrency,
-        )
-        if static_results is not None:
-            return static_results
-
         results: list[CrawlResult] = []
         _sw = self.config.strip_www
         visited: set[str] = set(self._normalize_url(u, strip_www=_sw) for u in skip_urls)
@@ -1119,6 +1149,8 @@ class SiteCrawler:
         )
         try:
             discovery_limit_reached = len(generated) >= self.config.limit
+            prefetched_results: dict[str, Any] = {}
+            next_fetch_start_at = 0.0
 
             consecutive_blocks = 0
             # Redirect storm tracking: count consecutive redirects to the
@@ -1145,11 +1177,35 @@ class SiteCrawler:
                 )
 
             while queue:
-                self._raise_if_cancelled()
+                if queue[0][0] not in prefetched_results:
+                    self._raise_if_cancelled()
+                if not is_retry:
+                    frontier = self._next_concurrent_frontier(
+                        queue,
+                        visited,
+                        strip_www=_sw,
+                        prefetched_urls=set(prefetched_results),
+                    )
+                    if frontier:
+                        (
+                            new_prefetched,
+                            next_fetch_start_at,
+                        ) = await self._prefetch_concurrent_frontier(
+                            urls=frontier,
+                            crawler=crawler,
+                            run_cfg=run_cfg,
+                            progress=progress,
+                            is_retry=is_retry,
+                            next_start_at=next_fetch_start_at,
+                        )
+                        prefetched_results.update(new_prefetched)
+
                 url, depth = queue.pop(0)
+                used_prefetched_result = url in prefetched_results
 
                 norm_url = self._normalize_url(url, strip_www=_sw)
                 if norm_url in visited:
+                    prefetched_results.pop(url, None)
                     generated.discard(norm_url)
                     self._remove_page_record(norm_url, statuses={_PAGE_STATUS_DISCOVERED})
                     progress.total = max(len(generated), 1)
@@ -1165,10 +1221,17 @@ class SiteCrawler:
                 visited.add(norm_url)
 
                 if not self._url_allowed(url):
+                    prefetched_results.pop(url, None)
                     continue
 
                 # Fast path: download PDFs directly (bypass the browser).
                 if self._is_pdf_url(url):
+                    if not is_retry and self.config.max_concurrent > 1:
+                        await self._wait_for_fetch_start_slot(
+                            next_start_at=next_fetch_start_at,
+                            progress=progress,
+                        )
+                        next_fetch_start_at = self._next_fetch_start_after_delay(is_retry=is_retry)
                     await self._handle_direct_pdf_url(
                         url=url,
                         results=results,
@@ -1180,11 +1243,27 @@ class SiteCrawler:
                         round_num=round_num,
                         crawl_depth=depth,
                         round_dir=round_dir,
+                        is_retry=is_retry,
                     )
                     continue
                 try:
                     progress.set_activity(f"Reading page {_shorten_url(url)}")
-                    result = await crawler.arun(url=url, config=run_cfg)
+                    if used_prefetched_result:
+                        result = prefetched_results.pop(url)
+                        if isinstance(result, BaseException):
+                            raise result
+                    else:
+                        if not is_retry and self.config.max_concurrent > 1:
+                            await self._wait_for_fetch_start_slot(
+                                next_start_at=next_fetch_start_at,
+                                progress=progress,
+                            )
+                            next_fetch_start_at = self._next_fetch_start_after_delay(
+                                is_retry=is_retry
+                            )
+                        result = await self._fetch_html_url(
+                            url=url, crawler=crawler, run_cfg=run_cfg
+                        )
 
                     # Use the final URL after any redirects
                     final_url = getattr(result, "redirected_url", None) or url
@@ -1415,19 +1494,14 @@ class SiteCrawler:
                         success, fail = self._split_results(results)
                         await asyncio.to_thread(self._save_url_lists, success, fail, round_dir)
 
-                # Throttle between pages — jitter mimics human browsing.
+                # Throttle serial request starts — jitter mimics human browsing.
                 # Round 1 applies a light delay; retries apply a heavier one.
                 # Both require delay > 0 (default 0 keeps current fast behavior).
-                if self.config.delay > 0:
+                if self.config.delay > 0 and not used_prefetched_result:
+                    jitter = self._crawl_delay_seconds(is_retry=is_retry)
                     if is_retry:
-                        jitter = self.config.delay * random.uniform(
-                            _JITTER_RETRY_MIN, _JITTER_RETRY_MAX
-                        )
                         progress.set_activity(f"Waiting before retry ({jitter:.1f}s)")
                     else:
-                        jitter = self.config.delay * random.uniform(
-                            _JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX
-                        )
                         progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
                     await self._sleep_with_cancel(jitter)
 
@@ -1522,6 +1596,7 @@ class SiteCrawler:
         round_num: int,
         crawl_depth: int,
         round_dir: Path | None,
+        is_retry: bool,
     ) -> None:
         progress.set_activity(f"Downloading PDF {_shorten_url(url)}")
         crawl_result = await self._download_pdf(url)
@@ -1576,8 +1651,11 @@ class SiteCrawler:
         crawl_result.markdown = ""
 
         if self.config.delay > 0:
-            jitter = self.config.delay * random.uniform(_JITTER_ROUND1_MIN, _JITTER_ROUND1_MAX)
-            progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
+            jitter = self._crawl_delay_seconds(is_retry=is_retry)
+            if is_retry:
+                progress.set_activity(f"Waiting before retry ({jitter:.1f}s)")
+            else:
+                progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
             await self._sleep_with_cancel(jitter)
 
     def _flush_skipped_redirects(
@@ -1749,74 +1827,6 @@ class SiteCrawler:
         )
         progress.total = max(len(generated), 1)
         return len(generated) >= self.config.limit
-
-    def _should_prefetch_static_urls(
-        self,
-        *,
-        urls: list[str],
-        discover_links: bool,
-        is_retry: bool,
-        skip_urls: frozenset[str],
-        all_generated: set[str] | None,
-        allow_concurrency: bool,
-    ) -> bool:
-        if not allow_concurrency or self.config.max_concurrent <= 1:
-            return False
-        if discover_links or is_retry or skip_urls or self.config.delay > 0:
-            return False
-        if all_generated is None or all_generated:
-            return False
-        if len(urls) <= 1:
-            return False
-        eligible_urls = urls[: self.config.limit]
-        normalized_urls = [
-            self._normalize_url(url, strip_www=self.config.strip_www) for url in eligible_urls
-        ]
-        if len(set(normalized_urls)) != len(normalized_urls):
-            return False
-        return all(self._url_allowed(url) and not self._is_pdf_url(url) for url in eligible_urls)
-
-    async def _crawl_static_urls_concurrently(
-        self,
-        *,
-        urls: list[str],
-        crawler: Any,
-        run_cfg: object,
-        round_dir: Path | None,
-        prior_success: int,
-        prior_fail: int,
-        round_label: str,
-        all_generated: set[str] | None,
-        url_depths: dict[str, int] | None,
-        round_num: int,
-    ) -> list[CrawlResult]:
-        semaphore = asyncio.Semaphore(self.config.max_concurrent)
-        urls_to_fetch = urls[: self.config.limit]
-
-        async def _fetch(url: str) -> object:
-            async with semaphore:
-                self._raise_if_cancelled()
-                return await crawler.arun(url=url, config=run_cfg)
-
-        raw_results = await asyncio.gather(
-            *(_fetch(url) for url in urls_to_fetch),
-            return_exceptions=True,
-        )
-        prefetched_crawler = _PrefetchedCrawler(dict(zip(urls_to_fetch, raw_results, strict=True)))
-        return await self._crawl_urls_async(
-            urls=urls_to_fetch,
-            crawler=prefetched_crawler,
-            run_cfg=run_cfg,
-            discover_links=False,
-            round_dir=round_dir,
-            prior_success=prior_success,
-            prior_fail=prior_fail,
-            round_label=round_label,
-            all_generated=all_generated,
-            url_depths=url_depths,
-            round_num=round_num,
-            _allow_concurrency=False,
-        )
 
     # ------------------------------------------------------------------
     # Block detection

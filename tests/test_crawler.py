@@ -339,40 +339,105 @@ class TestSiteCrawler:
         assert mock_instance.arun.await_count == 3
         assert [result.url for result in results if result.success] == urls
 
-    def test_static_prefetch_disabled_for_order_sensitive_cases(self):
-        urls = ["https://example.com/a", "https://example.com/b"]
-        scenarios = [
-            (
-                CrawlerConfig(urls=urls, limit=2, max_depth=2, max_concurrent=2),
-                urls,
-                True,
-            ),
-            (
-                CrawlerConfig(urls=urls, limit=2, max_concurrent=2, delay=0.1),
-                urls,
-                False,
-            ),
-            (
-                CrawlerConfig(
-                    urls=["https://example.com/a.pdf", "https://example.com/b"],
-                    limit=2,
-                    max_concurrent=2,
-                ),
-                ["https://example.com/a.pdf", "https://example.com/b"],
-                False,
-            ),
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_prefetched_pages_drain_after_cancel_request(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        active_calls = 0
+        max_active_calls = 0
+        cancel_requested = False
+        completed_urls: list[str] = []
+        release: asyncio.Event | None = None
+
+        urls = [
+            "https://example.com/a",
+            "https://example.com/b",
+            "https://example.com/c",
         ]
 
-        for config, candidate_urls, discover_links in scenarios:
-            crawler = SiteCrawler(config)
-            assert not crawler._should_prefetch_static_urls(
-                urls=candidate_urls,
-                discover_links=discover_links,
-                is_retry=False,
-                skip_urls=frozenset(),
-                all_generated=set(),
-                allow_concurrency=True,
-            )
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_calls, max_active_calls, cancel_requested, release
+            if release is None:
+                release = asyncio.Event()
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            if max_active_calls == len(urls):
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_calls -= 1
+            completed_urls.append(url)
+            if len(completed_urls) == len(urls):
+                cancel_requested = True
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=urls, limit=3, max_concurrent=3, max_retries=0)
+        crawler = SiteCrawler(
+            config,
+            output_base=tmp_path,
+            should_cancel=lambda: cancel_requested,
+        )
+
+        results = crawler.crawl()
+
+        assert max_active_calls == 3
+        assert [result.url for result in results if result.success] == urls
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_started_prefetch_drains_after_cancel_during_delay(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        urls = ["https://example.com/a", "https://example.com/b"]
+        cancel_requested = False
+        sleep_calls: list[float] = []
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        async def fake_sleep(seconds: float) -> None:
+            nonlocal cancel_requested
+            sleep_calls.append(seconds)
+            cancel_requested = True
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        page_config = PageConfig(extract_main_content=False)
+        config = CrawlerConfig(
+            urls=urls,
+            limit=2,
+            max_concurrent=2,
+            delay=3,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(
+            config,
+            page_config,
+            output_base=tmp_path,
+            extractor=ContentExtractor(page_config),
+            writer=FileWriter(max_file_size_mb=15.0),
+            should_cancel=lambda: cancel_requested,
+        )
+
+        with (
+            patch("crawl4md.crawler.random.uniform", return_value=1.0),
+            patch("crawl4md.crawler.asyncio.sleep", side_effect=fake_sleep),
+        ):
+            results = crawler.crawl()
+
+        assert sleep_calls
+        assert mock_instance.arun.await_count == 1
+        assert [result.url for result in results if result.success] == [urls[0]]
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_max_concurrent_static_url_exception_becomes_failure(
@@ -402,6 +467,325 @@ class TestSiteCrawler:
         assert len(failures) == 1
         assert failures[0].url == "https://example.com/bad"
         assert failures[0].error == "RuntimeError: boom"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_discovered_same_depth_urls_run_together(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        seed_url = "https://example.com"
+        child_urls = [
+            "https://example.com/b",
+            "https://example.com/c",
+            "https://example.com/d",
+        ]
+        seed_html = "".join(f'<a href="/{url.rsplit("/", 1)[-1]}">child</a>' for url in child_urls)
+        active_child_calls = 0
+        max_active_child_calls = 0
+        release: asyncio.Event | None = None
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_child_calls, max_active_child_calls, release
+            if url == seed_url:
+                return _make_mock_result(seed_url, seed_html, "seed")
+            if release is None:
+                release = asyncio.Event()
+            active_child_calls += 1
+            max_active_child_calls = max(max_active_child_calls, active_child_calls)
+            if max_active_child_calls == 3:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_child_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[seed_url],
+            limit=4,
+            max_depth=2,
+            max_concurrent=3,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        results = crawler.crawl()
+
+        assert max_active_child_calls == 3
+        assert [result.url for result in results if result.success] == [seed_url, *child_urls]
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_depth_crawl_waits_until_links_are_discovered(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        seed_url = "https://example.com"
+        child_urls = ["https://example.com/b", "https://example.com/c"]
+        seed_finished = False
+        child_started_before_seed_finished = False
+        seed_html = '<a href="/b">B</a><a href="/c">C</a>'
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal seed_finished, child_started_before_seed_finished
+            if url == seed_url:
+                await asyncio.sleep(0)
+                seed_finished = True
+                return _make_mock_result(seed_url, seed_html, "seed")
+            if not seed_finished:
+                child_started_before_seed_finished = True
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[seed_url],
+            limit=3,
+            max_depth=2,
+            max_concurrent=2,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        results = crawler.crawl()
+
+        assert child_started_before_seed_finished is False
+        assert [result.url for result in results if result.success] == [seed_url, *child_urls]
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_depth_child_exception_becomes_failure(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        seed_url = "https://example.com"
+        seed_html = '<a href="/good">Good</a><a href="/bad">Bad</a>'
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            if url == seed_url:
+                return _make_mock_result(seed_url, seed_html, "seed")
+            if url.endswith("/bad"):
+                raise RuntimeError("boom")
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[seed_url],
+            limit=3,
+            max_depth=2,
+            max_concurrent=2,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        results = crawler.crawl()
+
+        successes = [result.url for result in results if result.success]
+        failures = [result for result in results if not result.success]
+        assert successes == [seed_url, "https://example.com/good"]
+        assert len(failures) == 1
+        assert failures[0].url == "https://example.com/bad"
+        assert failures[0].error == "RuntimeError: boom"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_delay_spaces_request_starts(self, mock_crawler_cls, tmp_path: Path):
+        seed_url = "https://example.com"
+        seed_html = '<a href="/b">B</a><a href="/c">C</a>'
+        sleep_calls: list[float] = []
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            if url == seed_url:
+                return _make_mock_result(seed_url, seed_html, "seed")
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        async def fake_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[seed_url],
+            limit=3,
+            max_depth=2,
+            max_concurrent=2,
+            delay=3,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with (
+            patch("crawl4md.crawler.random.uniform", return_value=1.0),
+            patch("crawl4md.crawler.asyncio.sleep", side_effect=fake_sleep),
+        ):
+            crawler.crawl()
+
+        assert any(seconds >= 3 for seconds in sleep_calls)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_delay_spaces_leftover_serial_url(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        seed_url = "https://example.com"
+        child_urls = [
+            "https://example.com/b",
+            "https://example.com/c",
+            "https://example.com/d",
+        ]
+        seed_html = '<a href="/b">B</a><a href="/c">C</a><a href="/d">D</a>'
+        events: list[tuple[str, str | float]] = []
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            events.append(("start", url))
+            if url == seed_url:
+                return _make_mock_result(seed_url, seed_html, "seed")
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        async def fake_sleep(seconds: float) -> None:
+            events.append(("sleep", seconds))
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[seed_url],
+            limit=4,
+            max_depth=2,
+            max_concurrent=2,
+            delay=3,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with (
+            patch("crawl4md.crawler.random.uniform", return_value=1.0),
+            patch("crawl4md.crawler.asyncio.sleep", side_effect=fake_sleep),
+        ):
+            crawler.crawl()
+
+        child_c_start = events.index(("start", child_urls[1]))
+        child_d_start = events.index(("start", child_urls[2]))
+        sleeps_between_child_c_and_d = [
+            event
+            for event in events[child_c_start + 1 : child_d_start]
+            if event[0] == "sleep" and isinstance(event[1], float) and event[1] > 0
+        ]
+        assert sleeps_between_child_c_and_d
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_delay_still_allows_overlap_for_slow_pages(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        seed_url = "https://example.com"
+        seed_html = '<a href="/b">B</a><a href="/c">C</a>'
+        active_child_calls = 0
+        max_active_child_calls = 0
+        release: asyncio.Event | None = None
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_child_calls, max_active_child_calls, release
+            if url == seed_url:
+                return _make_mock_result(seed_url, seed_html, "seed")
+            if release is None:
+                release = asyncio.Event()
+            active_child_calls += 1
+            max_active_child_calls = max(max_active_child_calls, active_child_calls)
+            if max_active_child_calls == 2:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_child_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=[seed_url],
+            limit=3,
+            max_depth=2,
+            max_concurrent=2,
+            delay=3,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        with (
+            patch("crawl4md.crawler.random.uniform", return_value=0.1),
+            patch("crawl4md.crawler.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            crawler.crawl()
+
+        assert max_active_child_calls == 2
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_max_concurrent_frontier_deduplicates_normalized_urls(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        urls = [
+            "https://example.com/a",
+            "https://example.com/b",
+            "https://example.com/a#section",
+        ]
+        active_calls = 0
+        max_active_calls = 0
+        release: asyncio.Event | None = None
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            nonlocal active_calls, max_active_calls, release
+            if release is None:
+                release = asyncio.Event()
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            if max_active_calls == 2:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=1)
+            active_calls -= 1
+            return _make_mock_result(url, f"<p>{url}</p>", url)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=urls,
+            limit=3,
+            max_depth=2,
+            max_concurrent=3,
+            max_retries=0,
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+
+        results = crawler.crawl()
+
+        assert max_active_calls == 2
+        assert mock_instance.arun.await_count == 2
+        assert [result.url for result in results if result.success] == urls[:2]
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_crawl_single_page(self, mock_crawler_cls, tmp_path: Path):

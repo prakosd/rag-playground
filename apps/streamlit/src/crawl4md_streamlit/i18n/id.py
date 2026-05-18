@@ -42,7 +42,7 @@ STRINGS_ID: Strings = {
         "semua halaman yang sudah ditemukan."
     ),
     "FORM_DELAY_LABEL": "Jeda antar halaman",
-    "FORM_DELAY_HELP": "Menambahkan jeda antar halaman untuk mengurangi pemblokiran oleh situs web.",
+    "FORM_DELAY_HELP": "Memberi jarak awal halaman untuk mengurangi pemblokiran oleh situs web.",
     "FORM_DEPTH_LABEL": "Kedalaman tautan",
     "FORM_DEPTH_HELP": "Seberapa dalam mengikuti tautan.",
     "FORM_RETRIES_LABEL": "Putaran percobaan ulang",
@@ -68,11 +68,12 @@ STRINGS_ID: Strings = {
     ),
     "FORM_MAX_CONCURRENT_LABEL": "Pengambilan paralel",
     "FORM_MAX_CONCURRENT_HELP": (
-        "Mengambil hingga N halaman secara bersamaan. 1 (default) mengirim satu "
-        "permintaan pada satu waktu dan paling aman untuk sebagian besar situs. "
-        "2-3 dapat mempercepat crawl besar pada situs yang permisif. Risiko: "
-        "nilai lebih tinggi meningkatkan kemungkinan dibatasi kecepatannya atau "
-        "diblokir. Hanya aktif saat Kedalaman tautan adalah 1 dan Jeda adalah 0. "
+        "Mengambil hingga N halaman yang sudah ditemukan secara bersamaan pada "
+        "crawl awal. 1 (default) mengirim satu permintaan pada satu waktu dan "
+        "paling aman untuk sebagian besar situs. 2-3 dapat mempercepat crawl "
+        "besar pada situs yang permisif. Jeda tetap memberi jarak awal "
+        "permintaan; retry tetap serial demi keamanan WAF. Risiko: nilai lebih "
+        "tinggi meningkatkan kemungkinan dibatasi kecepatannya atau diblokir. "
         "Minimum: 1. Direkomendasikan: 1-3."
     ),
     "FORM_EXCLUDE_TAGS_LABEL": "Tag HTML yang dihapus",

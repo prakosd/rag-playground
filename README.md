@@ -202,10 +202,10 @@ SiteCrawler.crawl()
 | `urls` | `list[str]` | *(required)* | Seed URLs to crawl (comma-separated string also accepted) |
 | `limit` | `int` | `1` | Maximum pages to crawl |
 | `max_depth` | `int` | `1` | How many clicks deep to follow links |
-| `max_concurrent` | `int` | `1` | Maximum concurrent page fetches for static one-depth crawls when `max_depth=1` and `delay=0`. `1` preserves the default serial, WAF-friendly crawl order. |
+| `max_concurrent` | `int` | `1` | Maximum simultaneous page fetches among URLs already discovered in the initial crawl. `1` preserves the default serial, WAF-friendly crawl order. Higher values can speed permissive sites; `delay` still spaces request starts. Retry rounds remain serial for WAF safety. |
 | `exclude_paths` | `list[str]` | `[]` | Regex patterns for URLs to skip |
 | `include_only_paths` | `list[str]` | `[]` | Regex patterns for URLs to keep (skip everything else) |
-| `delay` | `float` | `0` | Seconds to wait between page crawls — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
+| `delay` | `float` | `0` | Seconds to space page-fetch starts — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
 | `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages (minimum 2) |
@@ -245,7 +245,7 @@ For each page:
             └─ timeout caps this ─┘
 ```
 
-- **`delay`** (CrawlerConfig) — pause *between* pages. Controls crawl speed to avoid bot detection. Applied before starting the next page.
+- **`delay`** (CrawlerConfig) — pause between page-fetch starts. Controls crawl speed to avoid bot detection. When `max_concurrent` is above `1`, slow pages may overlap, but new requests are still spaced by the delay.
 - **`wait_until`** (PageConfig) — determines *when* a page is considered loaded. `"networkidle"` waits until all network requests finish (~500 ms of silence), which is thorough but can hang on analytics-heavy sites. `"domcontentloaded"` returns as soon as the HTML is parsed, which is faster but may miss JS-rendered content. On retry rounds, `wait_until` is automatically downgraded to `"domcontentloaded"` to avoid repeated timeouts.
 - **`wait_for`** (PageConfig) — extra pause *after* `wait_until` completes. Use this when content appears slightly after the page load event (e.g., delayed AJAX calls). Runs on top of `wait_until`, not instead of it.
 - **`timeout`** (PageConfig) — hard limit on the `wait_until` phase. If the load condition hasn't been met within this time, the page is treated as loaded anyway and extraction proceeds.
