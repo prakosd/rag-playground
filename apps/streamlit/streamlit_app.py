@@ -88,6 +88,7 @@ _REFRESH_FORM_STATES = {
 _TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
 _STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:1"
+_STATUS_NEXT_ROW_STYLE = f"{_STATUS_ROW_STYLE};padding-bottom:1rem"
 _SESSION_STORAGE_COMPONENT_KEY = "browser_session_storage"
 _SESSION_RECORDS_CACHE_STATE = "normalized_session_records_cache"
 _SESSION_RECORDS_CACHE_MAX_ENTRIES = 8
@@ -871,7 +872,7 @@ def _render_status() -> None:
                     urls=next_urls,
                     total_count=next_url_count,
                     right_text=eta_text,
-                    style=_STATUS_ROW_STYLE,
+                    style=_STATUS_NEXT_ROW_STYLE,
                     overflow_template=strings["STATUS_MORE_URLS"],
                 ),
                 unsafe_allow_html=True,
@@ -882,7 +883,7 @@ def _render_status() -> None:
                     url=next_urls[0] if next_urls else "",
                     url_template=strings["STATUS_NEXT_URL"],
                     right_text=eta_text,
-                    style=_STATUS_ROW_STYLE,
+                    style=_STATUS_NEXT_ROW_STYLE,
                 ),
                 unsafe_allow_html=True,
             )
