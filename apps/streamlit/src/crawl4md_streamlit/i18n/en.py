@@ -166,6 +166,7 @@ STRINGS_EN: Strings = {
     "FILES_SESSION_CAPTION": "Session folder: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} is too large to download from the app.",
     "FILES_DOWNLOADS_IN_PROGRESS": "Crawl in progress — files generated so far are shown below.",
+    "FILES_DOWNLOADS_SUBTITLE": "Files generated so far are shown below.",
     "FILES_PREVIEW_BUTTON": ":material/visibility:",
     "FILES_PREVIEW_HELP": "Preview {file}",
     "FILES_PREVIEW_PATH": "Path: {path}",

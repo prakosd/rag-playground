@@ -98,6 +98,11 @@ def test_files_downloads_in_progress_exists_in_all_locales() -> None:
     assert "FILES_DOWNLOADS_IN_PROGRESS" in STRINGS_ID
 
 
+def test_files_downloads_subtitle_exists_in_all_locales() -> None:
+    assert "FILES_DOWNLOADS_SUBTITLE" in STRINGS_EN
+    assert "FILES_DOWNLOADS_SUBTITLE" in STRINGS_ID
+
+
 def test_files_preview_path_and_size_have_placeholders() -> None:
     assert "{path}" in STRINGS_EN["FILES_PREVIEW_PATH"]
     assert "{size_kib}" in STRINGS_EN["FILES_PREVIEW_SIZE"]

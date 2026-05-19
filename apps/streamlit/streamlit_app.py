@@ -931,15 +931,14 @@ def _render_activity_log() -> None:
     lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
     st.session_state.activity_log_latest_line = lines[-1] if lines else None
     if lines:
-        st.write("")
-        st.markdown(f"**{strings['ACTIVITY_LOG_HEADER']}**")
         rows_html = "".join(
             f"<div style='padding:4px 8px;border-bottom:1px solid rgba(150,150,150,0.35);font-size:14px;font-family:sans-serif'>{_linkify_log_line(line)}</div>"
             for line in reversed(lines)
         )
-        st.html(
-            f"<div style='height:200px;overflow-y:auto;border:1px solid rgba(150,150,150,0.35);border-radius:8px'>{rows_html}</div>"
-        )
+        with st.expander(strings["ACTIVITY_LOG_HEADER"], expanded=False):
+            st.html(
+                f"<div style='height:200px;overflow-y:auto;border:1px solid rgba(150,150,150,0.35);border-radius:8px'>{rows_html}</div>"
+            )
 
 
 def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
@@ -1159,7 +1158,7 @@ def render_download_tree(tree: Mapping[str, Any]) -> None:
     )
     for name, entry in entries:
         if isinstance(entry, dict):
-            with st.expander(f"📁 {name}"):
+            with st.expander(f"📁 {name.removeprefix('crawl_')}"):
                 render_download_tree(entry)
             continue
         render_generated_file_download(entry)
@@ -1189,30 +1188,35 @@ def _render_downloads() -> None:
     )
     download_tree = _cached_download_tree(tuple(files))
     if files:
-        st.markdown(f"**{strings['FILES_HEADER']}**")
         rows = [
             {
-                strings["FILES_COL_NAME"]: file.relative_path,
+                strings["FILES_COL_NAME"]: file.relative_path.removeprefix("crawl_"),
                 strings["FILES_COL_TYPE"]: file.file_type,
                 strings["FILES_COL_SIZE"]: round(file.size_bytes / (1024 * 1024), 3),
                 strings["FILES_COL_MODIFIED"]: file.modified_at.strftime(_UTC_DISPLAY_FORMAT),
             }
             for file in files
         ]
-        st.dataframe(rows, hide_index=True, width="stretch")
+        with st.expander(strings["FILES_HEADER"], expanded=False):
+            st.dataframe(rows, hide_index=True, width="stretch")
 
-    st.subheader(strings["FILES_DOWNLOADS_SUBHEADER"])
+    subtitle_text = (
+        strings["FILES_DOWNLOADS_IN_PROGRESS"]
+        if _job_is_alive(st.session_state.job)
+        else strings["FILES_DOWNLOADS_SUBTITLE"]
+    )
+    st.markdown(
+        f'<h3 style="padding-bottom:0">{strings["FILES_DOWNLOADS_SUBHEADER"]}</h3>'
+        f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 1rem">{subtitle_text}</p>',
+        unsafe_allow_html=True,
+    )
     if _job_is_alive(st.session_state.job):
-        st.caption(strings["FILES_DOWNLOADS_IN_PROGRESS"])
         if files:
-            with st.expander(f"📁 {session_folder.name}", expanded=True):
+            with st.expander(f"📁 {session_folder.name.removeprefix('session_')}", expanded=True):
                 render_download_tree(download_tree)
     elif session_folder.exists():
-        with st.expander(f"📁 {session_folder.name}", expanded=True):
+        with st.expander(f"📁 {session_folder.name.removeprefix('session_')}", expanded=True):
             render_download_tree(download_tree)
-        st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
-    else:
-        st.caption(strings["FILES_SESSION_CAPTION"].format(path=session_folder))
 
     _render_open_preview_dialog(files)
 

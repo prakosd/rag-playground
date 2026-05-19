@@ -172,6 +172,7 @@ STRINGS_ID: Strings = {
     "FILES_SESSION_CAPTION": "Folder sesi: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} terlalu besar untuk diunduh dari aplikasi.",
     "FILES_DOWNLOADS_IN_PROGRESS": "Proses crawl sedang berjalan — file yang sudah dibuat ditampilkan di bawah.",
+    "FILES_DOWNLOADS_SUBTITLE": "File yang sudah dibuat ditampilkan di bawah.",
     "FILES_PREVIEW_BUTTON": ":material/visibility:",
     "FILES_PREVIEW_HELP": "Pratinjau {file}",
     "FILES_PREVIEW_PATH": "Path: {path}",

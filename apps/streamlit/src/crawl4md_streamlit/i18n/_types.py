@@ -127,6 +127,7 @@ class Strings(TypedDict):
     FILES_SESSION_CAPTION: str  # template: {path}
     FILES_DOWNLOAD_TOO_LARGE: str  # template: {file}
     FILES_DOWNLOADS_IN_PROGRESS: str
+    FILES_DOWNLOADS_SUBTITLE: str
     FILES_PREVIEW_BUTTON: str
     FILES_PREVIEW_HELP: str  # template: {file}
     FILES_PREVIEW_PATH: str  # template: {path}
