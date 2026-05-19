@@ -1279,6 +1279,9 @@ st.markdown(
         margin-left: auto;
         margin-right: auto;
     }}
+    div[data-testid="stForm"] .stHeading h3 {{
+        padding: 0.75rem 0 0 !important;
+    }}
     div[class*="st-key-Stop"] button {{
         background-color: #dc2626;
         border-color: #dc2626;
