@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
+from crawl4md_streamlit import session_manager
 from crawl4md_streamlit.support import (
     CrawlJob,
     SessionRecord,
@@ -20,6 +21,7 @@ from crawl4md_streamlit.support import (
     build_configs,
     cleanup_old_sessions,
     cleanup_old_sessions_with_lock,
+    count_crawl_dirs,
     crawl_output_base,
     create_session_record,
     drain_events,
@@ -75,6 +77,71 @@ def test_generate_safe_id_uses_path_safe_characters() -> None:
 
     assert safe_id
     assert validate_safe_id(safe_id) == safe_id
+
+
+def test_generate_safe_id_uses_readable_format_when_toggle_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session_manager, "_USE_READABLE_IDS", True)
+    monkeypatch.setattr(session_manager, "_READABLE_SESSION_WORD_COUNT", 2)
+    monkeypatch.setattr(session_manager, "_READABLE_ID_DIGITS", 0)
+    monkeypatch.setattr(session_manager, "_readable_word_pool", lambda: ("winter",))
+
+    chosen_words = iter(("winter", "apple"))
+    monkeypatch.setattr(session_manager.secrets, "choice", lambda _words: next(chosen_words))
+
+    assert generate_safe_id() == "winter_apple"
+
+
+def test_generate_readable_session_id_includes_digits_when_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session_manager, "_READABLE_SESSION_WORD_COUNT", 2)
+    monkeypatch.setattr(session_manager, "_READABLE_ID_DIGITS", 2)
+    monkeypatch.setattr(session_manager, "_READABLE_ID_LIMIT", 100)
+    monkeypatch.setattr(session_manager, "_readable_word_pool", lambda: ("boulder",))
+
+    chosen_words = iter(("boulder", "river"))
+    monkeypatch.setattr(session_manager.secrets, "choice", lambda _words: next(chosen_words))
+    monkeypatch.setattr(session_manager.secrets, "randbelow", lambda _limit: 7)
+
+    assert session_manager._generate_readable_session_id() == "boulder_river_07"
+
+
+def test_generate_readable_session_id_words_only_when_digits_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session_manager, "_READABLE_SESSION_WORD_COUNT", 1)
+    monkeypatch.setattr(session_manager, "_READABLE_ID_DIGITS", 0)
+    monkeypatch.setattr(session_manager, "_readable_word_pool", lambda: ("cedar",))
+    monkeypatch.setattr(session_manager.secrets, "choice", lambda _words: "cedar")
+
+    assert session_manager._generate_readable_session_id() == "cedar"
+
+
+def test_generate_safe_id_uses_legacy_token_when_toggle_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session_manager, "_USE_READABLE_IDS", False)
+
+    def _fake_token_urlsafe(size: int) -> str:
+        assert size == 9
+        return "AbC+/="
+
+    monkeypatch.setattr(session_manager.secrets, "token_urlsafe", _fake_token_urlsafe)
+
+    assert generate_safe_id() == "abc___"
+
+
+def test_readable_word_pool_loads_expected_safe_eff_words() -> None:
+    session_manager._readable_word_pool.cache_clear()
+    words = session_manager._readable_word_pool()
+
+    assert len(words) == 7776
+    assert "abacus" in words
+    assert "yo-yo" in words
+    assert all(word == word.lower() for word in words)
+    assert all(all(char in session_manager._SAFE_WORD_CHARS for char in word) for word in words)
 
 
 def test_session_and_crawl_dirs_are_prefixed(tmp_path: Path) -> None:
@@ -650,10 +717,61 @@ def test_cleanup_old_sessions_with_lock_replaces_stale_lock(tmp_path: Path) -> N
     assert not lock_path.exists()
 
 
+def test_generate_crawl_id_uses_seq_prefix_when_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session_manager, "_USE_READABLE_IDS", True)
+    monkeypatch.setattr(session_manager, "_readable_word_pool", lambda: ("boulder",))
+    monkeypatch.setattr(session_manager.secrets, "choice", lambda words: words[0])
+
+    assert generate_crawl_id(seq=1) == "1_boulder"
+    assert generate_crawl_id(seq=42) == "42_boulder"
+
+
+def test_count_crawl_dirs_returns_zero_when_session_dir_missing(tmp_path: Path) -> None:
+    assert count_crawl_dirs(tmp_path, "abc123") == 0
+
+
+def test_count_crawl_dirs_counts_only_crawl_prefixed_subdirs(tmp_path: Path) -> None:
+    sdir = prepare_session_dir(tmp_path, "abc123")
+    (sdir / "crawl_1_boulder").mkdir()
+    (sdir / "crawl_2_river").mkdir()
+    (sdir / "other_dir").mkdir()
+    (sdir / "not_a_dir.txt").write_text("x", encoding="utf-8")
+
+    assert count_crawl_dirs(tmp_path, "abc123") == 2
+
+
 def test_generate_crawl_id_includes_timestamp() -> None:
     now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=timezone.utc)
 
     assert generate_crawl_id(now).startswith("20260504_123045_")
+
+
+def test_generate_crawl_id_uses_single_word_suffix_when_toggle_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=timezone.utc)
+    monkeypatch.setattr(session_manager, "_USE_READABLE_IDS", True)
+    monkeypatch.setattr(session_manager, "_readable_word_pool", lambda: ("boulder",))
+    monkeypatch.setattr(session_manager.secrets, "choice", lambda words: words[0])
+
+    assert generate_crawl_id(now) == "20260504_123045_boulder"
+
+
+def test_generate_crawl_id_uses_legacy_suffix_when_toggle_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=timezone.utc)
+    monkeypatch.setattr(session_manager, "_USE_READABLE_IDS", False)
+
+    def _fake_token_urlsafe(size: int) -> str:
+        assert size == 9
+        return "Token123"
+
+    monkeypatch.setattr(session_manager.secrets, "token_urlsafe", _fake_token_urlsafe)
+
+    assert generate_crawl_id(now) == "20260504_123045_token123"
 
 
 def test_find_latest_crawl_dir_and_activity_log_path(tmp_path: Path) -> None:

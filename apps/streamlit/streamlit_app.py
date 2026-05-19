@@ -27,6 +27,7 @@ from crawl4md_streamlit.support import (
     bootstrap_gate_state,
     build_configs,
     cleanup_old_sessions_with_lock,
+    count_crawl_dirs,
     create_session_record,
     drain_events,
     elapsed_time_display,
@@ -551,7 +552,9 @@ def _start_job(values: dict[str, Any]) -> None:
     except (ValidationError, ValueError) as exc:
         st.error(str(exc))
         return
-    crawl_id = generate_crawl_id()
+    crawl_id = generate_crawl_id(
+        seq=count_crawl_dirs(_SESSIONS_ROOT, st.session_state.session_id) + 1
+    )
     job = start_crawl_job(
         session_id=st.session_state.session_id,
         crawl_id=crawl_id,
@@ -1313,7 +1316,7 @@ with session_controls_col:
                 index=_session_selector_index(session_options),
                 key=f"session_selector_{st.session_state.session_id}",
                 label_visibility="collapsed",
-                width=170,
+                width=240,
                 disabled=fields_disabled,
             )
         if st.button(

@@ -8,6 +8,8 @@ import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from importlib import resources
 from pathlib import Path
 from typing import Literal
 
@@ -17,15 +19,37 @@ _CRAWL_PREFIX = "crawl_"
 _DEFAULT_RETENTION_DAYS = 7
 _DEFAULT_SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
 _ID_BYTES = 9
+_READABLE_CRAWL_WORD_COUNT = 1
+# --- Readable session ID pattern (edit these two to change the format) ---
+# _READABLE_SESSION_WORD_COUNT — number of EFF words per session ID (≥1)
+# _READABLE_ID_DIGITS          — digits appended after words; 0 = words only
+#
+# Examples:
+#   2 words only  → WORD_COUNT=2, DIGITS=0  → "boulder_river"
+#   4 words + 6d  → WORD_COUNT=4, DIGITS=6  → "stone_apple_river_oak_482917"
+#   1 word + 2d   → WORD_COUNT=1, DIGITS=2  → "cedar_07"
+#   legacy token  → set _USE_READABLE_IDS = False (ignores counts above)
+# -------------------------------------------------------------------------
+_READABLE_ID_DIGITS = 0
+_READABLE_ID_LIMIT = 10**_READABLE_ID_DIGITS
+_READABLE_SESSION_WORD_COUNT = 2
+# EFF large wordlist — Creative Commons Attribution 4.0 International (CC-BY 4.0).
+# Wordlist provided by the Electronic Frontier Foundation (eff.org).
+# Source: https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt
+_EFF_WORDLIST_PACKAGE = "crawl4md_streamlit"
+_EFF_WORDLIST_RESOURCE = ("data", "eff_large_wordlist.txt")
+_EFF_WORDLIST_SIZE = 7776
 _LOCK_STALE_SECONDS = 60 * 60
 _SESSION_PREFIX = "session_"
 _TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
+_USE_READABLE_IDS = True
 
 DEFAULT_SESSIONS_ROOT = _DEFAULT_SESSIONS_ROOT
 DEFAULT_SESSION_LANGUAGE = "EN"
 SESSION_PREFIX = _SESSION_PREFIX
 
 _SAFE_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_-")
+_SAFE_WORD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz-")
 _SESSION_CREATED_AT_FIELD = "created_at"
 _SESSION_ID_FIELD = "session_id"
 _SESSION_LANGUAGE_FIELD = "language"
@@ -62,10 +86,53 @@ def bootstrap_gate_state(
     return "ready"
 
 
-def generate_safe_id() -> str:
-    """Return a short lowercase ID safe for directory names."""
+@lru_cache(maxsize=1)
+def _readable_word_pool() -> tuple[str, ...]:
+    try:
+        resource = resources.files(_EFF_WORDLIST_PACKAGE).joinpath(*_EFF_WORDLIST_RESOURCE)
+        lines = resource.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError as exc:
+        raise ValueError("EFF word list resource is missing.") from exc
+
+    words = tuple(_parse_eff_word(line) for line in lines if line.strip())
+    if len(words) != _EFF_WORDLIST_SIZE:
+        raise ValueError("EFF word list size is unexpected.")
+    return words
+
+
+def _parse_eff_word(raw_line: str) -> str:
+    parts = raw_line.split(maxsplit=1)
+    if len(parts) != 2:
+        raise ValueError("EFF word list line is malformed.")
+    word = parts[1].strip()
+    if not word or word != word.lower() or any(char not in _SAFE_WORD_CHARS for char in word):
+        raise ValueError("EFF word list contains an unsafe word.")
+    return word
+
+
+def _legacy_safe_id() -> str:
     raw_id = secrets.token_urlsafe(_ID_BYTES).lower()
     return "".join(char if char in _SAFE_ID_CHARS else "_" for char in raw_id)
+
+
+def _generate_readable_session_id() -> str:
+    words = [secrets.choice(_readable_word_pool()) for _ in range(_READABLE_SESSION_WORD_COUNT)]
+    if _READABLE_ID_DIGITS > 0:
+        digits = f"{secrets.randbelow(_READABLE_ID_LIMIT):0{_READABLE_ID_DIGITS}d}"
+        return "_".join([*words, digits])
+    return "_".join(words)
+
+
+def _generate_readable_crawl_suffix() -> str:
+    words = [secrets.choice(_readable_word_pool()) for _ in range(_READABLE_CRAWL_WORD_COUNT)]
+    return "_".join(words)
+
+
+def generate_safe_id() -> str:
+    """Return a short lowercase ID safe for directory names."""
+    if not _USE_READABLE_IDS:
+        return _legacy_safe_id()
+    return _generate_readable_session_id()
 
 
 def validate_safe_id(value: str) -> str:
@@ -177,10 +244,22 @@ def _format_session_created_at(value: datetime) -> str:
     return normalized.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def generate_crawl_id(now: datetime | None = None) -> str:
-    """Return a crawl ID that sorts by start time and remains unique."""
+def generate_crawl_id(now: datetime | None = None, *, seq: int | None = None) -> str:
+    """Return a crawl ID. With seq, returns '{seq}_{word}'; otherwise uses a timestamp prefix."""
+    if seq is not None:
+        return f"{seq}_{_generate_readable_crawl_suffix()}"
     timestamp = (now or datetime.now(timezone.utc)).strftime(_TIMESTAMP_FORMAT)
-    return f"{timestamp}_{generate_safe_id()}"
+    if not _USE_READABLE_IDS:
+        return f"{timestamp}_{_legacy_safe_id()}"
+    return f"{timestamp}_{_generate_readable_crawl_suffix()}"
+
+
+def count_crawl_dirs(sessions_root: Path | str, session_id: str) -> int:
+    """Return the number of existing crawl subdirectories in the session folder."""
+    sdir = session_dir(sessions_root, session_id)
+    if not sdir.is_dir():
+        return 0
+    return sum(1 for p in sdir.iterdir() if p.is_dir() and p.name.startswith(_CRAWL_PREFIX))
 
 
 def session_dir(sessions_root: Path | str, session_id: str) -> Path:

@@ -39,6 +39,7 @@ SessionRecord = _session_manager.SessionRecord
 bootstrap_gate_state = _session_manager.bootstrap_gate_state
 cleanup_old_sessions = _session_manager.cleanup_old_sessions
 cleanup_old_sessions_with_lock = _session_manager.cleanup_old_sessions_with_lock
+count_crawl_dirs = _session_manager.count_crawl_dirs
 crawl_output_base = _session_manager.crawl_output_base
 create_session_record = _session_manager.create_session_record
 ensure_within_root = _session_manager.ensure_within_root
@@ -68,6 +69,7 @@ __all__ = [
     "build_configs",
     "cleanup_old_sessions",
     "cleanup_old_sessions_with_lock",
+    "count_crawl_dirs",
     "crawl_output_base",
     "create_session_record",
     "drain_events",

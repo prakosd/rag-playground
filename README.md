@@ -287,7 +287,7 @@ Example:
 ---
 crawl_start_datetime: "2026-05-12T23:19:38"
 session_id: "2026-05-12_23-19-38"
-stored_directory: "outputs\\streamlit_sessions\\session_mrjnre7ljfxx\\crawl_20260512_131938_bms4zel2a4ya\\2026-05-12_23-19-38\\round_1"
+stored_directory: "outputs\\streamlit_sessions\\session_winter_apple_river_stone_482917\\crawl_20260512_131938_boulder\\2026-05-12_23-19-38\\round_1"
 crawl_parameters:
   crawler_config:
     urls:

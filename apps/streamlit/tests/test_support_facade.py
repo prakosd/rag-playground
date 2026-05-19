@@ -20,6 +20,7 @@ _EXPECTED_FACADE_EXPORTS = {
     "build_configs": crawl_jobs.build_configs,
     "cleanup_old_sessions": session_manager.cleanup_old_sessions,
     "cleanup_old_sessions_with_lock": session_manager.cleanup_old_sessions_with_lock,
+    "count_crawl_dirs": session_manager.count_crawl_dirs,
     "crawl_output_base": session_manager.crawl_output_base,
     "create_session_record": session_manager.create_session_record,
     "drain_events": crawl_jobs.drain_events,

@@ -186,6 +186,18 @@ has no valid sessions, the server creates one safe ID, sends it back to the brid
 and selects it. Users can switch sessions with the searchable `st.selectbox()` or create a new
 session with the adjacent button.
 
+Session IDs use a readable format based on the EFF large wordlist. The pattern is controlled by
+two constants in `session_manager.py`:
+
+- `_READABLE_SESSION_WORD_COUNT` — number of EFF words per session ID (≥1)
+- `_READABLE_ID_DIGITS` — digits appended after the words; `0` means words only
+
+Examples: `2` words + `0` digits → `"boulder_river"` · `4` words + `6` digits →
+`"stone_apple_river_oak_482917"` · `1` word + `2` digits → `"cedar_07"`.
+Crawl IDs keep their timestamp prefix and append one readable word: `YYYYMMDD_HHMMSS_boulder`.
+To revert to the legacy `token_urlsafe` IDs, set `_USE_READABLE_IDS = False`.
+Wordlist provided by the Electronic Frontier Foundation (eff.org), licensed CC-BY 4.0.
+
 All output lives inside:
 
 ```text
