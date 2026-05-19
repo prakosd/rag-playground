@@ -14,7 +14,11 @@ from streamlit.components.v2 import component as component_v2
 
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.form_ui import render_crawl_form
-from crawl4md_streamlit.generated_files import build_download_tree, generated_files_cache_token
+from crawl4md_streamlit.generated_files import (
+    build_download_tree,
+    collapse_crawl_run_folder,
+    generated_files_cache_token,
+)
 from crawl4md_streamlit.i18n import CATALOG, get_strings
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
@@ -1153,14 +1157,23 @@ def render_generated_file_download(file: GeneratedFile) -> None:
             )
 
 
-def render_download_tree(tree: Mapping[str, Any]) -> None:
+def render_download_tree(
+    tree: Mapping[str, Any], *, allow_crawl_run_folder_collapse: bool = True
+) -> None:
     entries = sorted(
         tree.items(), key=lambda item: (not isinstance(item[1], dict), item[0].lower())
     )
     for name, entry in entries:
         if isinstance(entry, dict):
-            with st.expander(f"📁 {name.removeprefix('crawl_')}"):
-                render_download_tree(entry)
+            folder_label = name.removeprefix("crawl_")
+            folder_node: Mapping[str, Any] = entry
+            if allow_crawl_run_folder_collapse:
+                folder_label, folder_node = collapse_crawl_run_folder(name, entry)
+            with st.expander(f"📁 {folder_label}"):
+                render_download_tree(
+                    folder_node,
+                    allow_crawl_run_folder_collapse=False,
+                )
             continue
         render_generated_file_download(entry)
 

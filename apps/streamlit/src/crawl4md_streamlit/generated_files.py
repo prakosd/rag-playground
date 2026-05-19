@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import mimetypes
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -12,10 +13,12 @@ from typing import Any
 from crawl4md_streamlit.session_manager import ensure_within_root
 
 _ACTIVITY_LOG_FILE = "activity_log.txt"
+_CRAWL_DIR_PREFIX = "crawl_"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
 _MISSING_CACHE_TOKEN = (0.0, 0)
+_RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 _TEXT_PREVIEW_EXTENSIONS = frozenset(
     {
         ".cfg",
@@ -231,3 +234,19 @@ def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
             node = node.setdefault(folder, {})
         node[parts[-1]] = file
     return tree
+
+
+def collapse_crawl_run_folder(
+    folder_name: str,
+    folder_node: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Merge crawl folder and single timestamp child into a compact UI label."""
+    label = folder_name.removeprefix(_CRAWL_DIR_PREFIX)
+    if not folder_name.startswith(_CRAWL_DIR_PREFIX) or len(folder_node) != 1:
+        return label, folder_node
+
+    child_name, child_entry = next(iter(folder_node.items()))
+    if not isinstance(child_entry, dict) or not _RUN_FOLDER_PATTERN.fullmatch(child_name):
+        return label, folder_node
+
+    return f"{label}_{child_name}", child_entry
