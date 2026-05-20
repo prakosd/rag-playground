@@ -127,6 +127,11 @@ def test_files_preview_truncated_has_limit_placeholder() -> None:
     assert "{limit_kib}" in STRINGS_ID["FILES_PREVIEW_TRUNCATED"]
 
 
+def test_ready_result_zip_subtitle_has_count_placeholder() -> None:
+    assert "{count}" in STRINGS_EN["READY_RESULT_ZIP_SUBTITLE"]
+    assert "{count}" in STRINGS_ID["READY_RESULT_ZIP_SUBTITLE"]
+
+
 def test_files_preview_messages_keep_file_placeholder() -> None:
     keys = (
         "FILES_PREVIEW_HELP",

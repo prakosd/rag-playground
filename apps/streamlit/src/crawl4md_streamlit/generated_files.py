@@ -5,6 +5,7 @@ from __future__ import annotations
 import mimetypes
 import os
 import re
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -17,8 +18,12 @@ _CRAWL_DIR_PREFIX = "crawl_"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
+_FINAL_DIR_NAME = "final"
 _MISSING_CACHE_TOKEN = (0.0, 0)
 _RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+_SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
+_SUCCESS_CONTENT_GLOB = "success_content_*"
+_SUCCESS_ZIP_NAME = "success_content.zip"
 _TEXT_PREVIEW_EXTENSIONS = frozenset(
     {
         ".cfg",
@@ -62,6 +67,14 @@ class TextPreview:
 
     text: str
     truncated: bool
+
+
+@dataclass(frozen=True)
+class ReadyDownload:
+    """A ready-to-download crawl result, either a single file or a zip."""
+
+    file: GeneratedFile
+    source_count: int
 
 
 @dataclass(frozen=True)
@@ -250,3 +263,81 @@ def collapse_crawl_run_folder(
         return label, folder_node
 
     return f"{label}/{child_name}", child_entry
+
+
+def collect_success_content_files(crawl_output_dir: Path, root: Path) -> list[Path]:
+    """Return success content files from the final/ folder of a crawl output directory.
+
+    Prefers ``sorted_success_content_*`` files. Falls back to ``success_content_*``
+    (excluding any .zip file) when sorted files are absent.
+    """
+    try:
+        safe_dir = ensure_within_root(root, crawl_output_dir)
+    except ValueError:
+        return []
+    final_dir = safe_dir / _FINAL_DIR_NAME
+    if not final_dir.exists():
+        return []
+    files = sorted(f for f in final_dir.glob(_SORTED_SUCCESS_CONTENT_GLOB) if f.is_file())
+    if not files:
+        files = sorted(
+            f
+            for f in final_dir.glob(_SUCCESS_CONTENT_GLOB)
+            if f.is_file() and f.suffix.lower() != ".zip"
+        )
+    return files
+
+
+def _refresh_success_zip(source_files: list[Path], zip_path: Path) -> None:
+    """Create or refresh success_content.zip when any source file is newer."""
+    if zip_path.exists():
+        zip_mtime = zip_path.stat().st_mtime
+        if all(f.stat().st_mtime <= zip_mtime for f in source_files):
+            return
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in source_files:
+            zf.write(f, f.name)
+
+
+def build_ready_download(
+    crawl_output_dir: Path | str,
+    session_root: Path | str,
+    *,
+    download_limit_bytes: int = _DEFAULT_DOWNLOAD_LIMIT_BYTES,
+) -> ReadyDownload | None:
+    """Return the ready-to-download success result for a finished or stopped crawl.
+
+    Returns a single-file ``ReadyDownload`` when only one success content file exists,
+    or a zip-based ``ReadyDownload`` when multiple files are present. Returns ``None``
+    when no successful content is available or the path is outside the session root.
+    """
+    root = Path(session_root).resolve()
+    try:
+        output_dir = ensure_within_root(root, Path(crawl_output_dir))
+    except ValueError:
+        return None
+    source_files = collect_success_content_files(output_dir, root)
+    if not source_files:
+        return None
+    if len(source_files) == 1:
+        download_path = source_files[0]
+    else:
+        zip_path = output_dir / _FINAL_DIR_NAME / _SUCCESS_ZIP_NAME
+        _refresh_success_zip(source_files, zip_path)
+        download_path = zip_path
+    try:
+        stat = download_path.stat()
+    except OSError:
+        return None
+    relative = download_path.relative_to(root)
+    gf = GeneratedFile(
+        path=download_path,
+        relative_path=relative.as_posix(),
+        name=download_path.name,
+        size_bytes=stat.st_size,
+        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+        file_type=download_path.suffix.lower().lstrip(".") or "file",
+        download_allowed=stat.st_size <= download_limit_bytes,
+    )
+    return ReadyDownload(file=gf, source_count=len(source_files))

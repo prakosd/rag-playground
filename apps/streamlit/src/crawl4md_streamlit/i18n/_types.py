@@ -140,5 +140,11 @@ class Strings(TypedDict):
     FILES_PREVIEW_READ_ERROR: str  # template: {file}
     FILES_PREVIEW_EMPTY: str  # template: {file}
     FILES_PREVIEW_TRUNCATED: str  # template: {limit_kib}
+    # ── Ready result download ─────────────────────────────────────────────
+    READY_RESULT_HEADER: str
+    READY_RESULT_SINGLE_SUBTITLE: str
+    READY_RESULT_ZIP_SUBTITLE: str  # template: {count}
+    READY_RESULT_DOWNLOAD_BUTTON: str
+    READY_RESULT_TOO_LARGE: str
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]

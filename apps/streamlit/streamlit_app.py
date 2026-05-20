@@ -26,10 +26,12 @@ from crawl4md_streamlit.support import (
     PLAYWRIGHT_MISSING_BROWSER_MESSAGE,
     CrawlJob,
     GeneratedFile,
+    ReadyDownload,
     SessionRecord,
     activity_log_path,
     bootstrap_gate_state,
     build_configs,
+    build_ready_download,
     cleanup_old_sessions_with_lock,
     count_crawl_dirs,
     create_session_record,
@@ -1179,6 +1181,37 @@ def render_download_tree(
         render_generated_file_download(entry)
 
 
+def _render_ready_result(ready: ReadyDownload, strings: dict[str, Any]) -> None:
+    is_zip = ready.file.file_type == "zip"
+    subtitle = (
+        strings["READY_RESULT_ZIP_SUBTITLE"].format(count=ready.source_count)
+        if is_zip
+        else strings["READY_RESULT_SINGLE_SUBTITLE"]
+    )
+    st.markdown(
+        f'<h4 style="margin-bottom:0.25rem">{strings["READY_RESULT_HEADER"]}</h4>'
+        f'<p style="opacity:0.7;font-size:0.875rem;margin:0 0 0.75rem">'
+        f"{subtitle}</p>",
+        unsafe_allow_html=True,
+    )
+    if not ready.file.download_allowed:
+        st.warning(strings["READY_RESULT_TOO_LARGE"])
+        return
+    try:
+        file_bytes = ready.file.path.read_bytes()
+    except OSError:
+        return
+    mime_type = mimetypes.guess_type(ready.file.name)[0] or "application/octet-stream"
+    st.download_button(
+        label=strings["READY_RESULT_DOWNLOAD_BUTTON"],
+        data=file_bytes,
+        file_name=ready.file.name,
+        mime=mime_type,
+        key=f"ready_result_{st.session_state.session_id}_{st.session_state.get('crawl_id', '')}",
+        use_container_width=True,
+    )
+
+
 def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
     preview_relative_path = str(st.session_state.get("preview_file_relative_path", ""))
     if not preview_relative_path:
@@ -1230,6 +1263,15 @@ def _render_downloads() -> None:
             with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
                 render_download_tree(download_tree)
     elif session_folder.exists():
+        active_output_dir = str(st.session_state.get("active_output_dir", ""))
+        if active_output_dir:
+            ready = build_ready_download(
+                active_output_dir,
+                session_folder,
+                download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
+            )
+            if ready is not None:
+                _render_ready_result(ready, strings)
         with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
             render_download_tree(download_tree)
 

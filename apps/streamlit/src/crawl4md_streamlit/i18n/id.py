@@ -185,6 +185,12 @@ STRINGS_ID: Strings = {
     "FILES_PREVIEW_READ_ERROR": "Tidak dapat membaca file untuk pratinjau: {file}",
     "FILES_PREVIEW_EMPTY": "{file} kosong.",
     "FILES_PREVIEW_TRUNCATED": "Pratinjau dibatasi pada {limit_kib} KiB pertama.",
+    # ── Ready result download ──────────────────────────────────────────
+    "READY_RESULT_HEADER": "✅ Hasil crawl siap",
+    "READY_RESULT_SINGLE_SUBTITLE": "1 file berhasil siap diunduh",
+    "READY_RESULT_ZIP_SUBTITLE": "{count} file berhasil — dikemas dalam satu zip",
+    "READY_RESULT_DOWNLOAD_BUTTON": "⬇ Unduh",
+    "READY_RESULT_TOO_LARGE": "Output terlalu besar untuk diunduh dari aplikasi — gunakan daftar file di bawah.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Siap",

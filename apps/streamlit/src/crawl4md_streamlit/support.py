@@ -23,8 +23,10 @@ request_cancel = _crawl_jobs.request_cancel
 start_crawl_job = _crawl_jobs.start_crawl_job
 
 GeneratedFile = _generated_files.GeneratedFile
+ReadyDownload = _generated_files.ReadyDownload
 TextPreview = _generated_files.TextPreview
 activity_log_path = _generated_files.activity_log_path
+build_ready_download = _generated_files.build_ready_download
 find_latest_crawl_dir = _generated_files.find_latest_crawl_dir
 is_text_previewable = _generated_files.is_text_previewable
 list_generated_files = _generated_files.list_generated_files
@@ -61,12 +63,14 @@ __all__ = [
     "GeneratedFile",
     "PLAYWRIGHT_MISSING_BROWSER_MESSAGE",
     "ProgressEstimate",
+    "ReadyDownload",
     "SESSION_PREFIX",
     "SessionRecord",
     "TextPreview",
     "activity_log_path",
     "bootstrap_gate_state",
     "build_configs",
+    "build_ready_download",
     "cleanup_old_sessions",
     "cleanup_old_sessions_with_lock",
     "count_crawl_dirs",

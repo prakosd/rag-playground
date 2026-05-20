@@ -6,8 +6,11 @@ from pathlib import Path
 
 from crawl4md_streamlit.generated_files import (
     GeneratedFile,
+    ReadyDownload,
     build_download_tree,
+    build_ready_download,
     collapse_crawl_run_folder,
+    collect_success_content_files,
     generated_files_cache_token,
 )
 
@@ -86,3 +89,130 @@ def test_generated_files_cache_token_reflects_path_stat(tmp_path: Path) -> None:
 
     assert second_token[0] > first_token[0]
     assert second_token[1] == first_token[1]
+
+
+# ── collect_success_content_files ────────────────────────────────────────────
+
+
+def _make_final_dir(root: Path) -> Path:
+    final = root / "final"
+    final.mkdir(parents=True)
+    return final
+
+
+def test_collect_prefers_sorted_success_files(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    sorted_f = final / "sorted_success_content_001_of_001.md"
+    unsorted_f = final / "success_content_001.md"
+    sorted_f.write_text("sorted", encoding="utf-8")
+    unsorted_f.write_text("unsorted", encoding="utf-8")
+
+    result = collect_success_content_files(tmp_path, tmp_path)
+
+    assert result == [sorted_f]
+
+
+def test_collect_falls_back_to_unsorted_success_files(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    content_f = final / "success_content_001.md"
+    content_f.write_text("content", encoding="utf-8")
+
+    result = collect_success_content_files(tmp_path, tmp_path)
+
+    assert result == [content_f]
+
+
+def test_collect_excludes_zip_from_fallback(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    content_f = final / "success_content_001.md"
+    zip_f = final / "success_content.zip"
+    content_f.write_text("content", encoding="utf-8")
+    zip_f.write_bytes(b"PK")
+
+    result = collect_success_content_files(tmp_path, tmp_path)
+
+    assert result == [content_f]
+
+
+def test_collect_returns_empty_when_no_final_dir(tmp_path: Path) -> None:
+    assert collect_success_content_files(tmp_path, tmp_path) == []
+
+
+def test_collect_returns_empty_for_path_outside_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "session"
+    root.mkdir()
+
+    assert collect_success_content_files(outside, root) == []
+
+
+# ── build_ready_download ─────────────────────────────────────────────────────
+
+
+def test_build_ready_download_returns_none_when_no_success_files(tmp_path: Path) -> None:
+    _make_final_dir(tmp_path)
+
+    assert build_ready_download(tmp_path, tmp_path) is None
+
+
+def test_build_ready_download_returns_single_file_directly(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    content_f = final / "sorted_success_content_001_of_001.md"
+    content_f.write_text("# Page", encoding="utf-8")
+
+    result = build_ready_download(tmp_path, tmp_path)
+
+    assert isinstance(result, ReadyDownload)
+    assert result.source_count == 1
+    assert result.file.path == content_f
+    assert result.file.file_type == "md"
+    assert not (final / "success_content.zip").exists()
+
+
+def test_build_ready_download_creates_zip_for_multiple_files(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    (final / "sorted_success_content_001_of_002.md").write_text("# A", encoding="utf-8")
+    (final / "sorted_success_content_002_of_002.md").write_text("# B", encoding="utf-8")
+
+    result = build_ready_download(tmp_path, tmp_path)
+
+    assert isinstance(result, ReadyDownload)
+    assert result.source_count == 2
+    assert result.file.name == "success_content.zip"
+    assert result.file.file_type == "zip"
+    assert (final / "success_content.zip").exists()
+
+
+def test_build_ready_download_reuses_zip_when_up_to_date(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    (final / "sorted_success_content_001_of_002.md").write_text("# A", encoding="utf-8")
+    (final / "sorted_success_content_002_of_002.md").write_text("# B", encoding="utf-8")
+    build_ready_download(tmp_path, tmp_path)
+    zip_path = final / "success_content.zip"
+    future_mtime = zip_path.stat().st_mtime + 100
+    os.utime(zip_path, (future_mtime, future_mtime))
+
+    build_ready_download(tmp_path, tmp_path)
+
+    assert zip_path.stat().st_mtime == future_mtime
+
+
+def test_build_ready_download_respects_download_limit(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    content_f = final / "sorted_success_content_001_of_001.md"
+    content_f.write_bytes(b"x" * 20)
+
+    result = build_ready_download(tmp_path, tmp_path, download_limit_bytes=10)
+
+    assert result is not None
+    assert result.file.download_allowed is False
+
+
+def test_build_ready_download_returns_none_for_path_outside_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "session"
+    root.mkdir()
+
+    assert build_ready_download(outside, root) is None

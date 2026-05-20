@@ -179,6 +179,12 @@ STRINGS_EN: Strings = {
     "FILES_PREVIEW_READ_ERROR": "Unable to read file for preview: {file}",
     "FILES_PREVIEW_EMPTY": "{file} is empty.",
     "FILES_PREVIEW_TRUNCATED": "Preview is capped to the first {limit_kib} KiB.",
+    # ── Ready result download ──────────────────────────────────────────
+    "READY_RESULT_HEADER": "✅ Crawl results ready",
+    "READY_RESULT_SINGLE_SUBTITLE": "1 success file ready to download",
+    "READY_RESULT_ZIP_SUBTITLE": "{count} success files — packaged as a zip",
+    "READY_RESULT_DOWNLOAD_BUTTON": "⬇ Download",
+    "READY_RESULT_TOO_LARGE": "The output is too large to download from the app — use the file listing below.",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Ready",
