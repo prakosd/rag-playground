@@ -9,7 +9,9 @@ from crawl4md_streamlit import session_manager as _session_manager
 DEFAULT_ACTIVITY_LOG_SIZE = _crawl_jobs.DEFAULT_ACTIVITY_LOG_SIZE
 PLAYWRIGHT_MISSING_BROWSER_MESSAGE = _crawl_jobs.PLAYWRIGHT_MISSING_BROWSER_MESSAGE
 CrawlJob = _crawl_jobs.CrawlJob
+JobSnapshot = _crawl_jobs.JobSnapshot
 ProgressEstimate = _crawl_jobs.ProgressEstimate
+active_registry_session_ids = _crawl_jobs.active_registry_session_ids
 build_configs = _crawl_jobs.build_configs
 drain_events = _crawl_jobs.drain_events
 elapsed_time_display = _crawl_jobs.elapsed_time_display
@@ -17,6 +19,7 @@ estimate_progress = _crawl_jobs.estimate_progress
 format_eta_seconds = _crawl_jobs.format_eta_seconds
 format_status_row = _crawl_jobs.format_status_row
 format_status_url_preview = _crawl_jobs.format_status_url_preview
+get_active_job_snapshot = _crawl_jobs.get_active_job_snapshot
 job_state_from_event = _crawl_jobs.job_state_from_event
 normalize_event_urls = _crawl_jobs.normalize_event_urls
 request_cancel = _crawl_jobs.request_cancel
@@ -62,12 +65,14 @@ __all__ = [
     "DEFAULT_SESSION_LANGUAGE",
     "DEFAULT_SESSIONS_ROOT",
     "GeneratedFile",
+    "JobSnapshot",
     "PLAYWRIGHT_MISSING_BROWSER_MESSAGE",
     "ProgressEstimate",
     "ReadyDownload",
     "SESSION_PREFIX",
     "SessionRecord",
     "TextPreview",
+    "active_registry_session_ids",
     "activity_log_path",
     "bootstrap_gate_state",
     "build_configs",
@@ -88,6 +93,7 @@ __all__ = [
     "format_status_url_preview",
     "generate_crawl_id",
     "generate_safe_id",
+    "get_active_job_snapshot",
     "is_text_previewable",
     "job_state_from_event",
     "latest_session_id",

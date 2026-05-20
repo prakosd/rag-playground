@@ -28,6 +28,7 @@ from crawl4md_streamlit.support import (
     GeneratedFile,
     ReadyDownload,
     SessionRecord,
+    active_registry_session_ids,
     activity_log_path,
     bootstrap_gate_state,
     build_configs,
@@ -44,6 +45,7 @@ from crawl4md_streamlit.support import (
     format_status_row,
     format_status_url_preview,
     generate_crawl_id,
+    get_active_job_snapshot,
     is_text_previewable,
     job_state_from_event,
     latest_session_id,
@@ -104,6 +106,7 @@ _SESSION_ID_FIELD = "session_id"
 _SESSION_CREATED_AT_FIELD = "created_at"
 _SESSION_LANGUAGE_FIELD = "language"
 _SESSION_STORAGE_KEY = "crawl4md.streamlit.sessions.v1"
+_SESSION_SELECTED_ID_FIELD = "selected_session_id"
 _SESSION_STORAGE_HTML = """
 <div id="crawl4md-session-storage" hidden></div>
 """
@@ -138,23 +141,31 @@ function normalizeRecords(records) {
     })
 }
 
-function readRecords(storageKey) {
+function readStorage(storageKey) {
     try {
         const rawValue = window.localStorage.getItem(storageKey)
-        if (!rawValue) return []
+        if (!rawValue) return { records: [], selectedSessionId: null }
         const parsed = JSON.parse(rawValue)
-        if (Array.isArray(parsed)) return normalizeRecords(parsed)
-        if (Array.isArray(parsed.sessions)) return normalizeRecords(parsed.sessions)
+        const records = Array.isArray(parsed)
+            ? normalizeRecords(parsed)
+            : normalizeRecords(parsed.sessions)
+        const rawSelected = typeof parsed.selected_session_id === "string"
+            ? parsed.selected_session_id.trim()
+            : null
+        const selectedSessionId = rawSelected && SESSION_ID_PATTERN.test(rawSelected)
+            ? rawSelected
+            : null
+        return { records, selectedSessionId }
     } catch {
-        return []
+        return { records: [], selectedSessionId: null }
     }
-    return []
 }
 
-function writeRecords(storageKey, records) {
+function writeStorage(storageKey, records, selectedSessionId) {
     try {
-        const payload = JSON.stringify({ version: 1, sessions: records })
-        window.localStorage.setItem(storageKey, payload)
+        const payload = { version: 1, sessions: records }
+        if (selectedSessionId) payload.selected_session_id = selectedSessionId
+        window.localStorage.setItem(storageKey, JSON.stringify(payload))
         return true
     } catch {
         return false
@@ -164,16 +175,20 @@ function writeRecords(storageKey, records) {
 export default function (component) {
     const { data, setStateValue } = component
     const storageKey = data.storageKey
-    const storedRecords = readRecords(storageKey)
+    const { records: storedRecords, selectedSessionId: storedSelectedId } = readStorage(storageKey)
     const pendingRecords = Array.isArray(data.pendingRecords) ? data.pendingRecords : []
     const nextRecords = normalizeRecords([...storedRecords, ...pendingRecords])
     const nextSerialized = JSON.stringify(nextRecords)
     const storedSerialized = JSON.stringify(storedRecords)
-    let storedPending = pendingRecords.length === 0
-    if (pendingRecords.length > 0 || nextSerialized !== storedSerialized) {
-        storedPending = writeRecords(storageKey, nextRecords)
+    const pendingSelectedId = typeof data.pendingSelectedSessionId === "string"
+        ? data.pendingSelectedSessionId.trim()
+        : null
+    const nextSelectedId = pendingSelectedId || storedSelectedId
+    let storedPending = pendingRecords.length === 0 && !pendingSelectedId
+    if (pendingRecords.length > 0 || nextSerialized !== storedSerialized || pendingSelectedId) {
+        storedPending = writeStorage(storageKey, nextRecords, nextSelectedId)
     }
-    const storageWriteFailed = pendingRecords.length > 0 && storedPending === false
+    const storageWriteFailed = (pendingRecords.length > 0 || !!pendingSelectedId) && storedPending === false
     if (pendingRecords.length > 0 && storedPending) {
         setStateValue("stored_records", nextRecords)
     }
@@ -187,6 +202,9 @@ export default function (component) {
     }
     if (data.hydrated !== true) {
         setStateValue("hydrated", true)
+    }
+    if (storedSelectedId && data.selectedSessionId !== storedSelectedId) {
+        setStateValue("selected_session_id", storedSelectedId)
     }
 }
 """
@@ -219,6 +237,7 @@ def _init_state() -> None:
     st.session_state.setdefault("pending_bootstrap_session_id", "")
     st.session_state.setdefault("session_storage_write_failed", False)
     st.session_state.setdefault("preferred_session_id", "")
+    st.session_state.setdefault("pending_selected_session_id", "")
     st.session_state.setdefault("job", None)
     st.session_state.setdefault("job_state", _STATE_IDLE)
     st.session_state.setdefault("crawl_id", "")
@@ -334,6 +353,8 @@ def _mount_session_storage() -> None:
             "storageKey": _SESSION_STORAGE_KEY,
             "records": serialize_session_records(_browser_session_records()),
             "pendingRecords": st.session_state.pending_browser_session_records,
+            "pendingSelectedSessionId": st.session_state.pending_selected_session_id,
+            "selectedSessionId": st.session_state.preferred_session_id,
             "hydrated": st.session_state.browser_sessions_hydrated,
             "storageWriteFailed": st.session_state.session_storage_write_failed,
         },
@@ -341,6 +362,7 @@ def _mount_session_storage() -> None:
         on_stored_records_change=lambda: None,
         on_storage_write_failed_change=lambda: None,
         on_hydrated_change=lambda: None,
+        on_selected_session_id_change=lambda: None,
     )
     _apply_session_storage_result(result)
 
@@ -373,6 +395,20 @@ def _apply_session_storage_result(result: Any) -> None:
         if st.session_state.pending_bootstrap_session_id in stored_ids:
             st.session_state.pending_bootstrap_session_id = ""
             st.session_state.session_storage_write_failed = False
+
+    # Restore the previously selected session id from browser storage if present.
+    stored_selected_id = _component_result_field(result, "selected_session_id")
+    if isinstance(stored_selected_id, str) and stored_selected_id.strip():
+        candidate = stored_selected_id.strip()
+        records = _browser_session_records()
+        known_ids = {r.session_id for r in records}
+        if candidate in known_ids and not st.session_state.preferred_session_id:
+            st.session_state.preferred_session_id = candidate
+
+    # Clear pending_selected_session_id after one round-trip — JS writes synchronously
+    # so confirmation via stored_payload is not needed.
+    if st.session_state.pending_selected_session_id:
+        st.session_state.pending_selected_session_id = ""
 
 
 def _normalize_language(value: object) -> str:
@@ -414,6 +450,8 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
         st.session_state.prev_successful_pages = 0
         st.session_state.prev_failed_pages = 0
         st.session_state.prev_discovered_pages = 0
+        # Persist the newly selected session id back to browser storage only on change.
+        st.session_state.pending_selected_session_id = session_id
     st.session_state.session_id = session_id
     st.session_state.preferred_session_id = session_id
     if not restore_language:
@@ -548,6 +586,35 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
     return state_changed
 
 
+def _reattach_selected_session_job() -> None:
+    """Restore a running crawl job from the process-local registry after browser refresh.
+
+    Called after session selection so that `st.session_state.session_id` is already set.
+    Does nothing if a job is already attached to this Streamlit session.
+    """
+    if st.session_state.job is not None:
+        return
+    session_id = st.session_state.session_id
+    if not session_id:
+        return
+    snapshot = get_active_job_snapshot(session_id)
+    if snapshot is None:
+        return
+    st.session_state.job = snapshot.job
+    st.session_state.crawl_id = snapshot.crawl_id
+    st.session_state.job_state = snapshot.job_state
+    st.session_state.started_at = snapshot.started_at
+    st.session_state.activity_log_size = snapshot.activity_log_size
+    st.session_state.latest_event = dict(snapshot.latest_event)
+    st.session_state.active_output_dir = snapshot.active_output_dir
+    # Seed page-count deltas so the first drain doesn't fire spurious toast messages.
+    st.session_state.prev_successful_pages = int(snapshot.latest_event.get("successful_pages", 0))
+    st.session_state.prev_failed_pages = int(snapshot.latest_event.get("failed_pages", 0))
+    st.session_state.prev_discovered_pages = int(
+        snapshot.latest_event.get("queued_discovered_urls", 0)
+    )
+
+
 def _session_root(session_id: str | None = None) -> Path:
     current_session_id = session_id or st.session_state.session_id
     if not current_session_id:
@@ -556,6 +623,12 @@ def _session_root(session_id: str | None = None) -> Path:
 
 
 def _start_job(values: dict[str, Any]) -> None:
+    # Guard: if the registry already has an alive job for this session (e.g. a
+    # second tab opened the same session), reattach instead of starting a new crawl.
+    if get_active_job_snapshot(st.session_state.session_id) is not None:
+        _reattach_selected_session_job()
+        st.rerun()
+        return
     try:
         crawler_config, page_config, activity_log_size = build_configs(values)
     except (ValidationError, ValueError) as exc:
@@ -1336,7 +1409,8 @@ if bootstrap_state != "ready":
     st.info(strings["SESSION_LOADING"])
     st.stop()
 
-_run_startup_cleanup(tuple(_session_options()))
+_reattach_selected_session_job()
+_run_startup_cleanup(tuple(set(_session_options()) | active_registry_session_ids()))
 _drain_job_events(st.session_state.job)
 
 strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))

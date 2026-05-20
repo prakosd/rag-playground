@@ -6,7 +6,7 @@ import html
 import queue
 import threading
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -31,8 +31,11 @@ _EVENT_CANCELLED = "cancelled"
 _EVENT_COMPLETED = "completed"
 _EVENT_FAILED = "failed"
 _EVENT_STARTED = "started"
+_STATE_CANCEL_REQUESTED = "cancel_requested"
 _STATE_RUNNING = "running"
 _ELAPSED_ACTIVE_STATES = frozenset({_STATE_RUNNING, _EVENT_CANCEL_REQUESTED})
+# Terminal states whose registry entries may be pruned on the next registration.
+_TERMINAL_STATES = frozenset({_EVENT_COMPLETED, _EVENT_FAILED, "stopped", "cancelled"})
 
 _PLAYWRIGHT_INSTALL_HINT = "playwright install"
 _PLAYWRIGHT_MISSING_EXECUTABLE_MARKER = "BrowserType.launch: Executable doesn't exist at"
@@ -67,6 +70,74 @@ class CrawlJob:
     events: queue.Queue[dict[str, object]]
     cancel_event: threading.Event
     thread: threading.Thread
+
+
+@dataclass
+class JobSnapshot:
+    """Process-local snapshot of a running job, safe to share across Streamlit sessions.
+
+    Unlike ``CrawlJob.events`` (a single-consumer queue), ``latest_event`` is updated
+    by the background thread on every emit so a refreshed browser session can read the
+    latest progress without consuming queued events first.
+    """
+
+    job: CrawlJob
+    crawl_id: str
+    started_at: datetime
+    activity_log_size: int
+    job_state: str
+    latest_event: dict[str, object] = field(default_factory=dict)
+    active_output_dir: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Process-local active job registry
+# ---------------------------------------------------------------------------
+# Maps session_id → JobSnapshot for jobs that are still alive (or recently
+# completed).  Protected by _REGISTRY_LOCK so that background threads and
+# Streamlit reruns can both write safely.
+_REGISTRY_LOCK: threading.Lock = threading.Lock()
+_JOB_REGISTRY: dict[str, JobSnapshot] = {}
+
+
+def _register_job(snapshot: JobSnapshot) -> None:
+    """Register a new job snapshot, pruning any stale terminal entries first."""
+    with _REGISTRY_LOCK:
+        # Prune sessions whose thread has already finished to avoid unbounded growth.
+        stale = [sid for sid, snap in _JOB_REGISTRY.items() if not snap.job.thread.is_alive()]
+        for sid in stale:
+            del _JOB_REGISTRY[sid]
+        _JOB_REGISTRY[snapshot.job.session_id] = snapshot
+
+
+def _update_snapshot(session_id: str, event: dict[str, object], state: str) -> None:
+    """Update the registry snapshot's latest_event and job_state from a worker emit."""
+    with _REGISTRY_LOCK:
+        snap = _JOB_REGISTRY.get(session_id)
+        if snap is None:
+            return
+        snap.latest_event = dict(event)
+        snap.job_state = state
+        output_dir = str(event.get("output_dir", ""))
+        if output_dir:
+            snap.active_output_dir = output_dir
+
+
+def get_active_job_snapshot(session_id: str) -> JobSnapshot | None:
+    """Return the active snapshot for a session if the job thread is still alive."""
+    with _REGISTRY_LOCK:
+        snap = _JOB_REGISTRY.get(session_id)
+    if snap is None:
+        return None
+    if not snap.job.thread.is_alive():
+        return None
+    return snap
+
+
+def active_registry_session_ids() -> frozenset[str]:
+    """Return session IDs whose job threads are still alive."""
+    with _REGISTRY_LOCK:
+        return frozenset(sid for sid, snap in _JOB_REGISTRY.items() if snap.job.thread.is_alive())
 
 
 def build_configs(values: Mapping[str, Any]) -> tuple[CrawlerConfig, PageConfig, int]:
@@ -241,9 +312,16 @@ def start_crawl_job(
     output_base = prepare_crawl_output_base(sessions_root, session_id, crawl_id)
     event_queue: queue.Queue[dict[str, object]] = queue.Queue()
     cancel_event = threading.Event()
+    started_at = datetime.now(timezone.utc)
 
     def emit(event: Mapping[str, object]) -> None:
-        event_queue.put(dict(event))
+        raw = dict(event)
+        event_queue.put(raw)
+        event_name = str(raw.get("event", ""))
+        state = job_state_from_event(event_name)
+        if event_name == _EVENT_CANCELLED:
+            state = "stopped"
+        _update_snapshot(session_id, raw, state)
 
     def run() -> None:
         emit(
@@ -302,8 +380,7 @@ def start_crawl_job(
             )
 
     thread = threading.Thread(target=run, name=f"crawl4md-{crawl_id}", daemon=True)
-    thread.start()
-    return CrawlJob(
+    job = CrawlJob(
         session_id=session_id,
         crawl_id=crawl_id,
         output_base=output_base,
@@ -311,12 +388,27 @@ def start_crawl_job(
         cancel_event=cancel_event,
         thread=thread,
     )
+    snapshot = JobSnapshot(
+        job=job,
+        crawl_id=crawl_id,
+        started_at=started_at,
+        activity_log_size=activity_log_size,
+        job_state=_STATE_RUNNING,
+    )
+    _register_job(snapshot)
+    thread.start()
+    return job
 
 
 def request_cancel(job: CrawlJob) -> None:
     """Request cooperative cancellation for a running crawl job."""
     job.cancel_event.set()
-    job.events.put({"event": _EVENT_CANCEL_REQUESTED, "crawl_id": job.crawl_id})
+    cancel_event_dict: dict[str, object] = {
+        "event": _EVENT_CANCEL_REQUESTED,
+        "crawl_id": job.crawl_id,
+    }
+    job.events.put(cancel_event_dict)
+    _update_snapshot(job.session_id, cancel_event_dict, _STATE_CANCEL_REQUESTED)
 
 
 def _format_crawl_error(exc: Exception) -> str:

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
+from queue import Queue
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -10,6 +12,8 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from crawl4md_streamlit.support import (
+    CrawlJob,
+    JobSnapshot,
     SessionRecord,
     normalize_session_records,
     serialize_session_records,
@@ -142,3 +146,62 @@ def test_new_session_not_reverted_when_component_records_are_stale(
         assert app.session_state.session_id == new_session_id, (
             f"session_id reverted to old session: got {app.session_state.session_id!r}"
         )
+
+
+# Risk: browser refresh causes a fresh st.session_state (job=None) even if the crawl
+# thread is still alive — the registry must be consulted to reattach. Type: critical flow.
+def test_refresh_reattaches_running_crawl_from_registry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "sess_reattach"
+    initial_records = serialize_session_records(
+        [SessionRecord(session_id, datetime(2026, 6, 1, tzinfo=timezone.utc))]
+    )
+
+    # output_base must be inside the app's sessions root so ensure_within_root passes.
+    sessions_root = tmp_path / "outputs" / "streamlit_sessions"
+    output_base = sessions_root / f"session_{session_id}" / "crawl_1_reattach"
+    gate = Event()
+    t = Thread(target=gate.wait)
+    t.daemon = True
+    t.start()
+    fake_job = CrawlJob(
+        session_id=session_id,
+        crawl_id="cr_reattach",
+        output_base=output_base,
+        events=Queue(),
+        cancel_event=Event(),
+        thread=t,
+    )
+    snapshot = JobSnapshot(
+        job=fake_job,
+        crawl_id=fake_job.crawl_id,
+        started_at=datetime(2026, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+        activity_log_size=50,
+        job_state="running",
+        latest_event={"successful_pages": 3, "failed_pages": 0, "queued_discovered_urls": 5},
+        active_output_dir=str(output_base),
+    )
+    fake_registry = {session_id: snapshot}
+
+    monkeypatch.chdir(tmp_path)
+    try:
+        with (
+            patch(
+                "streamlit.components.v2.component",
+                partial(_storage_component_factory, initial_records=initial_records),
+            ),
+            patch("crawl4md_streamlit.crawl_jobs._JOB_REGISTRY", fake_registry),
+        ):
+            app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+            app.run(timeout=10)
+
+        assert not app.exception
+        assert app.session_state.session_id == session_id
+        assert app.session_state.job is fake_job
+        assert app.session_state.job_state == "running"
+        assert app.session_state.crawl_id == "cr_reattach"
+        assert app.session_state.prev_successful_pages == 3
+    finally:
+        gate.set()
+        t.join(timeout=2)

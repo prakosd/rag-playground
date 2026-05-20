@@ -239,7 +239,9 @@ def test_find_ready_download_in_session_returns_none_when_no_crawl_dirs(tmp_path
     assert find_ready_download_in_session(tmp_path) is None
 
 
-def test_find_ready_download_in_session_returns_none_when_no_success_content(tmp_path: Path) -> None:
+def test_find_ready_download_in_session_returns_none_when_no_success_content(
+    tmp_path: Path,
+) -> None:
     _make_crawl_run(tmp_path, "crawl_1_word", "2026-05-20_12-00-00")
 
     assert find_ready_download_in_session(tmp_path) is None

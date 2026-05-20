@@ -15,7 +15,9 @@ from pydantic import ValidationError
 from crawl4md_streamlit import session_manager
 from crawl4md_streamlit.support import (
     CrawlJob,
+    JobSnapshot,
     SessionRecord,
+    active_registry_session_ids,
     activity_log_path,
     bootstrap_gate_state,
     build_configs,
@@ -33,6 +35,7 @@ from crawl4md_streamlit.support import (
     format_status_url_preview,
     generate_crawl_id,
     generate_safe_id,
+    get_active_job_snapshot,
     is_text_previewable,
     job_state_from_event,
     latest_session_id,
@@ -1204,3 +1207,171 @@ def test_format_status_url_preview_escapes_links_and_overflow() -> None:
     assert "+2 more" in markup
     assert "<script>" not in markup
     assert "&lt;script&gt;alert(&quot;" in markup
+
+
+# ---------------------------------------------------------------------------
+# Process-local job registry
+# ---------------------------------------------------------------------------
+
+
+def _make_dead_job(session_id: str = "sess_dead", tmp_path: Path | None = None) -> CrawlJob:
+    """Return a CrawlJob whose thread has already finished."""
+    base = (tmp_path or Path("/tmp")) / session_id
+    t = Thread(target=lambda: None)
+    t.start()
+    t.join()
+    return CrawlJob(
+        session_id=session_id,
+        crawl_id="cr_dead",
+        output_base=base,
+        events=Queue(),
+        cancel_event=Event(),
+        thread=t,
+    )
+
+
+def _make_alive_job(
+    session_id: str = "sess_alive", *, tmp_path: Path | None = None
+) -> tuple[CrawlJob, Event]:
+    """Return a CrawlJob whose thread blocks until the returned event is set."""
+    base = (tmp_path or Path("/tmp")) / session_id
+    gate = Event()
+    t = Thread(target=gate.wait)
+    t.daemon = True
+    t.start()
+    job = CrawlJob(
+        session_id=session_id,
+        crawl_id="cr_alive",
+        output_base=base,
+        events=Queue(),
+        cancel_event=Event(),
+        thread=t,
+    )
+    return job, gate
+
+
+def _alive_snapshot(
+    session_id: str = "sess_alive",
+    *,
+    tmp_path: Path | None = None,
+    job_state: str = "running",
+) -> tuple[JobSnapshot, Event]:
+    job, gate = _make_alive_job(session_id, tmp_path=tmp_path)
+    snap = JobSnapshot(
+        job=job,
+        crawl_id=job.crawl_id,
+        started_at=datetime.now(timezone.utc),
+        activity_log_size=50,
+        job_state=job_state,
+    )
+    return snap, gate
+
+
+def test_get_active_job_snapshot_returns_none_when_no_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs._JOB_REGISTRY", {})
+    assert get_active_job_snapshot("no_such_session") is None
+
+
+def test_get_active_job_snapshot_returns_snapshot_for_alive_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snap, gate = _alive_snapshot()
+    try:
+        monkeypatch.setattr(
+            "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+            {snap.job.session_id: snap},
+        )
+        result = get_active_job_snapshot(snap.job.session_id)
+        assert result is snap
+    finally:
+        gate.set()
+
+
+def test_get_active_job_snapshot_returns_none_for_dead_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dead_job = _make_dead_job()
+    snap = JobSnapshot(
+        job=dead_job,
+        crawl_id=dead_job.crawl_id,
+        started_at=datetime.now(timezone.utc),
+        activity_log_size=50,
+        job_state="running",
+    )
+    monkeypatch.setattr(
+        "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+        {dead_job.session_id: snap},
+    )
+    assert get_active_job_snapshot(dead_job.session_id) is None
+
+
+def test_active_registry_session_ids_returns_only_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snap_alive, gate = _alive_snapshot("sess_a")
+    snap_dead = JobSnapshot(
+        job=_make_dead_job("sess_d"),
+        crawl_id="cr_d",
+        started_at=datetime.now(timezone.utc),
+        activity_log_size=50,
+        job_state="running",
+    )
+    try:
+        monkeypatch.setattr(
+            "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+            {"sess_a": snap_alive, "sess_d": snap_dead},
+        )
+        ids = active_registry_session_ids()
+        assert "sess_a" in ids
+        assert "sess_d" not in ids
+    finally:
+        gate.set()
+
+
+def test_request_cancel_updates_registry_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snap, gate = _alive_snapshot("sess_cancel")
+    try:
+        monkeypatch.setattr(
+            "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+            {"sess_cancel": snap},
+        )
+        request_cancel(snap.job)
+        assert snap.job_state == "cancel_requested"
+        assert snap.job.cancel_event.is_set()
+    finally:
+        gate.set()
+
+
+def test_start_crawl_job_registers_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """start_crawl_job must add a snapshot to the registry before the thread starts."""
+
+    class FakeCrawler:
+        def __init__(self, *args: object, output_base: Path, **kwargs: object) -> None:
+            self.output_dir = output_base / "fake_out"
+
+        def crawl(self) -> list[object]:
+            return []
+
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    registry: dict = {}
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs._JOB_REGISTRY", registry)
+
+    crawler_config, page_config, activity_log_size = build_configs(_form_values())
+    job = start_crawl_job(
+        session_id="sess_reg",
+        crawl_id="cr_reg",
+        crawler_config=crawler_config,
+        page_config=page_config,
+        activity_log_size=activity_log_size,
+        sessions_root=tmp_path,
+    )
+    job.thread.join(timeout=5)
+
+    assert "sess_reg" in registry
+    assert registry["sess_reg"].job is job
