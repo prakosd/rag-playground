@@ -349,6 +349,7 @@ def _apply_session_storage_result(result: Any) -> None:
         st.session_state.browser_session_records = _cached_normalize_session_records(
             [
                 *serialize_session_records(normalized_payload),
+                *serialize_session_records(_browser_session_records()),
                 *st.session_state.pending_browser_session_records,
             ]
         )
