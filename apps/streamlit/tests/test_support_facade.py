@@ -30,6 +30,7 @@ _EXPECTED_FACADE_EXPORTS = {
     "ensure_within_root": session_manager.ensure_within_root,
     "estimate_progress": crawl_jobs.estimate_progress,
     "find_latest_crawl_dir": generated_files.find_latest_crawl_dir,
+    "find_ready_download_in_session": generated_files.find_ready_download_in_session,
     "format_eta_seconds": crawl_jobs.format_eta_seconds,
     "format_status_row": crawl_jobs.format_status_row,
     "format_status_url_preview": crawl_jobs.format_status_url_preview,

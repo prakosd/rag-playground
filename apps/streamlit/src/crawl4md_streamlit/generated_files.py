@@ -341,3 +341,33 @@ def build_ready_download(
         download_allowed=stat.st_size <= download_limit_bytes,
     )
     return ReadyDownload(file=gf, source_count=len(source_files))
+
+
+def find_ready_download_in_session(
+    session_root: Path | str,
+    *,
+    download_limit_bytes: int = _DEFAULT_DOWNLOAD_LIMIT_BYTES,
+) -> ReadyDownload | None:
+    """Return the most recent ready-to-download result within a session folder.
+
+    Scans ``crawl_*`` subdirectories of *session_root*, finds the newest run
+    directory in each, and returns the first ``ReadyDownload`` found when
+    searching newest-first. Returns ``None`` when no crawl in the session has
+    success content.
+    """
+    root = Path(session_root).resolve()
+    if not root.exists():
+        return None
+    candidates: list[tuple[float, Path]] = []
+    for crawl_dir in root.iterdir():
+        if not crawl_dir.is_dir() or not crawl_dir.name.startswith(_CRAWL_DIR_PREFIX):
+            continue
+        run_dir = find_latest_crawl_dir(crawl_dir)
+        if run_dir is None:
+            continue
+        candidates.append((run_dir.stat().st_mtime, run_dir))
+    for _, run_dir in sorted(candidates, reverse=True):
+        ready = build_ready_download(run_dir, root, download_limit_bytes=download_limit_bytes)
+        if ready is not None:
+            return ready
+    return None

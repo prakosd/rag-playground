@@ -28,6 +28,7 @@ TextPreview = _generated_files.TextPreview
 activity_log_path = _generated_files.activity_log_path
 build_ready_download = _generated_files.build_ready_download
 find_latest_crawl_dir = _generated_files.find_latest_crawl_dir
+find_ready_download_in_session = _generated_files.find_ready_download_in_session
 is_text_previewable = _generated_files.is_text_previewable
 list_generated_files = _generated_files.list_generated_files
 preview_created_timestamp = _generated_files.preview_created_timestamp
@@ -81,6 +82,7 @@ __all__ = [
     "ensure_within_root",
     "estimate_progress",
     "find_latest_crawl_dir",
+    "find_ready_download_in_session",
     "format_eta_seconds",
     "format_status_row",
     "format_status_url_preview",

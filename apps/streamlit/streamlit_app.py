@@ -39,6 +39,7 @@ from crawl4md_streamlit.support import (
     elapsed_time_display,
     ensure_within_root,
     find_latest_crawl_dir,
+    find_ready_download_in_session,
     format_eta_seconds,
     format_status_row,
     format_status_url_preview,
@@ -1181,6 +1182,26 @@ def render_download_tree(
         render_generated_file_download(entry)
 
 
+def _render_ready_result_panel() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    session_root = _session_root()
+    active_output_dir = str(st.session_state.get("active_output_dir", ""))
+    ready: ReadyDownload | None = None
+    if active_output_dir:
+        ready = build_ready_download(
+            active_output_dir,
+            session_root,
+            download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
+        )
+    if ready is None:
+        ready = find_ready_download_in_session(
+            session_root,
+            download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
+        )
+    if ready is not None:
+        _render_ready_result(ready, strings)
+
+
 def _render_ready_result(ready: ReadyDownload, strings: dict[str, Any]) -> None:
     is_zip = ready.file.file_type == "zip"
     subtitle = (
@@ -1188,8 +1209,17 @@ def _render_ready_result(ready: ReadyDownload, strings: dict[str, Any]) -> None:
         if is_zip
         else strings["READY_RESULT_SINGLE_SUBTITLE"]
     )
+    path_parts = ready.file.relative_path.split("/")
+    crawl_label = path_parts[0].removeprefix("crawl_") if path_parts else ""
+    timestamp = path_parts[1] if len(path_parts) > 1 else ""
+    if crawl_label:
+        subtitle = f"{subtitle} ({crawl_label})"
+    if crawl_label and timestamp:
+        download_name = f"{crawl_label}_{timestamp}.{ready.file.file_type}"
+    else:
+        download_name = ready.file.name
     st.markdown(
-        f'<h4 style="margin-bottom:0.25rem">{strings["READY_RESULT_HEADER"]}</h4>'
+        f'<h4 style="margin-bottom:0.25rem;padding-bottom:0">{strings["READY_RESULT_HEADER"]}</h4>'
         f'<p style="opacity:0.7;font-size:0.875rem;margin:0 0 0.75rem">'
         f"{subtitle}</p>",
         unsafe_allow_html=True,
@@ -1201,11 +1231,11 @@ def _render_ready_result(ready: ReadyDownload, strings: dict[str, Any]) -> None:
         file_bytes = ready.file.path.read_bytes()
     except OSError:
         return
-    mime_type = mimetypes.guess_type(ready.file.name)[0] or "application/octet-stream"
+    mime_type = mimetypes.guess_type(download_name)[0] or "application/octet-stream"
     st.download_button(
         label=strings["READY_RESULT_DOWNLOAD_BUTTON"],
         data=file_bytes,
-        file_name=ready.file.name,
+        file_name=download_name,
         mime=mime_type,
         key=f"ready_result_{st.session_state.session_id}_{st.session_state.get('crawl_id', '')}",
         use_container_width=True,
@@ -1263,15 +1293,6 @@ def _render_downloads() -> None:
             with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
                 render_download_tree(download_tree)
     elif session_folder.exists():
-        active_output_dir = str(st.session_state.get("active_output_dir", ""))
-        if active_output_dir:
-            ready = build_ready_download(
-                active_output_dir,
-                session_folder,
-                download_limit_bytes=_DOWNLOAD_LIMIT_BYTES,
-            )
-            if ready is not None:
-                _render_ready_result(ready, strings)
         with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
             render_download_tree(download_tree)
 
@@ -1429,6 +1450,7 @@ if st.session_state.stop_confirmation_open and not job_alive:
 if st.session_state.stop_confirmation_open:
     _stop_confirmation_dialog()
 
+_render_ready_result_panel()
 st.subheader(strings["PROGRESS_HEADER"])
 _render_live_area()
 _render_downloads()
