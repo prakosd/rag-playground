@@ -46,7 +46,7 @@ def test_collapse_crawl_run_folder_merges_single_timestamp_child() -> None:
 
     label, folder_node = collapse_crawl_run_folder("crawl_1_parlor", crawl_tree)
 
-    assert label == "1_parlor_2026-05-19_18-17-52"
+    assert label == "1_parlor/2026-05-19_18-17-52"
     assert folder_node == crawl_tree["2026-05-19_18-17-52"]
 
 

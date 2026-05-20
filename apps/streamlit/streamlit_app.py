@@ -1201,6 +1201,16 @@ def _render_downloads() -> None:
         generated_files_cache_token(session_folder),
     )
     download_tree = _cached_download_tree(tuple(files))
+    subtitle_text = (
+        strings["FILES_DOWNLOADS_IN_PROGRESS"]
+        if _job_is_alive(st.session_state.job)
+        else strings["FILES_DOWNLOADS_SUBTITLE"]
+    )
+    st.markdown(
+        f'<h3 style="padding-bottom:0">{strings["FILES_DOWNLOADS_SUBHEADER"]}</h3>'
+        f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 1rem">{subtitle_text}</p>',
+        unsafe_allow_html=True,
+    )
     if files:
         rows = [
             {
@@ -1214,22 +1224,12 @@ def _render_downloads() -> None:
         with st.expander(strings["FILES_HEADER"], expanded=False):
             st.dataframe(rows, hide_index=True, width="stretch")
 
-    subtitle_text = (
-        strings["FILES_DOWNLOADS_IN_PROGRESS"]
-        if _job_is_alive(st.session_state.job)
-        else strings["FILES_DOWNLOADS_SUBTITLE"]
-    )
-    st.markdown(
-        f'<h3 style="padding-bottom:0">{strings["FILES_DOWNLOADS_SUBHEADER"]}</h3>'
-        f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 1rem">{subtitle_text}</p>',
-        unsafe_allow_html=True,
-    )
     if _job_is_alive(st.session_state.job):
         if files:
-            with st.expander(f"📁 {session_folder.name.removeprefix('session_')}", expanded=True):
+            with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
                 render_download_tree(download_tree)
     elif session_folder.exists():
-        with st.expander(f"📁 {session_folder.name.removeprefix('session_')}", expanded=True):
+        with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
             render_download_tree(download_tree)
 
     _render_open_preview_dialog(files)

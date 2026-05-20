@@ -88,6 +88,11 @@ def test_files_session_caption_has_path_placeholder() -> None:
     assert "{path}" in STRINGS_ID["FILES_SESSION_CAPTION"]
 
 
+def test_files_crawl_result_label_defined() -> None:
+    assert STRINGS_EN["FILES_CRAWL_RESULT_LABEL"]
+    assert STRINGS_ID["FILES_CRAWL_RESULT_LABEL"]
+
+
 def test_files_download_too_large_has_file_placeholder() -> None:
     assert "{file}" in STRINGS_EN["FILES_DOWNLOAD_TOO_LARGE"]
     assert "{file}" in STRINGS_ID["FILES_DOWNLOAD_TOO_LARGE"]

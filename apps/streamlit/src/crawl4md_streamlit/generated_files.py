@@ -249,4 +249,4 @@ def collapse_crawl_run_folder(
     if not isinstance(child_entry, dict) or not _RUN_FOLDER_PATTERN.fullmatch(child_name):
         return label, folder_node
 
-    return f"{label}_{child_name}", child_entry
+    return f"{label}/{child_name}", child_entry

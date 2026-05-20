@@ -119,6 +119,7 @@ class Strings(TypedDict):
     ACTIVITY_LOG_HEADER: str
     # ── Files section ─────────────────────────────────────────────────────
     FILES_HEADER: str
+    FILES_CRAWL_RESULT_LABEL: str
     FILES_DOWNLOADS_SUBHEADER: str
     FILES_COL_NAME: str
     FILES_COL_TYPE: str
