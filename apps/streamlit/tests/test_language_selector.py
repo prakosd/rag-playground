@@ -169,6 +169,41 @@ def test_real_app_new_session_defaults_to_en_after_storage_roundtrip(
         assert not (tmp_path / "outputs" / "streamlit_sessions").exists()
 
 
+def test_new_session_button_with_existing_session_defaults_to_en(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: language selector must show EN after the async storage round-trip that
+    follows clicking New Session when a previous session (language=ID) is already active."""
+    initial_records = serialize_session_records(
+        [SessionRecord("existing", _FIXED_CREATED_AT, "ID")]
+    )
+    new_record = SessionRecord("created", _FIXED_CREATED_AT.replace(minute=5), "EN")
+    with _patched_app_test(
+        monkeypatch,
+        tmp_path,
+        component_factory=_storage_component_factory(
+            initial_records=initial_records,
+            delay_pending_store=True,
+        ),
+        created_record=new_record,
+    ) as app:
+        app.run(timeout=10)
+
+        assert app.selectbox[0].value == "existing"
+        assert app.button_group[0].value == "ID"
+
+        next(b for b in app.button if b.key == "session_create_button").click()
+        app.run(timeout=10)
+
+        assert app.info[0].value == "Loading browser sessions..."
+        assert len(app.button_group) == 0
+
+        app.run(timeout=10)
+
+        assert app.selectbox[0].value == "created"
+        assert app.button_group[0].value == "EN"
+
+
 def test_real_app_shows_error_when_bootstrap_storage_write_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

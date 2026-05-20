@@ -425,8 +425,6 @@ def _sync_language_widget_state() -> str:
     widget_key = _language_widget_key()
     language = _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
     st.session_state.language = language
-    if st.session_state.get(widget_key) != language:
-        st.session_state[widget_key] = language
     return widget_key
 
 
@@ -1399,6 +1397,7 @@ bootstrap_state = bootstrap_gate_state(
     pending_bootstrap_session_id=st.session_state.pending_bootstrap_session_id,
     session_storage_write_failed=st.session_state.session_storage_write_failed,
 )
+language_widget_key = _sync_language_widget_state()
 if bootstrap_state != "ready":
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     st.title(strings["PAGE_TITLE"])
@@ -1414,7 +1413,6 @@ _run_startup_cleanup(tuple(set(_session_options()) | active_registry_session_ids
 _drain_job_events(st.session_state.job)
 
 strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-language_widget_key = _sync_language_widget_state()
 
 st.markdown(
     f"""
@@ -1491,10 +1489,16 @@ with session_controls_col:
         _select_session_id(str(selected_session))
         st.rerun()
 with language_col, st.container(horizontal_alignment="right"):
+    _language_default = (
+        _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
+        if language_widget_key not in st.session_state
+        else None
+    )
     st.segmented_control(
         label=strings["LANG_SELECTOR_LABEL"],
         options=list(CATALOG.keys()),
         key=language_widget_key,
+        default=_language_default,
         label_visibility="collapsed",
         disabled=fields_disabled,
         on_change=_on_language_change,
