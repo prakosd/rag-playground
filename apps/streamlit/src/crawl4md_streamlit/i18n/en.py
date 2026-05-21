@@ -15,13 +15,16 @@ STRINGS_EN: Strings = {
     "SESSION_LOADING": "Loading browser sessions...",
     "SESSION_SELECTOR_LABEL": "Session ID",
     "SESSION_CREATE_BUTTON": "New",
-    "PROGRESS_HEADER": "📊 Progress",
+    "PROGRESS_HEADER": "⏳ Progress",
+    "PROGRESS_CAPTION": "Track crawl activity as it runs.",
+    "PROGRESS_EXPANDER_LABEL": "Live statistics",
     "LANG_SELECTOR_LABEL": "Language",
     # ── Form ──────────────────────────────────────────────────────────────
-    "FORM_SUBHEADER": "Set up your crawl",
+    "FORM_SUBHEADER": "⚙️ Set up your crawl",
     "FORM_CAPTION": (
         "Configure the starting URLs, filtering rules, and crawl behaviour before starting."
     ),
+    "FORM_EXPANDER_LABEL": "Crawl settings",
     "FORM_URLS_LABEL": "Website URLs",
     "FORM_URLS_HELP": (
         "Paste one or more starting pages. Use one line per site or separate with commas."
@@ -159,7 +162,7 @@ STRINGS_EN: Strings = {
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "File Details",
     "FILES_CRAWL_RESULT_LABEL": "📁 Crawl result",
-    "FILES_DOWNLOADS_SUBHEADER": "Output Files",
+    "FILES_DOWNLOADS_SUBHEADER": "🗂️ Output Files",
     "FILES_COL_NAME": "File",
     "FILES_COL_TYPE": "Type",
     "FILES_COL_SIZE": "Size (MB)",
@@ -180,7 +183,7 @@ STRINGS_EN: Strings = {
     "FILES_PREVIEW_EMPTY": "{file} is empty.",
     "FILES_PREVIEW_TRUNCATED": "Preview is capped to the first {limit_kib} KiB.",
     # ── Ready result download ──────────────────────────────────────────
-    "READY_RESULT_HEADER": "✅ Crawl results ready",
+    "READY_RESULT_HEADER": "📦 Crawl results ready",
     "READY_RESULT_SINGLE_SUBTITLE": "1 success file ready to download",
     "READY_RESULT_ZIP_SUBTITLE": "{count} success files — packaged as a zip",
     "READY_RESULT_DOWNLOAD_BUTTON": "⬇ Download",

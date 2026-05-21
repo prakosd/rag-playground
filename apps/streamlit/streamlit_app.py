@@ -1290,7 +1290,7 @@ def _render_ready_result(ready: ReadyDownload, strings: dict[str, Any]) -> None:
     else:
         download_name = ready.file.name
     st.markdown(
-        f'<h4 style="margin-bottom:0.25rem;padding-bottom:0">{strings["READY_RESULT_HEADER"]}</h4>'
+        f'<h3 style="margin-bottom:0;padding-bottom:0">{strings["READY_RESULT_HEADER"]}</h3>'
         f'<p style="opacity:0.7;font-size:0.875rem;margin:0 0 0.75rem">'
         f"{subtitle}</p>",
         unsafe_allow_html=True,
@@ -1372,8 +1372,11 @@ def _render_downloads() -> None:
 
 @st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
 def _render_live_area() -> None:
-    _render_status()
-    _render_activity_log()
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    live_expanded = st.session_state.job_state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}
+    with st.expander(strings["PROGRESS_EXPANDER_LABEL"], expanded=live_expanded):
+        _render_status()
+        _render_activity_log()
 
 
 _init_state()
@@ -1428,6 +1431,13 @@ st.markdown(
         margin-left: auto;
         margin-right: auto;
     }}
+    h3#form-subheader {{
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }}
+    h3#progress {{
+        padding-bottom: 0 !important;
+    }}
     div[data-testid="stForm"] .stHeading h3 {{
         padding: 0.75rem 0 0 !important;
     }}
@@ -1458,6 +1468,7 @@ job_alive = _job_is_alive(current_job)
 fields_disabled = (
     current_state == _STATE_RUNNING and job_alive
 ) or current_state == _STATE_CANCEL_REQUESTED
+form_expanded = not fields_disabled
 
 session_options = _session_options()
 session_controls_col, language_col = st.columns([5, 1], vertical_alignment="bottom")
@@ -1507,6 +1518,7 @@ with language_col, st.container(horizontal_alignment="right"):
 
 values = render_crawl_form(
     fields_disabled=fields_disabled,
+    expanded=form_expanded,
     state=current_state,
     job_alive=job_alive,
     strings=strings,
@@ -1530,5 +1542,6 @@ if st.session_state.stop_confirmation_open:
 
 _render_ready_result_panel()
 st.subheader(strings["PROGRESS_HEADER"])
+st.caption(strings["PROGRESS_CAPTION"])
 _render_live_area()
 _render_downloads()

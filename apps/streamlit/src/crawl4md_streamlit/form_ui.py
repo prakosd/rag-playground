@@ -30,6 +30,7 @@ from crawl4md_streamlit.i18n import Strings
 def render_crawl_form(
     *,
     fields_disabled: bool,
+    expanded: bool,
     state: str,
     job_alive: bool,
     strings: Strings,
@@ -37,9 +38,12 @@ def render_crawl_form(
     activity_log_size: int,
 ) -> dict[str, Any]:
     """Render the crawl settings form and return submitted values."""
-    with st.form("crawl_settings", enter_to_submit=False):
-        st.subheader(strings["FORM_SUBHEADER"])
-        st.caption(strings["FORM_CAPTION"])
+    st.subheader(strings["FORM_SUBHEADER"], anchor="form-subheader")
+    st.caption(strings["FORM_CAPTION"])
+    with (
+        st.expander(strings["FORM_EXPANDER_LABEL"], expanded=expanded),
+        st.form("crawl_settings", enter_to_submit=False),
+    ):
         urls = st.text_area(
             strings["FORM_URLS_LABEL"],
             value=str(defaults.get("urls", DEFAULT_URLS)),

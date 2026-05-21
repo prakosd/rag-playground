@@ -16,13 +16,16 @@ STRINGS_ID: Strings = {
     "SESSION_LOADING": "Memuat sesi browser...",
     "SESSION_SELECTOR_LABEL": "ID Sesi",
     "SESSION_CREATE_BUTTON": "Baru",
-    "PROGRESS_HEADER": "📊 Progres",
+    "PROGRESS_HEADER": "⏳ Progres",
+    "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
+    "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
     "LANG_SELECTOR_LABEL": "Bahasa",
     # ── Form ──────────────────────────────────────────────────────────────
-    "FORM_SUBHEADER": "Atur crawl Anda",
+    "FORM_SUBHEADER": "⚙️ Atur crawl Anda",
     "FORM_CAPTION": (
         "Konfigurasikan URL awal, aturan pemfilteran, dan perilaku crawl sebelum memulai."
     ),
+    "FORM_EXPANDER_LABEL": "Pengaturan crawl",
     "FORM_URLS_LABEL": "URL Situs Web",
     "FORM_URLS_HELP": (
         "Tempel satu atau lebih halaman awal. "
@@ -165,7 +168,7 @@ STRINGS_ID: Strings = {
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "Detail File",
     "FILES_CRAWL_RESULT_LABEL": "📁 Hasil crawl",
-    "FILES_DOWNLOADS_SUBHEADER": "File Output",
+    "FILES_DOWNLOADS_SUBHEADER": "🗂️ File Output",
     "FILES_COL_NAME": "File",
     "FILES_COL_TYPE": "Tipe",
     "FILES_COL_SIZE": "Ukuran (MB)",
@@ -186,7 +189,7 @@ STRINGS_ID: Strings = {
     "FILES_PREVIEW_EMPTY": "{file} kosong.",
     "FILES_PREVIEW_TRUNCATED": "Pratinjau dibatasi pada {limit_kib} KiB pertama.",
     # ── Ready result download ──────────────────────────────────────────
-    "READY_RESULT_HEADER": "✅ Hasil crawl siap",
+    "READY_RESULT_HEADER": "📦 Hasil crawl siap",
     "READY_RESULT_SINGLE_SUBTITLE": "1 file berhasil siap diunduh",
     "READY_RESULT_ZIP_SUBTITLE": "{count} file berhasil — dikemas dalam satu zip",
     "READY_RESULT_DOWNLOAD_BUTTON": "⬇ Unduh",

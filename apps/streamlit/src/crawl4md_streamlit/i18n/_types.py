@@ -14,10 +14,13 @@ class Strings(TypedDict):
     SESSION_SELECTOR_LABEL: str
     SESSION_CREATE_BUTTON: str
     PROGRESS_HEADER: str
+    PROGRESS_CAPTION: str
+    PROGRESS_EXPANDER_LABEL: str
     LANG_SELECTOR_LABEL: str
     # ── Form ──────────────────────────────────────────────────────────────
     FORM_SUBHEADER: str
     FORM_CAPTION: str
+    FORM_EXPANDER_LABEL: str
     FORM_URLS_LABEL: str
     FORM_URLS_HELP: str
     FORM_INCLUDE_PATHS_LABEL: str
