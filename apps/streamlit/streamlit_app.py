@@ -520,13 +520,13 @@ def _load_session_dialog() -> None:
         on_change=_on_input_commit,
     )
     error_slot = st.empty()
-    action_cols = st.columns(2)
-    with action_cols[0]:
+    cancel_col, _, load_col = st.columns([2, 5, 3])
+    with cancel_col:
         if st.button(strings["DIALOG_LOAD_BTN_CANCEL"], key="load_session_cancel"):
             st.session_state["_load_session_enter"] = False
             st.session_state.session_load_dialog_open = False
             st.rerun()
-    with action_cols[1]:
+    with load_col, st.container(horizontal_alignment="right"):
         load_clicked = st.button(
             strings["DIALOG_LOAD_BTN_LOAD"],
             type="primary",
@@ -1547,8 +1547,7 @@ form_expanded = not fields_disabled
 session_options = _session_options()
 session_controls_col, language_col = st.columns([5, 1], vertical_alignment="bottom")
 with session_controls_col:
-    selector_area, load_btn_area = st.columns([9, 1], vertical_alignment="bottom")
-    with selector_area, st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
         with st.container(
             horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"
         ):
@@ -1571,7 +1570,6 @@ with session_controls_col:
             disabled=fields_disabled,
         ):
             _create_new_session()
-    with load_btn_area, st.container(horizontal_alignment="right"):
         if st.button(
             "",
             width=_ICON_BUTTON_WIDTH_PX,
