@@ -1516,6 +1516,11 @@ if (
 ):
     st.session_state.pop(_CREATE_TOAST_STATE)
     st.toast(strings["TOAST_SESSION_CREATED"], icon=_TOAST_PAGE_SUCCESS_ICON)
+if st.session_state.get(_LOAD_TOAST_STATE) and not st.session_state.pending_browser_session_records:
+    _load_toast_id = st.session_state.pop(_LOAD_TOAST_STATE)
+    st.toast(
+        strings["TOAST_SESSION_LOADED"].format(id=_load_toast_id), icon=":material/folder_open:"
+    )
 
 bootstrap_state = bootstrap_gate_state(
     browser_sessions_hydrated=st.session_state.browser_sessions_hydrated,
@@ -1612,11 +1617,6 @@ with session_controls_col:
         st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
     elif _extend_toast == _EXTEND_TOAST_FAILED:
         st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
-    _load_toast_id = st.session_state.pop(_LOAD_TOAST_STATE, None)
-    if _load_toast_id:
-        st.toast(
-            strings["TOAST_SESSION_LOADED"].format(id=_load_toast_id), icon=":material/folder_open:"
-        )
     with st.container(gap="xxsmall"):
         with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
             with st.container(
