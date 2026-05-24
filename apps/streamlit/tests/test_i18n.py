@@ -60,11 +60,17 @@ def test_session_control_strings_are_present() -> None:
         "SESSION_LOAD_BUTTON_TOOLTIP",
         "SESSION_EXTEND_BUTTON_TOOLTIP",
         "TOAST_SESSION_CREATED",
+        "TOAST_SESSION_LOADED",
         "TOAST_SESSION_EXTENDED",
         "TOAST_SESSION_EXTEND_FAILED",
     ):
         assert STRINGS_EN[key]
         assert STRINGS_ID[key]
+
+
+def test_toast_session_loaded_has_id_placeholder() -> None:
+    assert "{id}" in STRINGS_EN["TOAST_SESSION_LOADED"]
+    assert "{id}" in STRINGS_ID["TOAST_SESSION_LOADED"]
 
 
 def test_discovered_delta_has_n_and_m_placeholders() -> None:

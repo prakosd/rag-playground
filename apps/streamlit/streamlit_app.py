@@ -89,6 +89,7 @@ _TOAST_PAGE_FAIL_ICON = "❌"
 _TOAST_PAGE_DISCOVERED_ICON = "🔎"
 _CREATE_TOAST_STATE = "_create_toast"
 _EXTEND_TOAST_STATE = "_extend_toast"
+_LOAD_TOAST_STATE = "_load_toast"
 _EXTEND_TOAST_SUCCESS = "success"
 _EXTEND_TOAST_FAILED = "failed"
 _STATE_CANCEL_REQUESTED = "cancel_requested"
@@ -549,6 +550,7 @@ def _register_and_select_session(session_id: str) -> None:
     record = create_session_record(session_id=session_id, language=current_language, now=created_at)
     _commit_session_record(record)
     st.session_state.session_load_dialog_open = False
+    st.session_state[_LOAD_TOAST_STATE] = record.session_id
     _select_session_id(record.session_id, restore_language=False)
     st.rerun()
 
@@ -1610,6 +1612,11 @@ with session_controls_col:
         st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
     elif _extend_toast == _EXTEND_TOAST_FAILED:
         st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
+    _load_toast_id = st.session_state.pop(_LOAD_TOAST_STATE, None)
+    if _load_toast_id:
+        st.toast(
+            strings["TOAST_SESSION_LOADED"].format(id=_load_toast_id), icon=":material/folder_open:"
+        )
     with st.container(gap="xxsmall"):
         with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
             with st.container(
