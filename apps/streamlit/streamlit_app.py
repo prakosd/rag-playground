@@ -90,6 +90,7 @@ _TOAST_PAGE_DISCOVERED_ICON = "🔎"
 _CREATE_TOAST_STATE = "_create_toast"
 _EXTEND_TOAST_STATE = "_extend_toast"
 _LOAD_TOAST_STATE = "_load_toast"
+_SWITCH_TOAST_STATE = "_switch_toast"
 _EXTEND_TOAST_SUCCESS = "success"
 _EXTEND_TOAST_FAILED = "failed"
 _STATE_CANCEL_REQUESTED = "cancel_requested"
@@ -597,7 +598,7 @@ def _load_session_dialog() -> None:
             return
         known_ids = {r.session_id for r in _browser_session_records()}
         if stripped in known_ids:
-            st.toast(strings["DIALOG_LOAD_SESSION_ALREADY_LOADED"].format(id=stripped))
+            st.session_state[_SWITCH_TOAST_STATE] = stripped
             st.session_state.session_load_dialog_open = False
             _select_session_id(stripped)
             st.rerun()
@@ -1520,6 +1521,15 @@ if st.session_state.get(_LOAD_TOAST_STATE) and not st.session_state.pending_brow
     _load_toast_id = st.session_state.pop(_LOAD_TOAST_STATE)
     st.toast(
         strings["TOAST_SESSION_LOADED"].format(id=_load_toast_id), icon=":material/folder_open:"
+    )
+if (
+    st.session_state.get(_SWITCH_TOAST_STATE)
+    and not st.session_state.pending_browser_session_records
+):
+    _switch_toast_id = st.session_state.pop(_SWITCH_TOAST_STATE)
+    st.toast(
+        strings["DIALOG_LOAD_SESSION_ALREADY_LOADED"].format(id=_switch_toast_id),
+        icon=":material/folder_open:",
     )
 
 bootstrap_state = bootstrap_gate_state(
