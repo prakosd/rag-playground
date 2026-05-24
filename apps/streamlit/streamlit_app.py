@@ -1548,56 +1548,57 @@ fields_disabled = (
 form_expanded = not fields_disabled
 
 session_options = _session_options()
-session_controls_col, language_col = st.columns([5, 1], vertical_alignment="bottom")
+session_controls_col, language_col = st.columns([5, 1], vertical_alignment="top")
 with session_controls_col:
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
-        with st.container(
-            horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"
-        ):
-            st.markdown(strings["SESSION_SELECTOR_LABEL"])
-            selected_session = st.selectbox(
-                label=strings["SESSION_SELECTOR_LABEL"],
-                options=session_options,
-                index=_session_selector_index(session_options),
-                key=f"session_selector_{st.session_state.session_id}",
-                label_visibility="collapsed",
-                width=240,
+    with st.container(gap="xxsmall"):
+        with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
+            with st.container(
+                horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"
+            ):
+                st.markdown(strings["SESSION_SELECTOR_LABEL"])
+                selected_session = st.selectbox(
+                    label=strings["SESSION_SELECTOR_LABEL"],
+                    options=session_options,
+                    index=_session_selector_index(session_options),
+                    key=f"session_selector_{st.session_state.session_id}",
+                    label_visibility="collapsed",
+                    width=240,
+                    disabled=fields_disabled,
+                )
+            if st.button(
+                "",
+                width=_ICON_BUTTON_WIDTH_PX,
+                key="session_create_button",
+                icon=":material/add:",
+                help=strings["SESSION_CREATE_BUTTON_TOOLTIP"],
                 disabled=fields_disabled,
-            )
-        if st.button(
-            "",
-            width=_ICON_BUTTON_WIDTH_PX,
-            key="session_create_button",
-            icon=":material/add:",
-            help=strings["SESSION_CREATE_BUTTON_TOOLTIP"],
-            disabled=fields_disabled,
-        ):
-            _create_new_session()
-        if st.button(
-            "",
-            width=_ICON_BUTTON_WIDTH_PX,
-            key="session_load_button",
-            icon=":material/folder_open:",
-            help=strings["SESSION_LOAD_BUTTON_TOOLTIP"],
-            disabled=fields_disabled,
-        ):
-            st.session_state.session_load_dialog_open = True
-            st.rerun()
-    days_left, unit = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
-    if unit == "hours":
-        if days_left == 0:
-            expiry_key = "SESSION_EXPIRY_CAPTION_SOON"
-        elif days_left == 1:
-            expiry_key = "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR"
+            ):
+                _create_new_session()
+            if st.button(
+                "",
+                width=_ICON_BUTTON_WIDTH_PX,
+                key="session_load_button",
+                icon=":material/folder_open:",
+                help=strings["SESSION_LOAD_BUTTON_TOOLTIP"],
+                disabled=fields_disabled,
+            ):
+                st.session_state.session_load_dialog_open = True
+                st.rerun()
+        days_left, unit = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
+        if unit == "hours":
+            if days_left == 0:
+                expiry_key = "SESSION_EXPIRY_CAPTION_SOON"
+            elif days_left == 1:
+                expiry_key = "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR"
+            else:
+                expiry_key = "SESSION_EXPIRY_CAPTION_HOURS"
         else:
-            expiry_key = "SESSION_EXPIRY_CAPTION_HOURS"
-    else:
-        expiry_key = (
-            "SESSION_EXPIRY_CAPTION_SINGULAR" if days_left == 1 else "SESSION_EXPIRY_CAPTION"
-        )
-    st.caption(
-        strings[expiry_key].format(days=days_left, hours=days_left)
-    )  # one kwarg unused per key
+            expiry_key = (
+                "SESSION_EXPIRY_CAPTION_SINGULAR" if days_left == 1 else "SESSION_EXPIRY_CAPTION"
+            )
+        st.caption(
+            strings[expiry_key].format(days=days_left, hours=days_left)
+        )  # one kwarg unused per key
     if selected_session != st.session_state.session_id:
         _select_session_id(str(selected_session))
         st.rerun()
