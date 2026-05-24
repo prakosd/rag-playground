@@ -51,6 +51,7 @@ from crawl4md_streamlit.support import (
     serialize_session_records,
     session_dir,
     session_exists,
+    session_time_remaining,
     start_crawl_job,
     touch_session,
     validate_safe_id,
@@ -194,6 +195,94 @@ def test_touch_session_updates_directory_mtime(tmp_path: Path) -> None:
 def test_touch_session_raises_for_invalid_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         touch_session(tmp_path, "../escape")
+
+
+# ── session_time_remaining ────────────────────────────────────────────────────
+
+
+_NOW = datetime(2026, 5, 24, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def test_session_time_remaining_no_dir_returns_full_retention(tmp_path: Path) -> None:
+    value, unit = session_time_remaining(tmp_path, "newid", now=_NOW)
+    assert value == 7
+    assert unit == "days"
+
+
+def test_session_time_remaining_fresh_dir_returns_full_retention(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_fresh"
+    sdir.mkdir()
+    os.utime(sdir, (_NOW.timestamp(), _NOW.timestamp()))
+
+    value, unit = session_time_remaining(tmp_path, "fresh", now=_NOW)
+    assert value == 7
+    assert unit == "days"
+
+
+def test_session_time_remaining_3_days_old_returns_4_days(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_aged"
+    sdir.mkdir()
+    mtime = (_NOW - timedelta(days=3)).timestamp()
+    os.utime(sdir, (mtime, mtime))
+
+    value, unit = session_time_remaining(tmp_path, "aged", now=_NOW)
+    assert value == 4
+    assert unit == "days"
+
+
+def test_session_time_remaining_sub_24h_returns_hours(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_sub24"
+    sdir.mkdir()
+    mtime = (_NOW - timedelta(days=6, hours=2)).timestamp()
+    os.utime(sdir, (mtime, mtime))
+
+    value, unit = session_time_remaining(tmp_path, "sub24", now=_NOW)
+    assert unit == "hours"
+    assert value == 22  # floor of (7d - 6d2h) = 22h
+
+
+def test_session_time_remaining_1_hour_left(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_1h"
+    sdir.mkdir()
+    mtime = (_NOW - timedelta(days=6, hours=23)).timestamp()
+    os.utime(sdir, (mtime, mtime))
+
+    value, unit = session_time_remaining(tmp_path, "1h", now=_NOW)
+    assert unit == "hours"
+    assert value == 1
+
+
+def test_session_time_remaining_sub_1h_returns_0_hours(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_sub1h"
+    sdir.mkdir()
+    mtime = (_NOW - timedelta(days=6, hours=23, minutes=30)).timestamp()
+    os.utime(sdir, (mtime, mtime))
+
+    value, unit = session_time_remaining(tmp_path, "sub1h", now=_NOW)
+    assert unit == "hours"
+    assert value == 0
+
+
+def test_session_time_remaining_overdue_returns_0_hours(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_overdue"
+    sdir.mkdir()
+    mtime = (_NOW - timedelta(days=9)).timestamp()
+    os.utime(sdir, (mtime, mtime))
+
+    value, unit = session_time_remaining(tmp_path, "overdue", now=_NOW)
+    assert unit == "hours"
+    assert value == 0
+
+
+def test_session_time_remaining_exactly_at_boundary_returns_0_hours(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_exact"
+    sdir.mkdir()
+    mtime = (_NOW - timedelta(days=7)).timestamp()
+    os.utime(sdir, (mtime, mtime))
+
+    value, unit = session_time_remaining(tmp_path, "exact", now=_NOW)
+    assert unit == "hours"
+    assert value == 0
 
 
 def test_create_session_record_uses_safe_id_and_utc_time() -> None:

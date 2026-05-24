@@ -40,6 +40,8 @@ _EFF_WORDLIST_PACKAGE = "crawl4md_streamlit"
 _EFF_WORDLIST_RESOURCE = ("data", "eff_large_wordlist.txt")
 _EFF_WORDLIST_SIZE = 7776
 _LOCK_STALE_SECONDS = 60 * 60
+_SECONDS_PER_DAY = 86400
+_SECONDS_PER_HOUR = 3600
 _SESSION_PREFIX = "session_"
 _TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 _USE_READABLE_IDS = True
@@ -279,6 +281,33 @@ def session_exists(sessions_root: Path | str, session_id: str) -> bool:
 def touch_session(sessions_root: Path | str, session_id: str) -> None:
     """Update the session directory mtime to now, resetting its retention clock."""
     session_dir(sessions_root, session_id).touch()
+
+
+def session_time_remaining(
+    sessions_root: Path | str,
+    session_id: str,
+    *,
+    retention_days: int = _DEFAULT_RETENTION_DAYS,
+    now: datetime | None = None,
+) -> tuple[int, Literal["days", "hours"]]:
+    """Return how much time is left before a session is eligible for deletion.
+
+    Returns a (value, unit) pair. Unit is "days" when 24 hours or more remain,
+    and "hours" otherwise. Both values are floor-rounded so the count never
+    overpromises. If the session directory does not exist (e.g. a brand-new
+    session), the full retention period is returned.
+    """
+    sdir = session_dir(sessions_root, session_id)
+    _now = now or datetime.now(timezone.utc)
+    if not sdir.is_dir():
+        return (retention_days, "days")
+    modified_at = datetime.fromtimestamp(sdir.stat().st_mtime, tz=timezone.utc)
+    remaining_seconds = max(
+        0.0, (timedelta(days=retention_days) - (_now - modified_at)).total_seconds()
+    )
+    if remaining_seconds >= _SECONDS_PER_DAY:
+        return (int(remaining_seconds // _SECONDS_PER_DAY), "days")
+    return (int(remaining_seconds // _SECONDS_PER_HOUR), "hours")
 
 
 def crawl_output_base(sessions_root: Path | str, session_id: str, crawl_id: str) -> Path:

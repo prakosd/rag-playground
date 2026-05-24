@@ -98,6 +98,26 @@ def test_files_crawl_result_label_defined() -> None:
     assert STRINGS_ID["FILES_CRAWL_RESULT_LABEL"]
 
 
+def test_session_expiry_caption_has_days_placeholder() -> None:
+    assert "{days}" in STRINGS_EN["SESSION_EXPIRY_CAPTION"]
+    assert "{days}" in STRINGS_ID["SESSION_EXPIRY_CAPTION"]
+
+
+def test_session_expiry_caption_hours_has_hours_placeholder() -> None:
+    assert "{hours}" in STRINGS_EN["SESSION_EXPIRY_CAPTION_HOURS"]
+    assert "{hours}" in STRINGS_ID["SESSION_EXPIRY_CAPTION_HOURS"]
+
+
+def test_session_expiry_caption_singular_and_soon_have_no_placeholder() -> None:
+    for key in (
+        "SESSION_EXPIRY_CAPTION_SINGULAR",
+        "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR",
+        "SESSION_EXPIRY_CAPTION_SOON",
+    ):
+        assert "{" not in STRINGS_EN[key], f"STRINGS_EN[{key!r}] should have no placeholder"
+        assert "{" not in STRINGS_ID[key], f"STRINGS_ID[{key!r}] should have no placeholder"
+
+
 def test_files_download_too_large_has_file_placeholder() -> None:
     assert "{file}" in STRINGS_EN["FILES_DOWNLOAD_TOO_LARGE"]
     assert "{file}" in STRINGS_ID["FILES_DOWNLOAD_TOO_LARGE"]

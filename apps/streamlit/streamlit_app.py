@@ -59,6 +59,7 @@ from crawl4md_streamlit.support import (
     serialize_session_records,
     session_dir,
     session_exists,
+    session_time_remaining,
     start_crawl_job,
     touch_session,
     validate_safe_id,
@@ -1582,6 +1583,21 @@ with session_controls_col:
         ):
             st.session_state.session_load_dialog_open = True
             st.rerun()
+    days_left, unit = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
+    if unit == "hours":
+        if days_left == 0:
+            expiry_key = "SESSION_EXPIRY_CAPTION_SOON"
+        elif days_left == 1:
+            expiry_key = "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR"
+        else:
+            expiry_key = "SESSION_EXPIRY_CAPTION_HOURS"
+    else:
+        expiry_key = (
+            "SESSION_EXPIRY_CAPTION_SINGULAR" if days_left == 1 else "SESSION_EXPIRY_CAPTION"
+        )
+    st.caption(
+        strings[expiry_key].format(days=days_left, hours=days_left)
+    )  # one kwarg unused per key
     if selected_session != st.session_state.session_id:
         _select_session_id(str(selected_session))
         st.rerun()
