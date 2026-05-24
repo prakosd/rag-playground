@@ -1492,7 +1492,7 @@ with session_controls_col:
             width=_ICON_BUTTON_WIDTH_PX,
             key="session_create_button",
             icon=":material/add:",
-            help=strings["SESSION_CREATE_BUTTON"],
+            help=strings["SESSION_CREATE_BUTTON_TOOLTIP"],
             disabled=fields_disabled,
         ):
             _create_new_session()

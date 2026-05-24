@@ -16,6 +16,7 @@ STRINGS_ID: Strings = {
     "SESSION_LOADING": "Memuat sesi browser...",
     "SESSION_SELECTOR_LABEL": "ID Sesi",
     "SESSION_CREATE_BUTTON": "Baru",
+    "SESSION_CREATE_BUTTON_TOOLTIP": "Buat sesi terpisah (hasil saat ini tetap tersimpan)",
     "PROGRESS_HEADER": "⏳ Progres",
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",

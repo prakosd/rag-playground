@@ -52,7 +52,12 @@ def test_session_prefix_has_session_id_placeholder() -> None:
 
 
 def test_session_control_strings_are_present() -> None:
-    for key in ("SESSION_LOADING", "SESSION_SELECTOR_LABEL", "SESSION_CREATE_BUTTON"):
+    for key in (
+        "SESSION_LOADING",
+        "SESSION_SELECTOR_LABEL",
+        "SESSION_CREATE_BUTTON",
+        "SESSION_CREATE_BUTTON_TOOLTIP",
+    ):
         assert STRINGS_EN[key]
         assert STRINGS_ID[key]
 

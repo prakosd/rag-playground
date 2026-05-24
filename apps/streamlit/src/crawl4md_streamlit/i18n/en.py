@@ -15,6 +15,7 @@ STRINGS_EN: Strings = {
     "SESSION_LOADING": "Loading browser sessions...",
     "SESSION_SELECTOR_LABEL": "Session ID",
     "SESSION_CREATE_BUTTON": "New",
+    "SESSION_CREATE_BUTTON_TOOLTIP": "Create a separate session (keeps current results)",
     "PROGRESS_HEADER": "⏳ Progress",
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
