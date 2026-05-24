@@ -1621,6 +1621,20 @@ with session_controls_col:
             ):
                 st.session_state.session_load_dialog_open = True
                 st.rerun()
+            if st.button(
+                "",
+                width=_ICON_BUTTON_WIDTH_PX,
+                key="session_extend_button",
+                icon=":material/more_time:",
+                help=strings["SESSION_EXTEND_BUTTON_TOOLTIP"],
+                disabled=fields_disabled,
+            ):
+                try:
+                    touch_session(_SESSIONS_ROOT, st.session_state.session_id)
+                    st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
+                except Exception:
+                    st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
+                st.rerun()
         days_left, unit = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
         if unit == "hours":
             if days_left == 0:

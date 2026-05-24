@@ -22,6 +22,7 @@ STRINGS_EN: Strings = {
     "SESSION_CREATE_BUTTON": "New",
     "SESSION_CREATE_BUTTON_TOOLTIP": "Create a separate session (keeps current results)",
     "SESSION_LOAD_BUTTON_TOOLTIP": "Load an existing session by ID",
+    "SESSION_EXTEND_BUTTON_TOOLTIP": "Extend session — resets the 7-day expiry clock",
     "PROGRESS_HEADER": "⏳ Progress",
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
@@ -113,6 +114,8 @@ STRINGS_EN: Strings = {
     "TOAST_SUCCESS": "{n} page(s) crawled successfully",
     "TOAST_FAILED": "{n} page(s) failed",
     "TOAST_DISCOVERED": "{n} page(s) discovered",
+    "TOAST_SESSION_EXTENDED": "Session extended — expiry reset to 7 days",
+    "TOAST_SESSION_EXTEND_FAILED": "Could not extend session",
     # ── Progress metrics ──────────────────────────────────────────────────
     "METRIC_PROCESSED_LABEL": "📄 Page attempts",
     "METRIC_PROCESSED_DELTA": "{n} total",

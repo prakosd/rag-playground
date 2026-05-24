@@ -20,6 +20,7 @@ class Strings(TypedDict):
     SESSION_CREATE_BUTTON: str
     SESSION_CREATE_BUTTON_TOOLTIP: str
     SESSION_LOAD_BUTTON_TOOLTIP: str
+    SESSION_EXTEND_BUTTON_TOOLTIP: str
     PROGRESS_HEADER: str
     PROGRESS_CAPTION: str
     PROGRESS_EXPANDER_LABEL: str
@@ -85,6 +86,8 @@ class Strings(TypedDict):
     TOAST_SUCCESS: str
     TOAST_FAILED: str
     TOAST_DISCOVERED: str
+    TOAST_SESSION_EXTENDED: str
+    TOAST_SESSION_EXTEND_FAILED: str
     # ── Progress metrics ──────────────────────────────────────────────────
     METRIC_PROCESSED_LABEL: str
     METRIC_PROCESSED_DELTA: str  # template: {n}

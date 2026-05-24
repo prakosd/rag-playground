@@ -23,6 +23,7 @@ STRINGS_ID: Strings = {
     "SESSION_CREATE_BUTTON": "Baru",
     "SESSION_CREATE_BUTTON_TOOLTIP": "Buat sesi terpisah (hasil saat ini tetap tersimpan)",
     "SESSION_LOAD_BUTTON_TOOLTIP": "Muat sesi yang ada berdasarkan ID",
+    "SESSION_EXTEND_BUTTON_TOOLTIP": "Perpanjang sesi — perbarui masa berlaku 7 hari",
     "PROGRESS_HEADER": "⏳ Progres",
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
@@ -118,6 +119,8 @@ STRINGS_ID: Strings = {
     "TOAST_SUCCESS": "{n} halaman berhasil di-crawl",
     "TOAST_FAILED": "{n} halaman gagal di-crawl",
     "TOAST_DISCOVERED": "{n} halaman ditemukan",
+    "TOAST_SESSION_EXTENDED": "Sesi diperpanjang — masa berlaku diperbarui ke 7 hari",
+    "TOAST_SESSION_EXTEND_FAILED": "Sesi gagal diperpanjang",
     # ── Progress metrics ──────────────────────────────────────────────────
     "METRIC_PROCESSED_LABEL": "📄 Upaya halaman",
     "METRIC_PROCESSED_DELTA": "{n} total",
