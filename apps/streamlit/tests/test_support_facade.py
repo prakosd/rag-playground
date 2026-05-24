@@ -53,6 +53,7 @@ _EXPECTED_FACADE_EXPORTS = {
     "request_cancel": crawl_jobs.request_cancel,
     "serialize_session_records": session_manager.serialize_session_records,
     "session_dir": session_manager.session_dir,
+    "session_exists": session_manager.session_exists,
     "start_crawl_job": crawl_jobs.start_crawl_job,
     "validate_safe_id": session_manager.validate_safe_id,
 }

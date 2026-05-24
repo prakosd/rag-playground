@@ -17,6 +17,7 @@ STRINGS_ID: Strings = {
     "SESSION_SELECTOR_LABEL": "ID Sesi",
     "SESSION_CREATE_BUTTON": "Baru",
     "SESSION_CREATE_BUTTON_TOOLTIP": "Buat sesi terpisah (hasil saat ini tetap tersimpan)",
+    "SESSION_LOAD_BUTTON_TOOLTIP": "Muat sesi yang ada berdasarkan ID",
     "PROGRESS_HEADER": "⏳ Progres",
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
@@ -98,6 +99,16 @@ STRINGS_ID: Strings = {
     ),
     "DIALOG_BTN_KEEP": "Lanjutkan",
     "DIALOG_BTN_STOP": "Hentikan crawl",
+    # ── Load session dialog ───────────────────────────────────────────────
+    # Note: @st.dialog title is fixed at decoration time and cannot be translated.
+    "DIALOG_LOAD_SESSION_ID_LABEL": "ID Sesi",
+    "DIALOG_LOAD_SESSION_ID_PLACEHOLDER": "Tempel ID sesi di sini",
+    "DIALOG_LOAD_SESSION_ID_HELP": "Masukkan ID sesi dari browser atau komputer lain",
+    "DIALOG_LOAD_BTN_CANCEL": "Batal",
+    "DIALOG_LOAD_BTN_LOAD": "Muat",
+    "DIALOG_LOAD_SESSION_NOT_FOUND": "Sesi '{id}' tidak ditemukan di server ini.",
+    "DIALOG_LOAD_SESSION_ALREADY_LOADED": "Sesi '{id}' sudah tersedia. Beralih ke sesi tersebut.",
+    "DIALOG_LOAD_SESSION_INVALID_ID": "ID sesi tidak valid.",
     # ── Toast messages ────────────────────────────────────────────────────
     "TOAST_SUCCESS": "{n} halaman berhasil di-crawl",
     "TOAST_FAILED": "{n} halaman gagal di-crawl",

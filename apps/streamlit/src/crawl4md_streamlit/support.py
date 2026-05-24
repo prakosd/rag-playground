@@ -57,6 +57,7 @@ prepare_crawl_output_base = _session_manager.prepare_crawl_output_base
 prepare_session_dir = _session_manager.prepare_session_dir
 serialize_session_records = _session_manager.serialize_session_records
 session_dir = _session_manager.session_dir
+session_exists = _session_manager.session_exists
 validate_safe_id = _session_manager.validate_safe_id
 
 __all__ = [
@@ -108,6 +109,7 @@ __all__ = [
     "request_cancel",
     "serialize_session_records",
     "session_dir",
+    "session_exists",
     "start_crawl_job",
     "validate_safe_id",
 ]

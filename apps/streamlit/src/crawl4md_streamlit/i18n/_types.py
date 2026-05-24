@@ -14,6 +14,7 @@ class Strings(TypedDict):
     SESSION_SELECTOR_LABEL: str
     SESSION_CREATE_BUTTON: str
     SESSION_CREATE_BUTTON_TOOLTIP: str
+    SESSION_LOAD_BUTTON_TOOLTIP: str
     PROGRESS_HEADER: str
     PROGRESS_CAPTION: str
     PROGRESS_EXPANDER_LABEL: str
@@ -65,6 +66,16 @@ class Strings(TypedDict):
     DIALOG_STOP_BODY: str
     DIALOG_BTN_KEEP: str
     DIALOG_BTN_STOP: str
+    # ── Load session dialog ───────────────────────────────────────────────
+    # Note: @st.dialog title is fixed at decoration time and cannot be translated.
+    DIALOG_LOAD_SESSION_ID_LABEL: str
+    DIALOG_LOAD_SESSION_ID_PLACEHOLDER: str
+    DIALOG_LOAD_SESSION_ID_HELP: str
+    DIALOG_LOAD_BTN_CANCEL: str
+    DIALOG_LOAD_BTN_LOAD: str
+    DIALOG_LOAD_SESSION_NOT_FOUND: str  # template: {id}
+    DIALOG_LOAD_SESSION_ALREADY_LOADED: str  # template: {id}
+    DIALOG_LOAD_SESSION_INVALID_ID: str
     # ── Toast messages — {n} is the page count ────────────────────────────
     TOAST_SUCCESS: str
     TOAST_FAILED: str

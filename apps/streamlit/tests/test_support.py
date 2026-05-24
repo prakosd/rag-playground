@@ -50,6 +50,7 @@ from crawl4md_streamlit.support import (
     request_cancel,
     serialize_session_records,
     session_dir,
+    session_exists,
     start_crawl_job,
     validate_safe_id,
 )
@@ -158,6 +159,23 @@ def test_session_and_crawl_dirs_are_prefixed(tmp_path: Path) -> None:
 def test_validate_safe_id_rejects_path_traversal() -> None:
     with pytest.raises(ValueError):
         validate_safe_id("../secret")
+
+
+def test_session_exists_returns_true_when_directory_exists(tmp_path: Path) -> None:
+    (tmp_path / "session_myid").mkdir()
+    assert session_exists(tmp_path, "myid") is True
+
+
+def test_session_exists_returns_false_when_directory_missing(tmp_path: Path) -> None:
+    assert session_exists(tmp_path, "myid") is False
+
+
+def test_session_exists_returns_false_for_invalid_id(tmp_path: Path) -> None:
+    assert session_exists(tmp_path, "../escape") is False
+
+
+def test_session_exists_returns_false_for_empty_id(tmp_path: Path) -> None:
+    assert session_exists(tmp_path, "") is False
 
 
 def test_create_session_record_uses_safe_id_and_utc_time() -> None:

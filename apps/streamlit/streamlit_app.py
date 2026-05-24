@@ -58,7 +58,9 @@ from crawl4md_streamlit.support import (
     request_cancel,
     serialize_session_records,
     session_dir,
+    session_exists,
     start_crawl_job,
+    validate_safe_id,
 )
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
@@ -66,6 +68,7 @@ _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = "7s"
 _GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
 _DIALOG_PLACEHOLDER_TITLE = " "
+_DIALOG_LOAD_SESSION_TITLE = "Load Session"
 _ICON_BUTTON_WIDTH_PX = 44
 _LIVE_AREA_REFRESH_INTERVAL = "3s"
 _PREVIEW_DIALOG_WIDTH = "large"
@@ -251,6 +254,8 @@ def _init_state() -> None:
     st.session_state.setdefault("preview_file_relative_path", "")
     st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
+    st.session_state.setdefault("session_load_dialog_open", False)
+    st.session_state.setdefault("_load_session_enter", False)
     st.session_state.setdefault("language", _DEFAULT_LANGUAGE)
     st.session_state.setdefault(_SESSION_RECORDS_CACHE_STATE, {})
 
@@ -460,9 +465,8 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
             break
 
 
-def _create_new_session() -> None:
-    record = create_session_record()
-    st.session_state.language = record.language
+def _commit_session_record(record: SessionRecord) -> None:
+    """Merge *record* into browser session state and stage it for localStorage write."""
     records = _cached_normalize_session_records(
         [
             *serialize_session_records(_browser_session_records()),
@@ -479,8 +483,78 @@ def _create_new_session() -> None:
     st.session_state.pending_browser_session_records = serialize_session_records(pending_records)
     st.session_state.pending_bootstrap_session_id = record.session_id
     st.session_state.session_storage_write_failed = False
+
+
+def _create_new_session() -> None:
+    record = create_session_record()
+    st.session_state.language = record.language
+    _commit_session_record(record)
     _select_session_id(record.session_id)
     st.rerun()
+
+
+def _register_and_select_session(session_id: str) -> None:
+    """Register an externally known session into local browser records and select it."""
+    mtime = session_dir(_SESSIONS_ROOT, session_id).stat().st_mtime
+    created_at = datetime.fromtimestamp(mtime, tz=timezone.utc)
+    current_language = _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    record = create_session_record(session_id=session_id, language=current_language, now=created_at)
+    _commit_session_record(record)
+    st.session_state.session_load_dialog_open = False
+    _select_session_id(record.session_id, restore_language=False)
+    st.rerun()
+
+
+@st.dialog(_DIALOG_LOAD_SESSION_TITLE, width="small")
+def _load_session_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+
+    def _on_input_commit() -> None:
+        st.session_state["_load_session_enter"] = True
+
+    session_id_input = st.text_input(
+        label=strings["DIALOG_LOAD_SESSION_ID_LABEL"],
+        placeholder=strings["DIALOG_LOAD_SESSION_ID_PLACEHOLDER"],
+        help=strings["DIALOG_LOAD_SESSION_ID_HELP"],
+        key="load_session_id_input",
+        on_change=_on_input_commit,
+    )
+    error_slot = st.empty()
+    action_cols = st.columns(2)
+    with action_cols[0]:
+        if st.button(strings["DIALOG_LOAD_BTN_CANCEL"], key="load_session_cancel"):
+            st.session_state["_load_session_enter"] = False
+            st.session_state.session_load_dialog_open = False
+            st.rerun()
+    with action_cols[1], st.container(horizontal_alignment="right"):
+        load_clicked = st.button(
+            strings["DIALOG_LOAD_BTN_LOAD"],
+            type="primary",
+            icon=":material/folder_open:",
+            key="load_session_confirm",
+        )
+    enter_submitted = st.session_state.get("_load_session_enter", False)
+    st.session_state["_load_session_enter"] = False
+    if load_clicked or enter_submitted:
+        stripped = session_id_input.strip()
+        if not stripped:
+            error_slot.error(strings["DIALOG_LOAD_SESSION_INVALID_ID"])
+            return
+        try:
+            validate_safe_id(stripped)
+        except ValueError:
+            error_slot.error(strings["DIALOG_LOAD_SESSION_INVALID_ID"])
+            return
+        known_ids = {r.session_id for r in _browser_session_records()}
+        if stripped in known_ids:
+            st.toast(strings["DIALOG_LOAD_SESSION_ALREADY_LOADED"].format(id=stripped))
+            st.session_state.session_load_dialog_open = False
+            _select_session_id(stripped)
+            st.rerun()
+        if not session_exists(_SESSIONS_ROOT, stripped):
+            error_slot.error(strings["DIALOG_LOAD_SESSION_NOT_FOUND"].format(id=stripped))
+            return
+        _register_and_select_session(stripped)
 
 
 def _ensure_selected_session() -> None:
@@ -1496,6 +1570,16 @@ with session_controls_col:
             disabled=fields_disabled,
         ):
             _create_new_session()
+        if st.button(
+            "",
+            width=_ICON_BUTTON_WIDTH_PX,
+            key="session_load_button",
+            icon=":material/folder_open:",
+            help=strings["SESSION_LOAD_BUTTON_TOOLTIP"],
+            disabled=fields_disabled,
+        ):
+            st.session_state.session_load_dialog_open = True
+            st.rerun()
     if selected_session != st.session_state.session_id:
         _select_session_id(str(selected_session))
         st.rerun()
@@ -1539,6 +1623,9 @@ if st.session_state.stop_confirmation_open and not job_alive:
 
 if st.session_state.stop_confirmation_open:
     _stop_confirmation_dialog()
+
+if st.session_state.session_load_dialog_open:
+    _load_session_dialog()
 
 _render_ready_result_panel()
 st.subheader(strings["PROGRESS_HEADER"])

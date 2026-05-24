@@ -268,6 +268,14 @@ def session_dir(sessions_root: Path | str, session_id: str) -> Path:
     return Path(sessions_root) / f"{_SESSION_PREFIX}{safe_session_id}"
 
 
+def session_exists(sessions_root: Path | str, session_id: str) -> bool:
+    """Return True if the session directory exists; False for any invalid or missing ID."""
+    try:
+        return session_dir(sessions_root, session_id).is_dir()
+    except ValueError:
+        return False
+
+
 def crawl_output_base(sessions_root: Path | str, session_id: str, crawl_id: str) -> Path:
     """Return the output base directory for one crawl run."""
     safe_crawl_id = validate_safe_id(crawl_id)

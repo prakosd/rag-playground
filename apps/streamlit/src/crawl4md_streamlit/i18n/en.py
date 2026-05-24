@@ -16,6 +16,7 @@ STRINGS_EN: Strings = {
     "SESSION_SELECTOR_LABEL": "Session ID",
     "SESSION_CREATE_BUTTON": "New",
     "SESSION_CREATE_BUTTON_TOOLTIP": "Create a separate session (keeps current results)",
+    "SESSION_LOAD_BUTTON_TOOLTIP": "Load an existing session by ID",
     "PROGRESS_HEADER": "⏳ Progress",
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
@@ -93,6 +94,16 @@ STRINGS_EN: Strings = {
     "DIALOG_STOP_BODY": "Stop this crawl now? This will cancel any pages still in progress.",
     "DIALOG_BTN_KEEP": "Keep running",
     "DIALOG_BTN_STOP": "Stop crawl",
+    # ── Load session dialog ───────────────────────────────────────────────
+    # Note: @st.dialog title is fixed at decoration time and cannot be translated.
+    "DIALOG_LOAD_SESSION_ID_LABEL": "Session ID",
+    "DIALOG_LOAD_SESSION_ID_PLACEHOLDER": "Paste session ID here",
+    "DIALOG_LOAD_SESSION_ID_HELP": "Enter the session ID from another browser or computer",
+    "DIALOG_LOAD_BTN_CANCEL": "Cancel",
+    "DIALOG_LOAD_BTN_LOAD": "Load",
+    "DIALOG_LOAD_SESSION_NOT_FOUND": "Session '{id}' does not exist on this server.",
+    "DIALOG_LOAD_SESSION_ALREADY_LOADED": "Session '{id}' is already available. Switching to it.",
+    "DIALOG_LOAD_SESSION_INVALID_ID": "Not a valid session ID.",
     # ── Toast messages ────────────────────────────────────────────────────
     "TOAST_SUCCESS": "{n} page(s) crawled successfully",
     "TOAST_FAILED": "{n} page(s) failed",
