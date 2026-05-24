@@ -1587,6 +1587,11 @@ form_expanded = not fields_disabled
 session_options = _session_options()
 session_controls_col, language_col = st.columns([5, 1], vertical_alignment="top")
 with session_controls_col:
+    _extend_toast = st.session_state.pop("_extend_toast", None)
+    if _extend_toast == "success":
+        st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
+    elif _extend_toast == "failed":
+        st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
     with st.container(gap="xxsmall"):
         with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
             with st.container(
@@ -1631,9 +1636,9 @@ with session_controls_col:
             ):
                 try:
                     touch_session(_SESSIONS_ROOT, st.session_state.session_id)
-                    st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
+                    st.session_state._extend_toast = "success"
                 except Exception:
-                    st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
+                    st.session_state._extend_toast = "failed"
                 st.rerun()
         days_left, unit = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
         if unit == "hours":
