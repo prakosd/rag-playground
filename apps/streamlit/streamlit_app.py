@@ -181,8 +181,12 @@ export default function (component) {
     const { data, setStateValue } = component
     const storageKey = data.storageKey
     const { records: storedRecords, selectedSessionId: storedSelectedId } = readStorage(storageKey)
+    const idsToRemove = new Set(Array.isArray(data.recordsToRemove) ? data.recordsToRemove : [])
+    const filteredStoredRecords = idsToRemove.size > 0
+        ? storedRecords.filter(r => !idsToRemove.has(r.session_id))
+        : storedRecords
     const pendingRecords = Array.isArray(data.pendingRecords) ? data.pendingRecords : []
-    const nextRecords = normalizeRecords([...storedRecords, ...pendingRecords])
+    const nextRecords = normalizeRecords([...filteredStoredRecords, ...pendingRecords])
     const nextSerialized = JSON.stringify(nextRecords)
     const storedSerialized = JSON.stringify(storedRecords)
     const pendingSelectedId = typeof data.pendingSelectedSessionId === "string"
@@ -243,6 +247,7 @@ def _init_state() -> None:
     st.session_state.setdefault("session_storage_write_failed", False)
     st.session_state.setdefault("preferred_session_id", "")
     st.session_state.setdefault("pending_selected_session_id", "")
+    st.session_state.setdefault("session_ids_to_purge", [])
     st.session_state.setdefault("job", None)
     st.session_state.setdefault("job_state", _STATE_IDLE)
     st.session_state.setdefault("crawl_id", "")
@@ -331,6 +336,31 @@ def _cached_download_tree(files: tuple[GeneratedFile, ...]) -> dict[str, Any]:
     return build_download_tree(list(files))
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_session_exists(sessions_root: str, session_id: str) -> bool:
+    return session_exists(Path(sessions_root), session_id)
+
+
+def _filter_server_valid_sessions(
+    records: list[SessionRecord], current_session_id: str
+) -> tuple[list[SessionRecord], list[str]]:
+    """Split records into server-valid and missing; exempt the current session."""
+    sessions_root_str = str(_SESSIONS_ROOT.resolve())
+    valid: list[SessionRecord] = []
+    invalid_ids: list[str] = []
+    for record in records:
+        if (
+            record.session_id == current_session_id
+            or _cached_session_exists(  # exempt the current session
+                sessions_root_str, record.session_id
+            )
+        ):
+            valid.append(record)
+        else:
+            invalid_ids.append(record.session_id)
+    return valid, invalid_ids
+
+
 def _browser_session_records() -> list[SessionRecord]:
     records = st.session_state.get("browser_session_records", [])
     if isinstance(records, list) and all(isinstance(record, SessionRecord) for record in records):
@@ -364,6 +394,7 @@ def _mount_session_storage() -> None:
             "selectedSessionId": st.session_state.preferred_session_id,
             "hydrated": st.session_state.browser_sessions_hydrated,
             "storageWriteFailed": st.session_state.session_storage_write_failed,
+            "recordsToRemove": st.session_state.get("session_ids_to_purge", []),
         },
         on_records_change=lambda: None,
         on_stored_records_change=lambda: None,
@@ -390,6 +421,12 @@ def _apply_session_storage_result(result: Any) -> None:
         st.session_state.session_storage_write_failed = bool(storage_write_failed)
     if _component_field(result, "hydrated") is True:
         st.session_state.browser_sessions_hydrated = True
+    if records_payload is not None and st.session_state.browser_sessions_hydrated:
+        valid, invalid_ids = _filter_server_valid_sessions(
+            _browser_session_records(), str(st.session_state.get("session_id", ""))
+        )
+        st.session_state.browser_session_records = valid
+        st.session_state.session_ids_to_purge = invalid_ids
 
     pending = _cached_normalize_session_records(st.session_state.pending_browser_session_records)
     stored_payload = _component_result_field(result, "stored_records")

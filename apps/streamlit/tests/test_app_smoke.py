@@ -115,6 +115,7 @@ def test_new_session_not_reverted_when_component_records_are_stale(
     initial_records = serialize_session_records(
         [SessionRecord(old_session_id, datetime(2026, 1, 1, tzinfo=timezone.utc))]
     )
+    (tmp_path / "outputs" / "streamlit_sessions" / f"session_{old_session_id}").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     with patch(
         "streamlit.components.v2.component",
@@ -183,6 +184,7 @@ def test_refresh_reattaches_running_crawl_from_registry(
         active_output_dir=str(output_base),
     )
     fake_registry = {session_id: snapshot}
+    (sessions_root / f"session_{session_id}").mkdir(parents=True)
 
     monkeypatch.chdir(tmp_path)
     try:

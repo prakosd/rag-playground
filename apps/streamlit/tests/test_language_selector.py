@@ -125,6 +125,9 @@ def test_real_app_language_selection_persists_for_active_session_across_rerun(
             SessionRecord("other", _FIXED_CREATED_AT.replace(minute=1), "ID"),
         ]
     )
+    _sessions_root = tmp_path / "outputs" / "streamlit_sessions"
+    (_sessions_root / "session_active").mkdir(parents=True)
+    (_sessions_root / "session_other").mkdir(parents=True)
     with _patched_app_test(
         monkeypatch,
         tmp_path,
@@ -178,6 +181,7 @@ def test_new_session_button_with_existing_session_defaults_to_en(
         [SessionRecord("existing", _FIXED_CREATED_AT, "ID")]
     )
     new_record = SessionRecord("created", _FIXED_CREATED_AT.replace(minute=5), "EN")
+    (tmp_path / "outputs" / "streamlit_sessions" / "session_existing").mkdir(parents=True)
     with _patched_app_test(
         monkeypatch,
         tmp_path,
@@ -232,6 +236,9 @@ def test_real_app_retries_language_write_after_same_session_store_failure(
             SessionRecord("other", _FIXED_CREATED_AT.replace(minute=1), "ID"),
         ]
     )
+    _sessions_root = tmp_path / "outputs" / "streamlit_sessions"
+    (_sessions_root / "session_active").mkdir(parents=True)
+    (_sessions_root / "session_other").mkdir(parents=True)
     with _patched_app_test(
         monkeypatch,
         tmp_path,
@@ -277,6 +284,9 @@ def test_real_app_switching_session_clears_stale_view_state(
             SessionRecord("other", _FIXED_CREATED_AT.replace(minute=1), "EN"),
         ]
     )
+    _sessions_root = tmp_path / "outputs" / "streamlit_sessions"
+    (_sessions_root / "session_active").mkdir(parents=True)
+    (_sessions_root / "session_other").mkdir(parents=True)
     with _patched_app_test(
         monkeypatch,
         tmp_path,
