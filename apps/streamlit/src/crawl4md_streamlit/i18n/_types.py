@@ -86,6 +86,7 @@ class Strings(TypedDict):
     TOAST_SUCCESS: str
     TOAST_FAILED: str
     TOAST_DISCOVERED: str
+    TOAST_SESSION_CREATED: str
     TOAST_SESSION_EXTENDED: str
     TOAST_SESSION_EXTEND_FAILED: str
     # ── Progress metrics ──────────────────────────────────────────────────

@@ -119,6 +119,7 @@ STRINGS_ID: Strings = {
     "TOAST_SUCCESS": "{n} halaman berhasil di-crawl",
     "TOAST_FAILED": "{n} halaman gagal di-crawl",
     "TOAST_DISCOVERED": "{n} halaman ditemukan",
+    "TOAST_SESSION_CREATED": "Sesi baru berhasil dibuat",
     "TOAST_SESSION_EXTENDED": "Sesi diperpanjang — masa berlaku diperbarui ke 7 hari",
     "TOAST_SESSION_EXTEND_FAILED": "Sesi gagal diperpanjang",
     # ── Progress metrics ──────────────────────────────────────────────────

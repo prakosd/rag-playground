@@ -114,6 +114,7 @@ STRINGS_EN: Strings = {
     "TOAST_SUCCESS": "{n} page(s) crawled successfully",
     "TOAST_FAILED": "{n} page(s) failed",
     "TOAST_DISCOVERED": "{n} page(s) discovered",
+    "TOAST_SESSION_CREATED": "New session created",
     "TOAST_SESSION_EXTENDED": "Session extended — expiry reset to 7 days",
     "TOAST_SESSION_EXTEND_FAILED": "Could not extend session",
     # ── Progress metrics ──────────────────────────────────────────────────

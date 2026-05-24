@@ -87,6 +87,10 @@ _DEFAULT_LANGUAGE = DEFAULT_SESSION_LANGUAGE
 _TOAST_PAGE_SUCCESS_ICON = "✅"
 _TOAST_PAGE_FAIL_ICON = "❌"
 _TOAST_PAGE_DISCOVERED_ICON = "🔎"
+_CREATE_TOAST_STATE = "_create_toast"
+_EXTEND_TOAST_STATE = "_extend_toast"
+_EXTEND_TOAST_SUCCESS = "success"
+_EXTEND_TOAST_FAILED = "failed"
 _STATE_CANCEL_REQUESTED = "cancel_requested"
 _STATE_CANCELLED = "cancelled"
 _STATE_COMPLETED = "completed"
@@ -193,12 +197,15 @@ export default function (component) {
         ? data.pendingSelectedSessionId.trim()
         : null
     const nextSelectedId = pendingSelectedId || storedSelectedId
-    let storedPending = pendingRecords.length === 0 && !pendingSelectedId
-    if (pendingRecords.length > 0 || nextSerialized !== storedSerialized || pendingSelectedId) {
+    const hasPendingRecords = pendingRecords.length > 0
+    const recordsNeedWrite = nextSerialized !== storedSerialized
+    const selectedNeedsWrite = !!pendingSelectedId && pendingSelectedId !== storedSelectedId
+    let storedPending = (!hasPendingRecords || !recordsNeedWrite) && !selectedNeedsWrite
+    if (recordsNeedWrite || selectedNeedsWrite) {
         storedPending = writeStorage(storageKey, nextRecords, nextSelectedId)
     }
-    const storageWriteFailed = (pendingRecords.length > 0 || !!pendingSelectedId) && storedPending === false
-    if (pendingRecords.length > 0 && storedPending) {
+    const storageWriteFailed = (hasPendingRecords || !!pendingSelectedId) && storedPending === false
+    if (hasPendingRecords && recordsNeedWrite && storedPending) {
         setStateValue("stored_records", nextRecords)
     }
     if (data.storageWriteFailed !== storageWriteFailed) {
@@ -212,8 +219,8 @@ export default function (component) {
     if (data.hydrated !== true) {
         setStateValue("hydrated", true)
     }
-    if (storedSelectedId && data.selectedSessionId !== storedSelectedId) {
-        setStateValue("selected_session_id", storedSelectedId)
+    if (nextSelectedId && data.selectedSessionId !== nextSelectedId) {
+        setStateValue("selected_session_id", nextSelectedId)
     }
 }
 """
@@ -529,6 +536,7 @@ def _create_new_session() -> None:
     st.session_state.language = record.language
     _commit_session_record(record)
     _select_session_id(record.session_id)
+    st.session_state[_CREATE_TOAST_STATE] = True
     st.rerun()
 
 
@@ -1497,6 +1505,16 @@ _init_state()
 _mount_session_storage()
 strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 
+# Show deferred "session created" toast only once the storage component has
+# confirmed the localStorage write. Firing earlier shows it on an intermediate
+# rerun that can be replaced by component callbacks, making the toast disappear.
+if (
+    st.session_state.get(_CREATE_TOAST_STATE)
+    and not st.session_state.pending_browser_session_records
+):
+    st.session_state.pop(_CREATE_TOAST_STATE)
+    st.toast(strings["TOAST_SESSION_CREATED"], icon=_TOAST_PAGE_SUCCESS_ICON)
+
 bootstrap_state = bootstrap_gate_state(
     browser_sessions_hydrated=st.session_state.browser_sessions_hydrated,
     pending_bootstrap_session_id=st.session_state.pending_bootstrap_session_id,
@@ -1587,10 +1605,10 @@ form_expanded = not fields_disabled
 session_options = _session_options()
 session_controls_col, language_col = st.columns([5, 1], vertical_alignment="top")
 with session_controls_col:
-    _extend_toast = st.session_state.pop("_extend_toast", None)
-    if _extend_toast == "success":
+    _extend_toast = st.session_state.pop(_EXTEND_TOAST_STATE, None)
+    if _extend_toast == _EXTEND_TOAST_SUCCESS:
         st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
-    elif _extend_toast == "failed":
+    elif _extend_toast == _EXTEND_TOAST_FAILED:
         st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
     with st.container(gap="xxsmall"):
         with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
@@ -1636,9 +1654,9 @@ with session_controls_col:
             ):
                 try:
                     touch_session(_SESSIONS_ROOT, st.session_state.session_id)
-                    st.session_state._extend_toast = "success"
-                except Exception:
-                    st.session_state._extend_toast = "failed"
+                    st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_SUCCESS
+                except (OSError, ValueError):
+                    st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_FAILED
                 st.rerun()
         days_left, unit = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
         if unit == "hours":

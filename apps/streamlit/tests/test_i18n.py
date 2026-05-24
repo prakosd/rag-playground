@@ -59,6 +59,7 @@ def test_session_control_strings_are_present() -> None:
         "SESSION_CREATE_BUTTON_TOOLTIP",
         "SESSION_LOAD_BUTTON_TOOLTIP",
         "SESSION_EXTEND_BUTTON_TOOLTIP",
+        "TOAST_SESSION_CREATED",
         "TOAST_SESSION_EXTENDED",
         "TOAST_SESSION_EXTEND_FAILED",
     ):

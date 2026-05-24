@@ -72,6 +72,17 @@ def test_streamlit_app_starts_without_crashing(
     assert not app.exception
 
 
+# Risk: the browser-storage component can emit an extra stale callback after New Session,
+# causing success toasts to vanish almost immediately. Type: integration regression.
+def test_session_storage_component_avoids_stale_new_session_callbacks() -> None:
+    app_text = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
+
+    assert "if (hasPendingRecords && recordsNeedWrite && storedPending)" in app_text
+    assert "if (nextSelectedId && data.selectedSessionId !== nextSelectedId)" in app_text
+    assert "if (pendingRecords.length > 0 && storedPending)" not in app_text
+    assert "if (storedSelectedId && data.selectedSessionId !== storedSelectedId)" not in app_text
+
+
 # Risk: long single-line preview content can become unreadable if wrapping or horizontal scrolling regresses. Type: UI-flow smoke.
 def test_streamlit_preview_keeps_long_lines_unwrapped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
