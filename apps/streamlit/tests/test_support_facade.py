@@ -55,6 +55,7 @@ _EXPECTED_FACADE_EXPORTS = {
     "session_dir": session_manager.session_dir,
     "session_exists": session_manager.session_exists,
     "start_crawl_job": crawl_jobs.start_crawl_job,
+    "touch_session": session_manager.touch_session,
     "validate_safe_id": session_manager.validate_safe_id,
 }
 

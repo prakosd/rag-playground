@@ -58,6 +58,7 @@ prepare_session_dir = _session_manager.prepare_session_dir
 serialize_session_records = _session_manager.serialize_session_records
 session_dir = _session_manager.session_dir
 session_exists = _session_manager.session_exists
+touch_session = _session_manager.touch_session
 validate_safe_id = _session_manager.validate_safe_id
 
 __all__ = [
@@ -111,5 +112,6 @@ __all__ = [
     "session_dir",
     "session_exists",
     "start_crawl_job",
+    "touch_session",
     "validate_safe_id",
 ]

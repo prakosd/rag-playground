@@ -60,6 +60,7 @@ from crawl4md_streamlit.support import (
     session_dir,
     session_exists,
     start_crawl_job,
+    touch_session,
     validate_safe_id,
 )
 
@@ -497,6 +498,7 @@ def _register_and_select_session(session_id: str) -> None:
     """Register an externally known session into local browser records and select it."""
     mtime = session_dir(_SESSIONS_ROOT, session_id).stat().st_mtime
     created_at = datetime.fromtimestamp(mtime, tz=timezone.utc)
+    touch_session(_SESSIONS_ROOT, session_id)
     current_language = _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
     record = create_session_record(session_id=session_id, language=current_language, now=created_at)
     _commit_session_record(record)

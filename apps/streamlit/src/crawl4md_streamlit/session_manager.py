@@ -276,6 +276,11 @@ def session_exists(sessions_root: Path | str, session_id: str) -> bool:
         return False
 
 
+def touch_session(sessions_root: Path | str, session_id: str) -> None:
+    """Update the session directory mtime to now, resetting its retention clock."""
+    session_dir(sessions_root, session_id).touch()
+
+
 def crawl_output_base(sessions_root: Path | str, session_id: str, crawl_id: str) -> Path:
     """Return the output base directory for one crawl run."""
     safe_crawl_id = validate_safe_id(crawl_id)

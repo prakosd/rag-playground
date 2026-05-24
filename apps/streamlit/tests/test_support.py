@@ -52,6 +52,7 @@ from crawl4md_streamlit.support import (
     session_dir,
     session_exists,
     start_crawl_job,
+    touch_session,
     validate_safe_id,
 )
 
@@ -176,6 +177,23 @@ def test_session_exists_returns_false_for_invalid_id(tmp_path: Path) -> None:
 
 def test_session_exists_returns_false_for_empty_id(tmp_path: Path) -> None:
     assert session_exists(tmp_path, "") is False
+
+
+def test_touch_session_updates_directory_mtime(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_myid"
+    sdir.mkdir()
+    old_time = 0.0
+    os.utime(sdir, (old_time, old_time))
+    before = sdir.stat().st_mtime
+
+    touch_session(tmp_path, "myid")
+
+    assert sdir.stat().st_mtime > before
+
+
+def test_touch_session_raises_for_invalid_id(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        touch_session(tmp_path, "../escape")
 
 
 def test_create_session_record_uses_safe_id_and_utc_time() -> None:
