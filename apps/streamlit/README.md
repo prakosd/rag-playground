@@ -186,6 +186,22 @@ has no valid sessions, the server creates one safe ID, sends it back to the brid
 and selects it. Users can switch sessions with the searchable `st.selectbox()` or create a new
 session with the adjacent button.
 
+**Load Session dialog** — the 📁 button next to the session selector opens a modal dialog that
+accepts a session ID typed or pasted by the user. This lets someone restore a session from
+another browser, device, or after clearing browser cache. The dialog:
+
+1. Validates the pasted ID against `^[a-z0-9_-]+$` — rejects empty or unsafe values.
+2. Checks that `outputs/streamlit_sessions/session_<id>/` exists on the server.
+3. If the session is already in the browser's records, shows a toast and switches to it without
+   creating a duplicate.
+4. If found but not yet local, registers the record in browser localStorage, then selects it.
+5. Calls `touch_session()` to reset the session's mtime so the 7-day retention clock restarts.
+
+The button is disabled while a crawl is running (`_STATE_RUNNING` / `_STATE_CANCEL_REQUESTED`)
+to prevent switching sessions mid-job. Error messages are translated via the i18n catalog
+(`DIALOG_LOAD_SESSION_INVALID_ID`, `DIALOG_LOAD_SESSION_NOT_FOUND`,
+`DIALOG_LOAD_SESSION_ALREADY_LOADED`).
+
 Session IDs use a readable format based on the EFF large wordlist. The pattern is controlled by
 two constants in `session_manager.py`:
 
@@ -276,6 +292,7 @@ Tests mock `SiteCrawler` — no real network calls are made. The split between `
 | Add a new event type from the crawler | `job_state_from_event()` in `crawl_jobs.py` + `_drain_job_events()` in `streamlit_app.py` |
 | Add a new output panel | A new `_render_*` function in `streamlit_app.py`; use `_render_live_area` for crawl-status panels and a separate fragment for selected-session downloads |
 | Change retention or cleanup logic | `cleanup_old_sessions()` in `session_manager.py` + `test_support.py` |
+| Change the Load Session dialog | `_load_session_dialog()` + `_register_and_select_session()` in `streamlit_app.py`; update i18n keys in `en.py` / `id.py` |
 | Change the server port or theme | `apps/streamlit/.streamlit/config.toml` |
 
 ---

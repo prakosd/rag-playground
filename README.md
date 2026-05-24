@@ -56,7 +56,7 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 - While a crawl is running, settings are locked and the action changes to **Stop**
 - Click **Stop** to request a cooperative stop; crawl4md writes final files for pages completed so far
 - Start again after stopping to begin a fresh crawl from the form settings
-- Reuse the newest browser session automatically, switch to older sessions from the searchable session selector, or create a new session manually
+- Reuse the newest browser session automatically, switch to older sessions from the searchable session selector, or create a new session manually; use **Load Session** (📁) to restore a session from another browser or device by pasting its session ID
 - Watch live progress (pages crawled, estimated completion, and active/next URL previews when parallel fetches are running)
 - Preview common text-based generated files and download files directly from the browser
 
@@ -356,9 +356,14 @@ apps/streamlit/
 ├── streamlit_app.py  # Browser UI that imports crawl4md
 ├── pyproject.toml    # App-only dependencies, including Streamlit
 ├── src/crawl4md_streamlit/
-│   ├── controls.py   # App button/state helpers
-│   └── support.py    # App job/session helpers
-└── tests/            # Streamlit app helper tests
+│   ├── controls.py        # Action-button state machine
+│   ├── crawl_jobs.py      # Background crawl thread, config builders, progress helpers
+│   ├── form_defaults.py   # Default form values and option constants
+│   ├── form_ui.py         # Streamlit crawl settings form renderer
+│   ├── generated_files.py # Session output listing, previews, and download-tree helpers
+│   ├── session_manager.py # Session IDs, records, paths, and cleanup
+│   └── support.py         # Compatibility re-exports from the modules above
+└── tests/                 # Streamlit app helper tests
 ```
 
 ## Development

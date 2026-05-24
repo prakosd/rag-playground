@@ -1,6 +1,6 @@
 ---
 description: "Use when editing the Streamlit app, Streamlit support helpers, or their tests. Covers session isolation, background crawl jobs, progress/cancel events, downloads, and container startup."
-applyTo: "apps/streamlit/streamlit_app.py, apps/streamlit/src/crawl4md_streamlit/support.py, apps/streamlit/src/crawl4md_streamlit/controls.py, apps/streamlit/src/crawl4md_streamlit/i18n/**, apps/streamlit/tests/**"
+applyTo: "apps/streamlit/streamlit_app.py, apps/streamlit/src/crawl4md_streamlit/support.py, apps/streamlit/src/crawl4md_streamlit/controls.py, apps/streamlit/src/crawl4md_streamlit/crawl_jobs.py, apps/streamlit/src/crawl4md_streamlit/form_defaults.py, apps/streamlit/src/crawl4md_streamlit/form_ui.py, apps/streamlit/src/crawl4md_streamlit/generated_files.py, apps/streamlit/src/crawl4md_streamlit/session_manager.py, apps/streamlit/src/crawl4md_streamlit/i18n/**, apps/streamlit/tests/**"
 ---
 
 # Streamlit App
@@ -26,3 +26,4 @@ Browser UI for users who prefer a form-based crawl workflow instead of the noteb
 - Tests must use `tmp_path` and mocked/stubbed crawl jobs. Never make real network requests from Streamlit tests.
 - Streamlit tests must follow the `## Streamlit Tests (apps/streamlit/**)` policy in `tests.instructions.md`: test business logic, integration behavior, critical workflows, and startup smoke coverage; do not test static rendering, cosmetic details, individual widget existence, or Streamlit framework behavior.
 - **Translation catalog:** Whenever new user-facing text is added to the Streamlit UI, add both an English and an Indonesian entry to the `apps/streamlit/src/crawl4md_streamlit/i18n/` package first — `en.py` and `id.py` — then reference the key via `get_strings()` in the UI code. Never hardcode text directly in Streamlit components. To add a new language, create a new `<code>.py` file in the package and register it in `__init__.py`.
+- **Load Session dialog:** The 📁 button in `streamlit_app.py` (`_load_session_dialog`) lets users paste a session ID to restore access from another browser or device. Session IDs are validated with `validate_safe_id()` before any server-side path is constructed. `touch_session()` must be called after a successful load to reset the 7-day retention clock. The dialog must stay disabled while a crawl is running.
