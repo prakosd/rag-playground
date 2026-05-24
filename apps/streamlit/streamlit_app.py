@@ -526,7 +526,7 @@ def _load_session_dialog() -> None:
             st.session_state["_load_session_enter"] = False
             st.session_state.session_load_dialog_open = False
             st.rerun()
-    with action_cols[1], st.container(horizontal_alignment="right"):
+    with action_cols[1]:
         load_clicked = st.button(
             strings["DIALOG_LOAD_BTN_LOAD"],
             type="primary",
@@ -1547,7 +1547,8 @@ form_expanded = not fields_disabled
 session_options = _session_options()
 session_controls_col, language_col = st.columns([5, 1], vertical_alignment="bottom")
 with session_controls_col:
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
+    selector_area, load_btn_area = st.columns([9, 1], vertical_alignment="bottom")
+    with selector_area, st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
         with st.container(
             horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"
         ):
@@ -1570,6 +1571,7 @@ with session_controls_col:
             disabled=fields_disabled,
         ):
             _create_new_session()
+    with load_btn_area, st.container(horizontal_alignment="right"):
         if st.button(
             "",
             width=_ICON_BUTTON_WIDTH_PX,
