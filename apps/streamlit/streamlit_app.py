@@ -557,7 +557,12 @@ def _register_and_select_session(session_id: str) -> None:
     st.rerun()
 
 
-@st.dialog(_DIALOG_LOAD_SESSION_TITLE, width="small")
+def _on_load_session_dismiss() -> None:
+    st.session_state.session_load_dialog_open = False
+    st.session_state["_load_session_enter"] = False
+
+
+@st.dialog(_DIALOG_LOAD_SESSION_TITLE, width="small", on_dismiss=_on_load_session_dismiss)
 def _load_session_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 
@@ -793,7 +798,11 @@ def _stop_job() -> None:
     st.warning(strings["ERROR_NO_ACTIVE_CRAWL"])
 
 
-@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small")
+def _on_stop_dismiss() -> None:
+    st.session_state.stop_confirmation_open = False
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_stop_dismiss)
 def _stop_confirmation_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     st.markdown(
