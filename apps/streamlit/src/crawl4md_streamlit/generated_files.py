@@ -356,7 +356,7 @@ def find_ready_download_in_session(
     success content.
     """
     root = Path(session_root).resolve()
-    if not root.exists():
+    if not root.is_dir():
         return None
     candidates: list[tuple[float, Path]] = []
     for crawl_dir in root.iterdir():
