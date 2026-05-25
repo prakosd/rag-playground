@@ -53,7 +53,12 @@ from crawl4md._internal.crawler_progress import (
 from crawl4md._internal.crawler_progress import (
     emit_progress as _emit_progress_impl,
 )
-from crawl4md._internal.final_output import FinalOutputWriter
+from crawl4md._internal.final_output import (
+    _CLEANUP_INTERMEDIATE_FILES as _INTERNAL_CLEANUP_INTERMEDIATE_FILES,
+)
+from crawl4md._internal.final_output import (
+    FinalOutputWriter,
+)
 from crawl4md._internal.pdf import (
     _OCR_UNAVAILABLE_WARNING as _PDF_OCR_UNAVAILABLE_WARNING,
 )
@@ -247,8 +252,13 @@ _SORTED_FAIL_URLS_FILE = "sorted_fail_urls.txt"
 # Round file naming components
 # ------------------------------------------------------------------
 
-# Set to False to skip per-round sorted file generation (saves extraction time)
-_ENABLE_SORTED_ROUND_FILES = True
+# When True (default), intermediate files are removed once final sorted output
+# is written.  Set to False to keep every intermediate file for debugging.
+# Mirrors crawl4md._internal.final_output._CLEANUP_INTERMEDIATE_FILES.
+_CLEANUP_INTERMEDIATE_FILES = _INTERNAL_CLEANUP_INTERMEDIATE_FILES
+# Per-round sorted files are skipped when cleanup is enabled (they are
+# superseded by the final/sorted_* output).
+_ENABLE_SORTED_ROUND_FILES = not _CLEANUP_INTERMEDIATE_FILES
 
 # Prefix for sorted output files within a round or final folder
 _SORTED_SUCCESS_PREFIX = "sorted_success_"

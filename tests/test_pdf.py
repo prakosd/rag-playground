@@ -274,6 +274,7 @@ class TestDownloadPdf:
         mock_cls.assert_not_called()
         mock_open.assert_called_once_with(stream=b"fake-pdf-bytes", filetype="pdf")
 
+    @patch("crawl4md._internal.final_output._CLEANUP_INTERMEDIATE_FILES", False)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_direct_pdf_empty_extraction_writes_fail_sidecar(self, mock_crawler_cls, tmp_path):
         pdf_url = "https://example.com/empty.pdf"

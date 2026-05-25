@@ -18,7 +18,14 @@ _SUCCESS_URLS_FILE = "success_urls.txt"
 _FAIL_URLS_FILE = "fail_urls.txt"
 _SORTED_SUCCESS_URLS_FILE = "sorted_success_urls.txt"
 _SORTED_FAIL_URLS_FILE = "sorted_fail_urls.txt"
-_ENABLE_SORTED_ROUND_FILES = True
+# When True (default), three classes of intermediate files are removed after final
+# sorted output is written:
+#   1. Per-round sorted files  (round_N/sorted_*) — superseded by final/sorted_*
+#   2. Unsorted final content  (final/success_content_*, final/fail_content_*) — superseded by sorted
+#   3. Sidecar JSONL files     (round_N/*_pages.jsonl) — no longer needed once sorted files exist
+# Set to False to keep every intermediate file on disk (useful for debugging).
+_CLEANUP_INTERMEDIATE_FILES = True
+_ENABLE_SORTED_ROUND_FILES = not _CLEANUP_INTERMEDIATE_FILES
 _SORTED_SUCCESS_PREFIX = "sorted_success_"
 _SORTED_FAIL_PREFIX = "sorted_fail_"
 _SUCCESS_SIDECAR_SUFFIX = "success_pages.jsonl"
@@ -162,6 +169,12 @@ class FinalOutputWriter:
                     fail_entries, prefix=_FAIL_SUFFIX, output_dir=final_dir
                 )
 
+    def delete_sidecars(self) -> None:
+        """Delete per-round JSONL sidecar files after final output is written."""
+        for pattern in (_SUCCESS_SIDECAR_SUFFIX, _FAIL_SIDECAR_SUFFIX):
+            for sidecar in self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{pattern}"):
+                sidecar.unlink(missing_ok=True)
+
     def write_sorted_files(self) -> None:
         final_dir = self.output_dir / _FINAL_DIR_NAME
         final_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +201,10 @@ class FinalOutputWriter:
                 fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=final_dir
             )
             rename_files_with_total(files)
+
+        if _CLEANUP_INTERMEDIATE_FILES:
+            self.clear_final_content_files(sorted_files=False)
+            self.delete_sidecars()
 
     def get_final_content_files(self) -> list[Path]:
         final_dir = self.output_dir / _FINAL_DIR_NAME

@@ -121,15 +121,13 @@ class TestFailContentFiles:
 
         assert crawler.output_dir is not None
         assert [result.url for result in results if not result.success] == redirect_urls
-        fail_sidecar = crawler.output_dir / "round_1" / "fail_pages.jsonl"
-        assert [entry.url for entry in PageSidecar.iter_index(fail_sidecar)] == redirect_urls
 
         final_dir = crawler.output_dir / "final"
         assert (final_dir / "fail_urls.txt").read_text(
             encoding="utf-8"
         ).splitlines() == redirect_urls
         final_fail_content = "\n".join(
-            path.read_text(encoding="utf-8") for path in final_dir.glob("fail_content_*.txt")
+            path.read_text(encoding="utf-8") for path in sorted(final_dir.glob("sorted_fail_content_*.txt"))
         )
         for redirect_url in redirect_urls:
             assert redirect_url in final_fail_content
@@ -946,8 +944,13 @@ class TestSaveUrlLists:
         assert not (round_1_dir / "fail_urls.txt").exists()
 
 
+@patch("crawl4md._internal.final_output._CLEANUP_INTERMEDIATE_FILES", False)
 class TestFinalUnsortedContentFiles:
-    """Tests for unsorted final_success_content / final_fail_content file generation."""
+    """Tests for unsorted final_success_content / final_fail_content file generation.
+
+    These tests run with _CLEANUP_INTERMEDIATE_FILES=False so unsorted files
+    are kept on disk, allowing direct assertion against them.
+    """
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_final_unsorted_content_created(self, mock_crawler_cls, tmp_path: Path):
@@ -1127,8 +1130,14 @@ class TestRoundSuccessSnapshots:
         assert round_2_content.count(f"*Source: {url_b}*") == 1
 
 
+@patch("crawl4md._internal.final_output._ENABLE_SORTED_ROUND_FILES", True)
+@patch("crawl4md.crawler._ENABLE_SORTED_ROUND_FILES", True)
 class TestSortedRoundFiles:
-    """Tests for per-round sorted content and URL file generation."""
+    """Tests for per-round sorted content and URL file generation.
+
+    These tests run with _ENABLE_SORTED_ROUND_FILES=True (i.e. cleanup disabled)
+    so per-round sorted files are written and can be asserted against.
+    """
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_sorted_round_success_files_created(self, mock_crawler_cls, tmp_path: Path):
@@ -1216,35 +1225,6 @@ class TestSortedRoundFiles:
             urls=["https://example.com/ok"], limit=1, max_retries=0, flush_interval=1
         )
         crawler = SiteCrawler(config, output_base=tmp_path)
-        crawler.crawl()
-
-        assert crawler.output_dir is not None
-        sorted_files = list(crawler.output_dir.glob("round_*/sorted_*"))
-        assert len(sorted_files) == 0
-
-    @patch("crawl4md.crawler._ENABLE_SORTED_ROUND_FILES", False)
-    @patch("crawl4md.crawler.AsyncWebCrawler")
-    def test_sorted_round_files_skipped_when_disabled(self, mock_crawler_cls, tmp_path: Path):
-        """No sorted round files when _ENABLE_SORTED_ROUND_FILES is False."""
-        html = "<html><head><title>Test</title></head><body><p>Hello</p></body></html>"
-        mock_result = _make_mock_result("https://example.com/page", html, "Hello")
-
-        mock_instance = AsyncMock()
-        mock_instance.arun = AsyncMock(return_value=mock_result)
-        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-        mock_instance.__aexit__ = AsyncMock(return_value=False)
-        mock_crawler_cls.return_value = mock_instance
-
-        config = CrawlerConfig(
-            urls=["https://example.com/page"], limit=1, max_retries=0, flush_interval=1
-        )
-        page_config = PageConfig(extract_main_content=False)
-        extractor = ContentExtractor(page_config)
-        writer = FileWriter(max_file_size_mb=15.0)
-
-        crawler = SiteCrawler(
-            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
-        )
         crawler.crawl()
 
         assert crawler.output_dir is not None
@@ -1438,13 +1418,15 @@ class TestInterruptHandling:
         crawler._write_final_files([CrawlResult(url=url_a, success=True)], [])
         crawler._write_sorted_files([CrawlResult(url=url_a, success=True)], [])
 
-        success_files = sorted(final_dir.glob("success_content_*.md"))
+        # With _CLEANUP_INTERMEDIATE_FILES=True (default), unsorted content files
+        # are removed after sorted files are written.
         sorted_success_files = sorted(final_dir.glob("sorted_success_content_*.md"))
-        assert [path.name for path in success_files] == ["success_content_001.md"]
         assert [path.name for path in sorted_success_files] == [
             "sorted_success_content_001_of_001.md"
         ]
-        assert "stale" not in success_files[0].read_text(encoding="utf-8")
+        assert "stale" not in sorted_success_files[0].read_text(encoding="utf-8")
+        assert "fresh content" in sorted_success_files[0].read_text(encoding="utf-8")
+        assert not list(final_dir.glob("success_content_*.md"))  # cleaned up
         assert not (final_dir / "fail_urls.txt").exists()
         assert not (final_dir / "sorted_fail_urls.txt").exists()
         assert not list(final_dir.glob("fail_content_*.md"))
@@ -1511,9 +1493,10 @@ class TestInterruptHandling:
 class TestSidecarFiles:
     """Tests for JSONL sidecar files and memory-efficient field stripping."""
 
+    @patch("crawl4md._internal.final_output._CLEANUP_INTERMEDIATE_FILES", False)
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_sidecar_files_created(self, mock_crawler_cls, tmp_path: Path):
-        """Crawl creates success and fail JSONL sidecar files."""
+        """Crawl creates success and fail JSONL sidecar files (cleanup disabled)."""
         blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 123</body></html>"
         ok_result = _make_mock_result(
             "https://example.com/ok",
@@ -1566,6 +1549,41 @@ class TestSidecarFiles:
         fail_pages = list(PageSidecar.read_pages(fail_sidecars[0]))
         assert len(fail_pages) >= 1
         assert any(p.url == "https://example.com/blocked" for p in fail_pages)
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_sidecar_files_deleted_after_crawl(self, mock_crawler_cls, tmp_path: Path):
+        """With _CLEANUP_INTERMEDIATE_FILES=True (default), sidecars are gone after crawl."""
+        ok_result = _make_mock_result(
+            "https://example.com/page",
+            "<html><body><p>Good content here is long enough</p></body></html>",
+            "Good content here is long enough",
+        )
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=ok_result)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com/page"], limit=1, max_retries=0, flush_interval=1
+        )
+        page_config = PageConfig(extract_main_content=False)
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(max_file_size_mb=15.0)
+
+        crawler = SiteCrawler(
+            config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
+        )
+        crawler.crawl()
+
+        assert crawler.output_dir is not None
+        # Sidecars should be gone — final sorted output was built from them then they were removed
+        assert not list(crawler.output_dir.glob("round_*/success_pages.jsonl"))
+        assert not list(crawler.output_dir.glob("round_*/fail_pages.jsonl"))
+        # Final sorted output should exist, proving the sidecars were used before deletion
+        final_dir = crawler.output_dir / "final"
+        assert list(final_dir.glob("sorted_success_content_*"))
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_crawl_results_have_stripped_fields(self, mock_crawler_cls, tmp_path: Path):

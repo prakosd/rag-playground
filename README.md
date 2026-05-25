@@ -252,31 +252,51 @@ For each page:
 
 ## Output Structure
 
-Each crawl creates a timestamped folder with three tiers of output:
+Each crawl creates a timestamped folder. Per-round subdirectories hold intermediate snapshots; the `final/` folder holds the primary output.
 
 ```
 2026-03-08_17-39-59/
 │
-│  # Per-round files (written during crawl)
-├── round_1_success_content_001.md
-├── round_1_success_urls.txt
-├── round_1_fail_content_001.md        # Error details + raw HTML for blocked pages
-├── round_1_fail_urls.txt
-├── round_2_success_content_001.md     # Retry round (if needed)
-├── round_2_fail_urls.txt
+├── activity_log.txt              # Timestamped crawl event log
+├── activity_log.csv              # Same log in CSV format
+├── site_graph.jsonl              # All discovered URLs with status and depth
 │
-│  # Final merged files (after all rounds, unsorted)
-├── final_success_content_001.md       # All successful pages merged
-├── final_success_content_002.md       # Additional file if size limit exceeded
-├── final_fail_content_001.md          # All failed pages merged
-├── final_success_urls.txt             # All successful URLs (deduplicated)
-├── final_fail_urls.txt                # URLs that never succeeded
+├── round_1/                      # Per-round files (written during crawl)
+│   ├── success_content_001.md    # Pages crawled in this round
+│   ├── success_urls.txt
+│   ├── fail_content_001.md       # Error details + raw HTML for blocked pages
+│   └── fail_urls.txt
 │
-│  # Sorted final files (grouped by URL path)
-├── sorted_final_success_content_001_of_001.md
-├── sorted_final_fail_content_001_of_001.md
-├── sorted_final_success_urls.txt
-└── sorted_final_fail_urls.txt
+├── round_2/                      # Retry round (only if max_retries > 0 and pages failed)
+│   ├── success_content_001.md
+│   └── ...
+│
+└── final/                        # Primary output — merged across all rounds
+    ├── sorted_success_content_001_of_001.md   # ✅ Main output (sorted by URL path)
+    ├── sorted_success_content_002_of_002.md   # Additional file if size limit exceeded
+    ├── sorted_success_urls.txt
+    ├── sorted_fail_content_001_of_001.md      # Pages that never succeeded
+    ├── sorted_fail_urls.txt
+    ├── success_urls.txt                       # Deduplicated success URL list (unsorted)
+    └── fail_urls.txt                          # URLs that never succeeded (unsorted)
+```
+
+### Intermediate file cleanup
+
+By default (`_CLEANUP_INTERMEDIATE_FILES = True` in `src/crawl4md/_internal/final_output.py`),
+three categories of intermediate files are automatically removed once the final sorted output is written:
+
+| Removed | Why |
+|---------|-----|
+| `round_N/success_pages.jsonl`, `round_N/fail_pages.jsonl` | JSONL sidecar files used during the crawl to keep memory usage low. No longer needed once sorted files exist. |
+| `final/success_content_*.md`, `final/fail_content_*.md` | Unsorted merged content — superseded by `final/sorted_*` which contains the same pages in a better order. |
+| `round_N/sorted_*` | Per-round sorted snapshots — superseded by the final merged sorted output. |
+
+To keep every intermediate file on disk (useful for debugging), set:
+
+```python
+# src/crawl4md/_internal/final_output.py
+_CLEANUP_INTERMEDIATE_FILES = False
 ```
 
 Every generated content file (`*_content_*.txt` / `*_content_*.md`) starts with YAML front matter metadata.
