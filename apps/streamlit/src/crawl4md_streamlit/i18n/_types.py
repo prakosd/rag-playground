@@ -14,6 +14,10 @@ class Strings(TypedDict):
     SESSION_SELECTOR_LABEL: str
     SESSION_EXPIRY_CAPTION: str  # template: {days}
     SESSION_EXPIRY_CAPTION_SINGULAR: str
+    SESSION_EXPIRY_CAPTION_DAYS_HOURS: str  # template: {days}, {hours}
+    SESSION_EXPIRY_CAPTION_DAY_HOURS: str  # template: {hours}
+    SESSION_EXPIRY_CAPTION_DAYS_HOUR: str  # template: {days}
+    SESSION_EXPIRY_CAPTION_DAY_HOUR: str
     SESSION_EXPIRY_CAPTION_HOURS: str  # template: {hours}
     SESSION_EXPIRY_CAPTION_HOURS_SINGULAR: str
     SESSION_EXPIRY_CAPTION_SOON: str

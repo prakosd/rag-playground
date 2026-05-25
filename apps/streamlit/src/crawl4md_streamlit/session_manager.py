@@ -289,25 +289,26 @@ def session_time_remaining(
     *,
     retention_days: int = _DEFAULT_RETENTION_DAYS,
     now: datetime | None = None,
-) -> tuple[int, Literal["days", "hours"]]:
+) -> tuple[int, int]:
     """Return how much time is left before a session is eligible for deletion.
 
-    Returns a (value, unit) pair. Unit is "days" when 24 hours or more remain,
-    and "hours" otherwise. Both values are floor-rounded so the count never
-    overpromises. If the session directory does not exist (e.g. a brand-new
-    session), the full retention period is returned.
+    Returns a (days, hours) pair. *days* is whole days remaining; *hours* is
+    the remaining hours after subtracting whole days (0–23). Both are
+    floor-rounded so the count never overpromises. If the session directory
+    does not exist (e.g. a brand-new session), the full retention period is
+    returned with zero remainder hours.
     """
     sdir = session_dir(sessions_root, session_id)
     _now = now or datetime.now(timezone.utc)
     if not sdir.is_dir():
-        return (retention_days, "days")
+        return (retention_days, 0)
     modified_at = datetime.fromtimestamp(sdir.stat().st_mtime, tz=timezone.utc)
     remaining_seconds = max(
         0.0, (timedelta(days=retention_days) - (_now - modified_at)).total_seconds()
     )
-    if remaining_seconds >= _SECONDS_PER_DAY:
-        return (int(remaining_seconds // _SECONDS_PER_DAY), "days")
-    return (int(remaining_seconds // _SECONDS_PER_HOUR), "hours")
+    whole_days = int(remaining_seconds // _SECONDS_PER_DAY)
+    remainder_hours = int((remaining_seconds % _SECONDS_PER_DAY) // _SECONDS_PER_HOUR)
+    return (whole_days, remainder_hours)
 
 
 def crawl_output_base(sessions_root: Path | str, session_id: str, crawl_id: str) -> Path:

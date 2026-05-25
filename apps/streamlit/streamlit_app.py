@@ -1675,21 +1675,33 @@ with session_controls_col:
                 except (OSError, ValueError):
                     st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_FAILED
                 st.rerun()
-        days_left, unit = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
-        if unit == "hours":
-            if days_left == 0:
+        days_left, hours_left = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
+        if days_left == 0:
+            if hours_left == 0:
                 expiry_key = "SESSION_EXPIRY_CAPTION_SOON"
-            elif days_left == 1:
+            elif hours_left == 1:
                 expiry_key = "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR"
             else:
                 expiry_key = "SESSION_EXPIRY_CAPTION_HOURS"
-        else:
+        elif hours_left == 0:
             expiry_key = (
                 "SESSION_EXPIRY_CAPTION_SINGULAR" if days_left == 1 else "SESSION_EXPIRY_CAPTION"
             )
+        elif hours_left == 1:
+            expiry_key = (
+                "SESSION_EXPIRY_CAPTION_DAY_HOUR"
+                if days_left == 1
+                else "SESSION_EXPIRY_CAPTION_DAYS_HOUR"
+            )
+        else:
+            expiry_key = (
+                "SESSION_EXPIRY_CAPTION_DAY_HOURS"
+                if days_left == 1
+                else "SESSION_EXPIRY_CAPTION_DAYS_HOURS"
+            )
         st.caption(
-            strings[expiry_key].format(days=days_left, hours=days_left)
-        )  # one kwarg unused per key
+            strings[expiry_key].format(days=days_left, hours=hours_left)
+        )  # one or both kwargs may be unused per key
     if selected_session != st.session_state.session_id:
         _select_session_id(str(selected_session))
         st.rerun()

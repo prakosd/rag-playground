@@ -204,9 +204,9 @@ _NOW = datetime(2026, 5, 24, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def test_session_time_remaining_no_dir_returns_full_retention(tmp_path: Path) -> None:
-    value, unit = session_time_remaining(tmp_path, "newid", now=_NOW)
-    assert value == 7
-    assert unit == "days"
+    days, hours = session_time_remaining(tmp_path, "newid", now=_NOW)
+    assert days == 7
+    assert hours == 0
 
 
 def test_session_time_remaining_fresh_dir_returns_full_retention(tmp_path: Path) -> None:
@@ -214,9 +214,9 @@ def test_session_time_remaining_fresh_dir_returns_full_retention(tmp_path: Path)
     sdir.mkdir()
     os.utime(sdir, (_NOW.timestamp(), _NOW.timestamp()))
 
-    value, unit = session_time_remaining(tmp_path, "fresh", now=_NOW)
-    assert value == 7
-    assert unit == "days"
+    days, hours = session_time_remaining(tmp_path, "fresh", now=_NOW)
+    assert days == 7
+    assert hours == 0
 
 
 def test_session_time_remaining_3_days_old_returns_4_days(tmp_path: Path) -> None:
@@ -225,9 +225,20 @@ def test_session_time_remaining_3_days_old_returns_4_days(tmp_path: Path) -> Non
     mtime = (_NOW - timedelta(days=3)).timestamp()
     os.utime(sdir, (mtime, mtime))
 
-    value, unit = session_time_remaining(tmp_path, "aged", now=_NOW)
-    assert value == 4
-    assert unit == "days"
+    days, hours = session_time_remaining(tmp_path, "aged", now=_NOW)
+    assert days == 4
+    assert hours == 0
+
+
+def test_session_time_remaining_3d_5h_old_returns_remainder_hours(tmp_path: Path) -> None:
+    sdir = tmp_path / "session_partial"
+    sdir.mkdir()
+    mtime = (_NOW - timedelta(days=3, hours=5)).timestamp()
+    os.utime(sdir, (mtime, mtime))
+
+    days, hours = session_time_remaining(tmp_path, "partial", now=_NOW)
+    assert days == 3
+    assert hours == 19  # 7d - 3d5h = 3d19h
 
 
 def test_session_time_remaining_sub_24h_returns_hours(tmp_path: Path) -> None:
@@ -236,9 +247,9 @@ def test_session_time_remaining_sub_24h_returns_hours(tmp_path: Path) -> None:
     mtime = (_NOW - timedelta(days=6, hours=2)).timestamp()
     os.utime(sdir, (mtime, mtime))
 
-    value, unit = session_time_remaining(tmp_path, "sub24", now=_NOW)
-    assert unit == "hours"
-    assert value == 22  # floor of (7d - 6d2h) = 22h
+    days, hours = session_time_remaining(tmp_path, "sub24", now=_NOW)
+    assert days == 0
+    assert hours == 22  # floor of (7d - 6d2h) = 22h
 
 
 def test_session_time_remaining_1_hour_left(tmp_path: Path) -> None:
@@ -247,9 +258,9 @@ def test_session_time_remaining_1_hour_left(tmp_path: Path) -> None:
     mtime = (_NOW - timedelta(days=6, hours=23)).timestamp()
     os.utime(sdir, (mtime, mtime))
 
-    value, unit = session_time_remaining(tmp_path, "1h", now=_NOW)
-    assert unit == "hours"
-    assert value == 1
+    days, hours = session_time_remaining(tmp_path, "1h", now=_NOW)
+    assert days == 0
+    assert hours == 1
 
 
 def test_session_time_remaining_sub_1h_returns_0_hours(tmp_path: Path) -> None:
@@ -258,9 +269,9 @@ def test_session_time_remaining_sub_1h_returns_0_hours(tmp_path: Path) -> None:
     mtime = (_NOW - timedelta(days=6, hours=23, minutes=30)).timestamp()
     os.utime(sdir, (mtime, mtime))
 
-    value, unit = session_time_remaining(tmp_path, "sub1h", now=_NOW)
-    assert unit == "hours"
-    assert value == 0
+    days, hours = session_time_remaining(tmp_path, "sub1h", now=_NOW)
+    assert days == 0
+    assert hours == 0
 
 
 def test_session_time_remaining_overdue_returns_0_hours(tmp_path: Path) -> None:
@@ -269,9 +280,9 @@ def test_session_time_remaining_overdue_returns_0_hours(tmp_path: Path) -> None:
     mtime = (_NOW - timedelta(days=9)).timestamp()
     os.utime(sdir, (mtime, mtime))
 
-    value, unit = session_time_remaining(tmp_path, "overdue", now=_NOW)
-    assert unit == "hours"
-    assert value == 0
+    days, hours = session_time_remaining(tmp_path, "overdue", now=_NOW)
+    assert days == 0
+    assert hours == 0
 
 
 def test_session_time_remaining_exactly_at_boundary_returns_0_hours(tmp_path: Path) -> None:
@@ -280,9 +291,9 @@ def test_session_time_remaining_exactly_at_boundary_returns_0_hours(tmp_path: Pa
     mtime = (_NOW - timedelta(days=7)).timestamp()
     os.utime(sdir, (mtime, mtime))
 
-    value, unit = session_time_remaining(tmp_path, "exact", now=_NOW)
-    assert unit == "hours"
-    assert value == 0
+    days, hours = session_time_remaining(tmp_path, "exact", now=_NOW)
+    assert days == 0
+    assert hours == 0
 
 
 def test_create_session_record_uses_safe_id_and_utc_time() -> None:
