@@ -207,7 +207,8 @@ export default function (component) {
         storedPending = writeStorage(storageKey, nextRecords, nextSelectedId)
     }
     const storageWriteFailed = (hasPendingRecords || !!pendingSelectedId) && storedPending === false
-    if (hasPendingRecords && recordsNeedWrite && storedPending) {
+    const pendingNeedWrite = pendingRecords.some(r => !storedRecords.some(s => s.session_id === r.session_id))
+    if (hasPendingRecords && pendingNeedWrite && storedPending) {
         setStateValue("stored_records", nextRecords)
     }
     if (data.storageWriteFailed !== storageWriteFailed) {

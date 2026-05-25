@@ -77,7 +77,12 @@ def test_streamlit_app_starts_without_crashing(
 def test_session_storage_component_avoids_stale_new_session_callbacks() -> None:
     app_text = _STREAMLIT_APP_FILE.read_text(encoding="utf-8")
 
-    assert "if (hasPendingRecords && recordsNeedWrite && storedPending)" in app_text
+    assert (
+        "const pendingNeedWrite = pendingRecords.some(r => !storedRecords.some(s => s.session_id === r.session_id))"
+        in app_text
+    )
+    assert "if (hasPendingRecords && pendingNeedWrite && storedPending)" in app_text
+    assert "if (hasPendingRecords && recordsNeedWrite && storedPending)" not in app_text
     assert "if (nextSelectedId && data.selectedSessionId !== nextSelectedId)" in app_text
     assert "if (pendingRecords.length > 0 && storedPending)" not in app_text
     assert "if (storedSelectedId && data.selectedSessionId !== storedSelectedId)" not in app_text
