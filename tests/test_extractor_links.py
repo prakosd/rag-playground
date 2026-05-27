@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from crawl4md._internal.html_preprocess import _WRAPPER_LINK_LABEL
+from crawl4md._internal.html_preprocess import _WRAPPER_LINK_TEXT
 from crawl4md.config import CrawlResult, PageConfig
 from crawl4md.extractor import ContentExtractor
 
@@ -170,7 +170,7 @@ class TestPopulateEmptyLinks:
         """
         result = ContentExtractor._populate_empty_links(html)
         # Wrapper should be unwrapped — children promoted
-        assert f">{_WRAPPER_LINK_LABEL}</" in result
+        assert _WRAPPER_LINK_TEXT in result
         assert "galaxy-s26-ultra-5g" in result
         # Original card content still present
         assert "Samsung" in result
@@ -182,16 +182,61 @@ class TestPopulateEmptyLinks:
         wrapper_links = [
             a for a in soup.find_all("a", href=True) if "galaxy-s26" in a.get("href", "")
         ]
-        # Should have exactly one link — the [more...] reference
+        # Should have exactly one link — the reference link with the full phrase
         assert len(wrapper_links) == 1
-        assert wrapper_links[0].get_text(strip=True) == _WRAPPER_LINK_LABEL
+        assert wrapper_links[0].get_text(strip=True) == _WRAPPER_LINK_TEXT
 
-    def test_wrapper_link_small_text_not_unwrapped(self):
+    def test_wrapper_link_reference_contains_full_phrase(self):
+        """Unwrapped wrapper link reference <a> contains the full 'Click here to learn more' text."""
+        html = """
+        <div>
+            <a href="/page">
+                <span>Product with enough text to trigger the threshold</span>
+            </a>
+        </div>
+        """
+        result = ContentExtractor._populate_empty_links(html)
+        assert _WRAPPER_LINK_TEXT in result
+        assert ">" + _WRAPPER_LINK_TEXT + "<" in result
+
+    def test_wrapper_link_markdown_is_single_link(self):
+        """Wrapper link renders as [Click here to learn more](url) — no space-stripping issues."""
+        from markdownify import markdownify
+
+        html = """
+        <div>
+            <a href="/about">
+                <h2>ATO advice and guidance</h2>
+            </a>
+        </div>
+        """
+        preprocessed = ContentExtractor._populate_empty_links(html)
+        md = markdownify(preprocessed, heading_style="ATX", strip=["img"])
+        assert f"[{_WRAPPER_LINK_TEXT}](/about)" in md
+
+    def test_wrapper_link_with_trailing_whitespace_in_anchor(self):
+        """Wrapper <a> with trailing whitespace text node — suffix space is not lost."""
+        html = (
+            '<div><a href="/page">'
+            "<span>Sufficient product text here for threshold</span>"
+            "\n        "
+            "</a></div>"
+        )
+        result = ContentExtractor._populate_empty_links(html)
+        from bs4 import BeautifulSoup
+
+        soup_out = BeautifulSoup(result, "html.parser")
+        reference = soup_out.find("a", href="/page")
+        assert reference is not None, "Reference link should be present"
+        assert reference.get_text(strip=True) == _WRAPPER_LINK_TEXT
+        # Full phrase must appear in the HTML
+        assert ">" + _WRAPPER_LINK_TEXT + "<" in result
+
         """A wrapper <a> with <20 chars child text is not unwrapped."""
         html = '<a href="/page"><span>Short</span></a>'
         result = ContentExtractor._populate_empty_links(html)
         # Too little text — should not be unwrapped
-        assert f">{_WRAPPER_LINK_LABEL}</" not in result
+        assert _WRAPPER_LINK_TEXT not in result
 
     def test_wrapper_link_hash_href_not_unwrapped(self):
         """A wrapper <a> with href='#' is not unwrapped."""
@@ -203,7 +248,7 @@ class TestPopulateEmptyLinks:
         </a>
         """
         result = ContentExtractor._populate_empty_links(html)
-        assert f">{_WRAPPER_LINK_LABEL}</" not in result
+        assert _WRAPPER_LINK_TEXT not in result
 
 
 class TestPopulateEmptyLinksIntegration:
@@ -409,7 +454,7 @@ class TestWrapperLinkUnwrap:
         assert len(wrappers) == 0, "Wrapper <a> should have been unwrapped"
         # [more...] link should exist
         more_links = [
-            a for a in soup.find_all("a") if a.get_text(strip=True) == _WRAPPER_LINK_LABEL
+            a for a in soup.find_all("a") if a.get_text(strip=True) == _WRAPPER_LINK_ANCHOR
         ]
         assert len(more_links) == 1
         assert "/devices/samsung/galaxy-s26-ultra" in more_links[0]["href"]
@@ -418,7 +463,7 @@ class TestWrapperLinkUnwrap:
         """Wrapper <a> with text only (no child elements) is not on the wrapper path."""
         html = '<a href="/page">Just plain text with enough chars for the threshold test</a>'
         result = ContentExtractor._populate_empty_links(html)
-        assert f">{_WRAPPER_LINK_LABEL}</" not in result
+        assert f">{_WRAPPER_LINK_ANCHOR}</" not in result
 
     def test_wrapper_hash_skipped(self):
         """Wrapper <a> with href='#' is excluded early."""
@@ -428,7 +473,7 @@ class TestWrapperLinkUnwrap:
         </a>
         """
         result = ContentExtractor._populate_empty_links(html)
-        assert f">{_WRAPPER_LINK_LABEL}</" not in result
+        assert f">{_WRAPPER_LINK_ANCHOR}</" not in result
 
     def test_wrapper_javascript_skipped(self):
         """Wrapper <a> with javascript: href is excluded early."""
@@ -438,7 +483,7 @@ class TestWrapperLinkUnwrap:
         </a>
         """
         result = ContentExtractor._populate_empty_links(html)
-        assert f">{_WRAPPER_LINK_LABEL}</" not in result
+        assert f">{_WRAPPER_LINK_ANCHOR}</" not in result
 
     def test_wrapper_integration_markdownify(self):
         """Full pipeline: wrapper link becomes [more...](url) in markdown output."""
@@ -459,7 +504,7 @@ class TestWrapperLinkUnwrap:
         extractor = ContentExtractor(config)
         result_obj = CrawlResult(url="https://example.com/devices", html=html, success=True)
         page = extractor._extract_page(result_obj)
-        assert f"[{_WRAPPER_LINK_LABEL}]" in page.markdown
+        assert f"{_WRAPPER_LINK_PREFIX}[{_WRAPPER_LINK_ANCHOR}]" in page.markdown
         assert "galaxy-s26-ultra" in page.markdown
 
 

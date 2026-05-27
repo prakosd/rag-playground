@@ -127,7 +127,8 @@ class TestFailContentFiles:
             encoding="utf-8"
         ).splitlines() == redirect_urls
         final_fail_content = "\n".join(
-            path.read_text(encoding="utf-8") for path in sorted(final_dir.glob("sorted_fail_content_*.txt"))
+            path.read_text(encoding="utf-8")
+            for path in sorted(final_dir.glob("sorted_fail_content_*.txt"))
         )
         for redirect_url in redirect_urls:
             assert redirect_url in final_fail_content

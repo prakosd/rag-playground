@@ -12,7 +12,10 @@ from bs4 import BeautifulSoup, NavigableString, Tag
 
 from crawl4md.config import PageConfig
 
-__all__ = ["HTMLPreprocessor", "_WRAPPER_LINK_LABEL"]
+__all__ = [
+    "HTMLPreprocessor",
+    "_WRAPPER_LINK_TEXT",
+]
 
 _HTML_PARSER = "html.parser"
 _STRIKETHROUGH_RE = re.compile(
@@ -26,7 +29,7 @@ _TABLE_CELL_BLOCK_TAGS = frozenset({"p", "div"})
 _MIN_WRAPPER_TEXT_LEN = 20
 _MIN_OVERLAY_SIBLING_LEN = 30
 _LINK_FALLBACK_TEXT = "Link"
-_WRAPPER_LINK_LABEL = "Learn more"
+_WRAPPER_LINK_TEXT = "Click here to learn more"
 _JAVASCRIPT_LINK_PREFIX = "javascript:"
 _TableCellTags = ("td", "th")
 _StrikeTags = ("del", "s", "strike")
@@ -89,9 +92,8 @@ class HTMLPreprocessor:
             child_text = anchor.get_text(strip=True)
             if had_children and child_text and len(child_text) >= _MIN_WRAPPER_TEXT_LEN:
                 reference = soup.new_tag("a", href=href)
-                reference.string = _WRAPPER_LINK_LABEL
+                reference.string = _WRAPPER_LINK_TEXT
                 anchor.insert_after(reference)
-                reference.insert_before(" ")
                 anchor.unwrap()
                 continue
             if child_text or had_children:

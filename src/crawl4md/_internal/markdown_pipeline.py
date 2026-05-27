@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from crawl4md._internal.html_preprocess import _WRAPPER_LINK_LABEL
+from crawl4md._internal.html_preprocess import _WRAPPER_LINK_TEXT
 
 __all__ = ["MarkdownPipeline"]
 
@@ -76,7 +76,7 @@ _UI_ACTION_RE = re.compile(
     r"Add\s+to\s+bag|Buy\s+now|Select\s+options|View\s+details|Shop\s+now)$",
     re.IGNORECASE,
 )
-_MORE_LINK_RE = re.compile(rf"^\[{re.escape(_WRAPPER_LINK_LABEL)}\]\((.+)\)$")
+_MORE_LINK_RE = re.compile(rf"^\[{re.escape(_WRAPPER_LINK_TEXT)}\]\((.+)\)$")
 
 _ProductEntry = dict[str, str | list[str]]
 
