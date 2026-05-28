@@ -47,7 +47,7 @@ def emit_page_progress(
     next_urls: list[str] | None = None,
     next_url_count: int | None = None,
     max_concurrent: int | None = None,
-) -> None:
+) -> dict[str, object]:
     """Emit a compact page-progress event."""
     success_count = sum(1 for result in results if result.success)
     fail_count = len(results) - success_count
@@ -77,3 +77,4 @@ def emit_page_progress(
         callback,
         event,
     )
+    return event

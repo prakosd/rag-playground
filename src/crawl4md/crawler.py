@@ -78,6 +78,10 @@ from crawl4md._internal.pdf import (
 from crawl4md._internal.pdf import (
     pdf_to_markdown as _pdf_to_markdown_impl,
 )
+from crawl4md._internal.progress_history import (
+    PROGRESS_HISTORY_FILE as _INTERNAL_PROGRESS_HISTORY_FILE,
+)
+from crawl4md._internal.progress_history import ProgressHistoryRecorder
 from crawl4md._internal.site_graph import (
     _PAGE_RECORD_DEPTH as _INTERNAL_PAGE_RECORD_DEPTH,
 )
@@ -354,6 +358,7 @@ _PROGRESS_EVENT_INTERRUPTED = _INTERNAL_PROGRESS_EVENT_INTERRUPTED
 _PROGRESS_EVENT_PAGE = _INTERNAL_PROGRESS_EVENT_PAGE
 _PROGRESS_EVENT_STARTED = _INTERNAL_PROGRESS_EVENT_STARTED
 _PROGRESS_EVENT_STATUS = _INTERNAL_PROGRESS_EVENT_STATUS
+_PROGRESS_HISTORY_FILE = _INTERNAL_PROGRESS_HISTORY_FILE
 
 # Compatibility re-export for tests and callers that imported the private
 # warning constant from this module before PDF handling moved internally.
@@ -420,6 +425,7 @@ class SiteCrawler:
         self._success_sidecar: Path | None = None
         self._fail_sidecar: Path | None = None
         self._run_metadata: dict[str, object] = {}
+        self._progress_history: ProgressHistoryRecorder | None = None
         self._site_graph = SiteGraphRecorder()
         self._pdf_client: httpx.AsyncClient | None = None
 
@@ -469,6 +475,11 @@ class SiteCrawler:
         """
         self.output_dir = self._create_output_dir()
         self._run_metadata = self._build_run_metadata()
+        self._progress_history = ProgressHistoryRecorder(
+            output_dir=self.output_dir,
+            session_id=str(self._run_metadata.get("session_id", self.output_dir.name)),
+        )
+        self._progress_history.set_round(1)
         self._site_graph.reset(self.output_dir)
         self._emit_progress(
             {
@@ -688,6 +699,8 @@ class SiteCrawler:
                     self._fail_writer.reset(_FAIL_SUFFIX)
                 self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
                 self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
+                if self._progress_history is not None:
+                    self._progress_history.set_round(1)
                 print(
                     f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---"
                 )
@@ -730,6 +743,8 @@ class SiteCrawler:
                         self._fail_writer.reset(_FAIL_SUFFIX)
                     self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
                     self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
+                    if self._progress_history is not None:
+                        self._progress_history.set_round(round_num)
 
                     cooldown = _ROUND_COOLDOWN * random.uniform(
                         _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
@@ -857,6 +872,8 @@ class SiteCrawler:
     def _emit_progress(self, event: Mapping[str, object]) -> None:
         """Send a progress event to an optional UI integration."""
         _emit_progress_impl(self._progress_callback, event)
+        if self._progress_history is not None:
+            self._progress_history.record(event)
 
     def _emit_page_progress(
         self,
@@ -874,8 +891,8 @@ class SiteCrawler:
         next_url_count: int | None = None,
     ) -> None:
         """Emit a compact page-progress event."""
-        _emit_page_progress_impl(
-            self._progress_callback,
+        page_event = _emit_page_progress_impl(
+            None,
             results,
             generated=generated,
             prior_success=prior_success,
@@ -891,6 +908,7 @@ class SiteCrawler:
             next_url_count=next_url_count,
             max_concurrent=self.config.max_concurrent,
         )
+        self._emit_progress(page_event)
 
     async def _flush_writer_buffers_async(self) -> None:
         if self._writer is not None:

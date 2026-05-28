@@ -154,6 +154,14 @@ STRINGS_EN: Strings = {
     "PROGRESS_ATTEMPTS": "{n} attempts",
     "PROGRESS_COMPLETE": "complete",
     "PROGRESS_RETRYING": "Retrying failed pages",
+    # ── Progress charts ───────────────────────────────────────────────────
+    "CHART_CUMULATIVE_TITLE": "Cumulative crawl totals over time",
+    "CHART_SPEED_TITLE": "Crawl speed over time",
+    "CHART_SERIES_LIMIT": "Page limit",
+    "CHART_SERIES_DISCOVERED": "Discovered pages",
+    "CHART_SERIES_SUCCESSFUL": "Successful pages",
+    "CHART_SERIES_FAILED": "Failed pages",
+    "CHART_SERIES_SPEED": "Pages per second",
     # ── Status line ───────────────────────────────────────────────────────
     "STATUS_CRAWLING": "Crawling: {url_html}",
     "STATUS_ELAPSED": "Elapsed time: {elapsed}",

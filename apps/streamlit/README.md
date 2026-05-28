@@ -8,28 +8,53 @@ the code is organised, how the pieces connect, and where to look when extending 
 
 ## File Map
 
-```text
-apps/streamlit/
-├── streamlit_app.py                  # UI entry point — one Streamlit page
-├── pyproject.toml                    # Package definition and dependencies
-├── .streamlit/config.toml            # Server address (0.0.0.0:8501) and theme
-├── src/crawl4md_streamlit/
-│   ├── __init__.py                   # Empty — marks this as an installable package
-│   ├── controls.py                   # Button definitions and state → button mapping
-│   ├── crawl_jobs.py                 # Background crawl jobs, config, progress helpers
-│   ├── form_defaults.py              # Default crawl form values and option constants
-│   ├── form_ui.py                    # Streamlit crawl settings form renderer
-│   ├── generated_files.py            # Session-scoped output listing and previews
-│   ├── session_manager.py            # Safe IDs, session records, paths, cleanup
-│   └── support.py                    # Compatibility exports for app support helpers
-└── tests/
-    ├── test_app_smoke.py             # App import/startup and preview CSS smoke coverage
-    ├── test_controls.py              # Action-button logic for each crawl state
-    ├── test_form_defaults.py         # Default form payload
-    ├── test_generated_files.py       # Download-tree helper logic
-    ├── test_support.py               # Jobs, path helpers, cleanup, progress estimation
-    ├── test_support_facade.py        # Compatibility exports from split helper modules
-    └── test_streamlit_boundaries.py  # Streamlit config and import-boundary checks
+```mermaid
+flowchart TD
+  Root["apps/streamlit/"]
+  Root --> App["streamlit_app.py<br/>UI entry point"]
+  Root --> PackageConfig["pyproject.toml<br/>package definition and dependencies"]
+  Root --> StreamlitConfig[".streamlit/config.toml<br/>server address and theme"]
+  Root --> HelpersRoot["src/crawl4md_streamlit/"]
+  Root --> TestsRoot["tests/"]
+
+  subgraph Helpers["crawl4md_streamlit helper package"]
+    Init["__init__.py<br/>installable package marker"]
+    Controls["controls.py<br/>button definitions and state mapping"]
+    CrawlJobs["crawl_jobs.py<br/>background jobs, config, progress"]
+    FormDefaults["form_defaults.py<br/>default form payload"]
+    FormUI["form_ui.py<br/>crawl settings form"]
+    GeneratedFiles["generated_files.py<br/>output listing and previews"]
+    SessionManager["session_manager.py<br/>safe IDs, records, paths, cleanup"]
+    Support["support.py<br/>compatibility exports"]
+  end
+
+  subgraph Tests["Streamlit helper tests"]
+    Smoke["test_app_smoke.py<br/>startup and preview CSS smoke coverage"]
+    ControlsTest["test_controls.py<br/>button logic by crawl state"]
+    DefaultsTest["test_form_defaults.py<br/>default form payload"]
+    GeneratedTest["test_generated_files.py<br/>download-tree helpers"]
+    ProgressChartTest["test_progress_chart.py<br/>chart helper behavior"]
+    SupportTest["test_support.py<br/>jobs, paths, cleanup, progress"]
+    FacadeTest["test_support_facade.py<br/>split helper exports"]
+    BoundaryTest["test_streamlit_boundaries.py<br/>config and import boundaries"]
+  end
+
+  HelpersRoot --> Init
+  HelpersRoot --> Controls
+  HelpersRoot --> CrawlJobs
+  HelpersRoot --> FormDefaults
+  HelpersRoot --> FormUI
+  HelpersRoot --> GeneratedFiles
+  HelpersRoot --> SessionManager
+  HelpersRoot --> Support
+  TestsRoot --> Smoke
+  TestsRoot --> ControlsTest
+  TestsRoot --> DefaultsTest
+  TestsRoot --> GeneratedTest
+  TestsRoot --> ProgressChartTest
+  TestsRoot --> SupportTest
+  TestsRoot --> FacadeTest
+  TestsRoot --> BoundaryTest
 ```
 
 ### Why a separate package?
@@ -63,8 +88,8 @@ Everything the user sees and interacts with. Responsibilities:
 - Translates button presses into job start / stop calls.
 - Drains background-thread events every Streamlit rerun and maps them to UI state
   (`_drain_job_events`).
-- Renders progress metrics, active/next URL previews, and the activity log (`_render_live_area`,
-  refreshed every 3 seconds via `@st.fragment(run_every="3s")`).
+- Renders progress metrics, active/next URL previews, cumulative + speed line charts, and the
+  activity log (`_render_live_area`, refreshed every 3 seconds via `@st.fragment(run_every="3s")`).
 - Renders the selected session's generated-file table and a per-file download + preview tree separately
   (`_render_downloads`, refreshed every 7 seconds).
 - Runs a one-time startup cleanup of old session folders (`_run_startup_cleanup`, cached with
@@ -114,16 +139,23 @@ Each crawl runs in a **background daemon thread**. The thread communicates with 
 a `queue.Queue[dict]` (the `CrawlJob.events` field). Events are drained on every Streamlit
 rerun by `_drain_job_events`.
 
-```text
-Background thread                    st.session_state.job_state
-──────────────────                   ──────────────────────────
-starts          → emits "started"  → "running"
-fetch batch     → emits "crawl_status" (no state change)
-page done       → emits "page_processed" (no state change)
-stop signal     → emits "cancel_requested" → "cancel_requested"
-thread ends     → emits "cancelled"  → "stopped"
-thread ends     → emits "completed" → "completed"
-thread ends     → emits "failed"   → "failed"
+```mermaid
+stateDiagram-v2
+  state "idle" as Idle
+  state "running" as Running
+  state "cancel_requested" as CancelRequested
+  state "stopped" as Stopped
+  state "completed" as Completed
+  state "failed" as Failed
+
+  [*] --> Idle: app first load
+  Idle --> Running: user clicks Start / emits started
+  Running --> Running: emits crawl_status
+  Running --> Running: emits page_processed
+  Running --> CancelRequested: user clicks Stop / emits cancel_requested
+  CancelRequested --> Stopped: thread emits cancelled
+  Running --> Completed: thread emits completed
+  Running --> Failed: thread emits failed
 ```
 
 Full `job_state` values and the transitions that produce them:
@@ -141,36 +173,37 @@ Parallel crawl progress uses generic event fields from the core crawler. `active
 `next_url_count` are authoritative counts; `active_urls` and `next_urls` are capped previews for
 display. The app renders counts plus previews so any supported Parallel fetches value stays compact.
 Activity logs record concurrent reads as batch entries such as `Reading page batch (5 concurrent)`.
+Live charts are native Streamlit line charts rendered right before the Activity log panel:
+
+- Cumulative counters over time: page limit, discovered pages, successful pages, failed pages
+- Crawl speed over time: pages per second (derived from processed-page deltas)
+
+For reload-safe chart history, the app prefers `progress_history.jsonl` written by the core crawler
+and falls back to in-memory samples captured from live events when that file is not available yet.
 
 ---
 
 ## Start / Stop Sequence
 
-```text
-Initial load
-  └─ job_state = "idle"
-     Start is enabled; settings are editable
+```mermaid
+flowchart TD
+  Initial["Initial load"] --> Idle["job_state = idle<br/>Start enabled<br/>settings editable"]
+  Idle --> StartClick["User clicks Start"]
+  StartClick --> StartJob["_start_job(values)"]
+  StartJob --> BuildConfigs["build_configs(values)<br/>CrawlerConfig + PageConfig"]
+  BuildConfigs --> CrawlId["create fresh crawl_id"]
+  CrawlId --> LaunchJob["start_crawl_job(...)"]
+  LaunchJob --> Running["job_state = running<br/>settings disabled<br/>visible action is Stop"]
 
-User clicks Start
-  └─ _start_job(values)
-       calls build_configs(values)
-       creates a fresh crawl_id
-       calls start_crawl_job(...)
-       job_state = "running"
-       settings are disabled and the visible action is Stop
+  Running --> StopClick["User clicks Stop"]
+  StopClick --> StopJob["_stop_job()<br/>job_state = cancel_requested"]
+  StopJob --> RequestCancel["request_cancel(job)<br/>sets cancel_event<br/>queues cancel_requested"]
+  RequestCancel --> WorkerStops["Background thread sees cancel_event<br/>finishes current page<br/>emits cancelled"]
+  WorkerStops --> DrainCancelled["_drain_job_events()<br/>maps cancelled to stopped"]
+  DrainCancelled --> Stopped["clear active job<br/>reset form defaults<br/>keep active_output_dir visible"]
 
-User clicks Stop
-  └─ _stop_job()
-       sets job_state = "cancel_requested"
-       calls request_cancel(job)   ← sets cancel_event + queues "cancel_requested"
-       background thread sees cancel_event, finishes current page, emits "cancelled"
-  └─ _drain_job_events() maps "cancelled" to "stopped"
-       clears the active job
-       resets form defaults
-       keeps active_output_dir so generated files stay visible
-
-User clicks Start again
-  └─ creates a new crawl_id and starts from the beginning
+  Stopped --> StartAgain["User clicks Start again"]
+  StartAgain --> CrawlId
 ```
 
 Stop is cooperative: the worker is not force-killed. `SiteCrawler` owns sidecars and final
@@ -219,11 +252,19 @@ Wordlist provided by the Electronic Frontier Foundation (eff.org), licensed CC-B
 
 All output lives inside:
 
-```text
-outputs/streamlit_sessions/
-└── session_{session_id}/          ← one folder per browser tab / session
-    └── crawl_{crawl_id}/          ← one folder per Start click
-        └── {timestamped-dir}/     ← created by SiteCrawler inside the crawl_id folder
+```mermaid
+flowchart TD
+  Browser["Browser localStorage<br/>known session IDs and creation times"] --> Bridge["inline CCv2 bridge"]
+  Bridge --> Validate["validate_safe_id(id)<br/>server-side filtering"]
+  Validate --> SessionsRoot["outputs/streamlit_sessions/"]
+  SessionsRoot --> SessionFolder["session_{session_id}/<br/>one folder per browser session"]
+  SessionFolder --> CrawlFolder["crawl_{crawl_id}/<br/>one folder per Start click"]
+  CrawlFolder --> TimestampRoot["{timestamped-dir}/<br/>created by SiteCrawler"]
+  TimestampRoot --> ReadRequest["file listing or preview request"]
+  ReadRequest --> Containment["ensure_within_root(root, path)"]
+  Containment --> Safe{"Path stays inside root?"}
+  Safe -->|Yes| Serve["serve metadata or file content"]
+  Safe -->|No| Reject["raise ValueError"]
 ```
 
 `ensure_within_root(root, path)` is called before every file read or listing. It resolves
@@ -251,15 +292,16 @@ in the root README.
 
 **Folder layout under `outputs/streamlit_sessions/`:**
 
-```text
-session_{id}/                      ← one folder per browser session
-└── crawl_{id}/                    ← one folder per Start click
-    └── YYYY-MM-DD_HH-MM-SS/      ← timestamped crawl root (created by SiteCrawler)
-        ├── activity_log.txt / .csv
-        ├── site_graph.jsonl
-        ├── round_1/              ← intermediate snapshot (one per retry round)
-        ├── round_2/ …            ← only if max_retries > 0 and pages failed
-        └── final/                ← primary output; appears after all rounds complete
+```mermaid
+flowchart TD
+  Session["session_{id}/<br/>browser session"] --> Crawl["crawl_{id}/<br/>one folder per Start click"]
+  Crawl --> Timestamp["YYYY-MM-DD_HH-MM-SS/<br/>SiteCrawler crawl root"]
+  Timestamp --> Logs["activity_log.txt<br/>activity_log.csv"]
+  Timestamp --> Graph["site_graph.jsonl"]
+  Timestamp --> History["progress_history.jsonl<br/>chart-ready timeline"]
+  Timestamp --> Round1["round_1/<br/>intermediate snapshot"]
+  Timestamp --> Round2["round_2/...<br/>retry snapshots when needed"]
+  Timestamp --> Final["final/<br/>primary output after merge and sort"]
 ```
 
 **Why a new folder per Start click?** Each Start increments the crawl counter (`crawl_1`,
@@ -280,27 +322,30 @@ the files in `final/` instead.
 
 ## Data Flow (one crawl from click to download)
 
-```text
-User fills form and clicks Start
-  │
-  ▼
-render_crawl_form()     collects raw form values into a dict
-  │
-  ▼
-build_configs()         validates and converts to CrawlerConfig + PageConfig
-  │
-  ▼
-start_crawl_job()       creates output dirs, spawns background thread
-  │                     thread: SiteCrawler.crawl() → extractor → writer
-  │                     emits progress events to job.events queue
-  │
-  ▼ (live area every 3 s; downloads every 7 s, via @st.fragment)
-_drain_job_events()     dequeues events, updates st.session_state
-  │
-  ▼
-_render_status()        progress bar, metrics, active/next URLs, elapsed time
-_render_activity_log()  tail of activity_log.txt from the output dir
-_render_downloads()     dataframe + download/preview buttons for the selected session
+```mermaid
+flowchart TD
+  User["User fills form and clicks Start"] --> Form["render_crawl_form()<br/>collect raw form values"]
+  Form --> Configs["build_configs()<br/>validate and convert to CrawlerConfig + PageConfig"]
+  Configs --> StartJob["start_crawl_job()<br/>create output dirs and spawn background thread"]
+
+  StartJob --> WorkerCrawl
+  subgraph Worker["Background worker thread"]
+    WorkerCrawl["SiteCrawler.crawl()"] --> WorkerExtract["ContentExtractor"]
+    WorkerExtract --> WorkerWrite["FileWriter"]
+    WorkerWrite --> GeneratedOutput["generated files on disk"]
+    WorkerCrawl --> Events["job.events queue<br/>progress callback and terminal events"]
+  end
+
+  Events --> Drain["_drain_job_events()<br/>update st.session_state on rerun"]
+
+  subgraph LiveUI["Streamlit UI fragments"]
+    Drain --> LiveArea["_render_live_area()<br/>refresh every 3 seconds"]
+    LiveArea --> Status["_render_status()<br/>progress, metrics, active and next URLs"]
+    LiveArea --> Charts["_render_progress_charts()<br/>cumulative and speed charts"]
+    LiveArea --> Log["_render_activity_log()<br/>tail activity_log.txt"]
+    Drain --> Downloads["_render_downloads()<br/>refresh every 7 seconds<br/>file table, previews, downloads"]
+    GeneratedOutput --> Downloads
+  end
 ```
 
 ---
@@ -312,6 +357,7 @@ _render_downloads()     dataframe + download/preview buttons for the selected se
 | `tests/test_controls.py` | Every `job_state` value → correct buttons (label, disabled, type) |
 | `tests/test_form_defaults.py` | Default crawl form payload and independent dict creation |
 | `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads |
+| `tests/test_progress_chart.py` | Pure chart helper behavior: live sample append, persisted JSONL parsing, cumulative/speed row derivation |
 | `tests/test_support.py` | ID safety, browser session records, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |
 | `tests/test_support_facade.py` | Compatibility exports from the split helper modules |
 | `tests/test_app_smoke.py` | App import/startup smoke coverage and preview CSS guardrails |

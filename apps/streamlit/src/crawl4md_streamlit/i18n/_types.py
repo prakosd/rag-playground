@@ -121,6 +121,14 @@ class Strings(TypedDict):
     PROGRESS_ATTEMPTS: str  # template: {n}
     PROGRESS_COMPLETE: str
     PROGRESS_RETRYING: str
+    # ── Progress charts ───────────────────────────────────────────────────
+    CHART_CUMULATIVE_TITLE: str
+    CHART_SPEED_TITLE: str
+    CHART_SERIES_LIMIT: str
+    CHART_SERIES_DISCOVERED: str
+    CHART_SERIES_SUCCESSFUL: str
+    CHART_SERIES_FAILED: str
+    CHART_SERIES_SPEED: str
     # ── Status line ───────────────────────────────────────────────────────
     STATUS_CRAWLING: str  # template: {url_html}
     STATUS_ELAPSED: str  # template: {elapsed}

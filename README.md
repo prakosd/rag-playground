@@ -15,7 +15,7 @@ This repository is evolving into a practical RAG playground: crawl websites into
 - **Smart content extraction** — trafilatura for main content (with automatic fallback to markdownify when coverage is below 15%), plus supplementary section recovery for FAQs, accordions, and product metadata
 - **WAF / bot-detection handling** — two-stage detection (HTML block signatures + post-extraction content-length check) with automatic retry rounds and cooldown between rounds
 - **Size-limited output files** — pages are never split across files; oversized pages get their own file
-- **Real-time progress** — browser progress in Streamlit, animated spider progress widget in Jupyter, and plain-text ETA in terminal
+- **Real-time progress** — browser progress in Streamlit (including cumulative and pages/second line charts), animated spider progress widget in Jupyter, and plain-text ETA in terminal
 - **Stop-safe output** — stopping a Streamlit crawl still writes the final output folder for pages completed so far
 - **Configurable filtering** — include/exclude URL paths and HTML tags via regex
 - **Structured item grouping** — auto-detects repeated elements (product cards, plan blocks) via DOM analysis and inserts `---` separators; supports custom CSS selectors
@@ -25,6 +25,17 @@ This repository is evolving into a practical RAG playground: crawl websites into
 ## Run Without Installing Anything
 
 The easiest way to use crawl4md is via a pre-configured environment — no Python, Chromium, or Tesseract setup required.
+
+```mermaid
+flowchart TD
+  Start["Choose a no-install setup path"] --> Codespaces["GitHub Codespaces<br/>Browser VS Code<br/>Preconfigured tools"]
+  Start --> DevContainer["VS Code Dev Container<br/>Local Docker<br/>Auto-starts Streamlit"]
+  Codespaces --> UseCase{"Preferred interface?"}
+  DevContainer --> UseCase
+  UseCase -->|Non-technical users| Streamlit["Streamlit web app<br/>http://localhost:8501"]
+  UseCase -->|Technical users| Notebook["Jupyter notebook<br/>notebooks/crawl4md.ipynb"]
+  UseCase -->|Library users| PythonAPI["Python API<br/>SiteCrawler, configs, extractor, writer"]
+```
 
 **GitHub Codespaces (browser, zero local install)**
 Click the badge above. GitHub spins up a fully configured VS Code environment in your browser. Free tier: 120 core-hours/month.
@@ -55,13 +66,39 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 
 **What it does:**
 
+```mermaid
+stateDiagram-v2
+  state "Browser session selected" as Session
+  state "Idle: settings editable" as Idle
+  state "Running: settings locked" as Running
+  state "Stop requested" as StopRequested
+  state "Stopped: completed pages saved" as Stopped
+  state "Completed: files ready" as Completed
+  state "Failed: error shown" as Failed
+  state "Preview or download files" as FilesReady
+
+  [*] --> Session: page load
+  Session --> Idle: newest, loaded, or new session
+  Session --> Session: switch, create, or load session
+  Idle --> Running: Start
+  Running --> StopRequested: Stop
+  StopRequested --> Stopped: current work winds down
+  Running --> Completed: crawl finishes
+  Running --> Failed: unhandled error
+  Stopped --> FilesReady: final output for completed pages
+  Completed --> FilesReady: generated files
+  Stopped --> Idle: Start again creates a fresh crawl
+  Completed --> Idle: Start again creates a fresh crawl
+  Failed --> Idle: adjust settings and retry
+```
+
 - Fill in the crawl URL, page limit, depth, parallel fetches, and optional filters via a form
 - Click **Start** to run the crawl in the background
 - While a crawl is running, settings are locked and the action changes to **Stop**
 - Click **Stop** to request a cooperative stop; crawl4md writes final files for pages completed so far
 - Start again after stopping to begin a fresh crawl from the form settings
 - Reuse the newest browser session automatically, switch to older sessions from the searchable session selector, or create a new session manually; use **Load Session** (📁) to restore a session from another browser or device by pasting its session ID
-- Watch live progress (pages crawled, estimated completion, and active/next URL previews when parallel fetches are running)
+- Watch live progress (pages crawled, estimated completion, active/next URL previews when parallel fetches are running, cumulative counters over time, and pages/second)
 - Preview common text-based generated files and download files directly from the browser
 
 Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run). The browser stores known session IDs and creation times in local storage so later page loads can select the newest existing session instead of creating a new one. Stopped crawls keep their generated files in that crawl folder, but no crawl state is kept for continuing later.
@@ -80,6 +117,8 @@ Development guidance in this repository uses external agent skills:
 The bundled Streamlit app is a reference adapter over the `crawl4md` library, not a required runtime. Another UI stack such as React can reproduce the same crawl behavior and generated files by calling `crawl4md` from a Python backend or worker and letting the library keep ownership of crawling, extraction, file writing, final output generation, and YAML front matter.
 
 To match the bundled app's behavior, build `CrawlerConfig` and `PageConfig`, create a `ContentExtractor` and `FileWriter` from that page config, then run `SiteCrawler` with the same optional integration hooks the Streamlit adapter uses: `output_base`, `session_id`, `progress_callback`, and `should_cancel`. Your UI can render progress from the emitted events and serve the generated files afterward, but it should not reimplement the crawl pipeline or output writer if you want the same result structure.
+
+`SiteCrawler` also writes `progress_history.jsonl` in each crawl root as a chart-ready cumulative timeline (page limit, discovered pages, successful pages, failed pages, processed pages, elapsed seconds). UIs can read this file to restore chart history after page reloads.
 
 Example adapter setup:
 
@@ -184,18 +223,37 @@ writer.write(pages, crawler.output_dir, page_config.max_file_size_mb)
 
 ## How It Works
 
-```
-SiteCrawler.crawl()
-  ├─ Crawl4AI (async)   → CrawlResult (raw HTML per page)
-  ├─ ContentExtractor    → ExtractedPage (clean Markdown per page)
-  ├─ FileWriter          → size-limited content files + URL lists
-  └─ ContentSorter       → sorted final files grouped by URL path
+```mermaid
+flowchart LR
+  Seeds["Seed URLs"] --> SiteCrawler["SiteCrawler.crawl()<br/>synchronous API"]
+  SiteCrawler --> Crawl4AI["Crawl4AI async browser crawl"]
+  Crawl4AI --> CrawlResult["CrawlResult<br/>raw HTML per page"]
+  CrawlResult --> Extractor["ContentExtractor"]
+  Extractor --> ExtractedPage["ExtractedPage<br/>clean Markdown"]
+  ExtractedPage --> RoundWriter["FileWriter<br/>round snapshots"]
+  RoundWriter --> RoundFiles["round_N/<br/>content files and URL lists"]
+  ExtractedPage --> Sorter["ContentSorter<br/>URL-path order"]
+  Sorter --> FinalWriter["FileWriter<br/>merged final output"]
+  FinalWriter --> FinalFiles["final/<br/>sorted content and URL lists"]
 ```
 
 1. **Crawl** — seed URLs are crawled with link discovery up to `max_depth`. Discovered links are queued up to `limit`.
 2. **Retry** — failed/blocked pages are retried in subsequent rounds (up to `max_retries`), with a 30-second cooldown between rounds. Retry rounds automatically downgrade `wait_until` to `domcontentloaded` to avoid repeated timeouts. Link discovery continues in retry rounds — pages that recover on retry have their links discovered and crawled (respecting `max_depth` and `limit`).
 3. **Extract** — HTML is converted to Markdown via trafilatura or markdownify, then cleaned through a 7-step post-processing pipeline.
 4. **Write** — pages are written to numbered, size-limited files. Per-round files are produced during crawl; final merged and sorted files are written after all rounds complete.
+
+```mermaid
+flowchart TD
+  Initial["Initial crawl round"] --> Failed{"Failed or blocked pages?"}
+  Failed -->|No| Merge["Merge rounds and write final output"]
+  Failed -->|Yes, retry budget remains| Cooldown["Cooldown before retry round"]
+  Cooldown --> Downgrade["Retry round uses domcontentloaded"]
+  Downgrade --> Retry["Retry failed or blocked URLs"]
+  Retry --> Discover["Recovered pages may discover more links"]
+  Discover --> Failed
+  Failed -->|Retry limit reached| FinalFailures["Keep unresolved URLs in final fail files"]
+  FinalFailures --> Merge
+```
 
 ## Configuration
 
@@ -239,14 +297,12 @@ SiteCrawler.crawl()
 
 The timing parameters control different phases of each page crawl:
 
-```
-For each page:
-  delay          wait_until               wait_for          extract
-  ─────── → ──────────────────── → ────────────────── → ────────────
-  pause     page load condition     extra JS pause       content
-  between   ("networkidle" or       (runs after load     extraction
-  pages     "domcontentloaded")     condition is met)
-            └─ timeout caps this ─┘
+```mermaid
+flowchart LR
+  Delay["delay<br/>space page-fetch starts"] --> WaitUntil["wait_until<br/>networkidle or domcontentloaded"]
+  Timeout["timeout<br/>caps wait_until only"] -.-> WaitUntil
+  WaitUntil --> WaitFor["wait_for<br/>optional extra JS pause"]
+  WaitFor --> Extract["extract<br/>read rendered content"]
 ```
 
 - **`delay`** (CrawlerConfig) — pause between page-fetch starts. Controls crawl speed to avoid bot detection. When `max_concurrent` is above `1`, slow pages may overlap, but new requests are still spaced by the delay.
@@ -258,31 +314,31 @@ For each page:
 
 Each crawl creates a timestamped folder. Per-round subdirectories hold intermediate snapshots; the `final/` folder holds the primary output.
 
-```
-2026-03-08_17-39-59/
-│
-├── activity_log.txt              # Timestamped crawl event log
-├── activity_log.csv              # Same log in CSV format
-├── site_graph.jsonl              # All discovered URLs with status and depth
-│
-├── round_1/                      # Per-round files (written during crawl)
-│   ├── success_content_001.md    # Pages crawled in this round
-│   ├── success_urls.txt
-│   ├── fail_content_001.md       # Error details + raw HTML for blocked pages
-│   └── fail_urls.txt
-│
-├── round_2/                      # Retry round (only if max_retries > 0 and pages failed)
-│   ├── success_content_001.md
-│   └── ...
-│
-└── final/                        # Primary output — merged across all rounds
-    ├── sorted_success_content_001_of_002.md   # ✅ Main output, file 1 of 2 (sorted by URL path)
-    ├── sorted_success_content_002_of_002.md   # File 2 of 2; only present if size limit exceeded
-    ├── sorted_success_urls.txt
-    ├── sorted_fail_content_001_of_001.md      # Pages that never succeeded
-    ├── sorted_fail_urls.txt
-    ├── success_urls.txt                       # Deduplicated success URL list (unsorted)
-    └── fail_urls.txt                          # URLs that never succeeded (unsorted)
+```mermaid
+flowchart TD
+  Root["2026-03-08_17-39-59/<br/>timestamped crawl root"]
+  Root --> Activity["activity_log.txt<br/>activity_log.csv<br/>timestamped crawl diary"]
+  Root --> Graph["site_graph.jsonl<br/>discovered URLs, status, depth"]
+  Root --> History["progress_history.jsonl<br/>chart-ready cumulative timeline"]
+
+  Root --> Round1Success
+  subgraph Round1["round_1/ intermediate snapshot"]
+    Round1Success["success_content_001.md<br/>success_urls.txt"]
+    Round1Fail["fail_content_001.md<br/>fail_urls.txt"]
+  end
+
+  Root --> Round2Success
+  subgraph Round2["round_2/ retry snapshot, when needed"]
+    Round2Success["success_content_001.md"]
+    Round2More["additional retry files"]
+  end
+
+  Root --> FinalSuccess
+  subgraph Final["final/ primary output"]
+    FinalSuccess["sorted_success_content_001_of_002.md<br/>sorted_success_content_002_of_002.md"]
+    FinalUrls["sorted_success_urls.txt<br/>success_urls.txt"]
+    FinalFailures["sorted_fail_content_001_of_001.md<br/>sorted_fail_urls.txt<br/>fail_urls.txt"]
+  end
 ```
 
 ### Intermediate file cleanup
@@ -370,6 +426,7 @@ A crawl writes many files. Here is where to start.
 | Failed URLs | `final/sorted_fail_urls.txt` |
 | Full site map (status + depth) | `site_graph.jsonl` |
 | Timestamped crawl diary | `activity_log.txt` / `activity_log.csv` |
+| Chart-ready progress timeline | `progress_history.jsonl` |
 
 **Why `round_N/` folders?** crawl4md retries failed pages in separate rounds (controlled by `max_retries`). Each round folder is an intermediate snapshot written during the crawl. The `final/` folder merges every round and is what you normally use. If `max_retries = 0`, only `round_1/` exists.
 
@@ -389,28 +446,58 @@ See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook. You can also
 
 ## Architecture
 
-```
-src/crawl4md/
-├── __init__.py       # Public API exports
-├── config.py         # Pydantic v2 config models (CrawlerConfig, PageConfig, CrawlResult, ExtractedPage)
-├── crawler.py        # SiteCrawler — synchronous wrapper around Crawl4AI
-├── extractor.py      # ContentExtractor — HTML → Markdown via trafilatura or markdownify, validated with mdformat
-├── sorter.py         # ContentSorter — sorts pages by URL path for natural display order
-├── writer.py         # FileWriter — size-limited output files (batch & incremental modes)
-└── progress.py       # ProgressReporter — real-time progress with ETA (Jupyter & terminal)
+```mermaid
+flowchart TB
+  subgraph Core["src/crawl4md/ core library"]
+    PublicAPI["__init__.py<br/>public API exports"]
+    Config["config.py<br/>CrawlerConfig, PageConfig,<br/>CrawlResult, ExtractedPage"]
+    Crawler["crawler.py<br/>SiteCrawler"]
+    Extractor["extractor.py<br/>ContentExtractor"]
+    Sorter["sorter.py<br/>ContentSorter"]
+    Writer["writer.py<br/>FileWriter"]
+    Progress["progress.py<br/>ProgressReporter"]
+  end
 
-apps/streamlit/
-├── streamlit_app.py  # Browser UI that imports crawl4md
-├── pyproject.toml    # App-only dependencies, including Streamlit
-├── src/crawl4md_streamlit/
-│   ├── controls.py        # Action-button state machine
-│   ├── crawl_jobs.py      # Background crawl thread, config builders, progress helpers
-│   ├── form_defaults.py   # Default form values and option constants
-│   ├── form_ui.py         # Streamlit crawl settings form renderer
-│   ├── generated_files.py # Session output listing, previews, and download-tree helpers
-│   ├── session_manager.py # Session IDs, records, paths, and cleanup
-│   └── support.py         # Compatibility re-exports from the modules above
-└── tests/                 # Streamlit app helper tests
+  subgraph App["apps/streamlit/ browser app"]
+    StreamlitApp["streamlit_app.py<br/>UI entry point"]
+    AppPackage["pyproject.toml<br/>app dependencies"]
+    Controls["controls.py<br/>action-button state machine"]
+    CrawlJobs["crawl_jobs.py<br/>background thread and configs"]
+    FormDefaults["form_defaults.py<br/>default form values"]
+    FormUI["form_ui.py<br/>settings form renderer"]
+    GeneratedFiles["generated_files.py<br/>list, preview, downloads"]
+    SessionManager["session_manager.py<br/>safe IDs, records, paths, cleanup"]
+    Support["support.py<br/>compatibility re-exports"]
+    AppTests["tests/<br/>Streamlit helper tests"]
+  end
+
+  PublicAPI --> Config
+  PublicAPI --> Crawler
+  PublicAPI --> Extractor
+  PublicAPI --> Sorter
+  PublicAPI --> Writer
+  Crawler --> Config
+  Crawler --> Extractor
+  Crawler --> Writer
+  Crawler --> Sorter
+  Crawler --> Progress
+
+  StreamlitApp --> Controls
+  StreamlitApp --> FormUI
+  StreamlitApp --> CrawlJobs
+  StreamlitApp --> GeneratedFiles
+  StreamlitApp --> SessionManager
+  Support --> CrawlJobs
+  Support --> GeneratedFiles
+  Support --> SessionManager
+  FormUI --> FormDefaults
+  CrawlJobs --> Crawler
+  CrawlJobs --> Config
+  GeneratedFiles --> SessionManager
+  AppTests --> Controls
+  AppTests --> CrawlJobs
+  AppTests --> GeneratedFiles
+  AppTests --> SessionManager
 ```
 
 ## Development

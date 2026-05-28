@@ -20,6 +20,13 @@ from crawl4md_streamlit.generated_files import (
     generated_files_cache_token,
 )
 from crawl4md_streamlit.i18n import CATALOG, get_strings
+from crawl4md_streamlit.progress_chart import (
+    append_live_progress_sample,
+    load_persisted_progress_history,
+    prefer_persisted_history,
+    prepare_cumulative_chart_rows,
+    prepare_speed_chart_rows,
+)
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_SESSION_LANGUAGE,
@@ -75,6 +82,8 @@ _DIALOG_LOAD_SESSION_TITLE = "Load Session"
 _HOURS_PER_DAY = 24
 _ICON_BUTTON_WIDTH_PX = 44
 _LIVE_AREA_REFRESH_INTERVAL = "3s"
+_PROGRESS_CHART_HEIGHT = 220
+_SPEED_CHART_HEIGHT = 180
 _AUTHOR_NAME = "Danang Prakoso"
 _AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/prakosd"
 _PROJECT_GITHUB_URL = "https://github.com/prakosd/rag-playground"
@@ -711,6 +720,7 @@ def _init_state() -> None:
     st.session_state.setdefault("crawl_id", "")
     st.session_state.setdefault("events", [])
     st.session_state.setdefault("latest_event", {})
+    st.session_state.setdefault("progress_chart_history", [])
     st.session_state.setdefault("active_output_dir", "")
     st.session_state.setdefault("started_at", None)
     st.session_state.setdefault("last_elapsed", "")
@@ -958,6 +968,7 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
         st.session_state.preview_file_relative_path = ""
         st.session_state.events = []
         st.session_state.latest_event = {}
+        st.session_state.progress_chart_history = []
         st.session_state.active_output_dir = ""
         st.session_state.activity_log_latest_line = None
         st.session_state.last_elapsed = ""
@@ -1154,6 +1165,14 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
         event_name = str(event.get("event", ""))
         st.session_state.events.append(event)
         st.session_state.latest_event.update(event)
+        chart_history = st.session_state.get("progress_chart_history")
+        if not isinstance(chart_history, list):
+            chart_history = []
+        st.session_state.progress_chart_history = append_live_progress_sample(
+            chart_history,
+            event,
+            started_at=st.session_state.started_at,
+        )
         output_dir = str(event.get("output_dir", ""))
         if output_dir:
             st.session_state.active_output_dir = output_dir
@@ -1207,6 +1226,13 @@ def _reattach_selected_session_job() -> None:
     st.session_state.prev_discovered_pages = int(
         snapshot.latest_event.get("queued_discovered_urls", 0)
     )
+    st.session_state.progress_chart_history = []
+    if snapshot.latest_event:
+        st.session_state.progress_chart_history = append_live_progress_sample(
+            st.session_state.progress_chart_history,
+            snapshot.latest_event,
+            started_at=snapshot.started_at,
+        )
 
 
 def _session_root(session_id: str | None = None) -> Path:
@@ -1246,6 +1272,7 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.last_elapsed = ""
     st.session_state.events = []
     st.session_state.latest_event = {"limit": crawler_config.limit}
+    st.session_state.progress_chart_history = []
     st.session_state.active_output_dir = ""
     st.session_state.activity_log_size = activity_log_size
     st.session_state.activity_log_latest_line = None
@@ -1592,6 +1619,58 @@ def _active_file_root() -> Path:
             return ensure_within_root(session_folder, latest)
         return ensure_within_root(session_folder, job.output_base)
     return session_folder
+
+
+def _render_progress_charts() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    live_history = st.session_state.get("progress_chart_history")
+    if not isinstance(live_history, list):
+        live_history = []
+
+    persisted_history = load_persisted_progress_history(_active_file_root())
+    selected_history = prefer_persisted_history(live_history, persisted_history)
+    cumulative_rows = prepare_cumulative_chart_rows(selected_history)
+    if not cumulative_rows:
+        return
+
+    cumulative_chart_rows = [
+        {
+            "elapsed_seconds": row["elapsed_seconds"],
+            strings["CHART_SERIES_LIMIT"]: row["page_limit"],
+            strings["CHART_SERIES_DISCOVERED"]: row["discovered_pages"],
+            strings["CHART_SERIES_SUCCESSFUL"]: row["successful_pages"],
+            strings["CHART_SERIES_FAILED"]: row["failed_pages"],
+        }
+        for row in cumulative_rows
+    ]
+    st.caption(strings["CHART_CUMULATIVE_TITLE"])
+    st.line_chart(
+        cumulative_chart_rows,
+        x="elapsed_seconds",
+        y=[
+            strings["CHART_SERIES_LIMIT"],
+            strings["CHART_SERIES_DISCOVERED"],
+            strings["CHART_SERIES_SUCCESSFUL"],
+            strings["CHART_SERIES_FAILED"],
+        ],
+        height=_PROGRESS_CHART_HEIGHT,
+    )
+
+    speed_rows = prepare_speed_chart_rows(selected_history)
+    speed_chart_rows = [
+        {
+            "elapsed_seconds": row["elapsed_seconds"],
+            strings["CHART_SERIES_SPEED"]: row["pages_per_second"],
+        }
+        for row in speed_rows
+    ]
+    st.caption(strings["CHART_SPEED_TITLE"])
+    st.line_chart(
+        speed_chart_rows,
+        x="elapsed_seconds",
+        y=strings["CHART_SERIES_SPEED"],
+        height=_SPEED_CHART_HEIGHT,
+    )
 
 
 def _linkify_log_line(line: str) -> str:
@@ -1976,6 +2055,7 @@ def _render_live_area() -> None:
     live_expanded = st.session_state.job_state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}
     with st.expander(strings["PROGRESS_EXPANDER_LABEL"], expanded=live_expanded):
         _render_status()
+        _render_progress_charts()
         _render_activity_log()
 
 

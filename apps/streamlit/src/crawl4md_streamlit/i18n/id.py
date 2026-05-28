@@ -159,6 +159,14 @@ STRINGS_ID: Strings = {
     "PROGRESS_ATTEMPTS": "{n} upaya",
     "PROGRESS_COMPLETE": "selesai",
     "PROGRESS_RETRYING": "Sedang retry halaman gagal",
+    # ── Progress charts ───────────────────────────────────────────────────
+    "CHART_CUMULATIVE_TITLE": "Total crawl kumulatif dari waktu ke waktu",
+    "CHART_SPEED_TITLE": "Kecepatan crawl dari waktu ke waktu",
+    "CHART_SERIES_LIMIT": "Batas halaman",
+    "CHART_SERIES_DISCOVERED": "Halaman ditemukan",
+    "CHART_SERIES_SUCCESSFUL": "Halaman berhasil",
+    "CHART_SERIES_FAILED": "Halaman gagal",
+    "CHART_SERIES_SPEED": "Halaman per detik",
     # ── Status line ───────────────────────────────────────────────────────
     "STATUS_CRAWLING": "Merayapi: {url_html}",
     "STATUS_ELAPSED": "Waktu berlalu: {elapsed}",
