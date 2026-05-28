@@ -54,6 +54,7 @@ _EXPECTED_FACADE_EXPORTS = {
     "serialize_session_records": session_manager.serialize_session_records,
     "session_dir": session_manager.session_dir,
     "session_exists": session_manager.session_exists,
+    "should_show_portfolio_modal": session_manager.should_show_portfolio_modal,
     "start_crawl_job": crawl_jobs.start_crawl_job,
     "touch_session": session_manager.touch_session,
     "validate_safe_id": session_manager.validate_safe_id,

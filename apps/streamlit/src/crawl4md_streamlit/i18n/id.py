@@ -220,6 +220,32 @@ STRINGS_ID: Strings = {
     "READY_RESULT_ZIP_SUBTITLE": "{count} file berhasil — dikemas dalam satu zip",
     "READY_RESULT_DOWNLOAD_BUTTON": "⬇ Unduh",
     "READY_RESULT_TOO_LARGE": "Output terlalu besar untuk diunduh dari aplikasi — gunakan daftar file di bawah.",
+    # ── Portfolio footer ─────────────────────────────────────────────────
+    "FOOTER_BUILT_BY": "Dibuat oleh {author}",
+    "FOOTER_TAGLINE": "Playground crawl-to-RAG dengan bantuan AI",
+    "FOOTER_LINK_LINKEDIN": "LinkedIn",
+    "FOOTER_LINK_GITHUB": "GitHub",
+    "FOOTER_LINK_README": "Baca dokumentasi",
+    "FOOTER_LINK_STREAMLIT_README": "Panduan app",
+    # ── Portfolio modal ──────────────────────────────────────────────────
+    "PORTFOLIO_MODAL_TITLE": "Hai, saya {author}",
+    "PORTFOLIO_MODAL_BODY": (
+        "Saya membangun proyek ini sebagai RAG playground berbasis eksperimen "
+        "langsung dengan bantuan AI. Saat ini aplikasinya bisa meng-crawl situs "
+        "web dan mengubah halaman menjadi Markdown yang rapi. Berikutnya, saya "
+        "akan menambahkan vector embeddings, semantic search, tanya jawab RAG, "
+        "dan eksperimen conversational RAG."
+    ),
+    "PORTFOLIO_MODAL_CTA": (
+        "Kalau proyek ini menarik atau berguna, mari terhubung di LinkedIn atau "
+        "beri star di repo GitHub. Saya senang berbagi progres dan bertukar catatan."
+    ),
+    "PORTFOLIO_MODAL_LINK_LINKEDIN": "Terhubung di LinkedIn",
+    "PORTFOLIO_MODAL_LINK_GITHUB": "Beri star repo GitHub",
+    "PORTFOLIO_MODAL_LINK_README": "Baca dokumentasi",
+    "PORTFOLIO_MODAL_LINK_STREAMLIT_README": "Panduan developer app",
+    "PORTFOLIO_MODAL_CLOSE_LABEL": "Tutup",
+    "PORTFOLIO_MODAL_PHOTO_ALT": "Foto profil {author}",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Siap",

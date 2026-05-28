@@ -57,6 +57,7 @@ Everything the user sees and interacts with. Responsibilities:
 
 - Initialises `st.session_state` keys on first load (`_init_state`).
 - Hydrates browser-local session records through the inline CCv2 localStorage bridge.
+- Preserves portfolio-modal localStorage timestamps so the personal intro prompt is not shown too often.
 - Renders the selected session ID, searchable session selector, create-session button, and language selector.
 - Renders the settings form (`render_crawl_form`) and action buttons (delegated to `controls.py`).
 - Translates button presses into job start / stop calls.
@@ -68,6 +69,7 @@ Everything the user sees and interacts with. Responsibilities:
   (`_render_downloads`, refreshed every 7 seconds).
 - Runs a one-time startup cleanup of old session folders (`_run_startup_cleanup`, cached with
   `@st.cache_resource`).
+- Renders the global footer and browser-timed portfolio modal with translated copy.
 
 ### `controls.py` — button definitions
 
@@ -180,11 +182,12 @@ app does not persist crawl state and does not load any previous crawl when start
 ## Session and Path Safety
 
 Each browser stores known session IDs and UTC creation times in localStorage under a versioned
-`crawl4md` key. The app reads those records through a small inline `st.components.v2` bridge,
-validates them server-side, and selects the newest valid session on page load. If localStorage
-has no valid sessions, the server creates one safe ID, sends it back to the bridge for storage,
-and selects it. Users can switch sessions with the searchable `st.selectbox()` or create a new
-session with the adjacent button.
+`crawl4md` key. The same payload also stores portfolio-modal `last shown` and `last dismissed`
+UTC timestamps so the personal intro prompt can respect its repeat interval. The app reads those
+records through a small inline `st.components.v2` bridge, validates session IDs server-side, and
+selects the newest valid session on page load. If localStorage has no valid sessions, the server
+creates one safe ID, sends it back to the bridge for storage, and selects it. Users can switch
+sessions with the searchable `st.selectbox()` or create a new session with the adjacent button.
 
 **Load Session dialog** — the 📁 button next to the session selector opens a modal dialog that
 accepts a session ID typed or pasted by the user. This lets someone restore a session from

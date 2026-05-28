@@ -52,6 +52,7 @@ from crawl4md_streamlit.support import (
     session_dir,
     session_exists,
     session_time_remaining,
+    should_show_portfolio_modal,
     start_crawl_job,
     touch_session,
     validate_safe_id,
@@ -345,6 +346,51 @@ def test_bootstrap_gate_state_is_ready_when_bootstrap_is_complete() -> None:
     )
 
     assert state == "ready"
+
+
+def test_portfolio_modal_waits_for_browser_storage_hydration() -> None:
+    assert not should_show_portfolio_modal(
+        browser_sessions_hydrated=False,
+        last_dismissed_at=None,
+        repeat_after_hours=168,
+        now=_NOW,
+    )
+
+
+def test_portfolio_modal_shows_when_no_previous_timestamp_exists() -> None:
+    assert should_show_portfolio_modal(
+        browser_sessions_hydrated=True,
+        last_dismissed_at=None,
+        repeat_after_hours=168,
+        now=_NOW,
+    )
+
+
+def test_portfolio_modal_stays_hidden_after_recent_dismissal() -> None:
+    assert not should_show_portfolio_modal(
+        browser_sessions_hydrated=True,
+        last_dismissed_at="2026-05-20T12:00:00Z",
+        repeat_after_hours=168,
+        now=_NOW,
+    )
+
+
+def test_portfolio_modal_shows_after_repeat_interval() -> None:
+    assert should_show_portfolio_modal(
+        browser_sessions_hydrated=True,
+        last_dismissed_at="2026-05-17T11:59:59Z",
+        repeat_after_hours=168,
+        now=_NOW,
+    )
+
+
+def test_portfolio_modal_ignores_invalid_timestamps() -> None:
+    assert should_show_portfolio_modal(
+        browser_sessions_hydrated=True,
+        last_dismissed_at="",
+        repeat_after_hours=168,
+        now=_NOW,
+    )
 
 
 def test_serialize_session_records_formats_utc_iso_strings() -> None:

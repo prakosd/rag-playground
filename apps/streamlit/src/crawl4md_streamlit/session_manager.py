@@ -88,6 +88,46 @@ def bootstrap_gate_state(
     return "ready"
 
 
+def should_show_portfolio_modal(
+    *,
+    browser_sessions_hydrated: bool,
+    last_dismissed_at: str | None,
+    repeat_after_hours: int,
+    now: datetime | None = None,
+) -> bool:
+    """Return whether the portfolio modal may be scheduled in the browser."""
+    if not browser_sessions_hydrated:
+        return False
+
+    dismissed_at = _parse_utc_timestamp(last_dismissed_at)
+    if dismissed_at is None:
+        return True
+
+    current_time = _normalize_utc_datetime(now or datetime.now(timezone.utc))
+    return current_time - dismissed_at >= timedelta(hours=repeat_after_hours)
+
+
+def _parse_utc_timestamp(value: str | None) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return _normalize_utc_datetime(parsed)
+
+
+def _normalize_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @lru_cache(maxsize=1)
 def _readable_word_pool() -> tuple[str, ...]:
     try:

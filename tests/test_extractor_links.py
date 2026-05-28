@@ -6,6 +6,9 @@ from crawl4md._internal.html_preprocess import _WRAPPER_LINK_TEXT
 from crawl4md.config import CrawlResult, PageConfig
 from crawl4md.extractor import ContentExtractor
 
+_WRAPPER_LINK_ANCHOR = _WRAPPER_LINK_TEXT
+_WRAPPER_LINK_PREFIX = ""
+
 
 class TestPopulateEmptyLinks:
     """Tests for ContentExtractor._populate_empty_links."""

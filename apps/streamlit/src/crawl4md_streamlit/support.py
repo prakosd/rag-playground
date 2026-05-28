@@ -59,6 +59,7 @@ serialize_session_records = _session_manager.serialize_session_records
 session_dir = _session_manager.session_dir
 session_exists = _session_manager.session_exists
 session_time_remaining = _session_manager.session_time_remaining
+should_show_portfolio_modal = _session_manager.should_show_portfolio_modal
 touch_session = _session_manager.touch_session
 validate_safe_id = _session_manager.validate_safe_id
 
@@ -112,6 +113,7 @@ __all__ = [
     "serialize_session_records",
     "session_dir",
     "session_exists",
+    "should_show_portfolio_modal",
     "start_crawl_job",
     "touch_session",
     "validate_safe_id",

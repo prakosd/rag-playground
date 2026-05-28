@@ -1,8 +1,12 @@
 # crawl4md
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/crawl4md)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/rag-playground)
 
 A Python library for crawling websites and extracting their content as Markdown-formatted text files. Wraps [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API, a technical-user Jupyter Notebook, and a browser-based Streamlit app for non-technical users.
+
+This repository is evolving into a practical RAG playground: crawl websites into clean Markdown now, then extend those outputs into vector embeddings, semantic search, RAG question answering, and conversational RAG experiments.
+
+**Repo rename note:** the public GitHub repository is moving to `prakosd/rag-playground`. The Python package, imports, notebook name, and Streamlit helper package remain `crawl4md` / `crawl4md_streamlit` in this phase.
 
 ## Features
 
@@ -381,7 +385,7 @@ The Jupyter Notebook is still available for technical users who want to inspect 
 
 See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook. You can also run it directly in Google Colab:
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prakosd/crawl4md/blob/master/notebooks/crawl4md.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prakosd/rag-playground/blob/master/notebooks/crawl4md.ipynb)
 
 ## Architecture
 

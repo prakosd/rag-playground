@@ -214,6 +214,31 @@ STRINGS_EN: Strings = {
     "READY_RESULT_ZIP_SUBTITLE": "{count} success files — packaged as a zip",
     "READY_RESULT_DOWNLOAD_BUTTON": "⬇ Download",
     "READY_RESULT_TOO_LARGE": "The output is too large to download from the app — use the file listing below.",
+    # ── Portfolio footer ─────────────────────────────────────────────────
+    "FOOTER_BUILT_BY": "Built by {author}",
+    "FOOTER_TAGLINE": "AI-assisted crawl-to-RAG playground",
+    "FOOTER_LINK_LINKEDIN": "LinkedIn",
+    "FOOTER_LINK_GITHUB": "GitHub",
+    "FOOTER_LINK_README": "Read the docs",
+    "FOOTER_LINK_STREAMLIT_README": "App docs",
+    # ── Portfolio modal ──────────────────────────────────────────────────
+    "PORTFOLIO_MODAL_TITLE": "Hi, I'm {author}",
+    "PORTFOLIO_MODAL_BODY": (
+        "I'm building this project as a hands-on AI-assisted RAG playground. "
+        "Today it crawls websites and turns pages into clean Markdown. Next, "
+        "I'm extending it with vector embeddings, semantic search, RAG question "
+        "answering, and conversational RAG experiments."
+    ),
+    "PORTFOLIO_MODAL_CTA": (
+        "If this project is useful or interesting, connect with me on LinkedIn "
+        "or star the GitHub repo. I'd love to share progress and compare notes."
+    ),
+    "PORTFOLIO_MODAL_LINK_LINKEDIN": "Connect on LinkedIn",
+    "PORTFOLIO_MODAL_LINK_GITHUB": "Star the GitHub repo",
+    "PORTFOLIO_MODAL_LINK_README": "Read the docs",
+    "PORTFOLIO_MODAL_LINK_STREAMLIT_README": "App developer guide",
+    "PORTFOLIO_MODAL_CLOSE_LABEL": "Close",
+    "PORTFOLIO_MODAL_PHOTO_ALT": "Profile photo of {author}",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Ready",

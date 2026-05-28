@@ -175,5 +175,22 @@ class Strings(TypedDict):
     READY_RESULT_ZIP_SUBTITLE: str  # template: {count}
     READY_RESULT_DOWNLOAD_BUTTON: str
     READY_RESULT_TOO_LARGE: str
+    # ── Portfolio footer ─────────────────────────────────────────────────
+    FOOTER_BUILT_BY: str  # template: {author}
+    FOOTER_TAGLINE: str
+    FOOTER_LINK_LINKEDIN: str
+    FOOTER_LINK_GITHUB: str
+    FOOTER_LINK_README: str
+    FOOTER_LINK_STREAMLIT_README: str
+    # ── Portfolio modal ──────────────────────────────────────────────────
+    PORTFOLIO_MODAL_TITLE: str  # template: {author}
+    PORTFOLIO_MODAL_BODY: str
+    PORTFOLIO_MODAL_CTA: str
+    PORTFOLIO_MODAL_LINK_LINKEDIN: str
+    PORTFOLIO_MODAL_LINK_GITHUB: str
+    PORTFOLIO_MODAL_LINK_README: str
+    PORTFOLIO_MODAL_LINK_STREAMLIT_README: str
+    PORTFOLIO_MODAL_CLOSE_LABEL: str
+    PORTFOLIO_MODAL_PHOTO_ALT: str  # template: {author}
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]
