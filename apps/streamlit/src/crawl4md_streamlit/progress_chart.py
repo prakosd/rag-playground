@@ -301,11 +301,14 @@ def prepare_pace_chart_rows(
     ]
     for window_index in range(1, max_window_index + 1):
         attempts = window_attempts.get(window_index, 0.0)
+        window_start = (window_index - 1) * resolved_window_seconds
+        window_elapsed_seconds = min(window_index * resolved_window_seconds, max_elapsed_seconds)
+        observed_window_seconds = max(0.0, window_elapsed_seconds - window_start)
         pace_rows.append(
             {
-                "elapsed_seconds": window_index * resolved_window_seconds,
-                "seconds_per_page_attempt": resolved_window_seconds / attempts
-                if attempts > 0
+                "elapsed_seconds": window_elapsed_seconds,
+                "seconds_per_page_attempt": observed_window_seconds / attempts
+                if attempts > 0 and observed_window_seconds > 0
                 else None,
             }
         )

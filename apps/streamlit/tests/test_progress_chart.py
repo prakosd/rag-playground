@@ -160,10 +160,9 @@ def test_prepare_pace_chart_rows_ignores_discovery_samples_as_rate_anchors() -> 
 
     pace_rows = prepare_pace_chart_rows(history)
 
-    numeric_paces = [row["seconds_per_page_attempt"] for row in pace_rows[1:]]
-    assert pace_rows[-1]["elapsed_seconds"] == pytest.approx(6.0)
-    assert pace_rows[-1]["seconds_per_page_attempt"] == pytest.approx(1.0)
-    assert min(value for value in numeric_paces if value is not None) == pytest.approx(0.5)
+    assert pace_rows[-1]["elapsed_seconds"] == pytest.approx(5.02)
+    assert pace_rows[-1]["seconds_per_page_attempt"] == pytest.approx(0.02)
+    assert pace_rows[-1]["seconds_per_page_attempt"] != pytest.approx(0.01)
 
 
 def test_select_progress_chart_time_unit_uses_seconds_for_short_crawls() -> None:
@@ -199,10 +198,10 @@ def test_prepare_pace_chart_rows_averages_attempts_into_minute_windows() -> None
 
     pace_rows = prepare_pace_chart_rows(history)
 
-    assert [row["elapsed_seconds"] for row in pace_rows] == pytest.approx([0.0, 60.0, 120.0])
+    assert [row["elapsed_seconds"] for row in pace_rows] == pytest.approx([0.0, 60.0, 90.0])
     assert pace_rows[0]["seconds_per_page_attempt"] is None
     assert pace_rows[1]["seconds_per_page_attempt"] == pytest.approx(1.0)
-    assert pace_rows[2]["seconds_per_page_attempt"] == pytest.approx(2.0)
+    assert pace_rows[2]["seconds_per_page_attempt"] == pytest.approx(1.0)
 
 
 def test_prepare_pace_chart_rows_keeps_inactive_windows_blank() -> None:
