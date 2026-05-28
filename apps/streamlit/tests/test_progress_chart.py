@@ -6,12 +6,17 @@ from pathlib import Path
 import pytest
 
 from crawl4md_streamlit.progress_chart import (
+    SPEED_CHART_TIME_UNIT_HOUR,
+    SPEED_CHART_TIME_UNIT_MINUTE,
+    SPEED_CHART_TIME_UNIT_SECOND,
     append_live_progress_sample,
     load_persisted_progress_history,
     prefer_persisted_history,
     prepare_cumulative_chart_rows,
     prepare_speed_chart_rows,
     progress_history_file_name,
+    select_speed_chart_time_unit,
+    speed_chart_time_unit_seconds,
 )
 
 
@@ -135,10 +140,80 @@ def test_prepare_speed_chart_rows_uses_processed_delta_per_second() -> None:
 
     speed_rows = prepare_speed_chart_rows(history)
 
-    assert len(speed_rows) == 3
+    assert len(speed_rows) == 6
     assert speed_rows[0]["pages_per_second"] == pytest.approx(0.0)
     assert speed_rows[1]["pages_per_second"] == pytest.approx(1.0)
-    assert speed_rows[2]["pages_per_second"] == pytest.approx(2.0 / 3.0)
+    assert speed_rows[2]["pages_per_second"] == pytest.approx(1.0)
+    assert speed_rows[3]["pages_per_second"] == pytest.approx(2.0 / 3.0)
+    assert speed_rows[4]["pages_per_second"] == pytest.approx(2.0 / 3.0)
+    assert speed_rows[5]["pages_per_second"] == pytest.approx(2.0 / 3.0)
+
+
+def test_prepare_speed_chart_rows_ignores_discovery_samples_as_rate_anchors() -> None:
+    history = [
+        {"elapsed_seconds": 0.0, "processed_pages": 0, "discovered_pages": 0},
+        {"elapsed_seconds": 5.0, "processed_pages": 10, "discovered_pages": 10},
+        {"elapsed_seconds": 5.01, "processed_pages": 10, "discovered_pages": 25},
+        {"elapsed_seconds": 5.02, "processed_pages": 11, "discovered_pages": 25},
+    ]
+
+    speed_rows = prepare_speed_chart_rows(history)
+
+    assert speed_rows[-1]["elapsed_seconds"] == pytest.approx(6.0)
+    assert speed_rows[-1]["pages_per_second"] == pytest.approx(1.0)
+    assert max(row["pages_per_second"] for row in speed_rows) == pytest.approx(2.0)
+
+
+def test_select_speed_chart_time_unit_uses_seconds_for_short_crawls() -> None:
+    history = [{"elapsed_seconds": 60.0, "processed_pages": 2}]
+
+    assert select_speed_chart_time_unit(history) == SPEED_CHART_TIME_UNIT_SECOND
+
+
+def test_select_speed_chart_time_unit_uses_minutes_for_medium_crawls() -> None:
+    history = [{"elapsed_seconds": 180.0, "processed_pages": 2}]
+
+    assert select_speed_chart_time_unit(history) == SPEED_CHART_TIME_UNIT_MINUTE
+
+
+def test_select_speed_chart_time_unit_uses_hours_for_long_crawls() -> None:
+    history = [{"elapsed_seconds": 7200.0, "processed_pages": 2}]
+
+    assert select_speed_chart_time_unit(history) == SPEED_CHART_TIME_UNIT_HOUR
+
+
+def test_speed_chart_time_unit_seconds_returns_display_window_size() -> None:
+    assert speed_chart_time_unit_seconds(SPEED_CHART_TIME_UNIT_SECOND) == pytest.approx(1.0)
+    assert speed_chart_time_unit_seconds(SPEED_CHART_TIME_UNIT_MINUTE) == pytest.approx(60.0)
+    assert speed_chart_time_unit_seconds(SPEED_CHART_TIME_UNIT_HOUR) == pytest.approx(3600.0)
+
+
+def test_prepare_speed_chart_rows_averages_attempts_into_minute_windows() -> None:
+    history = [
+        {"elapsed_seconds": 0.0, "processed_pages": 0},
+        {"elapsed_seconds": 60.0, "processed_pages": 60},
+        {"elapsed_seconds": 90.0, "processed_pages": 90},
+    ]
+
+    speed_rows = prepare_speed_chart_rows(history)
+
+    assert [row["elapsed_seconds"] for row in speed_rows] == pytest.approx([0.0, 60.0, 120.0])
+    assert [row["pages_per_second"] for row in speed_rows] == pytest.approx([0.0, 1.0, 0.5])
+
+
+def test_prepare_speed_chart_rows_includes_zero_windows_after_inactive_samples() -> None:
+    history = [
+        {"elapsed_seconds": 0.0, "processed_pages": 0},
+        {"elapsed_seconds": 60.0, "processed_pages": 60},
+        {"elapsed_seconds": 180.0, "processed_pages": 60, "discovered_pages": 120},
+    ]
+
+    speed_rows = prepare_speed_chart_rows(history)
+
+    assert [row["elapsed_seconds"] for row in speed_rows] == pytest.approx(
+        [0.0, 60.0, 120.0, 180.0]
+    )
+    assert [row["pages_per_second"] for row in speed_rows] == pytest.approx([0.0, 1.0, 0.0, 0.0])
 
 
 def test_prefer_persisted_history_uses_persisted_when_available() -> None:

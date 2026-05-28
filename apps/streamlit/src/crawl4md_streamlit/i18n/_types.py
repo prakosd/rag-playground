@@ -129,6 +129,12 @@ class Strings(TypedDict):
     CHART_SERIES_SUCCESSFUL: str
     CHART_SERIES_FAILED: str
     CHART_SERIES_SPEED: str
+    CHART_SPEED_TITLE_SECOND: str
+    CHART_SPEED_TITLE_MINUTE: str
+    CHART_SPEED_TITLE_HOUR: str
+    CHART_TIME_UNIT_SECOND: str
+    CHART_TIME_UNIT_MINUTE: str
+    CHART_TIME_UNIT_HOUR: str
     # ── Status line ───────────────────────────────────────────────────────
     STATUS_CRAWLING: str  # template: {url_html}
     STATUS_ELAPSED: str  # template: {elapsed}

@@ -176,7 +176,8 @@ Activity logs record concurrent reads as batch entries such as `Reading page bat
 Live charts are native Streamlit line charts rendered right before the Activity log panel:
 
 - Cumulative counters over time: page limit, discovered pages, successful pages, failed pages
-- Crawl speed over time: pages per second (derived from processed-page deltas)
+- Page attempts per second: excludes discovered-only URL events and averages processed-page
+  attempts into second, minute, or hour windows based on crawl duration
 
 For reload-safe chart history, the app prefers `progress_history.jsonl` written by the core crawler
 and falls back to in-memory samples captured from live events when that file is not available yet.

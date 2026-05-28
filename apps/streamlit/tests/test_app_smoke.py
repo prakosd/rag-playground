@@ -247,7 +247,7 @@ def test_refresh_reattaches_running_crawl_from_registry(
 
 # Risk: progress chart schema regressions can silently change axis naming or mark type,
 # making progress trends harder to interpret. Type: integration regression.
-def test_progress_charts_use_second_axis_and_area_cumulative(
+def test_progress_charts_keep_cumulative_axis_and_hide_speed_axis_titles(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     session_id = "chart_schema"
@@ -305,5 +305,7 @@ def test_progress_charts_use_second_axis_and_area_cumulative(
     ]
     assert len(line_layers) == 1
     speed_x = line_layers[0].get("encoding", {}).get("x", {})
+    speed_y = line_layers[0].get("encoding", {}).get("y", {})
     assert speed_x.get("field") == "second"
-    assert speed_x.get("title") == "second"
+    assert speed_x.get("title") == ""
+    assert speed_y.get("title") == ""

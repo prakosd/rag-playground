@@ -21,11 +21,16 @@ from crawl4md_streamlit.generated_files import (
 )
 from crawl4md_streamlit.i18n import CATALOG, get_strings
 from crawl4md_streamlit.progress_chart import (
+    SPEED_CHART_TIME_UNIT_HOUR,
+    SPEED_CHART_TIME_UNIT_MINUTE,
+    SPEED_CHART_TIME_UNIT_SECOND,
     append_live_progress_sample,
     load_persisted_progress_history,
     prefer_persisted_history,
     prepare_cumulative_chart_rows,
     prepare_speed_chart_rows,
+    select_speed_chart_time_unit,
+    speed_chart_time_unit_seconds,
 )
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
@@ -84,6 +89,16 @@ _ICON_BUTTON_WIDTH_PX = 44
 _LIVE_AREA_REFRESH_INTERVAL = "3s"
 _PROGRESS_CHART_HEIGHT = 220
 _SPEED_CHART_HEIGHT = 180
+_CHART_SPEED_TITLE_KEYS = {
+    SPEED_CHART_TIME_UNIT_SECOND: "CHART_SPEED_TITLE_SECOND",
+    SPEED_CHART_TIME_UNIT_MINUTE: "CHART_SPEED_TITLE_MINUTE",
+    SPEED_CHART_TIME_UNIT_HOUR: "CHART_SPEED_TITLE_HOUR",
+}
+_CHART_SPEED_UNIT_KEYS = {
+    SPEED_CHART_TIME_UNIT_SECOND: "CHART_TIME_UNIT_SECOND",
+    SPEED_CHART_TIME_UNIT_MINUTE: "CHART_TIME_UNIT_MINUTE",
+    SPEED_CHART_TIME_UNIT_HOUR: "CHART_TIME_UNIT_HOUR",
+}
 _AUTHOR_NAME = "Danang Prakoso"
 _AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/prakosd"
 _PROJECT_GITHUB_URL = "https://github.com/prakosd/rag-playground"
@@ -1656,20 +1671,28 @@ def _render_progress_charts() -> None:
         height=_PROGRESS_CHART_HEIGHT,
     )
 
-    speed_rows = prepare_speed_chart_rows(selected_history)
+    speed_time_unit = select_speed_chart_time_unit(selected_history)
+    speed_time_unit_seconds = speed_chart_time_unit_seconds(speed_time_unit)
+    speed_x_column = strings[_CHART_SPEED_UNIT_KEYS[speed_time_unit]]
+    speed_rows = prepare_speed_chart_rows(
+        selected_history,
+        window_seconds=speed_time_unit_seconds,
+    )
     speed_chart_rows = [
         {
-            "second": row["elapsed_seconds"],
+            speed_x_column: row["elapsed_seconds"] / speed_time_unit_seconds,
             strings["CHART_SERIES_SPEED"]: row["pages_per_second"],
         }
         for row in speed_rows
     ]
-    st.caption(strings["CHART_SPEED_TITLE"])
+    st.caption(strings[_CHART_SPEED_TITLE_KEYS[speed_time_unit]])
     st.line_chart(
         speed_chart_rows,
-        x="second",
+        x=speed_x_column,
         y=strings["CHART_SERIES_SPEED"],
         height=_SPEED_CHART_HEIGHT,
+        x_label="",
+        y_label="",
     )
 
 

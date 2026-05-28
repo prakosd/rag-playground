@@ -5,9 +5,19 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from math import ceil
 from pathlib import Path
 
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
+SPEED_CHART_TIME_UNIT_SECOND = "second"
+SPEED_CHART_TIME_UNIT_MINUTE = "minute"
+SPEED_CHART_TIME_UNIT_HOUR = "hour"
+_SECONDS_PER_SECOND = 1.0
+_SECONDS_PER_MINUTE = 60.0
+_MINUTES_PER_HOUR = 60.0
+_SECONDS_PER_HOUR = _SECONDS_PER_MINUTE * _MINUTES_PER_HOUR
+_SPEED_CHART_MINUTE_THRESHOLD_SECONDS = _SECONDS_PER_MINUTE
+_SPEED_CHART_HOUR_THRESHOLD_SECONDS = _SECONDS_PER_HOUR
 _COUNTER_KEYS = (
     "page_limit",
     "discovered_pages",
@@ -181,34 +191,120 @@ def prepare_cumulative_chart_rows(history: list[Mapping[str, object]]) -> list[d
     return rows
 
 
-def prepare_speed_chart_rows(history: list[Mapping[str, object]]) -> list[dict[str, float]]:
-    """Build pages-per-second rows from cumulative processed-page samples."""
+def select_speed_chart_time_unit(history: list[Mapping[str, object]]) -> str:
+    """Return the speed-chart elapsed-time unit for a history duration."""
+    cumulative = prepare_cumulative_chart_rows(history)
+    if not cumulative:
+        return SPEED_CHART_TIME_UNIT_SECOND
+
+    max_elapsed_seconds = max(
+        _coerce_float(sample.get("elapsed_seconds"), 0.0) for sample in cumulative
+    )
+    if max_elapsed_seconds > _SPEED_CHART_HOUR_THRESHOLD_SECONDS:
+        return SPEED_CHART_TIME_UNIT_HOUR
+    if max_elapsed_seconds > _SPEED_CHART_MINUTE_THRESHOLD_SECONDS:
+        return SPEED_CHART_TIME_UNIT_MINUTE
+    return SPEED_CHART_TIME_UNIT_SECOND
+
+
+def speed_chart_time_unit_seconds(time_unit: str) -> float:
+    """Return the number of elapsed seconds represented by one display unit."""
+    if time_unit == SPEED_CHART_TIME_UNIT_HOUR:
+        return _SECONDS_PER_HOUR
+    if time_unit == SPEED_CHART_TIME_UNIT_MINUTE:
+        return _SECONDS_PER_MINUTE
+    return _SECONDS_PER_SECOND
+
+
+def _window_index(elapsed_seconds: float, window_seconds: float) -> int:
+    if elapsed_seconds <= 0:
+        return 0
+    return max(1, ceil(elapsed_seconds / window_seconds))
+
+
+def _add_attempts_to_windows(
+    window_attempts: dict[int, float],
+    *,
+    start_seconds: float,
+    end_seconds: float,
+    attempt_count: int,
+    window_seconds: float,
+) -> None:
+    if attempt_count <= 0:
+        return
+
+    bounded_start = max(0.0, start_seconds)
+    bounded_end = max(bounded_start, end_seconds)
+    if bounded_end <= bounded_start:
+        window_index = max(1, _window_index(bounded_end, window_seconds))
+        window_attempts[window_index] = window_attempts.get(window_index, 0.0) + attempt_count
+        return
+
+    attempts_per_second = attempt_count / (bounded_end - bounded_start)
+    start_window_index = max(1, _window_index(bounded_start, window_seconds))
+    end_window_index = max(1, _window_index(bounded_end, window_seconds))
+    for window_index in range(start_window_index, end_window_index + 1):
+        window_start = (window_index - 1) * window_seconds
+        window_end = window_index * window_seconds
+        overlap_seconds = min(bounded_end, window_end) - max(bounded_start, window_start)
+        if overlap_seconds <= 0:
+            continue
+        window_attempts[window_index] = window_attempts.get(window_index, 0.0) + (
+            attempts_per_second * overlap_seconds
+        )
+
+
+def prepare_speed_chart_rows(
+    history: list[Mapping[str, object]],
+    *,
+    window_seconds: float | None = None,
+) -> list[dict[str, float]]:
+    """Build window-averaged page-attempts-per-second rows."""
     cumulative = prepare_cumulative_chart_rows(history)
     if not cumulative:
         return []
 
+    resolved_window_seconds = window_seconds or speed_chart_time_unit_seconds(
+        select_speed_chart_time_unit(cumulative)
+    )
+    max_elapsed_seconds = max(
+        _coerce_float(sample.get("elapsed_seconds"), 0.0) for sample in cumulative
+    )
+    max_window_index = _window_index(max_elapsed_seconds, resolved_window_seconds)
+
+    window_attempts: dict[int, float] = {}
+    last_processed_elapsed = 0.0
+    last_processed_pages = 0
+    for sample in cumulative:
+        current_elapsed = _coerce_float(sample.get("elapsed_seconds"), 0.0)
+        current_processed_pages = _coerce_int(sample.get("processed_pages"), 0)
+        processed_delta = current_processed_pages - last_processed_pages
+        if processed_delta > 0:
+            _add_attempts_to_windows(
+                window_attempts,
+                start_seconds=last_processed_elapsed,
+                end_seconds=current_elapsed,
+                attempt_count=processed_delta,
+                window_seconds=resolved_window_seconds,
+            )
+            last_processed_elapsed = current_elapsed
+            last_processed_pages = current_processed_pages
+        elif processed_delta < 0:
+            last_processed_elapsed = current_elapsed
+            last_processed_pages = current_processed_pages
+
     speed_rows: list[dict[str, float]] = [
         {
-            "elapsed_seconds": _coerce_float(cumulative[0]["elapsed_seconds"], 0.0),
+            "elapsed_seconds": 0.0,
             "pages_per_second": 0.0,
         }
     ]
-    for previous, current in zip(cumulative, cumulative[1:], strict=False):
-        current_elapsed = _coerce_float(current["elapsed_seconds"], 0.0)
-        previous_elapsed = _coerce_float(previous["elapsed_seconds"], 0.0)
-        elapsed_delta = current_elapsed - previous_elapsed
-        if elapsed_delta <= 0:
-            continue
-
-        processed_delta = max(
-            0,
-            _coerce_int(current["processed_pages"], 0)
-            - _coerce_int(previous["processed_pages"], 0),
-        )
+    for window_index in range(1, max_window_index + 1):
         speed_rows.append(
             {
-                "elapsed_seconds": current_elapsed,
-                "pages_per_second": processed_delta / elapsed_delta,
+                "elapsed_seconds": window_index * resolved_window_seconds,
+                "pages_per_second": window_attempts.get(window_index, 0.0)
+                / resolved_window_seconds,
             }
         )
     return speed_rows
