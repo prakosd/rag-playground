@@ -1635,7 +1635,7 @@ def _render_progress_charts() -> None:
 
     cumulative_chart_rows = [
         {
-            "elapsed_seconds": row["elapsed_seconds"],
+            "second": row["elapsed_seconds"],
             strings["CHART_SERIES_LIMIT"]: row["page_limit"],
             strings["CHART_SERIES_DISCOVERED"]: row["discovered_pages"],
             strings["CHART_SERIES_SUCCESSFUL"]: row["successful_pages"],
@@ -1644,9 +1644,9 @@ def _render_progress_charts() -> None:
         for row in cumulative_rows
     ]
     st.caption(strings["CHART_CUMULATIVE_TITLE"])
-    st.line_chart(
+    st.area_chart(
         cumulative_chart_rows,
-        x="elapsed_seconds",
+        x="second",
         y=[
             strings["CHART_SERIES_LIMIT"],
             strings["CHART_SERIES_DISCOVERED"],
@@ -1659,7 +1659,7 @@ def _render_progress_charts() -> None:
     speed_rows = prepare_speed_chart_rows(selected_history)
     speed_chart_rows = [
         {
-            "elapsed_seconds": row["elapsed_seconds"],
+            "second": row["elapsed_seconds"],
             strings["CHART_SERIES_SPEED"]: row["pages_per_second"],
         }
         for row in speed_rows
@@ -1667,7 +1667,7 @@ def _render_progress_charts() -> None:
     st.caption(strings["CHART_SPEED_TITLE"])
     st.line_chart(
         speed_chart_rows,
-        x="elapsed_seconds",
+        x="second",
         y=strings["CHART_SERIES_SPEED"],
         height=_SPEED_CHART_HEIGHT,
     )

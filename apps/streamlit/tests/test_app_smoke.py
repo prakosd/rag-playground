@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
@@ -242,3 +243,67 @@ def test_refresh_reattaches_running_crawl_from_registry(
     finally:
         gate.set()
         t.join(timeout=2)
+
+
+# Risk: progress chart schema regressions can silently change axis naming or mark type,
+# making progress trends harder to interpret. Type: integration regression.
+def test_progress_charts_use_second_axis_and_area_cumulative(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "chart_schema"
+    initial_records = serialize_session_records(
+        [SessionRecord(session_id, datetime(2026, 6, 2, tzinfo=timezone.utc))]
+    )
+    (tmp_path / "outputs" / "streamlit_sessions" / f"session_{session_id}").mkdir(parents=True)
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "streamlit.components.v2.component",
+        partial(_storage_component_factory, initial_records=initial_records),
+    ):
+        app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+        app.run(timeout=10)
+        app.session_state.progress_chart_history = [
+            {
+                "elapsed_seconds": 0.0,
+                "page_limit": 10,
+                "discovered_pages": 0,
+                "successful_pages": 0,
+                "failed_pages": 0,
+                "processed_pages": 0,
+            },
+            {
+                "elapsed_seconds": 4.0,
+                "page_limit": 10,
+                "discovered_pages": 4,
+                "successful_pages": 3,
+                "failed_pages": 1,
+                "processed_pages": 4,
+            },
+        ]
+        app.session_state.job_state = "running"
+        app.run(timeout=10)
+
+    assert not app.exception
+    chart_specs = [json.loads(chart.spec) for chart in app.get("vega_lite_chart")]
+    assert len(chart_specs) == 2
+
+    cumulative_specs = [spec for spec in chart_specs if spec.get("height") == 220]
+    assert len(cumulative_specs) == 1
+    cumulative = cumulative_specs[0]
+    assert cumulative.get("mark", {}).get("type") == "area"
+    assert cumulative.get("encoding", {}).get("x", {}).get("field") == "second"
+    assert cumulative.get("encoding", {}).get("x", {}).get("title") == "second"
+
+    speed_specs = [spec for spec in chart_specs if spec.get("height") == 180]
+    assert len(speed_specs) == 1
+    speed = speed_specs[0]
+    line_layers = [
+        layer
+        for layer in speed.get("layer", [])
+        if isinstance(layer, dict) and layer.get("mark", {}).get("type") == "line"
+    ]
+    assert len(line_layers) == 1
+    speed_x = line_layers[0].get("encoding", {}).get("x", {})
+    assert speed_x.get("field") == "second"
+    assert speed_x.get("title") == "second"
