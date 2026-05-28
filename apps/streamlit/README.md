@@ -239,6 +239,42 @@ folders removed during the same startup.
 
 ---
 
+## Generated Files in the App
+
+The files shown in the download tree are produced by the core `crawl4md` library — the app
+presents them without transforming or filtering. For the full file reference (purposes, naming
+conventions, and cleanup behavior), see [Output Structure](../../README.md#output-structure)
+in the root README.
+
+**Folder layout under `outputs/streamlit_sessions/`:**
+
+```text
+session_{id}/                      ← one folder per browser session
+└── crawl_{id}/                    ← one folder per Start click
+    └── YYYY-MM-DD_HH-MM-SS/      ← timestamped crawl root (created by SiteCrawler)
+        ├── activity_log.txt / .csv
+        ├── site_graph.jsonl
+        ├── round_1/              ← intermediate snapshot (one per retry round)
+        ├── round_2/ …            ← only if max_retries > 0 and pages failed
+        └── final/                ← primary output; appears after all rounds complete
+```
+
+**Why a new folder per Start click?** Each Start increments the crawl counter (`crawl_1`,
+`crawl_2`, …) and `SiteCrawler` creates a fresh timestamped directory inside it. Previous
+crawls keep their files and remain downloadable from the same session.
+
+**Which files to open first:**
+
+- `final/sorted_success_content_001_of_001.md` — the extracted content, sorted by URL path
+- `final/sorted_success_urls.txt` — all URLs that succeeded
+- `activity_log.csv` — timestamped crawl diary in spreadsheet format
+
+The `round_N/` folders are intermediate per-round snapshots. They are useful when a crawl was
+stopped early or when you need to inspect a specific retry round; for a completed crawl, use
+the files in `final/` instead.
+
+---
+
 ## Data Flow (one crawl from click to download)
 
 ```text

@@ -272,8 +272,8 @@ Each crawl creates a timestamped folder. Per-round subdirectories hold intermedi
 │   └── ...
 │
 └── final/                        # Primary output — merged across all rounds
-    ├── sorted_success_content_001_of_001.md   # ✅ Main output (sorted by URL path)
-    ├── sorted_success_content_002_of_002.md   # Additional file if size limit exceeded
+    ├── sorted_success_content_001_of_002.md   # ✅ Main output, file 1 of 2 (sorted by URL path)
+    ├── sorted_success_content_002_of_002.md   # File 2 of 2; only present if size limit exceeded
     ├── sorted_success_urls.txt
     ├── sorted_fail_content_001_of_001.md      # Pages that never succeeded
     ├── sorted_fail_urls.txt
@@ -351,6 +351,29 @@ crawl_parameters:
 status: "success"
 ---
 ```
+
+### What to look at first
+
+A crawl writes many files. Here is where to start.
+
+**Primary output:** `final/sorted_success_content_001_of_NNN.md`. When a single file would exceed `max_file_size_mb`, content splits into `001_of_003`, `002_of_003`, `003_of_003`, … files. This contains all successfully extracted pages, merged across every retry round and sorted by URL path.
+
+| I want… | File |
+|---------|------|
+| Extracted site content | `final/sorted_success_content_*.md` |
+| Succeeded URLs | `final/sorted_success_urls.txt` |
+| Pages that never succeeded | `final/sorted_fail_content_*.md` |
+| Failed URLs | `final/sorted_fail_urls.txt` |
+| Full site map (status + depth) | `site_graph.jsonl` |
+| Timestamped crawl diary | `activity_log.txt` / `activity_log.csv` |
+
+**Why `round_N/` folders?** crawl4md retries failed pages in separate rounds (controlled by `max_retries`). Each round folder is an intermediate snapshot written during the crawl. The `final/` folder merges every round and is what you normally use. If `max_retries = 0`, only `round_1/` exists.
+
+**`sorted_` prefix vs. no prefix in `final/`.** `sorted_success_content_*.md` is sorted by URL path; `success_urls.txt` (no prefix) keeps insertion order. Use the `sorted_` files for reading or post-processing.
+
+**`001_of_003` chunk numbers.** `NNN_of_TOTAL` — file index and total count share the same total, so `001_of_003`, `002_of_003`, `003_of_003` are the three parts of a 3-file split. Concatenate them in order for the full output.
+
+**YAML front matter** at the top of every content file records the crawl start time, session ID, and full crawl parameters. It covers the entire file, not individual pages within it.
 
 ## Notebook Usage
 
