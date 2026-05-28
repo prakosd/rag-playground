@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import altair as alt
 import streamlit as st
 from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
@@ -21,16 +22,17 @@ from crawl4md_streamlit.generated_files import (
 )
 from crawl4md_streamlit.i18n import CATALOG, get_strings
 from crawl4md_streamlit.progress_chart import (
-    SPEED_CHART_TIME_UNIT_HOUR,
-    SPEED_CHART_TIME_UNIT_MINUTE,
-    SPEED_CHART_TIME_UNIT_SECOND,
+    PROGRESS_CHART_TIME_UNIT_HOUR,
+    PROGRESS_CHART_TIME_UNIT_MINUTE,
+    PROGRESS_CHART_TIME_UNIT_SECOND,
     append_live_progress_sample,
     load_persisted_progress_history,
     prefer_persisted_history,
+    prepare_cumulative_chart_display_rows,
     prepare_cumulative_chart_rows,
-    prepare_speed_chart_rows,
-    select_speed_chart_time_unit,
-    speed_chart_time_unit_seconds,
+    prepare_pace_chart_rows,
+    progress_chart_time_unit_seconds,
+    select_progress_chart_time_unit,
 )
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
@@ -88,17 +90,24 @@ _HOURS_PER_DAY = 24
 _ICON_BUTTON_WIDTH_PX = 44
 _LIVE_AREA_REFRESH_INTERVAL = "3s"
 _PROGRESS_CHART_HEIGHT = 220
-_SPEED_CHART_HEIGHT = 180
-_CHART_SPEED_TITLE_KEYS = {
-    SPEED_CHART_TIME_UNIT_SECOND: "CHART_SPEED_TITLE_SECOND",
-    SPEED_CHART_TIME_UNIT_MINUTE: "CHART_SPEED_TITLE_MINUTE",
-    SPEED_CHART_TIME_UNIT_HOUR: "CHART_SPEED_TITLE_HOUR",
+_PACE_CHART_HEIGHT = 180
+_CHART_CUMULATIVE_TITLE_KEYS = {
+    PROGRESS_CHART_TIME_UNIT_SECOND: "CHART_CUMULATIVE_TITLE_SECOND",
+    PROGRESS_CHART_TIME_UNIT_MINUTE: "CHART_CUMULATIVE_TITLE_MINUTE",
+    PROGRESS_CHART_TIME_UNIT_HOUR: "CHART_CUMULATIVE_TITLE_HOUR",
 }
-_CHART_SPEED_UNIT_KEYS = {
-    SPEED_CHART_TIME_UNIT_SECOND: "CHART_TIME_UNIT_SECOND",
-    SPEED_CHART_TIME_UNIT_MINUTE: "CHART_TIME_UNIT_MINUTE",
-    SPEED_CHART_TIME_UNIT_HOUR: "CHART_TIME_UNIT_HOUR",
+_CHART_TIME_UNIT_KEYS = {
+    PROGRESS_CHART_TIME_UNIT_SECOND: "CHART_TIME_UNIT_SECOND",
+    PROGRESS_CHART_TIME_UNIT_MINUTE: "CHART_TIME_UNIT_MINUTE",
+    PROGRESS_CHART_TIME_UNIT_HOUR: "CHART_TIME_UNIT_HOUR",
 }
+_CHART_COLOR_DISCOVERED = "#FAFAFA"
+_CHART_COLOR_SUCCESSFUL = "#21C354"
+_CHART_COLOR_FAILED = "#FF4B4B"
+_CHART_COLOR_LIMIT = "#FACA2B"
+_CHART_AREA_OPACITY = 0.45
+_CHART_LIMIT_LINE_WIDTH = 2.0
+_CHART_LEGEND_ORIENT = "bottom"
 _AUTHOR_NAME = "Danang Prakoso"
 _AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/prakosd"
 _PROJECT_GITHUB_URL = "https://github.com/prakosd/rag-playground"
@@ -1636,6 +1645,89 @@ def _active_file_root() -> Path:
     return session_folder
 
 
+def _build_cumulative_progress_chart(
+    rows: list[dict[str, float]], chart_strings: Mapping[str, str]
+) -> alt.LayerChart:
+    color_scale = alt.Scale(
+        domain=[
+            chart_strings["CHART_SERIES_DISCOVERED"],
+            chart_strings["CHART_SERIES_SUCCESSFUL"],
+            chart_strings["CHART_SERIES_FAILED"],
+            chart_strings["CHART_SERIES_LIMIT"],
+        ],
+        range=[
+            _CHART_COLOR_DISCOVERED,
+            _CHART_COLOR_SUCCESSFUL,
+            _CHART_COLOR_FAILED,
+            _CHART_COLOR_LIMIT,
+        ],
+    )
+    color = alt.Color(
+        "series:N",
+        scale=color_scale,
+        legend=alt.Legend(title=None, orient=_CHART_LEGEND_ORIENT),
+    )
+    x = alt.X("elapsed_time:Q", title="")
+
+    discovered = (
+        alt.Chart(
+            alt.Data(
+                values=[{**row, "series": chart_strings["CHART_SERIES_DISCOVERED"]} for row in rows]
+            )
+        )
+        .mark_area(opacity=_CHART_AREA_OPACITY)
+        .encode(
+            x=x,
+            y=alt.Y("discovered_pages:Q", title=""),
+            color=color,
+        )
+    )
+    successful = (
+        alt.Chart(
+            alt.Data(
+                values=[{**row, "series": chart_strings["CHART_SERIES_SUCCESSFUL"]} for row in rows]
+            )
+        )
+        .mark_area(opacity=_CHART_AREA_OPACITY)
+        .encode(
+            x=x,
+            y=alt.Y("successful_pages:Q", title=""),
+            color=color,
+        )
+    )
+    failed = (
+        alt.Chart(
+            alt.Data(
+                values=[{**row, "series": chart_strings["CHART_SERIES_FAILED"]} for row in rows]
+            )
+        )
+        .mark_area(opacity=_CHART_AREA_OPACITY)
+        .encode(
+            x=x,
+            y=alt.Y("processed_pages:Q", title=""),
+            y2="successful_pages:Q",
+            color=color,
+        )
+    )
+    limit = (
+        alt.Chart(
+            alt.Data(
+                values=[{**row, "series": chart_strings["CHART_SERIES_LIMIT"]} for row in rows]
+            )
+        )
+        .mark_line(strokeWidth=_CHART_LIMIT_LINE_WIDTH)
+        .encode(
+            x=x,
+            y=alt.Y("page_limit:Q", title=""),
+            color=color,
+        )
+    )
+
+    return alt.layer(discovered, successful, failed, limit).properties(
+        height=_PROGRESS_CHART_HEIGHT
+    )
+
+
 def _render_progress_charts() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     live_history = st.session_state.get("progress_chart_history")
@@ -1648,49 +1740,37 @@ def _render_progress_charts() -> None:
     if not cumulative_rows:
         return
 
-    cumulative_chart_rows = [
-        {
-            "second": row["elapsed_seconds"],
-            strings["CHART_SERIES_LIMIT"]: row["page_limit"],
-            strings["CHART_SERIES_DISCOVERED"]: row["discovered_pages"],
-            strings["CHART_SERIES_SUCCESSFUL"]: row["successful_pages"],
-            strings["CHART_SERIES_FAILED"]: row["failed_pages"],
-        }
-        for row in cumulative_rows
-    ]
-    st.caption(strings["CHART_CUMULATIVE_TITLE"])
-    st.area_chart(
-        cumulative_chart_rows,
-        x="second",
-        y=[
-            strings["CHART_SERIES_LIMIT"],
-            strings["CHART_SERIES_DISCOVERED"],
-            strings["CHART_SERIES_SUCCESSFUL"],
-            strings["CHART_SERIES_FAILED"],
-        ],
-        height=_PROGRESS_CHART_HEIGHT,
+    time_unit = select_progress_chart_time_unit(selected_history)
+    time_unit_seconds = progress_chart_time_unit_seconds(time_unit)
+    time_unit_label = strings[_CHART_TIME_UNIT_KEYS[time_unit]]
+
+    cumulative_chart_rows = prepare_cumulative_chart_display_rows(
+        cumulative_rows,
+        time_unit_seconds=time_unit_seconds,
+    )
+    st.caption(strings[_CHART_CUMULATIVE_TITLE_KEYS[time_unit]])
+    st.altair_chart(
+        _build_cumulative_progress_chart(cumulative_chart_rows, strings),
+        use_container_width=True,
     )
 
-    speed_time_unit = select_speed_chart_time_unit(selected_history)
-    speed_time_unit_seconds = speed_chart_time_unit_seconds(speed_time_unit)
-    speed_x_column = strings[_CHART_SPEED_UNIT_KEYS[speed_time_unit]]
-    speed_rows = prepare_speed_chart_rows(
+    pace_rows = prepare_pace_chart_rows(
         selected_history,
-        window_seconds=speed_time_unit_seconds,
+        window_seconds=time_unit_seconds,
     )
-    speed_chart_rows = [
+    pace_chart_rows = [
         {
-            speed_x_column: row["elapsed_seconds"] / speed_time_unit_seconds,
-            strings["CHART_SERIES_SPEED"]: row["pages_per_second"],
+            time_unit_label: row["elapsed_seconds"] / time_unit_seconds,
+            strings["CHART_SERIES_PACE"]: row["seconds_per_page_attempt"],
         }
-        for row in speed_rows
+        for row in pace_rows
     ]
-    st.caption(strings[_CHART_SPEED_TITLE_KEYS[speed_time_unit]])
+    st.caption(strings["CHART_PACE_TITLE"])
     st.line_chart(
-        speed_chart_rows,
-        x=speed_x_column,
-        y=strings["CHART_SERIES_SPEED"],
-        height=_SPEED_CHART_HEIGHT,
+        pace_chart_rows,
+        x=time_unit_label,
+        y=strings["CHART_SERIES_PACE"],
+        height=_PACE_CHART_HEIGHT,
         x_label="",
         y_label="",
     )

@@ -9,15 +9,15 @@ from math import ceil
 from pathlib import Path
 
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
-SPEED_CHART_TIME_UNIT_SECOND = "second"
-SPEED_CHART_TIME_UNIT_MINUTE = "minute"
-SPEED_CHART_TIME_UNIT_HOUR = "hour"
+PROGRESS_CHART_TIME_UNIT_SECOND = "second"
+PROGRESS_CHART_TIME_UNIT_MINUTE = "minute"
+PROGRESS_CHART_TIME_UNIT_HOUR = "hour"
 _SECONDS_PER_SECOND = 1.0
 _SECONDS_PER_MINUTE = 60.0
 _MINUTES_PER_HOUR = 60.0
 _SECONDS_PER_HOUR = _SECONDS_PER_MINUTE * _MINUTES_PER_HOUR
-_SPEED_CHART_MINUTE_THRESHOLD_SECONDS = _SECONDS_PER_MINUTE
-_SPEED_CHART_HOUR_THRESHOLD_SECONDS = _SECONDS_PER_HOUR
+_PROGRESS_CHART_MINUTE_THRESHOLD_SECONDS = _SECONDS_PER_MINUTE
+_PROGRESS_CHART_HOUR_THRESHOLD_SECONDS = _SECONDS_PER_HOUR
 _COUNTER_KEYS = (
     "page_limit",
     "discovered_pages",
@@ -191,27 +191,27 @@ def prepare_cumulative_chart_rows(history: list[Mapping[str, object]]) -> list[d
     return rows
 
 
-def select_speed_chart_time_unit(history: list[Mapping[str, object]]) -> str:
-    """Return the speed-chart elapsed-time unit for a history duration."""
+def select_progress_chart_time_unit(history: list[Mapping[str, object]]) -> str:
+    """Return the elapsed-time unit for a progress chart history duration."""
     cumulative = prepare_cumulative_chart_rows(history)
     if not cumulative:
-        return SPEED_CHART_TIME_UNIT_SECOND
+        return PROGRESS_CHART_TIME_UNIT_SECOND
 
     max_elapsed_seconds = max(
         _coerce_float(sample.get("elapsed_seconds"), 0.0) for sample in cumulative
     )
-    if max_elapsed_seconds > _SPEED_CHART_HOUR_THRESHOLD_SECONDS:
-        return SPEED_CHART_TIME_UNIT_HOUR
-    if max_elapsed_seconds > _SPEED_CHART_MINUTE_THRESHOLD_SECONDS:
-        return SPEED_CHART_TIME_UNIT_MINUTE
-    return SPEED_CHART_TIME_UNIT_SECOND
+    if max_elapsed_seconds > _PROGRESS_CHART_HOUR_THRESHOLD_SECONDS:
+        return PROGRESS_CHART_TIME_UNIT_HOUR
+    if max_elapsed_seconds > _PROGRESS_CHART_MINUTE_THRESHOLD_SECONDS:
+        return PROGRESS_CHART_TIME_UNIT_MINUTE
+    return PROGRESS_CHART_TIME_UNIT_SECOND
 
 
-def speed_chart_time_unit_seconds(time_unit: str) -> float:
+def progress_chart_time_unit_seconds(time_unit: str) -> float:
     """Return the number of elapsed seconds represented by one display unit."""
-    if time_unit == SPEED_CHART_TIME_UNIT_HOUR:
+    if time_unit == PROGRESS_CHART_TIME_UNIT_HOUR:
         return _SECONDS_PER_HOUR
-    if time_unit == SPEED_CHART_TIME_UNIT_MINUTE:
+    if time_unit == PROGRESS_CHART_TIME_UNIT_MINUTE:
         return _SECONDS_PER_MINUTE
     return _SECONDS_PER_SECOND
 
@@ -254,18 +254,18 @@ def _add_attempts_to_windows(
         )
 
 
-def prepare_speed_chart_rows(
+def prepare_pace_chart_rows(
     history: list[Mapping[str, object]],
     *,
     window_seconds: float | None = None,
-) -> list[dict[str, float]]:
-    """Build window-averaged page-attempts-per-second rows."""
+) -> list[dict[str, float | None]]:
+    """Build window-averaged seconds-per-page-attempt rows."""
     cumulative = prepare_cumulative_chart_rows(history)
     if not cumulative:
         return []
 
-    resolved_window_seconds = window_seconds or speed_chart_time_unit_seconds(
-        select_speed_chart_time_unit(cumulative)
+    resolved_window_seconds = window_seconds or progress_chart_time_unit_seconds(
+        select_progress_chart_time_unit(cumulative)
     )
     max_elapsed_seconds = max(
         _coerce_float(sample.get("elapsed_seconds"), 0.0) for sample in cumulative
@@ -293,21 +293,46 @@ def prepare_speed_chart_rows(
             last_processed_elapsed = current_elapsed
             last_processed_pages = current_processed_pages
 
-    speed_rows: list[dict[str, float]] = [
+    pace_rows: list[dict[str, float | None]] = [
         {
             "elapsed_seconds": 0.0,
-            "pages_per_second": 0.0,
+            "seconds_per_page_attempt": None,
         }
     ]
     for window_index in range(1, max_window_index + 1):
-        speed_rows.append(
+        attempts = window_attempts.get(window_index, 0.0)
+        pace_rows.append(
             {
                 "elapsed_seconds": window_index * resolved_window_seconds,
-                "pages_per_second": window_attempts.get(window_index, 0.0)
-                / resolved_window_seconds,
+                "seconds_per_page_attempt": resolved_window_seconds / attempts
+                if attempts > 0
+                else None,
             }
         )
-    return speed_rows
+    return pace_rows
+
+
+def prepare_cumulative_chart_display_rows(
+    rows: list[Mapping[str, object]],
+    *,
+    time_unit_seconds: float,
+) -> list[dict[str, float]]:
+    """Build cumulative chart rows with scaled elapsed-time values."""
+    display_rows: list[dict[str, float]] = []
+    for row in rows:
+        successful_pages = _coerce_int(row.get("successful_pages"), 0)
+        failed_pages = _coerce_int(row.get("failed_pages"), 0)
+        display_rows.append(
+            {
+                "elapsed_time": _coerce_float(row.get("elapsed_seconds"), 0.0) / time_unit_seconds,
+                "page_limit": _coerce_int(row.get("page_limit"), 1),
+                "discovered_pages": _coerce_int(row.get("discovered_pages"), 0),
+                "successful_pages": successful_pages,
+                "failed_pages": failed_pages,
+                "processed_pages": successful_pages + failed_pages,
+            }
+        )
+    return display_rows
 
 
 def prefer_persisted_history(

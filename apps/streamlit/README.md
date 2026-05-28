@@ -88,7 +88,7 @@ Everything the user sees and interacts with. Responsibilities:
 - Translates button presses into job start / stop calls.
 - Drains background-thread events every Streamlit rerun and maps them to UI state
   (`_drain_job_events`).
-- Renders progress metrics, active/next URL previews, cumulative + speed line charts, and the
+- Renders progress metrics, active/next URL previews, cumulative totals + pace charts, and the
   activity log (`_render_live_area`, refreshed every 3 seconds via `@st.fragment(run_every="3s")`).
 - Renders the selected session's generated-file table and a per-file download + preview tree separately
   (`_render_downloads`, refreshed every 7 seconds).
@@ -173,11 +173,12 @@ Parallel crawl progress uses generic event fields from the core crawler. `active
 `next_url_count` are authoritative counts; `active_urls` and `next_urls` are capped previews for
 display. The app renders counts plus previews so any supported Parallel fetches value stays compact.
 Activity logs record concurrent reads as batch entries such as `Reading page batch (5 concurrent)`.
-Live charts are native Streamlit line charts rendered right before the Activity log panel:
+Live charts are native Streamlit charts rendered right before the Activity log panel:
 
-- Cumulative counters over time: page limit, discovered pages, successful pages, failed pages
-- Page attempts per second: excludes discovered-only URL events and averages processed-page
-  attempts into second, minute, or hour windows based on crawl duration
+- Crawl totals by second, minute, or hour: discovered, successful, and failed cumulative areas
+  with the page limit shown as a line
+- Processing pace over time: seconds per processed page attempt, excluding discovered-only URL
+  events
 
 For reload-safe chart history, the app prefers `progress_history.jsonl` written by the core crawler
 and falls back to in-memory samples captured from live events when that file is not available yet.
@@ -342,7 +343,7 @@ flowchart TD
   subgraph LiveUI["Streamlit UI fragments"]
     Drain --> LiveArea["_render_live_area()<br/>refresh every 3 seconds"]
     LiveArea --> Status["_render_status()<br/>progress, metrics, active and next URLs"]
-    LiveArea --> Charts["_render_progress_charts()<br/>cumulative and speed charts"]
+    LiveArea --> Charts["_render_progress_charts()<br/>cumulative and pace charts"]
     LiveArea --> Log["_render_activity_log()<br/>tail activity_log.txt"]
     Drain --> Downloads["_render_downloads()<br/>refresh every 7 seconds<br/>file table, previews, downloads"]
     GeneratedOutput --> Downloads
@@ -358,7 +359,7 @@ flowchart TD
 | `tests/test_controls.py` | Every `job_state` value → correct buttons (label, disabled, type) |
 | `tests/test_form_defaults.py` | Default crawl form payload and independent dict creation |
 | `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads |
-| `tests/test_progress_chart.py` | Pure chart helper behavior: live sample append, persisted JSONL parsing, cumulative/speed row derivation |
+| `tests/test_progress_chart.py` | Pure chart helper behavior: live sample append, persisted JSONL parsing, cumulative/pace row derivation |
 | `tests/test_support.py` | ID safety, browser session records, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |
 | `tests/test_support_facade.py` | Compatibility exports from the split helper modules |
 | `tests/test_app_smoke.py` | App import/startup smoke coverage and preview CSS guardrails |
