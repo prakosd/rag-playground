@@ -157,7 +157,7 @@ STRINGS_EN: Strings = {
     # ── Progress charts ───────────────────────────────────────────────────
     "CHART_CUMULATIVE_TITLE": "Cumulative crawl totals over time",
     "CHART_CUMULATIVE_TITLE_SECOND": "Crawl totals by second",
-    "CHART_CUMULATIVE_TITLE_MINUTE": "Crawl totals by minute",
+    "CHART_CUMULATIVE_TITLE_MINUTE": "Crawl progress timeline",
     "CHART_CUMULATIVE_TITLE_HOUR": "Crawl totals by hour",
     "CHART_SERIES_LIMIT": "Limit",
     "CHART_SERIES_DISCOVERED": "Discovered",

@@ -162,7 +162,7 @@ STRINGS_ID: Strings = {
     # ── Progress charts ───────────────────────────────────────────────────
     "CHART_CUMULATIVE_TITLE": "Total crawl kumulatif dari waktu ke waktu",
     "CHART_CUMULATIVE_TITLE_SECOND": "Total crawl per detik",
-    "CHART_CUMULATIVE_TITLE_MINUTE": "Total crawl per menit",
+    "CHART_CUMULATIVE_TITLE_MINUTE": "Linimasa kemajuan crawl",
     "CHART_CUMULATIVE_TITLE_HOUR": "Total crawl per jam",
     "CHART_SERIES_LIMIT": "Batas",
     "CHART_SERIES_DISCOVERED": "Ditemukan",
