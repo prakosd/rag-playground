@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
 PROGRESS_CHART_TIME_UNIT_SECOND = "second"
@@ -24,16 +25,17 @@ _COUNTER_KEYS = (
     "failed_pages",
     "processed_pages",
 )
+_TERMINAL_EVENT_NAMES = frozenset({"crawl_completed", "crawl_interrupted"})
 
 
-def _coerce_int(value: object, fallback: int) -> int:
+def _coerce_int(value: Any, fallback: int) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
         return fallback
 
 
-def _coerce_float(value: object, fallback: float) -> float:
+def _coerce_float(value: Any, fallback: float) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -176,7 +178,9 @@ def load_persisted_progress_history(crawl_root: Path | None) -> list[dict[str, o
     return rows
 
 
-def prepare_cumulative_chart_rows(history: list[Mapping[str, object]]) -> list[dict[str, object]]:
+def prepare_cumulative_chart_rows(
+    history: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
     """Build cumulative-series chart rows from merged progress history."""
     rows: list[dict[str, object]] = []
     for sample in history:
@@ -193,7 +197,7 @@ def prepare_cumulative_chart_rows(history: list[Mapping[str, object]]) -> list[d
     return rows
 
 
-def select_progress_chart_time_unit(history: list[Mapping[str, object]]) -> str:
+def select_progress_chart_time_unit(history: Sequence[Mapping[str, object]]) -> str:
     """Return the elapsed-time unit for a progress chart history duration."""
     cumulative = prepare_cumulative_chart_rows(history)
     if not cumulative:
@@ -219,7 +223,7 @@ def progress_chart_time_unit_seconds(time_unit: str) -> float:
 
 
 def prepare_cumulative_chart_display_rows(
-    rows: list[Mapping[str, object]],
+    rows: Sequence[Mapping[str, object]],
     *,
     time_unit_seconds: float,
 ) -> list[dict[str, float]]:
@@ -229,24 +233,26 @@ def prepare_cumulative_chart_display_rows(
     for row in sorted_rows:
         successful_pages = _coerce_int(row.get("successful_pages"), 0)
         failed_pages = _coerce_int(row.get("failed_pages"), 0)
-        display_rows.append(
-            {
-                "elapsed_time": max(_coerce_float(row.get("elapsed_seconds"), 0.0), 0.0)
-                / time_unit_seconds,
-                "page_limit": _coerce_int(row.get("page_limit"), 1),
-                "discovered_pages": _coerce_int(row.get("discovered_pages"), 0),
-                "successful_pages": successful_pages,
-                "failed_pages": failed_pages,
-                "processed_pages": successful_pages + failed_pages,
-            }
-        )
+        display_row = {
+            "elapsed_time": max(_coerce_float(row.get("elapsed_seconds"), 0.0), 0.0)
+            / time_unit_seconds,
+            "page_limit": _coerce_int(row.get("page_limit"), 1),
+            "discovered_pages": _coerce_int(row.get("discovered_pages"), 0),
+            "successful_pages": successful_pages,
+            "failed_pages": failed_pages,
+            "processed_pages": successful_pages + failed_pages,
+        }
+        if display_rows and display_rows[-1]["elapsed_time"] == display_row["elapsed_time"]:
+            display_rows[-1] = display_row
+        else:
+            display_rows.append(display_row)
     return display_rows
 
 
 def prefer_persisted_history(
-    live_history: list[dict[str, object]],
-    persisted_history: list[dict[str, object]],
-) -> list[dict[str, object]]:
+    live_history: Sequence[Mapping[str, object]],
+    persisted_history: Sequence[Mapping[str, object]],
+) -> Sequence[Mapping[str, object]]:
     """Prefer the freshest history source between persisted and live samples."""
     if not persisted_history:
         return live_history
@@ -254,6 +260,9 @@ def prefer_persisted_history(
         return persisted_history
 
     persisted_last = persisted_history[-1]
+    if str(persisted_last.get("event", "")) in _TERMINAL_EVENT_NAMES:
+        return persisted_history
+
     live_last = live_history[-1]
     persisted_key = (
         _coerce_int(persisted_last.get("processed_pages"), 0),

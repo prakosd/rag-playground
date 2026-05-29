@@ -234,6 +234,33 @@ def test_prefer_persisted_history_prefers_higher_processed_even_when_elapsed_low
     assert selected == persisted_history
 
 
+def test_prefer_persisted_history_uses_terminal_persisted_sample_over_retry_attempts() -> None:
+    live_history = [
+        {
+            "elapsed_seconds": 14.2,
+            "event": "page_processed",
+            "processed_pages": 183,
+            "discovered_pages": 176,
+            "successful_pages": 171,
+            "failed_pages": 12,
+        }
+    ]
+    persisted_history = [
+        {
+            "elapsed_seconds": 14.4,
+            "event": "crawl_completed",
+            "processed_pages": 177,
+            "discovered_pages": 177,
+            "successful_pages": 171,
+            "failed_pages": 6,
+        }
+    ]
+
+    selected = prefer_persisted_history(live_history, persisted_history)
+
+    assert selected == persisted_history
+
+
 def test_prefer_persisted_history_prefers_higher_discovered_when_processed_equal() -> None:
     live_history = [
         {
@@ -371,3 +398,35 @@ def test_prepare_cumulative_chart_display_rows_sorts_elapsed_time() -> None:
 
     assert [row["elapsed_time"] for row in display_rows] == pytest.approx([0.0, 1.0, 2.0])
     assert [row["processed_pages"] for row in display_rows] == [0, 5, 7]
+
+
+def test_prepare_cumulative_chart_display_rows_keeps_latest_duplicate_time_sample() -> None:
+    rows = [
+        {
+            "elapsed_seconds": 60.0,
+            "page_limit": 10,
+            "discovered_pages": 8,
+            "successful_pages": 4,
+            "failed_pages": 1,
+        },
+        {
+            "elapsed_seconds": 60.0,
+            "page_limit": 10,
+            "discovered_pages": 7,
+            "successful_pages": 5,
+            "failed_pages": 1,
+        },
+    ]
+
+    display_rows = prepare_cumulative_chart_display_rows(rows, time_unit_seconds=60.0)
+
+    assert display_rows == [
+        {
+            "elapsed_time": 1.0,
+            "page_limit": 10,
+            "discovered_pages": 7,
+            "successful_pages": 5,
+            "failed_pages": 1,
+            "processed_pages": 6,
+        }
+    ]

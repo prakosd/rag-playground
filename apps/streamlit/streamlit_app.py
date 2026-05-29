@@ -20,7 +20,7 @@ from crawl4md_streamlit.generated_files import (
     collapse_crawl_run_folder,
     generated_files_cache_token,
 )
-from crawl4md_streamlit.i18n import CATALOG, get_strings
+from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings
 from crawl4md_streamlit.progress_chart import (
     PROGRESS_CHART_TIME_UNIT_HOUR,
     PROGRESS_CHART_TIME_UNIT_MINUTE,
@@ -105,7 +105,7 @@ _CHART_COLOR_FAILED = "#FF4B4B"
 _CHART_COLOR_LIMIT = "#FACA2B"
 _CHART_AREA_OPACITY = 0.45
 _CHART_LIMIT_LINE_WIDTH = 2.0
-_CHART_CUMULATIVE_INTERPOLATE = "monotone"
+_CHART_CUMULATIVE_INTERPOLATE = "linear"
 _AUTHOR_NAME = "Danang Prakoso"
 _AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/prakosd"
 _PROJECT_GITHUB_URL = "https://github.com/prakosd/rag-playground"
@@ -1644,7 +1644,7 @@ def _active_file_root() -> Path:
 
 
 def _build_cumulative_progress_chart(
-    rows: list[dict[str, float]], chart_strings: Mapping[str, str]
+    rows: list[dict[str, float]], chart_strings: Strings
 ) -> alt.FacetChart | alt.LayerChart:
     color_scale = alt.Scale(
         domain=[
