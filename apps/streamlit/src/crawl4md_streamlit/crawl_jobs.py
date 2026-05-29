@@ -316,6 +316,10 @@ def start_crawl_job(
 
     def emit(event: Mapping[str, object]) -> None:
         raw = dict(event)
+        raw.setdefault(
+            "elapsed_seconds",
+            max((datetime.now(timezone.utc) - started_at).total_seconds(), 0.0),
+        )
         event_queue.put(raw)
         event_name = str(raw.get("event", ""))
         state = job_state_from_event(event_name)

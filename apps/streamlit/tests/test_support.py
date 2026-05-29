@@ -1025,6 +1025,10 @@ def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
     events = drain_events(job)
 
     assert [event["event"] for event in events] == ["started", "page_processed", "completed"]
+    assert all(float(event["elapsed_seconds"]) >= 0.0 for event in events)
+    assert [event["elapsed_seconds"] for event in events] == sorted(
+        event["elapsed_seconds"] for event in events
+    )
     assert FakeCrawler.seen_session_id == "session_abc123"
 
 

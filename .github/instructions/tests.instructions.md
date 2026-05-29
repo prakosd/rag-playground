@@ -29,6 +29,7 @@ Do not create tests that only verify:
 - Exact labels, wording, layout, column positions, tabs, expanders, visual formatting, styling, spacing, ordering, icons, emojis, or cosmetic details.
 - Every individual Streamlit widget such as `st.button`, `st.selectbox`, `st.text_input`, `st.number_input`, `st.checkbox`, `st.radio`, `st.slider`, or `st.date_input`.
 - Streamlit framework behavior itself.
+- Chart or visualization styling: colors, legend position or orientation, padding, margins, spacing, axis label wording, or any chart spec property that does not affect data values. For charts, only test the data represented — correct counts, correct time values, correct series values, row shapes — never the visual style.
 
 Only add Streamlit tests for meaningful application risk:
 

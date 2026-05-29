@@ -247,7 +247,7 @@ def test_refresh_reattaches_running_crawl_from_registry(
 
 # Risk: progress chart schema regressions can silently change layer order, axis naming,
 # or mark type, making progress trends harder to interpret. Type: integration regression.
-def test_progress_charts_render_layered_cumulative_and_pace_schema(
+def test_progress_chart_renders_cumulative_schema(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     session_id = "chart_schema"
@@ -286,56 +286,19 @@ def test_progress_charts_render_layered_cumulative_and_pace_schema(
 
     assert not app.exception
     chart_specs = [json.loads(chart.spec) for chart in app.get("vega_lite_chart")]
-    assert len(chart_specs) == 2
+    assert len(chart_specs) == 1
 
     cumulative_specs = [spec for spec in chart_specs if spec.get("height") == 220]
     assert len(cumulative_specs) == 1
-    cumulative = cumulative_specs[0]
-    cumulative_layers = cumulative.get("layer", [])
-    assert [layer.get("mark", {}).get("type") for layer in cumulative_layers] == [
-        "area",
-        "area",
-        "area",
-        "line",
-    ]
+    cumulative_layers = cumulative_specs[0].get("layer", [])
     assert [layer.get("encoding", {}).get("y", {}).get("field") for layer in cumulative_layers] == [
         "discovered_pages",
         "successful_pages",
         "processed_pages",
         "page_limit",
     ]
-    assert cumulative_layers[2].get("encoding", {}).get("y2", {}).get("field") == (
-        "successful_pages"
-    )
-    first_x = cumulative_layers[0].get("encoding", {}).get("x", {})
-    first_color = cumulative_layers[0].get("encoding", {}).get("color", {})
-    assert first_x.get("field") == "elapsed_time"
-    assert first_x.get("title") == ""
-    assert first_color.get("scale", {}).get("domain") == [
-        "Discovered",
-        "Successful",
-        "Failed",
-        "Limit",
-    ]
-    assert first_color.get("scale", {}).get("range") == [
-        "#FAFAFA",
-        "#21C354",
-        "#FF4B4B",
-        "#FACA2B",
-    ]
-
-    pace_specs = [spec for spec in chart_specs if spec.get("height") == 180]
-    assert len(pace_specs) == 1
-    pace = pace_specs[0]
-    line_layers = [
-        layer
-        for layer in pace.get("layer", [])
-        if isinstance(layer, dict) and layer.get("mark", {}).get("type") == "line"
-    ]
-    assert len(line_layers) == 1
-    pace_x = line_layers[0].get("encoding", {}).get("x", {})
-    pace_y = line_layers[0].get("encoding", {}).get("y", {})
-    assert pace_x.get("field") == "second"
-    assert pace_x.get("title") == ""
-    assert pace_y.get("field") == "Seconds per page attempt"
-    assert pace_y.get("title") == ""
+    assert cumulative_layers[2].get("encoding", {}).get("y2", {}).get("field") == "successful_pages"
+    assert cumulative_layers[0].get("encoding", {}).get("x", {}).get("field") == "elapsed_time"
+    assert cumulative_layers[0].get("encoding", {}).get("color", {}).get("scale", {}).get(
+        "domain"
+    ) == ["Discovered", "Successful", "Failed", "Limit"]

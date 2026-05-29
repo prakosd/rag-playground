@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from math import ceil
 from pathlib import Path
 
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
@@ -75,7 +74,10 @@ def append_live_progress_sample(
 
     resolved_now = now or datetime.now(timezone.utc)
     elapsed_seconds = _coerce_float(previous.get("elapsed_seconds"), 0.0)
-    if started_at is not None:
+    if "elapsed_seconds" in event:
+        elapsed_seconds = max(_coerce_float(event.get("elapsed_seconds"), elapsed_seconds), 0.0)
+        elapsed_seconds = max(elapsed_seconds, _coerce_float(previous.get("elapsed_seconds"), 0.0))
+    elif started_at is not None:
         elapsed_seconds = max((resolved_now - started_at).total_seconds(), elapsed_seconds)
 
     sample = {
@@ -216,105 +218,6 @@ def progress_chart_time_unit_seconds(time_unit: str) -> float:
     return _SECONDS_PER_SECOND
 
 
-def _window_index(elapsed_seconds: float, window_seconds: float) -> int:
-    if elapsed_seconds <= 0:
-        return 0
-    return max(1, ceil(elapsed_seconds / window_seconds))
-
-
-def _add_attempts_to_windows(
-    window_attempts: dict[int, float],
-    *,
-    start_seconds: float,
-    end_seconds: float,
-    attempt_count: int,
-    window_seconds: float,
-) -> None:
-    if attempt_count <= 0:
-        return
-
-    bounded_start = max(0.0, start_seconds)
-    bounded_end = max(bounded_start, end_seconds)
-    if bounded_end <= bounded_start:
-        window_index = max(1, _window_index(bounded_end, window_seconds))
-        window_attempts[window_index] = window_attempts.get(window_index, 0.0) + attempt_count
-        return
-
-    attempts_per_second = attempt_count / (bounded_end - bounded_start)
-    start_window_index = max(1, _window_index(bounded_start, window_seconds))
-    end_window_index = max(1, _window_index(bounded_end, window_seconds))
-    for window_index in range(start_window_index, end_window_index + 1):
-        window_start = (window_index - 1) * window_seconds
-        window_end = window_index * window_seconds
-        overlap_seconds = min(bounded_end, window_end) - max(bounded_start, window_start)
-        if overlap_seconds <= 0:
-            continue
-        window_attempts[window_index] = window_attempts.get(window_index, 0.0) + (
-            attempts_per_second * overlap_seconds
-        )
-
-
-def prepare_pace_chart_rows(
-    history: list[Mapping[str, object]],
-    *,
-    window_seconds: float | None = None,
-) -> list[dict[str, float | None]]:
-    """Build window-averaged seconds-per-page-attempt rows."""
-    cumulative = prepare_cumulative_chart_rows(history)
-    if not cumulative:
-        return []
-
-    resolved_window_seconds = window_seconds or progress_chart_time_unit_seconds(
-        select_progress_chart_time_unit(cumulative)
-    )
-    max_elapsed_seconds = max(
-        _coerce_float(sample.get("elapsed_seconds"), 0.0) for sample in cumulative
-    )
-    max_window_index = _window_index(max_elapsed_seconds, resolved_window_seconds)
-
-    window_attempts: dict[int, float] = {}
-    last_processed_elapsed = 0.0
-    last_processed_pages = 0
-    for sample in cumulative:
-        current_elapsed = _coerce_float(sample.get("elapsed_seconds"), 0.0)
-        current_processed_pages = _coerce_int(sample.get("processed_pages"), 0)
-        processed_delta = current_processed_pages - last_processed_pages
-        if processed_delta > 0:
-            _add_attempts_to_windows(
-                window_attempts,
-                start_seconds=last_processed_elapsed,
-                end_seconds=current_elapsed,
-                attempt_count=processed_delta,
-                window_seconds=resolved_window_seconds,
-            )
-            last_processed_elapsed = current_elapsed
-            last_processed_pages = current_processed_pages
-        elif processed_delta < 0:
-            last_processed_elapsed = current_elapsed
-            last_processed_pages = current_processed_pages
-
-    pace_rows: list[dict[str, float | None]] = [
-        {
-            "elapsed_seconds": 0.0,
-            "seconds_per_page_attempt": None,
-        }
-    ]
-    for window_index in range(1, max_window_index + 1):
-        attempts = window_attempts.get(window_index, 0.0)
-        window_start = (window_index - 1) * resolved_window_seconds
-        window_elapsed_seconds = min(window_index * resolved_window_seconds, max_elapsed_seconds)
-        observed_window_seconds = max(0.0, window_elapsed_seconds - window_start)
-        pace_rows.append(
-            {
-                "elapsed_seconds": window_elapsed_seconds,
-                "seconds_per_page_attempt": observed_window_seconds / attempts
-                if attempts > 0 and observed_window_seconds > 0
-                else None,
-            }
-        )
-    return pace_rows
-
-
 def prepare_cumulative_chart_display_rows(
     rows: list[Mapping[str, object]],
     *,
@@ -322,12 +225,14 @@ def prepare_cumulative_chart_display_rows(
 ) -> list[dict[str, float]]:
     """Build cumulative chart rows with scaled elapsed-time values."""
     display_rows: list[dict[str, float]] = []
-    for row in rows:
+    sorted_rows = sorted(rows, key=lambda row: _coerce_float(row.get("elapsed_seconds"), 0.0))
+    for row in sorted_rows:
         successful_pages = _coerce_int(row.get("successful_pages"), 0)
         failed_pages = _coerce_int(row.get("failed_pages"), 0)
         display_rows.append(
             {
-                "elapsed_time": _coerce_float(row.get("elapsed_seconds"), 0.0) / time_unit_seconds,
+                "elapsed_time": max(_coerce_float(row.get("elapsed_seconds"), 0.0), 0.0)
+                / time_unit_seconds,
                 "page_limit": _coerce_int(row.get("page_limit"), 1),
                 "discovered_pages": _coerce_int(row.get("discovered_pages"), 0),
                 "successful_pages": successful_pages,
@@ -362,9 +267,16 @@ def prefer_persisted_history(
         _coerce_int(live_last.get("successful_pages"), 0),
         _coerce_int(live_last.get("failed_pages"), 0),
     )
-    if persisted_key >= live_key:
+    if persisted_key > live_key:
         return persisted_history
-    return live_history
+    if live_key > persisted_key:
+        return live_history
+
+    persisted_elapsed = _coerce_float(persisted_last.get("elapsed_seconds"), 0.0)
+    live_elapsed = _coerce_float(live_last.get("elapsed_seconds"), 0.0)
+    if live_elapsed > persisted_elapsed:
+        return live_history
+    return persisted_history
 
 
 def progress_history_file_name() -> str:

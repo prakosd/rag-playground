@@ -14,7 +14,6 @@ from crawl4md_streamlit.progress_chart import (
     prefer_persisted_history,
     prepare_cumulative_chart_display_rows,
     prepare_cumulative_chart_rows,
-    prepare_pace_chart_rows,
     progress_chart_time_unit_seconds,
     progress_history_file_name,
     select_progress_chart_time_unit,
@@ -91,6 +90,53 @@ def test_append_live_progress_sample_carries_previous_values_for_sparse_events()
     assert history[-1]["processed_pages"] == 2
 
 
+def test_append_live_progress_sample_prefers_worker_elapsed_seconds() -> None:
+    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+    drain_time = started_at + timedelta(seconds=60)
+    history: list[dict[str, object]] = []
+
+    append_live_progress_sample(
+        history,
+        {
+            "event": "page_processed",
+            "elapsed_seconds": 2.5,
+            "limit": 8,
+            "queued_discovered_urls": 1,
+            "successful_pages": 1,
+            "failed_pages": 0,
+            "processed_pages": 1,
+        },
+        started_at=started_at,
+        now=drain_time,
+    )
+
+    assert history[-1]["elapsed_seconds"] == pytest.approx(2.5)
+
+
+def test_append_live_progress_sample_keeps_burst_events_on_worker_time() -> None:
+    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+    drain_time = started_at + timedelta(seconds=90)
+    history: list[dict[str, object]] = []
+
+    for elapsed_seconds, successful_pages in [(4.0, 1), (6.0, 2)]:
+        append_live_progress_sample(
+            history,
+            {
+                "event": "page_processed",
+                "elapsed_seconds": elapsed_seconds,
+                "limit": 8,
+                "queued_discovered_urls": successful_pages,
+                "successful_pages": successful_pages,
+                "failed_pages": 0,
+                "processed_pages": successful_pages,
+            },
+            started_at=started_at,
+            now=drain_time,
+        )
+
+    assert [row["elapsed_seconds"] for row in history] == pytest.approx([4.0, 6.0])
+
+
 def test_load_persisted_progress_history_skips_partial_last_line(tmp_path: Path) -> None:
     history_file = tmp_path / progress_history_file_name()
     history_file.write_text(
@@ -109,60 +155,6 @@ def test_load_persisted_progress_history_skips_partial_last_line(tmp_path: Path)
     assert len(rows) == 2
     assert rows[0]["event"] == "crawl_started"
     assert rows[1]["event"] == "page_processed"
-
-
-def test_prepare_pace_chart_rows_uses_seconds_per_processed_attempt() -> None:
-    history = [
-        {
-            "elapsed_seconds": 0.0,
-            "page_limit": 10,
-            "discovered_pages": 0,
-            "successful_pages": 0,
-            "failed_pages": 0,
-            "processed_pages": 0,
-        },
-        {
-            "elapsed_seconds": 2.0,
-            "page_limit": 10,
-            "discovered_pages": 2,
-            "successful_pages": 2,
-            "failed_pages": 0,
-            "processed_pages": 2,
-        },
-        {
-            "elapsed_seconds": 5.0,
-            "page_limit": 10,
-            "discovered_pages": 4,
-            "successful_pages": 3,
-            "failed_pages": 1,
-            "processed_pages": 4,
-        },
-    ]
-
-    pace_rows = prepare_pace_chart_rows(history)
-
-    assert len(pace_rows) == 6
-    assert pace_rows[0]["seconds_per_page_attempt"] is None
-    assert pace_rows[1]["seconds_per_page_attempt"] == pytest.approx(1.0)
-    assert pace_rows[2]["seconds_per_page_attempt"] == pytest.approx(1.0)
-    assert pace_rows[3]["seconds_per_page_attempt"] == pytest.approx(1.5)
-    assert pace_rows[4]["seconds_per_page_attempt"] == pytest.approx(1.5)
-    assert pace_rows[5]["seconds_per_page_attempt"] == pytest.approx(1.5)
-
-
-def test_prepare_pace_chart_rows_ignores_discovery_samples_as_rate_anchors() -> None:
-    history = [
-        {"elapsed_seconds": 0.0, "processed_pages": 0, "discovered_pages": 0},
-        {"elapsed_seconds": 5.0, "processed_pages": 10, "discovered_pages": 10},
-        {"elapsed_seconds": 5.01, "processed_pages": 10, "discovered_pages": 25},
-        {"elapsed_seconds": 5.02, "processed_pages": 11, "discovered_pages": 25},
-    ]
-
-    pace_rows = prepare_pace_chart_rows(history)
-
-    assert pace_rows[-1]["elapsed_seconds"] == pytest.approx(5.02)
-    assert pace_rows[-1]["seconds_per_page_attempt"] == pytest.approx(0.02)
-    assert pace_rows[-1]["seconds_per_page_attempt"] != pytest.approx(0.01)
 
 
 def test_select_progress_chart_time_unit_uses_seconds_for_short_crawls() -> None:
@@ -187,34 +179,6 @@ def test_progress_chart_time_unit_seconds_returns_display_window_size() -> None:
     assert progress_chart_time_unit_seconds(PROGRESS_CHART_TIME_UNIT_SECOND) == pytest.approx(1.0)
     assert progress_chart_time_unit_seconds(PROGRESS_CHART_TIME_UNIT_MINUTE) == pytest.approx(60.0)
     assert progress_chart_time_unit_seconds(PROGRESS_CHART_TIME_UNIT_HOUR) == pytest.approx(3600.0)
-
-
-def test_prepare_pace_chart_rows_averages_attempts_into_minute_windows() -> None:
-    history = [
-        {"elapsed_seconds": 0.0, "processed_pages": 0},
-        {"elapsed_seconds": 60.0, "processed_pages": 60},
-        {"elapsed_seconds": 90.0, "processed_pages": 90},
-    ]
-
-    pace_rows = prepare_pace_chart_rows(history)
-
-    assert [row["elapsed_seconds"] for row in pace_rows] == pytest.approx([0.0, 60.0, 90.0])
-    assert pace_rows[0]["seconds_per_page_attempt"] is None
-    assert pace_rows[1]["seconds_per_page_attempt"] == pytest.approx(1.0)
-    assert pace_rows[2]["seconds_per_page_attempt"] == pytest.approx(1.0)
-
-
-def test_prepare_pace_chart_rows_keeps_inactive_windows_blank() -> None:
-    history = [
-        {"elapsed_seconds": 0.0, "processed_pages": 0},
-        {"elapsed_seconds": 60.0, "processed_pages": 60},
-        {"elapsed_seconds": 180.0, "processed_pages": 60, "discovered_pages": 120},
-    ]
-
-    pace_rows = prepare_pace_chart_rows(history)
-
-    assert [row["elapsed_seconds"] for row in pace_rows] == pytest.approx([0.0, 60.0, 120.0, 180.0])
-    assert [row["seconds_per_page_attempt"] for row in pace_rows] == [None, 1.0, None, None]
 
 
 def test_prefer_persisted_history_uses_persisted_when_available() -> None:
@@ -295,7 +259,7 @@ def test_prefer_persisted_history_prefers_higher_discovered_when_processed_equal
     assert selected == persisted_history
 
 
-def test_prefer_persisted_history_keeps_persisted_on_equal_counters() -> None:
+def test_prefer_persisted_history_keeps_newer_live_elapsed_on_equal_counters() -> None:
     live_history = [
         {
             "elapsed_seconds": 10.0,
@@ -324,7 +288,7 @@ def test_prefer_persisted_history_keeps_persisted_on_equal_counters() -> None:
 
     selected = prefer_persisted_history(live_history, persisted_history)
 
-    assert selected == persisted_history
+    assert selected == live_history
 
 
 def test_prepare_cumulative_chart_rows_preserves_counter_fields() -> None:
@@ -376,3 +340,34 @@ def test_prepare_cumulative_chart_display_rows_scales_time_and_combines_attempts
             "processed_pages": 7,
         }
     ]
+
+
+def test_prepare_cumulative_chart_display_rows_sorts_elapsed_time() -> None:
+    rows = [
+        {
+            "elapsed_seconds": 120.0,
+            "page_limit": 10,
+            "discovered_pages": 8,
+            "successful_pages": 5,
+            "failed_pages": 2,
+        },
+        {
+            "elapsed_seconds": 0.0,
+            "page_limit": 10,
+            "discovered_pages": 1,
+            "successful_pages": 0,
+            "failed_pages": 0,
+        },
+        {
+            "elapsed_seconds": 60.0,
+            "page_limit": 10,
+            "discovered_pages": 6,
+            "successful_pages": 4,
+            "failed_pages": 1,
+        },
+    ]
+
+    display_rows = prepare_cumulative_chart_display_rows(rows, time_unit_seconds=60.0)
+
+    assert [row["elapsed_time"] for row in display_rows] == pytest.approx([0.0, 1.0, 2.0])
+    assert [row["processed_pages"] for row in display_rows] == [0, 5, 7]

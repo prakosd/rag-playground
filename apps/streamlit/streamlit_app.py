@@ -30,7 +30,6 @@ from crawl4md_streamlit.progress_chart import (
     prefer_persisted_history,
     prepare_cumulative_chart_display_rows,
     prepare_cumulative_chart_rows,
-    prepare_pace_chart_rows,
     progress_chart_time_unit_seconds,
     select_progress_chart_time_unit,
 )
@@ -90,7 +89,6 @@ _HOURS_PER_DAY = 24
 _ICON_BUTTON_WIDTH_PX = 44
 _LIVE_AREA_REFRESH_INTERVAL = "3s"
 _PROGRESS_CHART_HEIGHT = 220
-_PACE_CHART_HEIGHT = 180
 _CHART_CUMULATIVE_TITLE_KEYS = {
     PROGRESS_CHART_TIME_UNIT_SECOND: "CHART_CUMULATIVE_TITLE_SECOND",
     PROGRESS_CHART_TIME_UNIT_MINUTE: "CHART_CUMULATIVE_TITLE_MINUTE",
@@ -108,6 +106,7 @@ _CHART_COLOR_LIMIT = "#FACA2B"
 _CHART_AREA_OPACITY = 0.45
 _CHART_LIMIT_LINE_WIDTH = 2.0
 _CHART_LEGEND_ORIENT = "bottom"
+_CHART_CUMULATIVE_INTERPOLATE = "step-after"
 _AUTHOR_NAME = "Danang Prakoso"
 _AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/prakosd"
 _PROJECT_GITHUB_URL = "https://github.com/prakosd/rag-playground"
@@ -1647,7 +1646,7 @@ def _active_file_root() -> Path:
 
 def _build_cumulative_progress_chart(
     rows: list[dict[str, float]], chart_strings: Mapping[str, str]
-) -> alt.LayerChart:
+) -> alt.FacetChart | alt.LayerChart:
     color_scale = alt.Scale(
         domain=[
             chart_strings["CHART_SERIES_DISCOVERED"],
@@ -1675,7 +1674,7 @@ def _build_cumulative_progress_chart(
                 values=[{**row, "series": chart_strings["CHART_SERIES_DISCOVERED"]} for row in rows]
             )
         )
-        .mark_area(opacity=_CHART_AREA_OPACITY)
+        .mark_area(opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE)
         .encode(
             x=x,
             y=alt.Y("discovered_pages:Q", title=""),
@@ -1688,7 +1687,7 @@ def _build_cumulative_progress_chart(
                 values=[{**row, "series": chart_strings["CHART_SERIES_SUCCESSFUL"]} for row in rows]
             )
         )
-        .mark_area(opacity=_CHART_AREA_OPACITY)
+        .mark_area(opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE)
         .encode(
             x=x,
             y=alt.Y("successful_pages:Q", title=""),
@@ -1701,7 +1700,7 @@ def _build_cumulative_progress_chart(
                 values=[{**row, "series": chart_strings["CHART_SERIES_FAILED"]} for row in rows]
             )
         )
-        .mark_area(opacity=_CHART_AREA_OPACITY)
+        .mark_area(opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE)
         .encode(
             x=x,
             y=alt.Y("processed_pages:Q", title=""),
@@ -1715,7 +1714,10 @@ def _build_cumulative_progress_chart(
                 values=[{**row, "series": chart_strings["CHART_SERIES_LIMIT"]} for row in rows]
             )
         )
-        .mark_line(strokeWidth=_CHART_LIMIT_LINE_WIDTH)
+        .mark_line(
+            strokeWidth=_CHART_LIMIT_LINE_WIDTH,
+            interpolate=_CHART_CUMULATIVE_INTERPOLATE,
+        )
         .encode(
             x=x,
             y=alt.Y("page_limit:Q", title=""),
@@ -1723,8 +1725,10 @@ def _build_cumulative_progress_chart(
         )
     )
 
-    return alt.layer(discovered, successful, failed, limit).properties(
-        height=_PROGRESS_CHART_HEIGHT
+    return (
+        alt.layer(discovered, successful, failed, limit)
+        .properties(height=_PROGRESS_CHART_HEIGHT)
+        .configure_legend(offset=4)
     )
 
 
@@ -1742,37 +1746,18 @@ def _render_progress_charts() -> None:
 
     time_unit = select_progress_chart_time_unit(selected_history)
     time_unit_seconds = progress_chart_time_unit_seconds(time_unit)
-    time_unit_label = strings[_CHART_TIME_UNIT_KEYS[time_unit]]
 
     cumulative_chart_rows = prepare_cumulative_chart_display_rows(
         cumulative_rows,
         time_unit_seconds=time_unit_seconds,
     )
-    st.caption(strings[_CHART_CUMULATIVE_TITLE_KEYS[time_unit]])
+    st.markdown(
+        f'<p style="font-size:0.875rem;opacity:0.6;margin:0;padding:0">{strings[_CHART_CUMULATIVE_TITLE_KEYS[time_unit]]}</p>',
+        unsafe_allow_html=True,
+    )
     st.altair_chart(
         _build_cumulative_progress_chart(cumulative_chart_rows, strings),
-        use_container_width=True,
-    )
-
-    pace_rows = prepare_pace_chart_rows(
-        selected_history,
-        window_seconds=time_unit_seconds,
-    )
-    pace_chart_rows = [
-        {
-            time_unit_label: row["elapsed_seconds"] / time_unit_seconds,
-            strings["CHART_SERIES_PACE"]: row["seconds_per_page_attempt"],
-        }
-        for row in pace_rows
-    ]
-    st.caption(strings["CHART_PACE_TITLE"])
-    st.line_chart(
-        pace_chart_rows,
-        x=time_unit_label,
-        y=strings["CHART_SERIES_PACE"],
-        height=_PACE_CHART_HEIGHT,
-        x_label="",
-        y_label="",
+        width="stretch",
     )
 
 
@@ -2091,7 +2076,7 @@ def _render_ready_result(ready: ReadyDownload, strings: dict[str, Any]) -> None:
         file_name=download_name,
         mime=mime_type,
         key=f"ready_result_{st.session_state.session_id}_{st.session_state.get('crawl_id', '')}",
-        use_container_width=True,
+        width="stretch",
     )
 
 
