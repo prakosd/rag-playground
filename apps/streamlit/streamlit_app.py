@@ -99,14 +99,13 @@ _CHART_TIME_UNIT_KEYS = {
     PROGRESS_CHART_TIME_UNIT_MINUTE: "CHART_TIME_UNIT_MINUTE",
     PROGRESS_CHART_TIME_UNIT_HOUR: "CHART_TIME_UNIT_HOUR",
 }
-_CHART_COLOR_DISCOVERED = "#FAFAFA"
+_CHART_COLOR_DISCOVERED = "#888888"
 _CHART_COLOR_SUCCESSFUL = "#21C354"
 _CHART_COLOR_FAILED = "#FF4B4B"
 _CHART_COLOR_LIMIT = "#FACA2B"
 _CHART_AREA_OPACITY = 0.45
 _CHART_LIMIT_LINE_WIDTH = 2.0
-_CHART_LEGEND_ORIENT = "bottom"
-_CHART_CUMULATIVE_INTERPOLATE = "step-after"
+_CHART_CUMULATIVE_INTERPOLATE = "monotone"
 _AUTHOR_NAME = "Danang Prakoso"
 _AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/prakosd"
 _PROJECT_GITHUB_URL = "https://github.com/prakosd/rag-playground"
@@ -1664,7 +1663,7 @@ def _build_cumulative_progress_chart(
     color = alt.Color(
         "series:N",
         scale=color_scale,
-        legend=alt.Legend(title=None, orient=_CHART_LEGEND_ORIENT),
+        legend=alt.Legend(title=None),
     )
     x = alt.X("elapsed_time:Q", title="")
 
@@ -1674,7 +1673,9 @@ def _build_cumulative_progress_chart(
                 values=[{**row, "series": chart_strings["CHART_SERIES_DISCOVERED"]} for row in rows]
             )
         )
-        .mark_area(opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE)
+        .mark_area(
+            opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE, strokeOpacity=0
+        )
         .encode(
             x=x,
             y=alt.Y("discovered_pages:Q", title=""),
@@ -1687,7 +1688,9 @@ def _build_cumulative_progress_chart(
                 values=[{**row, "series": chart_strings["CHART_SERIES_SUCCESSFUL"]} for row in rows]
             )
         )
-        .mark_area(opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE)
+        .mark_area(
+            opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE, strokeOpacity=0
+        )
         .encode(
             x=x,
             y=alt.Y("successful_pages:Q", title=""),
@@ -1700,7 +1703,9 @@ def _build_cumulative_progress_chart(
                 values=[{**row, "series": chart_strings["CHART_SERIES_FAILED"]} for row in rows]
             )
         )
-        .mark_area(opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE)
+        .mark_area(
+            opacity=_CHART_AREA_OPACITY, interpolate=_CHART_CUMULATIVE_INTERPOLATE, strokeOpacity=0
+        )
         .encode(
             x=x,
             y=alt.Y("processed_pages:Q", title=""),
@@ -1727,8 +1732,16 @@ def _build_cumulative_progress_chart(
 
     return (
         alt.layer(discovered, successful, failed, limit)
-        .properties(height=_PROGRESS_CHART_HEIGHT)
-        .configure_legend(offset=4)
+        .properties(
+            height=_PROGRESS_CHART_HEIGHT,
+            padding={"top": 0, "right": 0, "bottom": 50, "left": 0},
+        )
+        .configure_legend(
+            orient="none",
+            direction="horizontal",
+            legendX=alt.ExprRef("(width - 312) / 2"),
+            legendY=alt.ExprRef("height + 30"),
+        )
     )
 
 
