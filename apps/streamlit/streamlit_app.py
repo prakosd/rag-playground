@@ -1485,14 +1485,13 @@ def render_progress_and_files(
             st.info(strings["BANNER_STOPPED"])
 
 
-def _render_status() -> None:
+def _sync_job_state() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     job = st.session_state.job
     state_changed = _drain_job_events(job)
     if state_changed and st.session_state.job_state in _REFRESH_FORM_STATES:
         st.rerun()
     latest = st.session_state.latest_event
-    processed_pages = int(latest.get("processed_pages", 0) or 0)
     successful_pages = int(latest.get("successful_pages", 0) or 0)
     failed_pages = int(latest.get("failed_pages", 0) or 0)
     discovered_pages = int(latest.get("queued_discovered_urls", 0) or 0)
@@ -1518,105 +1517,113 @@ def _render_status() -> None:
     st.session_state.prev_successful_pages = successful_pages
     st.session_state.prev_failed_pages = failed_pages
     st.session_state.prev_discovered_pages = discovered_pages
+
+
+def _render_status_boxes() -> None:
+    latest = st.session_state.latest_event
+    processed_pages = int(latest.get("processed_pages", 0) or 0)
+    successful_pages = int(latest.get("successful_pages", 0) or 0)
+    failed_pages = int(latest.get("failed_pages", 0) or 0)
+    discovered_pages = int(latest.get("queued_discovered_urls", 0) or 0)
     limit = int(latest.get("limit", DEFAULT_LIMIT) or DEFAULT_LIMIT)
+    render_progress_and_files(
+        processed=processed_pages,
+        successful=successful_pages,
+        failed=failed_pages,
+        discovered=discovered_pages,
+        limit=limit,
+        state=st.session_state.job_state,
+    )
 
-    def _render_status_content() -> None:
-        render_progress_and_files(
-            processed=processed_pages,
-            successful=successful_pages,
-            failed=failed_pages,
-            discovered=discovered_pages,
-            limit=limit,
-            state=st.session_state.job_state,
+
+def _render_status_rows() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    latest = st.session_state.latest_event
+    current_url = str(latest.get("current_url", ""))
+    active_urls = normalize_event_urls(latest.get("active_urls", []))
+    active_url_count = max(
+        int(latest.get("active_url_count", len(active_urls)) or 0),
+        len(active_urls),
+    )
+    max_concurrent = max(
+        int(latest.get("max_concurrent", active_url_count or 1) or 1),
+        active_url_count,
+    )
+    elapsed_str = elapsed_time_display(
+        started_at=st.session_state.started_at,
+        job_state=st.session_state.job_state,
+        frozen_elapsed=st.session_state.last_elapsed,
+    )
+    right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
+    if active_url_count > 1:
+        st.markdown(
+            format_status_url_preview(
+                label=strings["STATUS_ACTIVE_FETCHES"].format(
+                    count=active_url_count,
+                    max=max_concurrent,
+                ),
+                urls=active_urls,
+                total_count=active_url_count,
+                right_text=right,
+                style=_STATUS_ROW_STYLE,
+                overflow_template=strings["STATUS_MORE_URLS"],
+            ),
+            unsafe_allow_html=True,
+        )
+    elif active_url_count == 1 and active_urls:
+        st.markdown(
+            format_status_row(
+                url=active_urls[0],
+                url_template=strings["STATUS_CRAWLING"],
+                right_text=right,
+                style=_STATUS_ROW_STYLE,
+            ),
+            unsafe_allow_html=True,
+        )
+    elif current_url or elapsed_str:
+        st.markdown(
+            format_status_row(
+                url=current_url,
+                url_template=strings["STATUS_CRAWLING"],
+                right_text=right,
+                style=_STATUS_ROW_STYLE,
+            ),
+            unsafe_allow_html=True,
         )
 
-        current_url = str(latest.get("current_url", ""))
-        active_urls = normalize_event_urls(latest.get("active_urls", []))
-        active_url_count = max(
-            int(latest.get("active_url_count", len(active_urls)) or 0),
-            len(active_urls),
+    next_url = str(latest.get("next_url", ""))
+    next_urls = normalize_event_urls(latest.get("next_urls", []))
+    if not next_urls and next_url:
+        next_urls = [next_url]
+    next_url_count = max(
+        int(latest.get("next_url_count", len(next_urls)) or 0),
+        len(next_urls),
+    )
+    eta_seconds_raw = latest.get("eta_remaining_seconds")
+    eta_seconds = float(eta_seconds_raw) if eta_seconds_raw is not None else None
+    eta_text = format_eta_seconds(eta_seconds, strings)
+    if next_url_count > 1:
+        st.markdown(
+            format_status_url_preview(
+                label=strings["STATUS_NEXT_FETCHES"].format(count=next_url_count),
+                urls=next_urls,
+                total_count=next_url_count,
+                right_text=eta_text,
+                style=_STATUS_NEXT_ROW_STYLE,
+                overflow_template=strings["STATUS_MORE_URLS"],
+            ),
+            unsafe_allow_html=True,
         )
-        max_concurrent = max(
-            int(latest.get("max_concurrent", active_url_count or 1) or 1),
-            active_url_count,
+    elif next_urls or eta_seconds is not None:
+        st.markdown(
+            format_status_row(
+                url=next_urls[0] if next_urls else "",
+                url_template=strings["STATUS_NEXT_URL"],
+                right_text=eta_text,
+                style=_STATUS_NEXT_ROW_STYLE,
+            ),
+            unsafe_allow_html=True,
         )
-        elapsed_str = elapsed_time_display(
-            started_at=st.session_state.started_at,
-            job_state=st.session_state.job_state,
-            frozen_elapsed=st.session_state.last_elapsed,
-        )
-        right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
-        if active_url_count > 1:
-            st.markdown(
-                format_status_url_preview(
-                    label=strings["STATUS_ACTIVE_FETCHES"].format(
-                        count=active_url_count,
-                        max=max_concurrent,
-                    ),
-                    urls=active_urls,
-                    total_count=active_url_count,
-                    right_text=right,
-                    style=_STATUS_ROW_STYLE,
-                    overflow_template=strings["STATUS_MORE_URLS"],
-                ),
-                unsafe_allow_html=True,
-            )
-        elif active_url_count == 1 and active_urls:
-            st.markdown(
-                format_status_row(
-                    url=active_urls[0],
-                    url_template=strings["STATUS_CRAWLING"],
-                    right_text=right,
-                    style=_STATUS_ROW_STYLE,
-                ),
-                unsafe_allow_html=True,
-            )
-        elif current_url or elapsed_str:
-            st.markdown(
-                format_status_row(
-                    url=current_url,
-                    url_template=strings["STATUS_CRAWLING"],
-                    right_text=right,
-                    style=_STATUS_ROW_STYLE,
-                ),
-                unsafe_allow_html=True,
-            )
-
-        next_url = str(latest.get("next_url", ""))
-        next_urls = normalize_event_urls(latest.get("next_urls", []))
-        if not next_urls and next_url:
-            next_urls = [next_url]
-        next_url_count = max(
-            int(latest.get("next_url_count", len(next_urls)) or 0),
-            len(next_urls),
-        )
-        eta_seconds_raw = latest.get("eta_remaining_seconds")
-        eta_seconds = float(eta_seconds_raw) if eta_seconds_raw is not None else None
-        eta_text = format_eta_seconds(eta_seconds, strings)
-        if next_url_count > 1:
-            st.markdown(
-                format_status_url_preview(
-                    label=strings["STATUS_NEXT_FETCHES"].format(count=next_url_count),
-                    urls=next_urls,
-                    total_count=next_url_count,
-                    right_text=eta_text,
-                    style=_STATUS_NEXT_ROW_STYLE,
-                    overflow_template=strings["STATUS_MORE_URLS"],
-                ),
-                unsafe_allow_html=True,
-            )
-        elif next_urls or eta_seconds is not None:
-            st.markdown(
-                format_status_row(
-                    url=next_urls[0] if next_urls else "",
-                    url_template=strings["STATUS_NEXT_URL"],
-                    right_text=eta_text,
-                    style=_STATUS_NEXT_ROW_STYLE,
-                ),
-                unsafe_allow_html=True,
-            )
-
-    _render_status_content()
 
     if st.session_state.job_state == _STATE_FAILED:
         err = str(latest.get("error", ""))
@@ -2152,11 +2159,13 @@ def _render_downloads() -> None:
 
 @st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
 def _render_live_area() -> None:
+    _sync_job_state()
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     live_expanded = st.session_state.job_state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}
     with st.expander(strings["PROGRESS_EXPANDER_LABEL"], expanded=live_expanded):
-        _render_status()
+        _render_status_boxes()
         _render_progress_charts()
+        _render_status_rows()
         _render_activity_log()
 
 
