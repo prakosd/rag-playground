@@ -1468,14 +1468,33 @@ def render_progress_and_files(
             border=True,
         )
         with row2[2]:
-            st.metric(
-                label=f"{state_icon} {strings['METRIC_STATE_WORD']}",
-                value=state_label,
-                delta=strings["METRIC_STATE_DELTA"],
-                delta_color="off",
-                help=strings["METRIC_STATE_TOOLTIP"],
-                border=True,
-            )
+            if normalized_state == _STATE_RUNNING:
+                label_text = html.escape(strings["METRIC_STATE_WORD"])
+                value_text = html.escape(state_label)
+                delta_text = html.escape(strings["METRIC_STATE_DELTA"])
+                st.html(
+                    "<style>"
+                    "@keyframes crawl4md-spin{to{transform:rotate(360deg)}}"
+                    ".crawl4md-run-card{border:1px solid rgba(250,250,250,0.2);border-radius:0.5rem;padding:1rem;}"
+                    ".crawl4md-run-label{display:flex;align-items:center;gap:6px;font-size:0.875rem;opacity:0.7;margin-bottom:0.25rem;}"
+                    ".crawl4md-run-spinner{width:11px;height:11px;border:1.5px solid rgba(250,250,250,0.2);border-top-color:rgba(250,250,250,0.9);border-radius:50%;animation:crawl4md-spin 0.8s linear infinite;flex-shrink:0;}"
+                    ".crawl4md-run-value{font-size:2.25rem;font-weight:400;line-height:normal;margin-bottom:0.25rem;}"
+                    ".crawl4md-run-delta{font-size:0.875rem;opacity:0.7;}"
+                    f"</style><div class='crawl4md-run-card'>"
+                    f"<div class='crawl4md-run-label'><div class='crawl4md-run-spinner'></div><span>{label_text}</span></div>"
+                    f"<div class='crawl4md-run-value'>{value_text}</div>"
+                    f"<div class='crawl4md-run-delta'>&#8593; {delta_text}</div>"
+                    f"</div>"
+                )
+            else:
+                st.metric(
+                    label=f"{state_icon} {strings['METRIC_STATE_WORD']}",
+                    value=state_label,
+                    delta=strings["METRIC_STATE_DELTA"],
+                    delta_color="off",
+                    help=strings["METRIC_STATE_TOOLTIP"],
+                    border=True,
+                )
 
         if normalized_state == _STATE_FAILED:
             st.error(strings["BANNER_FAILED"])
