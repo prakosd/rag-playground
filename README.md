@@ -67,29 +67,18 @@ When using the Dev Container or GitHub Codespaces, the app starts automatically 
 **What it does:**
 
 ```mermaid
-stateDiagram-v2
-  state "Browser session selected" as Session
-  state "Idle: settings editable" as Idle
-  state "Running: settings locked" as Running
-  state "Stop requested" as StopRequested
-  state "Stopped: completed pages saved" as Stopped
-  state "Completed: files ready" as Completed
-  state "Failed: error shown" as Failed
-  state "Preview or download files" as FilesReady
-
-  [*] --> Session: page load
-  Session --> Idle: newest, loaded, or new session
-  Session --> Session: switch, create, or load session
-  Idle --> Running: Start
-  Running --> StopRequested: Stop
-  StopRequested --> Stopped: current work winds down
-  Running --> Completed: crawl finishes
-  Running --> Failed: unhandled error
-  Stopped --> FilesReady: final output for completed pages
-  Completed --> FilesReady: generated files
-  Stopped --> Idle: Start again creates a fresh crawl
-  Completed --> Idle: Start again creates a fresh crawl
-  Failed --> Idle: adjust settings and retry
+flowchart TD
+  Session["Browser session<br/>selected or created"] --> Idle["Idle<br/>settings editable"]
+  Idle --> Running["Running<br/>settings locked"]
+  Running --> StopRequested["Stop requested"]
+  StopRequested --> Stopped["Stopped<br/>completed pages saved"]
+  Running --> Completed["Completed<br/>files ready"]
+  Running --> Failed["Failed<br/>error shown"]
+  Stopped --> FilesReady["Preview or download files"]
+  Completed --> FilesReady
+  Stopped --> Idle
+  Completed --> Idle
+  Failed --> Idle
 ```
 
 - Fill in the crawl URL, page limit, depth, parallel fetches, and optional filters via a form
@@ -224,17 +213,19 @@ writer.write(pages, crawler.output_dir, page_config.max_file_size_mb)
 ## How It Works
 
 ```mermaid
-flowchart LR
-  Seeds["Seed URLs"] --> SiteCrawler["SiteCrawler.crawl()<br/>synchronous API"]
-  SiteCrawler --> Crawl4AI["Crawl4AI async browser crawl"]
-  Crawl4AI --> CrawlResult["CrawlResult<br/>raw HTML per page"]
+flowchart TD
+  Seeds["Seed URLs"] --> SiteCrawler["SiteCrawler.crawl()<br/>sync entry point"]
+  SiteCrawler --> Crawl4AI["Crawl4AI<br/>browser crawl"]
+  Crawl4AI --> CrawlResult["CrawlResult<br/>raw HTML"]
   CrawlResult --> Extractor["ContentExtractor"]
   Extractor --> ExtractedPage["ExtractedPage<br/>clean Markdown"]
+
   ExtractedPage --> RoundWriter["FileWriter<br/>round snapshots"]
-  RoundWriter --> RoundFiles["round_N/<br/>content files and URL lists"]
+  RoundWriter --> RoundFiles["round_N/<br/>content + URL lists"]
+
   ExtractedPage --> Sorter["ContentSorter<br/>URL-path order"]
   Sorter --> FinalWriter["FileWriter<br/>merged final output"]
-  FinalWriter --> FinalFiles["final/<br/>sorted content and URL lists"]
+  FinalWriter --> FinalFiles["final/<br/>sorted content + URLs"]
 ```
 
 1. **Crawl** — seed URLs are crawled with link discovery up to `max_depth`. Discovered links are queued up to `limit`.
@@ -298,7 +289,7 @@ flowchart TD
 The timing parameters control different phases of each page crawl:
 
 ```mermaid
-flowchart LR
+flowchart TD
   Delay["delay<br/>space page-fetch starts"] --> WaitUntil["wait_until<br/>networkidle or domcontentloaded"]
   Timeout["timeout<br/>caps wait_until only"] -.-> WaitUntil
   WaitUntil --> WaitFor["wait_for<br/>optional extra JS pause"]
@@ -317,28 +308,12 @@ Each crawl creates a timestamped folder. Per-round subdirectories hold intermedi
 ```mermaid
 flowchart TD
   Root["2026-03-08_17-39-59/<br/>timestamped crawl root"]
-  Root --> Activity["activity_log.txt<br/>activity_log.csv<br/>timestamped crawl diary"]
-  Root --> Graph["site_graph.jsonl<br/>discovered URLs, status, depth"]
-  Root --> History["progress_history.jsonl<br/>chart-ready cumulative timeline"]
-
-  Root --> Round1Success
-  subgraph Round1["round_1/ intermediate snapshot"]
-    Round1Success["success_content_001.md<br/>success_urls.txt"]
-    Round1Fail["fail_content_001.md<br/>fail_urls.txt"]
-  end
-
-  Root --> Round2Success
-  subgraph Round2["round_2/ retry snapshot, when needed"]
-    Round2Success["success_content_001.md"]
-    Round2More["additional retry files"]
-  end
-
-  Root --> FinalSuccess
-  subgraph Final["final/ primary output"]
-    FinalSuccess["sorted_success_content_001_of_002.md<br/>sorted_success_content_002_of_002.md"]
-    FinalUrls["sorted_success_urls.txt<br/>success_urls.txt"]
-    FinalFailures["sorted_fail_content_001_of_001.md<br/>sorted_fail_urls.txt<br/>fail_urls.txt"]
-  end
+  Root --> RootFiles["root files<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl"]
+  Root --> Rounds["round_N/<br/>intermediate snapshots<br/>success/fail content + URL lists"]
+  Root --> Final["final/<br/>primary output"]
+  Final --> SortedContent["sorted content files<br/>001_of_NNN chunks"]
+  Final --> UrlLists["sorted and insertion-order<br/>URL lists"]
+  Final --> Failures["failed-page files<br/>when any pages fail"]
 ```
 
 ### Intermediate file cleanup
@@ -446,58 +421,39 @@ See `notebooks/crawl4md.ipynb` for a guided, step-by-step notebook. You can also
 
 ## Architecture
 
+The architecture is easiest to read in layers: the core package owns the crawl pipeline and
+generated outputs, while the Streamlit package adapts those APIs for browser sessions,
+background jobs, and downloads.
+
+**Core library:**
+
 ```mermaid
-flowchart TB
-  subgraph Core["src/crawl4md/ core library"]
-    PublicAPI["__init__.py<br/>public API exports"]
-    Config["config.py<br/>CrawlerConfig, PageConfig,<br/>CrawlResult, ExtractedPage"]
-    Crawler["crawler.py<br/>SiteCrawler"]
-    Extractor["extractor.py<br/>ContentExtractor"]
-    Sorter["sorter.py<br/>ContentSorter"]
-    Writer["writer.py<br/>FileWriter"]
-    Progress["progress.py<br/>ProgressReporter"]
-  end
+flowchart TD
+  PublicAPI["__init__.py<br/>public API"] --> Config["config.py<br/>models"]
+  Config --> Crawler["crawler.py<br/>SiteCrawler"]
+  Crawler --> Pipeline["extractor.py<br/>writer.py<br/>sorter.py"]
+  Crawler --> Progress["progress.py<br/>ProgressReporter"]
+```
 
-  subgraph App["apps/streamlit/ browser app"]
-    StreamlitApp["streamlit_app.py<br/>UI entry point"]
-    AppPackage["pyproject.toml<br/>app dependencies"]
-    Controls["controls.py<br/>action-button state machine"]
-    CrawlJobs["crawl_jobs.py<br/>background thread and configs"]
-    FormDefaults["form_defaults.py<br/>default form values"]
-    FormUI["form_ui.py<br/>settings form renderer"]
-    GeneratedFiles["generated_files.py<br/>list, preview, downloads"]
-    SessionManager["session_manager.py<br/>safe IDs, records, paths, cleanup"]
-    Support["support.py<br/>compatibility re-exports"]
-    AppTests["tests/<br/>Streamlit helper tests"]
-  end
+**Streamlit adapter:**
 
-  PublicAPI --> Config
-  PublicAPI --> Crawler
-  PublicAPI --> Extractor
-  PublicAPI --> Sorter
-  PublicAPI --> Writer
-  Crawler --> Config
-  Crawler --> Extractor
-  Crawler --> Writer
-  Crawler --> Sorter
-  Crawler --> Progress
+```mermaid
+flowchart TD
+  App["streamlit_app.py<br/>UI shell"] --> Inputs["controls.py<br/>form_ui.py<br/>form_defaults.py"]
+  Inputs --> Jobs["crawl_jobs.py<br/>background jobs"]
+  Jobs --> Outputs["generated_files.py<br/>session_manager.py"]
+  Support["support.py<br/>compat exports"] --> Jobs
+  Support --> Outputs
+```
 
-  StreamlitApp --> Controls
-  StreamlitApp --> FormUI
-  StreamlitApp --> CrawlJobs
-  StreamlitApp --> GeneratedFiles
-  StreamlitApp --> SessionManager
-  Support --> CrawlJobs
-  Support --> GeneratedFiles
-  Support --> SessionManager
-  FormUI --> FormDefaults
-  CrawlJobs --> Crawler
-  CrawlJobs --> Config
-  GeneratedFiles --> SessionManager
-  AppTests --> Controls
-  AppTests --> CrawlJobs
-  AppTests --> GeneratedFiles
-  AppTests --> SessionManager
+**Adapter boundary:**
+
+```mermaid
+flowchart TD
+  Jobs["crawl_jobs.py<br/>build configs"] --> Configs["CrawlerConfig + PageConfig"]
+  Jobs --> SiteCrawler["SiteCrawler"]
+  SiteCrawler --> Outputs["crawl output files<br/>progress events"]
+  Outputs --> UI["Streamlit UI<br/>progress + downloads"]
 ```
 
 ## Development

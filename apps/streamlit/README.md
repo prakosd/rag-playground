@@ -8,54 +8,29 @@ the code is organised, how the pieces connect, and where to look when extending 
 
 ## File Map
 
+The top-level layout is compact enough for a diagram. The helper package details are easier
+to scan as a table, and the test files are summarized in [Testing Map](#testing-map).
+
 ```mermaid
 flowchart TD
   Root["apps/streamlit/"]
+  Root --> Config["pyproject.toml<br/>.streamlit/config.toml"]
   Root --> App["streamlit_app.py<br/>UI entry point"]
-  Root --> PackageConfig["pyproject.toml<br/>package definition and dependencies"]
-  Root --> StreamlitConfig[".streamlit/config.toml<br/>server address and theme"]
-  Root --> HelpersRoot["src/crawl4md_streamlit/"]
-  Root --> TestsRoot["tests/"]
-
-  subgraph Helpers["crawl4md_streamlit helper package"]
-    Init["__init__.py<br/>installable package marker"]
-    Controls["controls.py<br/>button definitions and state mapping"]
-    CrawlJobs["crawl_jobs.py<br/>background jobs, config, progress"]
-    FormDefaults["form_defaults.py<br/>default form payload"]
-    FormUI["form_ui.py<br/>crawl settings form"]
-    GeneratedFiles["generated_files.py<br/>output listing and previews"]
-    SessionManager["session_manager.py<br/>safe IDs, records, paths, cleanup"]
-    Support["support.py<br/>compatibility exports"]
-  end
-
-  subgraph Tests["Streamlit helper tests"]
-    Smoke["test_app_smoke.py<br/>startup and preview CSS smoke coverage"]
-    ControlsTest["test_controls.py<br/>button logic by crawl state"]
-    DefaultsTest["test_form_defaults.py<br/>default form payload"]
-    GeneratedTest["test_generated_files.py<br/>download-tree helpers"]
-    ProgressChartTest["test_progress_chart.py<br/>chart helper behavior"]
-    SupportTest["test_support.py<br/>jobs, paths, cleanup, progress"]
-    FacadeTest["test_support_facade.py<br/>split helper exports"]
-    BoundaryTest["test_streamlit_boundaries.py<br/>config and import boundaries"]
-  end
-
-  HelpersRoot --> Init
-  HelpersRoot --> Controls
-  HelpersRoot --> CrawlJobs
-  HelpersRoot --> FormDefaults
-  HelpersRoot --> FormUI
-  HelpersRoot --> GeneratedFiles
-  HelpersRoot --> SessionManager
-  HelpersRoot --> Support
-  TestsRoot --> Smoke
-  TestsRoot --> ControlsTest
-  TestsRoot --> DefaultsTest
-  TestsRoot --> GeneratedTest
-  TestsRoot --> ProgressChartTest
-  TestsRoot --> SupportTest
-  TestsRoot --> FacadeTest
-  TestsRoot --> BoundaryTest
+  Root --> HelpersRoot["src/crawl4md_streamlit/<br/>helpers"]
+  Root --> TestsRoot["tests/<br/>helper tests"]
+  App --> HelpersRoot
 ```
+
+| Helper module | Responsibility |
+| --- | --- |
+| `__init__.py` | Installable package marker |
+| `controls.py` | Button definitions and state mapping |
+| `crawl_jobs.py` | Background jobs, config building, progress events |
+| `form_defaults.py` | Default crawl form payload |
+| `form_ui.py` | Crawl settings form renderer |
+| `generated_files.py` | Output listing, previews, and downloads |
+| `session_manager.py` | Safe IDs, session records, paths, and cleanup |
+| `support.py` | Compatibility exports for the split helper modules |
 
 ### Why a separate package?
 
@@ -298,11 +273,8 @@ in the root README.
 flowchart TD
   Session["session_{id}/<br/>browser session"] --> Crawl["crawl_{id}/<br/>one folder per Start click"]
   Crawl --> Timestamp["YYYY-MM-DD_HH-MM-SS/<br/>SiteCrawler crawl root"]
-  Timestamp --> Logs["activity_log.txt<br/>activity_log.csv"]
-  Timestamp --> Graph["site_graph.jsonl"]
-  Timestamp --> History["progress_history.jsonl<br/>chart-ready timeline"]
-  Timestamp --> Round1["round_1/<br/>intermediate snapshot"]
-  Timestamp --> Round2["round_2/...<br/>retry snapshots when needed"]
+  Timestamp --> RootFiles["root files<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl"]
+  Timestamp --> Rounds["round_N/<br/>intermediate snapshots"]
   Timestamp --> Final["final/<br/>primary output after merge and sort"]
 ```
 
@@ -324,30 +296,31 @@ the files in `final/` instead.
 
 ## Data Flow (one crawl from click to download)
 
+First, the UI turns form values into configs and starts one background worker.
+
 ```mermaid
 flowchart TD
   User["User fills form and clicks Start"] --> Form["render_crawl_form()<br/>collect raw form values"]
   Form --> Configs["build_configs()<br/>validate and convert to CrawlerConfig + PageConfig"]
   Configs --> StartJob["start_crawl_job()<br/>create output dirs and spawn background thread"]
+  StartJob --> Worker["Background worker thread"]
+```
 
-  StartJob --> WorkerCrawl
-  subgraph Worker["Background worker thread"]
-    WorkerCrawl["SiteCrawler.crawl()"] --> WorkerExtract["ContentExtractor"]
-    WorkerExtract --> WorkerWrite["FileWriter"]
-    WorkerWrite --> GeneratedOutput["generated files on disk"]
-    WorkerCrawl --> Events["job.events queue<br/>progress callback and terminal events"]
-  end
+While the worker runs, queued events update live progress and generated files feed the
+download area.
+
+```mermaid
+flowchart TD
+  Worker["Background worker thread"] --> Crawl["SiteCrawler.crawl()"]
+  Crawl --> Extract["ContentExtractor"]
+  Extract --> Write["FileWriter"]
+  Write --> GeneratedOutput["generated files on disk"]
+  Crawl --> Events["job.events queue<br/>progress + terminal events"]
 
   Events --> Drain["_drain_job_events()<br/>update st.session_state on rerun"]
-
-  subgraph LiveUI["Streamlit UI fragments"]
-    Drain --> LiveArea["_render_live_area()<br/>refresh every 3 seconds"]
-    LiveArea --> Status["_render_status()<br/>progress, metrics, active and next URLs"]
-    LiveArea --> Charts["_render_progress_charts()<br/>cumulative and pace charts"]
-    LiveArea --> Log["_render_activity_log()<br/>tail activity_log.txt"]
-    Drain --> Downloads["_render_downloads()<br/>refresh every 7 seconds<br/>file table, previews, downloads"]
-    GeneratedOutput --> Downloads
-  end
+  Drain --> LiveArea["_render_live_area()<br/>status, charts, activity log"]
+  Drain --> Downloads["_render_downloads()<br/>file table + previews"]
+  GeneratedOutput --> Downloads
 ```
 
 ---
