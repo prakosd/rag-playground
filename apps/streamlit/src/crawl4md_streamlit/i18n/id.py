@@ -32,11 +32,11 @@ STRINGS_ID: Strings = {
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
     "LANG_SELECTOR_LABEL": "Bahasa",
-    "NAV_CRAWL": "Crawl",
-    "NAV_VECTOR_INDEX": "Vector Index",
-    "NAV_SEMANTIC_SEARCH": "Semantic Search",
-    "NAV_RAG_QA": "RAG Q&A",
-    "NAV_CONVERSATIONAL_RAG": "Conversational RAG",
+    "NAV_CRAWL": "1. Crawl",
+    "NAV_VECTOR_INDEX": "2. Vector Index",
+    "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
+    "NAV_RAG_QA": "4. RAG Q&A",
+    "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/database: Langkah 2 - Bangun Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
         "Pilih output Markdown, teks, atau ZIP, pecah menjadi chunk, buat embedding, "

@@ -31,11 +31,11 @@ STRINGS_EN: Strings = {
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
     "LANG_SELECTOR_LABEL": "Language",
-    "NAV_CRAWL": "Crawl",
-    "NAV_VECTOR_INDEX": "Vector Index",
-    "NAV_SEMANTIC_SEARCH": "Semantic Search",
-    "NAV_RAG_QA": "RAG Q&A",
-    "NAV_CONVERSATIONAL_RAG": "Conversational RAG",
+    "NAV_CRAWL": "1. Crawl",
+    "NAV_VECTOR_INDEX": "2. Vector Index",
+    "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
+    "NAV_RAG_QA": "4. RAG Q&A",
+    "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/database: Step 2 - Build Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
         "Select Markdown, text, or ZIP outputs, split them into chunks, generate embeddings, "
