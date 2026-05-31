@@ -2539,8 +2539,6 @@ def _navigation_pages(strings: Strings) -> list[Any]:
 def _render_page_header(page_spec: AppPageSpec, strings: Strings) -> None:
     st.title(strings[page_spec.title_key])
     st.write(strings[page_spec.subtitle_key])
-
-
 _init_state()
 _mount_session_storage()
 active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
