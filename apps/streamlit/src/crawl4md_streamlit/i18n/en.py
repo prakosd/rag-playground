@@ -6,7 +6,7 @@ from crawl4md_streamlit.i18n._types import Strings
 
 STRINGS_EN: Strings = {
     # ── Page ──────────────────────────────────────────────────────────────
-    "PAGE_TITLE": ":material/travel_explore: crawl4md — Website Crawler",
+    "PAGE_TITLE": ":material/travel_explore: Step 1 - Crawl Website",
     "PAGE_SUBTITLE": (
         "Point it at any website and crawl4md will follow links, extract the main "
         "content from each page, and save everything as clean, readable Markdown files."

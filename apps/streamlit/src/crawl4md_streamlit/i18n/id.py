@@ -6,7 +6,7 @@ from crawl4md_streamlit.i18n._types import Strings
 
 STRINGS_ID: Strings = {
     # ── Page ──────────────────────────────────────────────────────────────
-    "PAGE_TITLE": ":material/travel_explore: crawl4md — Perayap Situs Web",
+    "PAGE_TITLE": ":material/travel_explore: Langkah 1 - Jelajahi Situs Web",
     "PAGE_SUBTITLE": (
         "Arahkan ke situs web mana pun dan crawl4md akan mengikuti tautan, "
         "mengekstrak konten utama dari setiap halaman, dan menyimpan semuanya "
