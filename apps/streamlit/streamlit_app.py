@@ -1475,9 +1475,9 @@ def render_progress_and_files(
                 st.html(
                     "<style>"
                     "@keyframes crawl4md-spin{to{transform:rotate(360deg)}}"
-                    ".crawl4md-run-card{border:1px solid rgba(250,250,250,0.2);border-radius:0.5rem;padding:1rem;}"
+                    ".crawl4md-run-card{border:1px solid var(--st-border-color, rgba(128,128,128,0.35));border-radius:0.5rem;padding:1rem;}"
                     ".crawl4md-run-label{display:flex;align-items:center;gap:6px;font-size:0.875rem;opacity:0.7;margin-bottom:0.25rem;}"
-                    ".crawl4md-run-spinner{width:11px;height:11px;border:1.5px solid rgba(250,250,250,0.2);border-top-color:rgba(250,250,250,0.9);border-radius:50%;animation:crawl4md-spin 0.8s linear infinite;flex-shrink:0;}"
+                    ".crawl4md-run-spinner{width:11px;height:11px;border:1.5px solid var(--st-border-color, rgba(128,128,128,0.35));border-top-color:currentColor;border-radius:50%;animation:crawl4md-spin 0.8s linear infinite;flex-shrink:0;}"
                     ".crawl4md-run-value{font-size:2.25rem;font-weight:400;line-height:normal;margin-bottom:0.25rem;}"
                     ".crawl4md-run-delta{font-size:0.875rem;opacity:0.7;}"
                     f"</style><div class='crawl4md-run-card'>"
