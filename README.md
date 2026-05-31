@@ -49,7 +49,7 @@ Click the badge above. GitHub spins up a fully configured VS Code environment in
 
 ## Streamlit Web App
 
-A browser-based UI is included as a separate app package for non-technical users who prefer not to use a Jupyter Notebook. The app imports the `crawl4md` library just like any external Python app would, provides the normal crawl settings as a form, runs the crawl in the background, and lets users download the generated files from the browser.
+A browser-based UI is included as a separate app package for non-technical users who prefer not to use a Jupyter Notebook. The app imports the `crawl4md` library just like any external Python app would, provides the normal crawl settings as a form, runs the crawl in the background, and lets users download the generated files from the browser. It also includes the first navigation pass for the crawl-to-RAG workflow: Step 1 is the existing crawler, while Steps 2-5 are placeholder workspaces for vector indexing, semantic search, single-turn RAG Q&A, and conversational RAG. Each workflow step now has a dedicated page module under `apps/streamlit/app_pages/`, while `streamlit_app.py` keeps the shared shell.
 
 **Start the app:**
 
@@ -89,6 +89,7 @@ flowchart TD
 - Reuse the newest browser session automatically, switch to older sessions from the searchable session selector, or create a new session manually; use **Load Session** (📁) to restore a session from another browser or device by pasting its session ID
 - Watch live progress (pages crawled, estimated completion, active/next URL previews when parallel fetches are running, cumulative counters over time, and pages/second)
 - Preview common text-based generated files and download files directly from the browser
+- Move through the RAG workflow navigation while keeping the same page shell, session controls, language selector, footer, and crawl progress toasts; placeholder pages change only the page-specific work area until backend RAG features are implemented
 
 Output files are saved under `outputs/streamlit_sessions/` (one subfolder per browser session and crawl run). The browser stores known session IDs and creation times in local storage so later page loads can select the newest existing session instead of creating a new one. Stopped crawls keep their generated files in that crawl folder, but no crawl state is kept for continuing later.
 
@@ -232,6 +233,8 @@ flowchart TD
 2. **Retry** — failed/blocked pages are retried in subsequent rounds (up to `max_retries`), with a 30-second cooldown between rounds. Retry rounds automatically downgrade `wait_until` to `domcontentloaded` to avoid repeated timeouts. Link discovery continues in retry rounds — pages that recover on retry have their links discovered and crawled (respecting `max_depth` and `limit`).
 3. **Extract** — HTML is converted to Markdown via trafilatura or markdownify, then cleaned through a 7-step post-processing pipeline.
 4. **Write** — pages are written to numbered, size-limited files. Per-round files are produced during crawl; final merged and sorted files are written after all rounds complete.
+
+The RAG expansion will build on those final `.md` / `.txt` outputs instead of changing the crawl pipeline. The planned backend flow is: select generated files or ZIP archives, chunk the text, generate embeddings, persist vectors in a local vector database such as ChromaDB, run semantic search, then use retrieved context for single-turn and conversational RAG. The Streamlit app currently exposes those later steps as placeholders so navigation can be validated before new backend dependencies are added.
 
 ```mermaid
 flowchart TD
@@ -440,6 +443,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   App["streamlit_app.py<br/>UI shell"] --> Inputs["controls.py<br/>form_ui.py<br/>form_defaults.py"]
+  App --> Pages["pages.py<br/>navigation metadata"]
   Inputs --> Jobs["crawl_jobs.py<br/>background jobs"]
   Jobs --> Outputs["generated_files.py<br/>session_manager.py"]
   Support["support.py<br/>compat exports"] --> Jobs

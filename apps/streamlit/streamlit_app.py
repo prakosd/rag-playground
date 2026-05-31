@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import html
+import importlib
 import mimetypes
 import re
-from collections.abc import Iterable, Mapping
+import sys
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +17,18 @@ from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
 
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
-from crawl4md_streamlit.form_ui import render_crawl_form
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
     collapse_crawl_run_folder,
     generated_files_cache_token,
 )
 from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings
+from crawl4md_streamlit.pages import (
+    APP_PAGE_SPECS,
+    DEFAULT_PAGE_ID,
+    AppPageSpec,
+    page_spec_by_nav_label,
+)
 from crawl4md_streamlit.progress_chart import (
     PROGRESS_CHART_TIME_UNIT_HOUR,
     PROGRESS_CHART_TIME_UNIT_MINUTE,
@@ -80,6 +88,7 @@ from crawl4md_streamlit.support import (
 )
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
+_APP_DIR = Path(__file__).resolve().parent
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = "7s"
 _GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
@@ -329,8 +338,7 @@ export default function (component) {
         )
     }
     const storageWriteFailed = (hasPendingRecords || !!pendingSelectedId) && storedPending === false
-    const pendingNeedWrite = pendingRecords.some(r => !storedRecords.some(s => s.session_id === r.session_id))
-    if (hasPendingRecords && pendingNeedWrite && storedPending) {
+    if (hasPendingRecords && storedPending) {
         setStateValue("stored_records", nextRecords)
     }
     if (data.storageWriteFailed !== storageWriteFailed) {
@@ -816,6 +824,7 @@ def _cached_list_generated_files(
     download_limit_bytes: int,
     cache_token: tuple[float, int],
 ) -> list[GeneratedFile]:
+    _ = cache_token  # Keeps token in st.cache_data's argument hash.
     return list_generated_files(
         Path(session_root),
         Path(search_root),
@@ -930,9 +939,16 @@ def _apply_session_storage_result(result: Any) -> None:
 
     pending = _cached_normalize_session_records(st.session_state.pending_browser_session_records)
     stored_payload = _component_result_field(result, "stored_records")
-    if pending and stored_payload is not None:
+    pending_ack_payload = stored_payload
+    if (
+        pending_ack_payload is None
+        and records_payload is not None
+        and not st.session_state.session_storage_write_failed
+    ):
+        pending_ack_payload = records_payload
+    if pending and pending_ack_payload is not None:
         stored_ids = {
-            record.session_id for record in _cached_normalize_session_records(stored_payload)
+            record.session_id for record in _cached_normalize_session_records(pending_ack_payload)
         }
         if {record.session_id for record in pending}.issubset(stored_ids):
             st.session_state.pending_browser_session_records = []
@@ -1269,8 +1285,7 @@ def _start_job(values: dict[str, Any]) -> None:
     # second tab opened the same session), reattach instead of starting a new crawl.
     if get_active_job_snapshot(st.session_state.session_id) is not None:
         _reattach_selected_session_job()
-        st.rerun()
-        return
+        return st.rerun()
     try:
         crawler_config, page_config, activity_log_size = build_configs(values)
     except (ValidationError, ValueError) as exc:
@@ -1295,6 +1310,9 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.events = []
     st.session_state.latest_event = {"limit": crawler_config.limit}
     st.session_state.progress_chart_history = []
+    st.session_state.prev_successful_pages = 0
+    st.session_state.prev_failed_pages = 0
+    st.session_state.prev_discovered_pages = 0
     st.session_state.active_output_dir = ""
     st.session_state.activity_log_size = activity_log_size
     st.session_state.activity_log_latest_line = None
@@ -1307,8 +1325,7 @@ def _stop_job() -> None:
     if job is not None and job.thread.is_alive():
         st.session_state.job_state = _STATE_CANCEL_REQUESTED
         request_cancel(job)
-        st.rerun()
-        return
+        return st.rerun()
     st.warning(strings["ERROR_NO_ACTIVE_CRAWL"])
 
 
@@ -1504,12 +1521,8 @@ def render_progress_and_files(
             st.info(strings["BANNER_STOPPED"])
 
 
-def _sync_job_state() -> None:
-    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    job = st.session_state.job
-    state_changed = _drain_job_events(job)
-    if state_changed and st.session_state.job_state in _REFRESH_FORM_STATES:
-        st.rerun()
+def _emit_crawl_progress_toasts(strings: Strings) -> None:
+    """Emit app-wide crawl progress toasts from the shared shell only."""
     latest = st.session_state.latest_event
     successful_pages = int(latest.get("successful_pages", 0) or 0)
     failed_pages = int(latest.get("failed_pages", 0) or 0)
@@ -1536,6 +1549,16 @@ def _sync_job_state() -> None:
     st.session_state.prev_successful_pages = successful_pages
     st.session_state.prev_failed_pages = failed_pages
     st.session_state.prev_discovered_pages = discovered_pages
+
+
+@st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
+def _render_crawl_event_loop() -> None:
+    """Drain crawl events and emit shell-owned toasts on every workflow page."""
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    state_changed = _drain_job_events(st.session_state.job)
+    if state_changed and st.session_state.job_state in _REFRESH_FORM_STATES:
+        st.rerun()
+    _emit_crawl_progress_toasts(strings)
 
 
 def _render_status_boxes() -> None:
@@ -2178,7 +2201,6 @@ def _render_downloads() -> None:
 
 @st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
 def _render_live_area() -> None:
-    _sync_job_state()
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     live_expanded = st.session_state.job_state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}
     with st.expander(strings["PROGRESS_EXPANDER_LABEL"], expanded=live_expanded):
@@ -2300,9 +2322,228 @@ def _render_portfolio_modal() -> None:
     )
 
 
+def _render_shared_styles() -> None:
+    st.markdown(
+        f"""
+        <style>
+        div[data-testid="stMainBlockContainer"],
+        section.main .block-container {{
+            max-width: {_FORM_MAX_WIDTH_PX}px !important;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        div[data-testid="stForm"] {{
+            max-width: {_FORM_MAX_WIDTH_PX}px;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        h3#form-subheader {{
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+        }}
+        h3#progress {{
+            padding-bottom: 0 !important;
+        }}
+        div[data-testid="stForm"] .stHeading h3 {{
+            padding: 0.75rem 0 0 !important;
+        }}
+        div[class*="st-key-Stop"] button {{
+            background-color: #dc2626;
+            border-color: #dc2626;
+            color: white;
+        }}
+        div[class*="st-key-Stop"] button:hover {{
+            background-color: #b91c1c;
+            border-color: #b91c1c;
+            color: white;
+        }}
+        div[data-testid="stToastContainer"] {{
+            top: auto !important;
+            bottom: 1rem !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _current_crawl_runtime() -> tuple[CrawlJob | None, str, bool, bool]:
+    current_job = st.session_state.job
+    current_state = st.session_state.job_state
+    job_alive = _job_is_alive(current_job)
+    fields_disabled = (
+        current_state == _STATE_RUNNING and job_alive
+    ) or current_state == _STATE_CANCEL_REQUESTED
+    return current_job, current_state, job_alive, fields_disabled
+
+
+def _render_session_controls(
+    *,
+    fields_disabled: bool,
+    language_widget_key: str,
+    strings: Strings,
+) -> None:
+    session_options = _session_options()
+    session_controls_col, language_col = st.columns([5, 1], vertical_alignment="top")
+    with session_controls_col:
+        extend_toast = st.session_state.pop(_EXTEND_TOAST_STATE, None)
+        if extend_toast == _EXTEND_TOAST_SUCCESS:
+            st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
+        elif extend_toast == _EXTEND_TOAST_FAILED:
+            st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
+        with st.container(gap="xxsmall"):
+            with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
+                with st.container(
+                    horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"
+                ):
+                    st.markdown(strings["SESSION_SELECTOR_LABEL"])
+                    selected_session = st.selectbox(
+                        label=strings["SESSION_SELECTOR_LABEL"],
+                        options=session_options,
+                        index=_session_selector_index(session_options),
+                        key=f"session_selector_{st.session_state.session_id}",
+                        label_visibility="collapsed",
+                        width=240,
+                        disabled=fields_disabled,
+                    )
+                if st.button(
+                    "",
+                    width=_ICON_BUTTON_WIDTH_PX,
+                    key="session_create_button",
+                    icon=":material/add:",
+                    help=strings["SESSION_CREATE_BUTTON_TOOLTIP"],
+                    disabled=fields_disabled,
+                ):
+                    _create_new_session()
+                if st.button(
+                    "",
+                    width=_ICON_BUTTON_WIDTH_PX,
+                    key="session_load_button",
+                    icon=":material/folder_open:",
+                    help=strings["SESSION_LOAD_BUTTON_TOOLTIP"],
+                    disabled=fields_disabled,
+                ):
+                    st.session_state.session_load_dialog_open = True
+                    st.rerun()
+                if st.button(
+                    "",
+                    width=_ICON_BUTTON_WIDTH_PX,
+                    key="session_extend_button",
+                    icon=":material/more_time:",
+                    help=strings["SESSION_EXTEND_BUTTON_TOOLTIP"],
+                    disabled=fields_disabled,
+                ):
+                    try:
+                        touch_session(_SESSIONS_ROOT, st.session_state.session_id)
+                        st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_SUCCESS
+                    except (OSError, ValueError):
+                        st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_FAILED
+                    st.rerun()
+            days_left, hours_left = session_time_remaining(
+                _SESSIONS_ROOT, st.session_state.session_id
+            )
+            if days_left == 0:
+                if hours_left == 0:
+                    expiry_key = "SESSION_EXPIRY_CAPTION_SOON"
+                elif hours_left == 1:
+                    expiry_key = "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR"
+                else:
+                    expiry_key = "SESSION_EXPIRY_CAPTION_HOURS"
+            elif hours_left == 0:
+                expiry_key = (
+                    "SESSION_EXPIRY_CAPTION_SINGULAR"
+                    if days_left == 1
+                    else "SESSION_EXPIRY_CAPTION"
+                )
+            elif hours_left == 1:
+                expiry_key = (
+                    "SESSION_EXPIRY_CAPTION_DAY_HOUR"
+                    if days_left == 1
+                    else "SESSION_EXPIRY_CAPTION_DAYS_HOUR"
+                )
+            else:
+                expiry_key = (
+                    "SESSION_EXPIRY_CAPTION_DAY_HOURS"
+                    if days_left == 1
+                    else "SESSION_EXPIRY_CAPTION_DAYS_HOURS"
+                )
+            st.caption(strings[expiry_key].format(days=days_left, hours=hours_left))
+        if selected_session != st.session_state.session_id:
+            _select_session_id(str(selected_session))
+            st.rerun()
+    with language_col, st.container(horizontal_alignment="right"):
+        language_default = (
+            _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
+            if language_widget_key not in st.session_state
+            else None
+        )
+        st.segmented_control(
+            label=strings["LANG_SELECTOR_LABEL"],
+            options=list(CATALOG.keys()),
+            key=language_widget_key,
+            default=language_default,
+            label_visibility="collapsed",
+            disabled=fields_disabled,
+            on_change=_on_language_change,
+            args=(language_widget_key,),
+        )
+
+
+def _import_page_module(module_name: str) -> Any:
+    app_dir = str(_APP_DIR)
+    if app_dir not in sys.path:
+        sys.path.insert(0, app_dir)
+    return importlib.import_module(module_name)
+
+
+def _crawl_page_context(crawl_module: Any) -> Any:
+    return crawl_module.CrawlPageContext(
+        current_runtime=_current_crawl_runtime,
+        start_job=_start_job,
+        stop_confirmation_dialog=_stop_confirmation_dialog,
+        render_ready_result_panel=_render_ready_result_panel,
+        render_live_area=_render_live_area,
+        render_downloads=_render_downloads,
+        default_language=_DEFAULT_LANGUAGE,
+    )
+
+
+def _page_renderers() -> dict[str, Callable[[], None]]:
+    renderers: dict[str, Callable[[], None]] = {}
+    for page_spec in APP_PAGE_SPECS:
+        page_module = _import_page_module(page_spec.module_name)
+        if page_spec.page_id == DEFAULT_PAGE_ID:
+            renderers[page_spec.page_id] = partial(
+                page_module.render_page,
+                _crawl_page_context(page_module),
+            )
+        else:
+            renderers[page_spec.page_id] = page_module.render_page
+    return renderers
+
+
+def _navigation_pages(strings: Strings) -> list[Any]:
+    renderers = _page_renderers()
+    return [
+        st.Page(
+            renderers[page_spec.page_id],
+            title=strings[page_spec.nav_label_key],
+            icon=page_spec.icon,
+            url_path=page_spec.url_path,
+            default=page_spec.page_id == DEFAULT_PAGE_ID,
+        )
+        for page_spec in APP_PAGE_SPECS
+    ]
+
+
+def _render_page_header(page_spec: AppPageSpec, strings: Strings) -> None:
+    st.title(strings[page_spec.title_key])
+    st.write(strings[page_spec.subtitle_key])
+
+
 _init_state()
 _mount_session_storage()
-strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 
 # Show deferred "session created" toast only once the storage component has
 # confirmed the localStorage write. Firing earlier shows it on an intermediate
@@ -2312,11 +2553,12 @@ if (
     and not st.session_state.pending_browser_session_records
 ):
     st.session_state.pop(_CREATE_TOAST_STATE)
-    st.toast(strings["TOAST_SESSION_CREATED"], icon=_TOAST_PAGE_SUCCESS_ICON)
+    st.toast(active_strings["TOAST_SESSION_CREATED"], icon=_TOAST_PAGE_SUCCESS_ICON)
 if st.session_state.get(_LOAD_TOAST_STATE) and not st.session_state.pending_browser_session_records:
     _load_toast_id = st.session_state.pop(_LOAD_TOAST_STATE)
     st.toast(
-        strings["TOAST_SESSION_LOADED"].format(id=_load_toast_id), icon=":material/folder_open:"
+        active_strings["TOAST_SESSION_LOADED"].format(id=_load_toast_id),
+        icon=":material/folder_open:",
     )
 if (
     st.session_state.get(_SWITCH_TOAST_STATE)
@@ -2324,7 +2566,7 @@ if (
 ):
     _switch_toast_id = st.session_state.pop(_SWITCH_TOAST_STATE)
     st.toast(
-        strings["DIALOG_LOAD_SESSION_ALREADY_LOADED"].format(id=_switch_toast_id),
+        active_strings["DIALOG_LOAD_SESSION_ALREADY_LOADED"].format(id=_switch_toast_id),
         icon=":material/folder_open:",
     )
 
@@ -2334,9 +2576,9 @@ bootstrap_state = bootstrap_gate_state(
     session_storage_write_failed=st.session_state.session_storage_write_failed,
 )
 if bootstrap_state == "hydrating":
-    st.title(strings["PAGE_TITLE"])
-    st.write(strings["PAGE_SUBTITLE"])
-    st.info(strings["SESSION_LOADING"])
+    st.title(active_strings["PAGE_TITLE"])
+    st.write(active_strings["PAGE_SUBTITLE"])
+    st.info(active_strings["SESSION_LOADING"])
     st.stop()
 
 _ensure_selected_session()
@@ -2345,210 +2587,36 @@ bootstrap_state = bootstrap_gate_state(
     pending_bootstrap_session_id=st.session_state.pending_bootstrap_session_id,
     session_storage_write_failed=st.session_state.session_storage_write_failed,
 )
-language_widget_key = _sync_language_widget_state()
+active_language_widget_key = _sync_language_widget_state()
 if bootstrap_state != "ready":
-    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    st.title(strings["PAGE_TITLE"])
-    st.write(strings["PAGE_SUBTITLE"])
+    active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    st.title(active_strings["PAGE_TITLE"])
+    st.write(active_strings["PAGE_SUBTITLE"])
     if bootstrap_state == "storage_error":
-        st.error(strings["ERROR_SESSION_STORAGE_WRITE"])
+        st.error(active_strings["ERROR_SESSION_STORAGE_WRITE"])
         st.stop()
-    st.info(strings["SESSION_LOADING"])
+    st.info(active_strings["SESSION_LOADING"])
     st.stop()
 
 _reattach_selected_session_job()
-_run_startup_cleanup(tuple(set(_session_options()) | active_registry_session_ids()))
-_drain_job_events(st.session_state.job)
+_run_startup_cleanup(tuple(sorted(set(_session_options()) | active_registry_session_ids())))
 
-strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+_render_crawl_event_loop()
 
-st.markdown(
-    f"""
-    <style>
-    div[data-testid="stMainBlockContainer"],
-    section.main .block-container {{
-        max-width: {_FORM_MAX_WIDTH_PX}px !important;
-        margin-left: auto;
-        margin-right: auto;
-    }}
-    div[data-testid="stForm"] {{
-        max-width: {_FORM_MAX_WIDTH_PX}px;
-        margin-left: auto;
-        margin-right: auto;
-    }}
-    h3#form-subheader {{
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
-    }}
-    h3#progress {{
-        padding-bottom: 0 !important;
-    }}
-    div[data-testid="stForm"] .stHeading h3 {{
-        padding: 0.75rem 0 0 !important;
-    }}
-    div[class*="st-key-Stop"] button {{
-        background-color: #dc2626;
-        border-color: #dc2626;
-        color: white;
-    }}
-    div[class*="st-key-Stop"] button:hover {{
-        background-color: #b91c1c;
-        border-color: #b91c1c;
-        color: white;
-    }}
-    div[data-testid="stToastContainer"] {{
-        top: auto !important;
-        bottom: 1rem !important;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
+_render_shared_styles()
+navigation_page = st.navigation(_navigation_pages(active_strings), position="top")
+selected_page_spec = page_spec_by_nav_label(navigation_page.title, active_strings)
+_render_page_header(selected_page_spec, active_strings)
+_, _, _, session_fields_disabled = _current_crawl_runtime()
+_render_session_controls(
+    fields_disabled=session_fields_disabled,
+    language_widget_key=active_language_widget_key,
+    strings=active_strings,
 )
-
-st.title(strings["PAGE_TITLE"])
-st.write(strings["PAGE_SUBTITLE"])
-current_job = st.session_state.job
-current_state = st.session_state.job_state
-job_alive = _job_is_alive(current_job)
-fields_disabled = (
-    current_state == _STATE_RUNNING and job_alive
-) or current_state == _STATE_CANCEL_REQUESTED
-form_expanded = not fields_disabled
-
-session_options = _session_options()
-session_controls_col, language_col = st.columns([5, 1], vertical_alignment="top")
-with session_controls_col:
-    _extend_toast = st.session_state.pop(_EXTEND_TOAST_STATE, None)
-    if _extend_toast == _EXTEND_TOAST_SUCCESS:
-        st.toast(strings["TOAST_SESSION_EXTENDED"], icon=_TOAST_PAGE_SUCCESS_ICON)
-    elif _extend_toast == _EXTEND_TOAST_FAILED:
-        st.toast(strings["TOAST_SESSION_EXTEND_FAILED"], icon=_TOAST_PAGE_FAIL_ICON)
-    with st.container(gap="xxsmall"):
-        with st.container(horizontal=True, vertical_alignment="bottom", gap="xxsmall"):
-            with st.container(
-                horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"
-            ):
-                st.markdown(strings["SESSION_SELECTOR_LABEL"])
-                selected_session = st.selectbox(
-                    label=strings["SESSION_SELECTOR_LABEL"],
-                    options=session_options,
-                    index=_session_selector_index(session_options),
-                    key=f"session_selector_{st.session_state.session_id}",
-                    label_visibility="collapsed",
-                    width=240,
-                    disabled=fields_disabled,
-                )
-            if st.button(
-                "",
-                width=_ICON_BUTTON_WIDTH_PX,
-                key="session_create_button",
-                icon=":material/add:",
-                help=strings["SESSION_CREATE_BUTTON_TOOLTIP"],
-                disabled=fields_disabled,
-            ):
-                _create_new_session()
-            if st.button(
-                "",
-                width=_ICON_BUTTON_WIDTH_PX,
-                key="session_load_button",
-                icon=":material/folder_open:",
-                help=strings["SESSION_LOAD_BUTTON_TOOLTIP"],
-                disabled=fields_disabled,
-            ):
-                st.session_state.session_load_dialog_open = True
-                st.rerun()
-            if st.button(
-                "",
-                width=_ICON_BUTTON_WIDTH_PX,
-                key="session_extend_button",
-                icon=":material/more_time:",
-                help=strings["SESSION_EXTEND_BUTTON_TOOLTIP"],
-                disabled=fields_disabled,
-            ):
-                try:
-                    touch_session(_SESSIONS_ROOT, st.session_state.session_id)
-                    st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_SUCCESS
-                except (OSError, ValueError):
-                    st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_FAILED
-                st.rerun()
-        days_left, hours_left = session_time_remaining(_SESSIONS_ROOT, st.session_state.session_id)
-        if days_left == 0:
-            if hours_left == 0:
-                expiry_key = "SESSION_EXPIRY_CAPTION_SOON"
-            elif hours_left == 1:
-                expiry_key = "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR"
-            else:
-                expiry_key = "SESSION_EXPIRY_CAPTION_HOURS"
-        elif hours_left == 0:
-            expiry_key = (
-                "SESSION_EXPIRY_CAPTION_SINGULAR" if days_left == 1 else "SESSION_EXPIRY_CAPTION"
-            )
-        elif hours_left == 1:
-            expiry_key = (
-                "SESSION_EXPIRY_CAPTION_DAY_HOUR"
-                if days_left == 1
-                else "SESSION_EXPIRY_CAPTION_DAYS_HOUR"
-            )
-        else:
-            expiry_key = (
-                "SESSION_EXPIRY_CAPTION_DAY_HOURS"
-                if days_left == 1
-                else "SESSION_EXPIRY_CAPTION_DAYS_HOURS"
-            )
-        st.caption(
-            strings[expiry_key].format(days=days_left, hours=hours_left)
-        )  # one or both kwargs may be unused per key
-    if selected_session != st.session_state.session_id:
-        _select_session_id(str(selected_session))
-        st.rerun()
-with language_col, st.container(horizontal_alignment="right"):
-    _language_default = (
-        _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
-        if language_widget_key not in st.session_state
-        else None
-    )
-    st.segmented_control(
-        label=strings["LANG_SELECTOR_LABEL"],
-        options=list(CATALOG.keys()),
-        key=language_widget_key,
-        default=_language_default,
-        label_visibility="collapsed",
-        disabled=fields_disabled,
-        on_change=_on_language_change,
-        args=(language_widget_key,),
-    )
-
-values = render_crawl_form(
-    fields_disabled=fields_disabled,
-    expanded=form_expanded,
-    state=current_state,
-    job_alive=job_alive,
-    strings=strings,
-    defaults=st.session_state.form_defaults,
-    activity_log_size=int(st.session_state.activity_log_size),
-)
-if values["submitted"]:
-    st.session_state.stop_confirmation_open = False
-    if current_job is not None and current_job.thread.is_alive():
-        st.warning(strings["ERROR_CRAWL_ALREADY_RUNNING"])
-    else:
-        _start_job(values)
-elif values["stop_submitted"]:
-    st.session_state.stop_confirmation_open = True
-
-if st.session_state.stop_confirmation_open and not job_alive:
-    st.session_state.stop_confirmation_open = False
-
-if st.session_state.stop_confirmation_open:
-    _stop_confirmation_dialog()
-
 if st.session_state.session_load_dialog_open:
     _load_session_dialog()
 
-_render_ready_result_panel()
-st.subheader(strings["PROGRESS_HEADER"])
-st.caption(strings["PROGRESS_CAPTION"])
-_render_live_area()
-_render_downloads()
+navigation_page.run()
 _render_footer()
 _render_portfolio_modal()

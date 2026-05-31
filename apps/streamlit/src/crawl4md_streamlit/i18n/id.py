@@ -32,6 +32,55 @@ STRINGS_ID: Strings = {
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
     "LANG_SELECTOR_LABEL": "Bahasa",
+    "NAV_CRAWL": "Crawl",
+    "NAV_VECTOR_INDEX": "Vector Index",
+    "NAV_SEMANTIC_SEARCH": "Semantic Search",
+    "NAV_RAG_QA": "RAG Q&A",
+    "NAV_CONVERSATIONAL_RAG": "Conversational RAG",
+    "PAGE_VECTOR_INDEX_TITLE": ":material/database: Langkah 2 - Bangun Vector Index",
+    "PAGE_VECTOR_INDEX_SUBTITLE": (
+        "Pilih output Markdown, teks, atau ZIP, pecah menjadi chunk, buat embedding, "
+        "dan simpan di vector database."
+    ),
+    "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Langkah 3 - Semantic Search",
+    "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
+        "Ubah kueri pencarian menjadi embedding, ambil chunk yang mirip, dan tinjau "
+        "hasil berperingkat dari vector database."
+    ),
+    "PAGE_RAG_QA_TITLE": ":material/question_answer: Langkah 4 - Tanya Jawab RAG",
+    "PAGE_RAG_QA_SUBTITLE": (
+        "Ajukan satu pertanyaan, ambil konteks, susun prompt, dan tinjau jawaban LLM "
+        "beserta sumbernya."
+    ),
+    "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Langkah 5 - Conversational RAG",
+    "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
+        "Chat lintas giliran dengan konteks hasil retrieval, riwayat percakapan, dan "
+        "penulisan ulang kueri."
+    ),
+    "PLACEHOLDER_SECTION_HEADER": "Area kerja langkah",
+    "PLACEHOLDER_SECTION_CAPTION": (
+        "Halaman ini memakai kontrol sesi dan layout yang sama sambil backend RAG ditambahkan."
+    ),
+    "PLACEHOLDER_EXPANDER_LABEL": "Ringkasan kebutuhan",
+    "PLACEHOLDER_VECTOR_INDEX": (
+        "Pilih file Markdown atau teks yang dihasilkan, termasuk arsip ZIP yang berisi file "
+        "tersebut. Alur berikutnya akan memecah konten menjadi chunk, membuat embedding, "
+        "dan menyimpan index di ChromaDB."
+    ),
+    "PLACEHOLDER_SEMANTIC_SEARCH": (
+        "Masukkan kueri pencarian, buat embedding dengan model yang sama seperti chunk dalam "
+        "index, jalankan similarity search, lalu tampilkan snippet berperingkat dengan skor "
+        "dan referensi sumber."
+    ),
+    "PLACEHOLDER_RAG_QA": (
+        "Ajukan satu pertanyaan, ambil chunk yang paling relevan, gabungkan ke dalam prompt, "
+        "panggil LLM yang dipilih, lalu tampilkan jawaban bersama sumber konteks."
+    ),
+    "PLACEHOLDER_CONVERSATIONAL_RAG": (
+        "Gunakan antarmuka chat yang dapat menulis ulang kueri retrieval dari konteks "
+        "percakapan, menyertakan riwayat pesan terbaru, dan berkembang menjadi alur RAG "
+        "dengan memory."
+    ),
     # ── Form ──────────────────────────────────────────────────────────────
     "FORM_SUBHEADER": "⚙️ Atur crawl Anda",
     "FORM_CAPTION": (

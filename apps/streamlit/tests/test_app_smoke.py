@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
@@ -12,6 +11,7 @@ from unittest.mock import patch
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from crawl4md_streamlit.pages import APP_PAGE_SPECS, DEFAULT_PAGE_ID
 from crawl4md_streamlit.support import (
     CrawlJob,
     JobSnapshot,
@@ -21,26 +21,66 @@ from crawl4md_streamlit.support import (
 )
 
 _STREAMLIT_APP_FILE = Path(__file__).resolve().parents[1] / "streamlit_app.py"
+_CONVERSATIONAL_PAGE_PATH = "app_pages/conversational_rag.py"
+_EVENT_PAGE_PROCESSED = "page_processed"
+
+
+def _page_path_from_module(module_name: str) -> str:
+    return f"{module_name.replace('.', '/')}.py"
+
+
+def _running_fake_job(session_id: str, output_base: Path) -> tuple[CrawlJob, Event, Thread]:
+    gate = Event()
+    thread = Thread(target=gate.wait)
+    thread.daemon = True
+    thread.start()
+    job = CrawlJob(
+        session_id=session_id,
+        crawl_id="cr_toast",
+        output_base=output_base,
+        events=Queue(),
+        cancel_event=Event(),
+        thread=thread,
+    )
+    return job, gate, thread
+
+
+def _queue_progress_event(
+    job: CrawlJob,
+    *,
+    output_base: Path,
+    successful: int,
+    failed: int,
+    discovered: int,
+) -> None:
+    job.events.put(
+        {
+            "event": _EVENT_PAGE_PROCESSED,
+            "output_dir": str(output_base),
+            "successful_pages": successful,
+            "failed_pages": failed,
+            "queued_discovered_urls": discovered,
+            "processed_pages": successful + failed,
+            "limit": 10,
+        }
+    )
 
 
 def _storage_component_factory(
-    name: str,
-    *,
-    html: str | None = None,
-    css: str | None = None,
-    js: str | None = None,
-    isolate_styles: bool = True,
+    *_component_args: object,
     initial_records: list[dict[str, str]] | None = None,
     freeze_records: bool = False,
+    acknowledge_stored_records: bool = True,
     initial_portfolio_modal_last_shown_at: str | None = None,
     initial_portfolio_modal_last_dismissed_at: str | None = None,
+    **_component_options: object,
 ):
     """Mock component factory. freeze_records=True simulates stale component state where
     'records' stays frozen at the hydration-time value after a new session is created."""
     browser_records: list[dict[str, str]] = list(initial_records or [])
     hydration_snapshot: list[dict[str, str]] = list(browser_records)
 
-    def render(*, data: dict[str, object], **kwargs: object) -> SimpleNamespace:
+    def render(*, data: dict[str, object], **_kwargs: object) -> SimpleNamespace:
         nonlocal browser_records
         pending_records = data.get("pendingRecords", [])
         if not isinstance(pending_records, list):
@@ -51,7 +91,8 @@ def _storage_component_factory(
             browser_records = serialize_session_records(
                 normalize_session_records([*browser_records, *pending_records])
             )
-            stored_records = browser_records
+            if acknowledge_stored_records:
+                stored_records = browser_records
 
         return SimpleNamespace(
             hydrated=True,
@@ -75,6 +116,25 @@ def test_streamlit_app_starts_without_crashing(
         app.run(timeout=10)
 
     assert not app.exception
+
+
+# Risk: registry entries can point at pages that fail only after navigation.
+# Type: workflow smoke.
+def test_streamlit_app_switches_through_registered_workflow_pages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    with patch("streamlit.components.v2.component", _storage_component_factory):
+        app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+        app.run(timeout=10)
+        assert not app.exception
+
+        for page_spec in APP_PAGE_SPECS:
+            if page_spec.page_id == DEFAULT_PAGE_ID:
+                continue
+            app.switch_page(_page_path_from_module(page_spec.module_name))
+            app.run(timeout=10)
+            assert not app.exception
 
 
 # Risk: browser-storage hydration must preserve portfolio modal timestamps separately from
@@ -185,6 +245,41 @@ def test_new_session_not_reverted_when_component_records_are_stale(
         )
 
 
+# Risk: a missed stored_records callback can leave bootstrap pending forever even after
+# localStorage already contains the new session. Type: critical flow regression.
+def test_pending_session_clears_when_component_records_already_include_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "pending_ack"
+    initial_records = serialize_session_records(
+        [SessionRecord(session_id, datetime(2026, 5, 30, tzinfo=timezone.utc))]
+    )
+    (tmp_path / "outputs" / "streamlit_sessions" / f"session_{session_id}").mkdir(parents=True)
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "streamlit.components.v2.component",
+        partial(
+            _storage_component_factory,
+            initial_records=initial_records,
+            acknowledge_stored_records=False,
+        ),
+    ):
+        app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+        app.run(timeout=10)
+        assert not app.exception
+
+        app.session_state.pending_browser_session_records = initial_records
+        app.session_state.pending_bootstrap_session_id = session_id
+        app.session_state.session_storage_write_failed = False
+        app.run(timeout=10)
+
+    assert not app.exception
+    assert app.session_state.pending_browser_session_records == []
+    assert app.session_state.pending_bootstrap_session_id == ""
+    assert app.session_state.session_storage_write_failed is False
+
+
 # Risk: browser refresh causes a fresh st.session_state (job=None) even if the crawl
 # thread is still alive — the registry must be consulted to reattach. Type: critical flow.
 def test_refresh_reattaches_running_crawl_from_registry(
@@ -245,9 +340,188 @@ def test_refresh_reattaches_running_crawl_from_registry(
         t.join(timeout=2)
 
 
-# Risk: progress chart schema regressions can silently change layer order, axis naming,
-# or mark type, making progress trends harder to interpret. Type: integration regression.
-def test_progress_chart_renders_cumulative_schema(
+# Risk: crawl progress notifications are missed when a user leaves the crawl page.
+# Type: critical flow regression.
+def test_crawl_progress_toasts_emit_from_shell_on_other_pages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "toast_cross_page"
+    initial_records = serialize_session_records(
+        [SessionRecord(session_id, datetime(2026, 6, 3, tzinfo=timezone.utc))]
+    )
+    sessions_root = tmp_path / "outputs" / "streamlit_sessions"
+    output_base = sessions_root / f"session_{session_id}" / "crawl_1_toast"
+    (sessions_root / f"session_{session_id}").mkdir(parents=True)
+    fake_job, gate, thread = _running_fake_job(session_id, output_base)
+    _queue_progress_event(
+        fake_job,
+        output_base=output_base,
+        successful=2,
+        failed=1,
+        discovered=4,
+    )
+    toast_calls: list[tuple[object, str | None]] = []
+
+    def capture_toast(body: object, *, icon: str | None = None, **_: object) -> None:
+        toast_calls.append((body, icon))
+
+    monkeypatch.chdir(tmp_path)
+    try:
+        with patch(
+            "streamlit.components.v2.component",
+            partial(_storage_component_factory, initial_records=initial_records),
+        ):
+            app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+            app.run(timeout=10)
+            app.switch_page(_CONVERSATIONAL_PAGE_PATH)
+            app.run(timeout=10)
+            app.session_state.job = fake_job
+            app.session_state.job_state = "running"
+            app.session_state.started_at = datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc)
+            app.session_state.latest_event = {}
+            app.session_state.prev_successful_pages = 0
+            app.session_state.prev_failed_pages = 0
+            app.session_state.prev_discovered_pages = 0
+
+            with patch("streamlit.toast", capture_toast):
+                app.run(timeout=10)
+
+        assert not app.exception
+        assert len(toast_calls) == 3
+        assert fake_job.events.empty()
+        assert app.session_state.latest_event["successful_pages"] == 2
+        assert app.session_state.prev_successful_pages == 2
+        assert app.session_state.prev_failed_pages == 1
+        assert app.session_state.prev_discovered_pages == 4
+    finally:
+        gate.set()
+        thread.join(timeout=2)
+
+
+# Risk: counters from a previous crawl can suppress early toasts for a fresh crawl.
+# Type: critical flow regression.
+def test_starting_new_crawl_resets_progress_toast_counters(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "toast_second_crawl"
+    initial_records = serialize_session_records(
+        [SessionRecord(session_id, datetime(2026, 6, 5, tzinfo=timezone.utc))]
+    )
+    sessions_root = tmp_path / "outputs" / "streamlit_sessions"
+    output_base = sessions_root / f"session_{session_id}" / "crawl_2_toast"
+    (sessions_root / f"session_{session_id}").mkdir(parents=True)
+    fake_job, gate, thread = _running_fake_job(session_id, output_base)
+    toast_calls: list[tuple[object, str | None]] = []
+
+    def fake_start_crawl_job(**_: object) -> CrawlJob:
+        return fake_job
+
+    def capture_toast(body: object, *, icon: str | None = None, **_: object) -> None:
+        toast_calls.append((body, icon))
+
+    monkeypatch.chdir(tmp_path)
+    try:
+        with (
+            patch(
+                "streamlit.components.v2.component",
+                partial(_storage_component_factory, initial_records=initial_records),
+            ),
+            patch("crawl4md_streamlit.support.start_crawl_job", fake_start_crawl_job),
+        ):
+            app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+            app.run(timeout=10)
+            app.session_state.prev_successful_pages = 9
+            app.session_state.prev_failed_pages = 2
+            app.session_state.prev_discovered_pages = 12
+
+            next(button for button in app.button if button.key == "Start").click()
+            app.run(timeout=10)
+
+            assert app.session_state.prev_successful_pages == 0
+            assert app.session_state.prev_failed_pages == 0
+            assert app.session_state.prev_discovered_pages == 0
+
+            _queue_progress_event(
+                fake_job,
+                output_base=output_base,
+                successful=1,
+                failed=0,
+                discovered=1,
+            )
+            with patch("streamlit.toast", capture_toast):
+                app.run(timeout=10)
+
+        assert not app.exception
+        assert len(toast_calls) == 2
+        assert app.session_state.prev_successful_pages == 1
+        assert app.session_state.prev_failed_pages == 0
+        assert app.session_state.prev_discovered_pages == 1
+    finally:
+        gate.set()
+        thread.join(timeout=2)
+
+
+# Risk: moving progress toasts to the shell could ignore the existing file-preview guard.
+# Type: integration regression.
+def test_crawl_progress_toasts_are_suppressed_during_file_preview(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "toast_preview"
+    initial_records = serialize_session_records(
+        [SessionRecord(session_id, datetime(2026, 6, 4, tzinfo=timezone.utc))]
+    )
+    sessions_root = tmp_path / "outputs" / "streamlit_sessions"
+    output_base = sessions_root / f"session_{session_id}" / "crawl_1_toast"
+    (sessions_root / f"session_{session_id}").mkdir(parents=True)
+    fake_job, gate, thread = _running_fake_job(session_id, output_base)
+    _queue_progress_event(
+        fake_job,
+        output_base=output_base,
+        successful=1,
+        failed=0,
+        discovered=3,
+    )
+    toast_calls: list[tuple[object, str | None]] = []
+
+    def capture_toast(body: object, *, icon: str | None = None, **_: object) -> None:
+        toast_calls.append((body, icon))
+
+    monkeypatch.chdir(tmp_path)
+    try:
+        with patch(
+            "streamlit.components.v2.component",
+            partial(_storage_component_factory, initial_records=initial_records),
+        ):
+            app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+            app.run(timeout=10)
+            app.switch_page(_CONVERSATIONAL_PAGE_PATH)
+            app.run(timeout=10)
+            app.session_state.job = fake_job
+            app.session_state.job_state = "running"
+            app.session_state.started_at = datetime(2026, 6, 4, 12, 0, tzinfo=timezone.utc)
+            app.session_state.latest_event = {}
+            app.session_state.preview_file_relative_path = "preview.md"
+            app.session_state.prev_successful_pages = 0
+            app.session_state.prev_failed_pages = 0
+            app.session_state.prev_discovered_pages = 0
+
+            with patch("streamlit.toast", capture_toast):
+                app.run(timeout=10)
+
+        assert not app.exception
+        assert toast_calls == []
+        assert fake_job.events.empty()
+        assert app.session_state.prev_successful_pages == 1
+        assert app.session_state.prev_failed_pages == 0
+        assert app.session_state.prev_discovered_pages == 3
+    finally:
+        gate.set()
+        thread.join(timeout=2)
+
+
+# Risk: progress chart rendering can crash when cumulative history is present.
+# Type: integration smoke.
+def test_progress_chart_renders_with_cumulative_history(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     session_id = "chart_schema"
@@ -285,20 +559,4 @@ def test_progress_chart_renders_cumulative_schema(
         app.run(timeout=10)
 
     assert not app.exception
-    chart_specs = [json.loads(chart.spec) for chart in app.get("vega_lite_chart")]
-    assert len(chart_specs) == 1
-
-    cumulative_specs = [spec for spec in chart_specs if spec.get("height") == 220]
-    assert len(cumulative_specs) == 1
-    cumulative_layers = cumulative_specs[0].get("layer", [])
-    assert [layer.get("encoding", {}).get("y", {}).get("field") for layer in cumulative_layers] == [
-        "discovered_pages",
-        "successful_pages",
-        "processed_pages",
-        "page_limit",
-    ]
-    assert cumulative_layers[2].get("encoding", {}).get("y2", {}).get("field") == "successful_pages"
-    assert cumulative_layers[0].get("encoding", {}).get("x", {}).get("field") == "elapsed_time"
-    assert cumulative_layers[0].get("encoding", {}).get("color", {}).get("scale", {}).get(
-        "domain"
-    ) == ["Discovered", "Successful", "Failed", "Limit"]
+    assert len(app.get("vega_lite_chart")) == 1

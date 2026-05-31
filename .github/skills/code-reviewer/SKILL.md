@@ -47,6 +47,7 @@ Walk through every item. Flag violations with file + line.
 - Code under `src/crawl4md/` must not import UI or app packages such as `streamlit` or `crawl4md_streamlit`.
 - Core code must not take on app-only concerns such as browser storage, UI state, download panels, or app-specific output roots. Generic hooks such as `output_base`, `session_id`, `progress_callback`, and `should_cancel` are acceptable because other adapters can reuse them.
 - UI packages should adapt core APIs, not reimplement crawl, extraction, write, sort, or final-output behavior that belongs in the library.
+- For `apps/streamlit/app_pages/**`, flag direct `st.toast()` calls. App-wide notifications belong in the shared shell or a shell-owned callback/context; page-local feedback should stay inline in page content.
 - If a change touches the boundary, check that the relevant boundary tests still cover it.
 
 ### 6. Tests

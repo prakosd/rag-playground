@@ -16,9 +16,13 @@ flowchart TD
   Root["apps/streamlit/"]
   Root --> Config["pyproject.toml<br/>.streamlit/config.toml"]
   Root --> App["streamlit_app.py<br/>UI entry point"]
+  Root --> AppPages["app_pages/<br/>content pages"]
   Root --> HelpersRoot["src/crawl4md_streamlit/<br/>helpers"]
   Root --> TestsRoot["tests/<br/>helper tests"]
+  App --> AppPages
   App --> HelpersRoot
+  AppPages --> HelpersRoot
+  HelpersRoot --> Pages["pages.py<br/>page registry"]
 ```
 
 | Helper module | Responsibility |
@@ -29,8 +33,11 @@ flowchart TD
 | `form_defaults.py` | Default crawl form payload |
 | `form_ui.py` | Crawl settings form renderer |
 | `generated_files.py` | Output listing, previews, and downloads |
+| `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
 | `support.py` | Compatibility exports for the split helper modules |
+
+Workflow content modules live in `app_pages/`. Each module exposes `render_page()` and renders only the content area for one navigation step. The shared page shell stays in `streamlit_app.py`.
 
 ### Why a separate package?
 
@@ -58,11 +65,11 @@ Everything the user sees and interacts with. Responsibilities:
 - Initialises `st.session_state` keys on first load (`_init_state`).
 - Hydrates browser-local session records through the inline CCv2 localStorage bridge.
 - Preserves portfolio-modal localStorage timestamps so the personal intro prompt is not shown too often.
+- Builds the top navigation with `st.navigation` from pure page metadata in `pages.py`.
+- Renders the shared page shell: active page title/subtitle, session controls, language selector, selected `app_pages` content, footer, and portfolio modal.
 - Renders the selected session ID, searchable session selector, create-session button, and language selector.
-- Renders the settings form (`render_crawl_form`) and action buttons (delegated to `controls.py`).
-- Translates button presses into job start / stop calls.
-- Drains background-thread events every Streamlit rerun and maps them to UI state
-  (`_drain_job_events`).
+- Supplies the crawler page with shell-owned callbacks for job start / stop, ready results, live progress, and downloads.
+- Runs the shell-level crawl event loop, drains background-thread events into UI state, and emits crawl progress toasts that remain visible while users navigate other workflow pages.
 - Renders progress metrics, active/next URL previews, cumulative totals + pace charts, and the
   activity log (`_render_live_area`, refreshed every 3 seconds via `@st.fragment(run_every="3s")`).
 - Renders the selected session's generated-file table and a per-file download + preview tree separately
@@ -70,6 +77,36 @@ Everything the user sees and interacts with. Responsibilities:
 - Runs a one-time startup cleanup of old session folders (`_run_startup_cleanup`, cached with
   `@st.cache_resource`).
 - Renders the global footer and browser-timed portfolio modal with translated copy.
+
+The current multipage pass uses dedicated modules in `app_pages/` for every workflow step. Step 1 (`app_pages/crawl4md.py`) renders the existing crawler content area through callbacks from the shared shell. Steps 2-5 are placeholder-only modules for now. They intentionally reuse the same width, title/subtitle placement, session-control row, language selector placement, footer, and restrained Streamlit-native styling as the crawler page so navigation feels continuous while the backend RAG features are still being built.
+
+### Toast Emission Model
+
+App-wide toast notifications are emitted by the shared shell, not by page modules. This keeps background crawl updates visible while users navigate across workflow pages, because the shell runs before every selected page.
+
+- Shell-owned toasts: crawl progress, background job completion/failure, session lifecycle, and other cross-page status.
+- Page-local feedback: validation hints, inline warnings, and page-only status should render in the content area with `st.info`, `st.warning`, `st.success`, or a page-local panel.
+- Future pages that need an app-wide toast should request it through a shell-provided callback or context instead of calling `st.toast()` directly.
+
+### `app_pages/` — workflow content pages
+
+Streamlit UI modules for individual workflow steps. These files may import Streamlit, but they should only render content that belongs between the shared session controls and footer. Do not add `st.title`, session controls, language selectors, footer UI, or direct `st.toast()` calls here.
+
+| Page module | Responsibility |
+| --- | --- |
+| `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
+| `vector_index.py` | Step 2 vector index workspace placeholder |
+| `semantic_search.py` | Step 3 semantic search workspace placeholder |
+| `rag_qa.py` | Step 4 single-turn RAG Q&A workspace placeholder |
+| `conversational_rag.py` | Step 5 conversational RAG workspace placeholder |
+
+When a page grows complex, keep page-specific state keys prefixed with the page id and move reusable non-UI logic into `src/crawl4md_streamlit/` or the core `crawl4md` package instead of importing from `streamlit_app.py`.
+
+### `pages.py` — workflow page registry
+
+Pure logic; no Streamlit imports. `APP_PAGE_SPECS` defines the five workflow steps, translated navigation-label keys, title/subtitle keys, icons, URL paths, page module names, and placeholder-copy keys. `streamlit_app.py` turns these specs into `st.Page` entries and uses the selected spec to render the shared header.
+
+Keep page metadata here when adding, renaming, or reordering workflow pages. Keep page content in `app_pages/`, and keep all visible page text in `i18n/en.py` and `i18n/id.py`.
 
 ### `controls.py` — button definitions
 
@@ -317,9 +354,9 @@ flowchart TD
   Write --> GeneratedOutput["generated files on disk"]
   Crawl --> Events["job.events queue<br/>progress + terminal events"]
 
-  Events --> Drain["_drain_job_events()<br/>update st.session_state on rerun"]
-  Drain --> LiveArea["_render_live_area()<br/>status, charts, activity log"]
-  Drain --> Downloads["_render_downloads()<br/>file table + previews"]
+  Events --> ShellLoop["_render_crawl_event_loop()<br/>drain events + app-wide toasts"]
+  ShellLoop --> LiveArea["_render_live_area()<br/>status, charts, activity log"]
+  ShellLoop --> Downloads["_render_downloads()<br/>file table + previews"]
   GeneratedOutput --> Downloads
 ```
 
@@ -333,10 +370,11 @@ flowchart TD
 | `tests/test_form_defaults.py` | Default crawl form payload and independent dict creation |
 | `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads |
 | `tests/test_progress_chart.py` | Pure chart helper behavior: live sample append, persisted JSONL parsing, cumulative/pace row derivation |
+| `tests/test_pages.py` | Pure page-registry behavior for workflow ordering, placeholders, translated navigation labels, and importable page modules |
 | `tests/test_support.py` | ID safety, browser session records, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |
 | `tests/test_support_facade.py` | Compatibility exports from the split helper modules |
 | `tests/test_app_smoke.py` | App import/startup smoke coverage and preview CSS guardrails |
-| `tests/test_streamlit_boundaries.py` | `.streamlit/config.toml` sets the right address and port; no config leaks to repo root; helper package stays Streamlit-free |
+| `tests/test_streamlit_boundaries.py` | `.streamlit/config.toml` sets the right address and port; no config leaks to repo root; helper package stays Streamlit-free; page modules do not emit direct Streamlit toasts |
 
 Tests mock `SiteCrawler` — no real network calls are made. The split between `streamlit_app.py`
 (Streamlit imports) and the pure helper modules is what makes pure-Python testing possible.
@@ -350,7 +388,8 @@ Tests mock `SiteCrawler` — no real network calls are made. The split between `
 | Add a new form field | `render_crawl_form()` in `form_ui.py` + `default_form_values()` in `form_defaults.py` + `build_configs()` in `crawl_jobs.py` |
 | Change action buttons or states | `controls.py` (`CrawlActionButton`, `crawl_action_buttons`) + `test_controls.py` |
 | Add a new event type from the crawler | `job_state_from_event()` in `crawl_jobs.py` + `_drain_job_events()` in `streamlit_app.py` |
-| Add a new output panel | A new `_render_*` function in `streamlit_app.py`; use `_render_live_area` for crawl-status panels and a separate fragment for selected-session downloads |
+| Add a new output panel | A new page-local renderer in `app_pages/crawl4md.py` or a shell callback in `streamlit_app.py`; use `_render_live_area` for crawl-status panels and a separate fragment for selected-session downloads |
+| Add or rename a workflow page | `app_pages/<page>.py` + `pages.py` + i18n keys in `en.py` / `id.py` + `tests/test_pages.py`; keep Steps 2-5 visually aligned with the crawler shell |
 | Change retention or cleanup logic | `cleanup_old_sessions()` in `session_manager.py` + `test_support.py` |
 | Change the Load Session dialog | `_load_session_dialog()` + `_register_and_select_session()` in `streamlit_app.py`; update i18n keys in `en.py` / `id.py` |
 | Change the server port or theme | `apps/streamlit/.streamlit/config.toml` |
@@ -373,5 +412,5 @@ python -m streamlit run apps/streamlit/streamlit_app.py --server.address=0.0.0.0
 ```bash
 # Tests and lint:
 python -m pytest apps/streamlit/tests/ -q
-python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/src/ apps/streamlit/tests/
+python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 ```

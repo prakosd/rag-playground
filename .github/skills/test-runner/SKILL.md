@@ -116,7 +116,7 @@ Run using the **ruff direct strategy** above.
 ### Step 7 — app ruff lint check
 
 ```
-python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/src/ apps/streamlit/tests/
+python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 ```
 
 Run using the **ruff direct strategy** above.
@@ -124,7 +124,7 @@ Run using the **ruff direct strategy** above.
 ### Step 8 — app ruff format check
 
 ```
-python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/src/ apps/streamlit/tests/
+python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 ```
 
 Run using the **ruff direct strategy** above.

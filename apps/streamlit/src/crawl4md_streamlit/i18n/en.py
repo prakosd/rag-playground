@@ -31,6 +31,52 @@ STRINGS_EN: Strings = {
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
     "LANG_SELECTOR_LABEL": "Language",
+    "NAV_CRAWL": "Crawl",
+    "NAV_VECTOR_INDEX": "Vector Index",
+    "NAV_SEMANTIC_SEARCH": "Semantic Search",
+    "NAV_RAG_QA": "RAG Q&A",
+    "NAV_CONVERSATIONAL_RAG": "Conversational RAG",
+    "PAGE_VECTOR_INDEX_TITLE": ":material/database: Step 2 - Build Vector Index",
+    "PAGE_VECTOR_INDEX_SUBTITLE": (
+        "Select Markdown, text, or ZIP outputs, split them into chunks, generate embeddings, "
+        "and store them in a vector database."
+    ),
+    "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Step 3 - Semantic Search",
+    "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
+        "Embed a search query, retrieve similar chunks, and inspect ranked matches from the "
+        "vector database."
+    ),
+    "PAGE_RAG_QA_TITLE": ":material/question_answer: Step 4 - RAG Q&A",
+    "PAGE_RAG_QA_SUBTITLE": (
+        "Ask one question, retrieve context, build the prompt, and review the LLM answer "
+        "with sources."
+    ),
+    "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Step 5 - Conversational RAG",
+    "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
+        "Chat across turns using retrieved context, conversation history, and query rewriting."
+    ),
+    "PLACEHOLDER_SECTION_HEADER": "Step workspace",
+    "PLACEHOLDER_SECTION_CAPTION": (
+        "This page uses the same session controls and layout while the RAG backend is added."
+    ),
+    "PLACEHOLDER_EXPANDER_LABEL": "Requirements summary",
+    "PLACEHOLDER_VECTOR_INDEX": (
+        "Select generated Markdown or text files, including ZIP archives that contain them. "
+        "The future workflow will split content into chunks, generate embeddings, and persist "
+        "the index in ChromaDB."
+    ),
+    "PLACEHOLDER_SEMANTIC_SEARCH": (
+        "Enter a search query, embed it with the same model used for the indexed chunks, run a "
+        "similarity search, then display ranked snippets with scores and source references."
+    ),
+    "PLACEHOLDER_RAG_QA": (
+        "Ask a single question, retrieve the most relevant chunks, combine them into a prompt, "
+        "call the selected LLM, then display the answer together with the context sources."
+    ),
+    "PLACEHOLDER_CONVERSATIONAL_RAG": (
+        "Use a chat-style interface that can rewrite the retrieval query from conversation "
+        "context, include recent message history, and grow into memory-aware RAG workflows."
+    ),
     # ── Form ──────────────────────────────────────────────────────────────
     "FORM_SUBHEADER": "⚙️ Set up your crawl",
     "FORM_CAPTION": (
