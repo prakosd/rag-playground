@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -144,6 +145,17 @@ class TestSiteCrawler:
         assert output_dir.parent == tmp_path
         # Matches YYYY-MM-DD_HH-MM-SS
         assert re.match(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", output_dir.name)
+
+    def test_build_run_metadata_uses_utc_crawl_start_datetime(self, tmp_path: Path):
+        config = CrawlerConfig(urls=["https://example.com"])
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.output_dir = crawler._create_output_dir()
+
+        metadata = crawler._build_run_metadata()
+
+        parsed = datetime.fromisoformat(str(metadata["crawl_start_datetime"]))
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == timezone.utc.utcoffset(parsed)
 
     def test_url_allowed_no_filters(self):
         config = CrawlerConfig(urls=["https://example.com"])

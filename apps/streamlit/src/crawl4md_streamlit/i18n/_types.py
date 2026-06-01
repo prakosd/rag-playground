@@ -28,6 +28,7 @@ class Strings(TypedDict):
     PROGRESS_HEADER: str
     PROGRESS_CAPTION: str
     PROGRESS_EXPANDER_LABEL: str
+    PROGRESS_EXPANDER_LABEL_ACTIVE: str  # template: {crawl_id}
     LANG_SELECTOR_LABEL: str
     NAV_CRAWL: str
     NAV_VECTOR_INDEX: str

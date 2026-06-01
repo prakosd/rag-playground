@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from crawl4md_streamlit.generated_files import (
@@ -11,7 +11,11 @@ from crawl4md_streamlit.generated_files import (
     build_ready_download,
     collapse_crawl_run_folder,
     collect_success_content_files,
+    download_tree_entry_sort_key,
+    find_latest_crawl_dir,
     find_ready_download_in_session,
+    format_run_timestamp_label,
+    generated_file_sort_key,
     generated_files_cache_token,
 )
 
@@ -41,6 +45,7 @@ def test_build_download_tree_nests_generated_files_by_relative_path() -> None:
 
 
 def test_collapse_crawl_run_folder_merges_single_timestamp_child() -> None:
+    local_timezone = timezone(timedelta(hours=10), "AEST")
     crawl_tree = {
         "2026-05-19_18-17-52": {
             "final": {"content.md": _generated_file("crawl_1/final/content.md")},
@@ -48,9 +53,13 @@ def test_collapse_crawl_run_folder_merges_single_timestamp_child() -> None:
         }
     }
 
-    label, folder_node = collapse_crawl_run_folder("crawl_1_parlor", crawl_tree)
+    label, folder_node = collapse_crawl_run_folder(
+        "crawl_1_parlor",
+        crawl_tree,
+        local_timezone=local_timezone,
+    )
 
-    assert label == "1_parlor/2026-05-19_18-17-52"
+    assert label == "crawl_1_parlor/2026-05-19_18-17-52 (20 May 2026 04:17 AEST)"
     assert folder_node == crawl_tree["2026-05-19_18-17-52"]
 
 
@@ -62,7 +71,7 @@ def test_collapse_crawl_run_folder_keeps_folder_when_not_single_timestamp_child(
 
     label, folder_node = collapse_crawl_run_folder("crawl_1_parlor", crawl_tree)
 
-    assert label == "1_parlor"
+    assert label == "crawl_1_parlor"
     assert folder_node == crawl_tree
 
 
@@ -71,8 +80,68 @@ def test_collapse_crawl_run_folder_keeps_non_timestamp_child() -> None:
 
     label, folder_node = collapse_crawl_run_folder("crawl_1_parlor", crawl_tree)
 
-    assert label == "1_parlor"
+    assert label == "crawl_1_parlor"
     assert folder_node == crawl_tree
+
+
+def test_generated_file_sort_key_orders_numbered_crawl_runs_descending() -> None:
+    paths = [
+        "crawl_01_boulder/final/content.md",
+        "crawl_10_river/final/content.md",
+        "summary.md",
+        "crawl_2_cedar/final/content.md",
+    ]
+
+    assert sorted(paths, key=generated_file_sort_key) == [
+        "crawl_10_river/final/content.md",
+        "crawl_2_cedar/final/content.md",
+        "crawl_01_boulder/final/content.md",
+        "summary.md",
+    ]
+
+
+def test_download_tree_entry_sort_key_orders_top_level_crawl_folders_descending() -> None:
+    entries = {
+        "crawl_01_boulder": {},
+        "crawl_10_river": {},
+        "summary.md": _generated_file("summary.md"),
+        "notes": {},
+    }
+
+    assert [
+        name
+        for name, entry in sorted(
+            entries.items(),
+            key=lambda item: download_tree_entry_sort_key(item[0], item[1], top_level=True),
+        )
+    ] == ["crawl_10_river", "crawl_01_boulder", "notes", "summary.md"]
+
+
+def test_format_run_timestamp_label_prefers_progress_history_timestamp(tmp_path: Path) -> None:
+    local_timezone = timezone(timedelta(hours=10), "AEST")
+    progress_path = tmp_path / "progress_history.jsonl"
+    progress_path.write_text(
+        '{"timestamp":"2026-06-01T03:58:32+00:00"}\n',
+        encoding="utf-8",
+    )
+    progress_file = GeneratedFile(
+        path=progress_path,
+        relative_path="crawl_01_boulder/2026-01-01_00-00-00/progress_history.jsonl",
+        name="progress_history.jsonl",
+        size_bytes=progress_path.stat().st_size,
+        modified_at=_MODIFIED_AT,
+        file_type="jsonl",
+        download_allowed=True,
+    )
+
+    assert (
+        format_run_timestamp_label(
+            "2026-01-01_00-00-00",
+            {"progress_history.jsonl": progress_file},
+            local_timezone=local_timezone,
+        )
+        == "2026-01-01_00-00-00 (1 June 2026 13:58 AEST)"
+    )
 
 
 def test_generated_files_cache_token_handles_missing_path(tmp_path: Path) -> None:
@@ -258,20 +327,31 @@ def test_find_ready_download_in_session_returns_single_crawl_result(tmp_path: Pa
     assert result.file.path == content
 
 
-def test_find_ready_download_in_session_returns_newest_run(tmp_path: Path) -> None:
-    old_run = _make_crawl_run(tmp_path, "crawl_1_word", "2026-05-20_10-00-00")
-    new_run = _make_crawl_run(tmp_path, "crawl_2_other", "2026-05-20_12-00-00")
-    (old_run / "final" / "sorted_success_content_001_of_001.md").write_text("old", encoding="utf-8")
-    new_content = new_run / "final" / "sorted_success_content_001_of_001.md"
-    new_content.write_text("new", encoding="utf-8")
-    # Ensure new_run is clearly newer by mtime
-    old_mtime = old_run.stat().st_mtime - 100
-    os.utime(old_run, (old_mtime, old_mtime))
+def test_find_latest_crawl_dir_prefers_latest_utc_timestamp_slug(tmp_path: Path) -> None:
+    older_run = _make_crawl_run(tmp_path, "crawl_01_word", "2026-05-20_10-00-00")
+    newer_run = _make_crawl_run(tmp_path, "crawl_01_word", "2026-05-20_12-00-00")
+    newer_mtime = older_run.stat().st_mtime - 100
+    os.utime(newer_run, (newer_mtime, newer_mtime))
+
+    assert find_latest_crawl_dir(tmp_path / "crawl_01_word") == newer_run
+
+
+def test_find_ready_download_in_session_returns_highest_numbered_crawl(tmp_path: Path) -> None:
+    lower_run = _make_crawl_run(tmp_path, "crawl_2_word", "2026-05-20_12-00-00")
+    higher_run = _make_crawl_run(tmp_path, "crawl_10_other", "2026-05-20_10-00-00")
+    (lower_run / "final" / "sorted_success_content_001_of_001.md").write_text(
+        "lower",
+        encoding="utf-8",
+    )
+    higher_content = higher_run / "final" / "sorted_success_content_001_of_001.md"
+    higher_content.write_text("higher", encoding="utf-8")
+    lower_mtime = higher_run.stat().st_mtime + 100
+    os.utime(lower_run, (lower_mtime, lower_mtime))
 
     result = find_ready_download_in_session(tmp_path)
 
     assert result is not None
-    assert result.file.path == new_content
+    assert result.file.path == higher_content
 
 
 def test_find_ready_download_in_session_falls_back_to_older_crawl(tmp_path: Path) -> None:

@@ -306,11 +306,11 @@ flowchart TD
 
 ## Output Structure
 
-Each crawl creates a timestamped folder. Per-round subdirectories hold intermediate snapshots; the `final/` folder holds the primary output.
+Each crawl creates a UTC timestamped folder. Per-round subdirectories hold intermediate snapshots; the `final/` folder holds the primary output.
 
 ```mermaid
 flowchart TD
-  Root["2026-03-08_17-39-59/<br/>timestamped crawl root"]
+  Root["2026-03-08_17-39-59/<br/>UTC timestamped crawl root"]
   Root --> RootFiles["root files<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl"]
   Root --> Rounds["round_N/<br/>intermediate snapshots<br/>success/fail content + URL lists"]
   Root --> Final["final/<br/>primary output"]
@@ -343,9 +343,9 @@ Example:
 
 ```yaml
 ---
-crawl_start_datetime: "2026-05-12T23:19:38"
-session_id: "2026-05-12_23-19-38"
-stored_directory: "outputs\\streamlit_sessions\\session_winter_apple_river_stone_482917\\crawl_20260512_131938_boulder\\2026-05-12_23-19-38\\round_1"
+crawl_start_datetime: "2026-05-12T13:19:38+00:00"
+session_id: "session_winter_apple"
+stored_directory: "outputs\\streamlit_sessions\\session_winter_apple\\crawl_01_boulder\\2026-05-12_13-19-38\\round_1"
 crawl_parameters:
   crawler_config:
     urls:
@@ -467,7 +467,7 @@ pip install -e ".[dev]" -e "apps/streamlit[dev]"
 python -m pytest tests/ -q
 python -m pytest apps/streamlit/tests/ -q
 python -m ruff check src/ tests/
-python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/src/ apps/streamlit/tests/
+python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 ```
 
 Core tests live in `tests/`. Streamlit app helper tests live in `apps/streamlit/tests/`.

@@ -2,24 +2,34 @@
 
 from __future__ import annotations
 
+import calendar
+import json
 import mimetypes
 import os
 import re
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from crawl4md.naming import (
+    CRAWL_FOLDER_PREFIX,
+    crawl_sequence_sort_key,
+    parse_crawl_folder_sequence,
+    parse_utc_timestamp_slug,
+)
 
 from crawl4md_streamlit.session_manager import ensure_within_root
 
 _ACTIVITY_LOG_FILE = "activity_log.txt"
-_CRAWL_DIR_PREFIX = "crawl_"
+_CRAWL_DIR_PREFIX = CRAWL_FOLDER_PREFIX
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
 _FINAL_DIR_NAME = "final"
 _MISSING_CACHE_TOKEN = (0.0, 0)
+_PROGRESS_HISTORY_FILE = "progress_history.jsonl"
 _RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 _SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
 _SUCCESS_CONTENT_GLOB = "success_content_*"
@@ -161,7 +171,18 @@ def _scan_generated_files(root: Path, target_root: Path) -> list[_ScannedGenerat
                     file_type=file_type,
                 )
             )
-    return sorted(scanned, key=lambda file: file.relative_path)
+    return sorted(scanned, key=lambda file: generated_file_sort_key(file.relative_path))
+
+
+def generated_file_sort_key(relative_path: str) -> tuple[int, int, str, str]:
+    """Return a sort key that orders numbered crawl runs newest-first."""
+    parts = PurePosixPath(relative_path).parts
+    if not parts:
+        return (1, 0, "", "")
+    sequence = parse_crawl_folder_sequence(parts[0])
+    if sequence is None:
+        return (1, 0, relative_path.lower(), "")
+    return (0, -sequence, parts[0].lower(), "/".join(parts[1:]).lower())
 
 
 def is_text_previewable(path_or_name: Path | str) -> bool:
@@ -219,14 +240,25 @@ def read_recent_lines(path: Path | str, *, max_lines: int | None) -> list[str]:
 
 
 def find_latest_crawl_dir(crawl_base: Path | str) -> Path | None:
-    """Return the newest crawler-created output directory under a crawl base."""
+    """Return the newest crawler-created timestamp directory under a crawl base."""
     base = Path(crawl_base)
     if not base.exists():
         return None
     candidates = [path for path in base.iterdir() if path.is_dir()]
     if not candidates:
         return None
-    return max(candidates, key=lambda path: path.stat().st_mtime)
+    return sorted(candidates, key=_crawl_timestamp_dir_sort_key)[0]
+
+
+def _crawl_timestamp_dir_sort_key(path: Path) -> tuple[int, float, str]:
+    parsed = parse_utc_timestamp_slug(path.name)
+    if parsed is not None:
+        return (0, -parsed.timestamp(), path.name.lower())
+    try:
+        modified_at = path.stat().st_mtime
+    except OSError:
+        modified_at = 0.0
+    return (1, -modified_at, path.name.lower())
 
 
 def activity_log_path(crawl_dir: Path | str | None) -> Path | None:
@@ -249,12 +281,29 @@ def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
     return tree
 
 
+def download_tree_entry_sort_key(
+    name: str,
+    entry: Any,
+    *,
+    top_level: bool = False,
+) -> tuple[int, int, str]:
+    """Return a tree-entry sort key with newest numbered crawl folders first."""
+    if isinstance(entry, dict):
+        if top_level and parse_crawl_folder_sequence(name) is not None:
+            _, sequence_key, name_key = crawl_sequence_sort_key(name)
+            return (0, sequence_key, name_key)
+        return (1, 0, name.lower())
+    return (2, 0, name.lower())
+
+
 def collapse_crawl_run_folder(
     folder_name: str,
     folder_node: dict[str, Any],
+    *,
+    local_timezone: tzinfo | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Merge crawl folder and single timestamp child into a compact UI label."""
-    label = folder_name.removeprefix(_CRAWL_DIR_PREFIX)
+    label = folder_name
     if not folder_name.startswith(_CRAWL_DIR_PREFIX) or len(folder_node) != 1:
         return label, folder_node
 
@@ -262,7 +311,91 @@ def collapse_crawl_run_folder(
     if not isinstance(child_entry, dict) or not _RUN_FOLDER_PATTERN.fullmatch(child_name):
         return label, folder_node
 
-    return f"{label}/{child_name}", child_entry
+    timestamp_label = format_run_timestamp_label(
+        child_name,
+        child_entry,
+        local_timezone=local_timezone,
+    )
+    return f"{label}/{timestamp_label}", child_entry
+
+
+def format_run_timestamp_label(
+    folder_name: str,
+    folder_node: dict[str, Any] | None = None,
+    *,
+    local_timezone: tzinfo | None = None,
+) -> str:
+    """Return a timestamp folder label with a local-time companion when possible."""
+    timestamp = _progress_history_timestamp(folder_node) if folder_node is not None else None
+    if timestamp is None:
+        timestamp = parse_utc_timestamp_slug(folder_name)
+    if timestamp is None:
+        return folder_name
+    return f"{folder_name} ({_format_local_timestamp(timestamp, local_timezone=local_timezone)})"
+
+
+def _format_local_timestamp(value: datetime, *, local_timezone: tzinfo | None = None) -> str:
+    target_timezone = local_timezone or datetime.now().astimezone().tzinfo or timezone.utc
+    local_value = value.astimezone(timezone.utc).astimezone(target_timezone)
+    zone_name = local_value.tzname() or "local"
+    month_name = calendar.month_name[local_value.month]
+    return (
+        f"{local_value.day} {month_name} {local_value.year} "
+        f"{local_value.hour:02d}:{local_value.minute:02d} {zone_name}"
+    )
+
+
+def _progress_history_timestamp(folder_node: dict[str, Any] | None) -> datetime | None:
+    progress_file = _find_generated_file(folder_node, _PROGRESS_HISTORY_FILE)
+    if progress_file is None:
+        return None
+    try:
+        with progress_file.path.open(encoding="utf-8") as handle:
+            for line in handle:
+                timestamp = _timestamp_from_progress_history_line(line)
+                if timestamp is not None:
+                    return timestamp
+    except OSError:
+        return None
+    return None
+
+
+def _find_generated_file(
+    folder_node: dict[str, Any] | None, file_name: str
+) -> GeneratedFile | None:
+    if folder_node is None:
+        return None
+    for name, entry in folder_node.items():
+        if isinstance(entry, GeneratedFile) and name == file_name:
+            return entry
+        if isinstance(entry, dict):
+            found = _find_generated_file(entry, file_name)
+            if found is not None:
+                return found
+    return None
+
+
+def _timestamp_from_progress_history_line(line: str) -> datetime | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    value = payload.get("timestamp")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def collect_success_content_files(crawl_output_dir: Path, root: Path) -> list[Path]:
@@ -358,15 +491,21 @@ def find_ready_download_in_session(
     root = Path(session_root).resolve()
     if not root.is_dir():
         return None
-    candidates: list[tuple[float, Path]] = []
+    candidates: list[tuple[tuple[int, int, str], tuple[int, float, str], Path]] = []
     for crawl_dir in root.iterdir():
         if not crawl_dir.is_dir() or not crawl_dir.name.startswith(_CRAWL_DIR_PREFIX):
             continue
         run_dir = find_latest_crawl_dir(crawl_dir)
         if run_dir is None:
             continue
-        candidates.append((run_dir.stat().st_mtime, run_dir))
-    for _, run_dir in sorted(candidates, reverse=True):
+        candidates.append(
+            (
+                crawl_sequence_sort_key(crawl_dir.name),
+                _crawl_timestamp_dir_sort_key(run_dir),
+                run_dir,
+            )
+        )
+    for _, _, run_dir in sorted(candidates):
         ready = build_ready_download(run_dir, root, download_limit_bytes=download_limit_bytes)
         if ready is not None:
             return ready

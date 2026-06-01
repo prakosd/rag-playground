@@ -13,6 +13,7 @@ from typing import Any
 
 import altair as alt
 import streamlit as st
+from crawl4md.naming import crawl_folder_name
 from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
 
@@ -20,6 +21,7 @@ from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
     collapse_crawl_run_folder,
+    download_tree_entry_sort_key,
     generated_files_cache_token,
 )
 from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings
@@ -55,7 +57,6 @@ from crawl4md_streamlit.support import (
     build_configs,
     build_ready_download,
     cleanup_old_sessions_with_lock,
-    count_crawl_dirs,
     create_session_record,
     drain_events,
     elapsed_time_display,
@@ -71,6 +72,7 @@ from crawl4md_streamlit.support import (
     job_state_from_event,
     latest_session_id,
     list_generated_files,
+    next_crawl_sequence,
     normalize_event_urls,
     normalize_session_records,
     preview_created_timestamp,
@@ -1292,7 +1294,7 @@ def _start_job(values: dict[str, Any]) -> None:
         st.error(str(exc))
         return
     crawl_id = generate_crawl_id(
-        seq=count_crawl_dirs(_SESSIONS_ROOT, st.session_state.session_id) + 1
+        seq=next_crawl_sequence(_SESSIONS_ROOT, st.session_state.session_id)
     )
     job = start_crawl_job(
         session_id=st.session_state.session_id,
@@ -2065,11 +2067,16 @@ def render_download_tree(
     tree: Mapping[str, Any], *, allow_crawl_run_folder_collapse: bool = True
 ) -> None:
     entries = sorted(
-        tree.items(), key=lambda item: (not isinstance(item[1], dict), item[0].lower())
+        tree.items(),
+        key=lambda item: download_tree_entry_sort_key(
+            item[0],
+            item[1],
+            top_level=allow_crawl_run_folder_collapse,
+        ),
     )
     for name, entry in entries:
         if isinstance(entry, dict):
-            folder_label = name.removeprefix("crawl_")
+            folder_label = name
             folder_node: Mapping[str, Any] = entry
             if allow_crawl_run_folder_collapse:
                 folder_label, folder_node = collapse_crawl_run_folder(name, entry)
@@ -2110,7 +2117,7 @@ def _render_ready_result(ready: ReadyDownload, strings: dict[str, Any]) -> None:
         else strings["READY_RESULT_SINGLE_SUBTITLE"]
     )
     path_parts = ready.file.relative_path.split("/")
-    crawl_label = path_parts[0].removeprefix("crawl_") if path_parts else ""
+    crawl_label = path_parts[0] if path_parts else ""
     timestamp = path_parts[1] if len(path_parts) > 1 else ""
     if crawl_label:
         subtitle = f"{subtitle} ({crawl_label})"
@@ -2178,7 +2185,7 @@ def _render_downloads() -> None:
     if files:
         rows = [
             {
-                strings["FILES_COL_NAME"]: file.relative_path.removeprefix("crawl_"),
+                strings["FILES_COL_NAME"]: file.relative_path,
                 strings["FILES_COL_TYPE"]: file.file_type,
                 strings["FILES_COL_SIZE"]: round(file.size_bytes / (1024 * 1024), 3),
                 strings["FILES_COL_MODIFIED"]: file.modified_at.strftime(_UTC_DISPLAY_FORMAT),
@@ -2203,11 +2210,24 @@ def _render_downloads() -> None:
 def _render_live_area() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     live_expanded = st.session_state.job_state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}
-    with st.expander(strings["PROGRESS_EXPANDER_LABEL"], expanded=live_expanded):
+    with st.expander(_live_statistics_label(strings), expanded=live_expanded):
         _render_status_boxes()
         _render_progress_charts()
         _render_status_rows()
         _render_activity_log()
+
+
+def _live_statistics_label(strings: Mapping[str, Any]) -> str:
+    if st.session_state.job_state not in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}:
+        return str(strings["PROGRESS_EXPANDER_LABEL"])
+    crawl_id = str(st.session_state.get("crawl_id", "")).strip()
+    if not crawl_id:
+        crawl_id = str(st.session_state.latest_event.get("crawl_id", "")).strip()
+    if not crawl_id:
+        return str(strings["PROGRESS_EXPANDER_LABEL"])
+    return str(strings["PROGRESS_EXPANDER_LABEL_ACTIVE"]).format(
+        crawl_id=crawl_folder_name(crawl_id)
+    )
 
 
 def _render_footer() -> None:
@@ -2539,6 +2559,8 @@ def _navigation_pages(strings: Strings) -> list[Any]:
 def _render_page_header(page_spec: AppPageSpec, strings: Strings) -> None:
     st.title(strings[page_spec.title_key])
     st.write(strings[page_spec.subtitle_key])
+
+
 _init_state()
 _mount_session_storage()
 active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))

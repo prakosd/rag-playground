@@ -31,6 +31,7 @@ STRINGS_ID: Strings = {
     "PROGRESS_HEADER": "⏳ Progres",
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
+    "PROGRESS_EXPANDER_LABEL_ACTIVE": "Statistik langsung: {crawl_id}",
     "LANG_SELECTOR_LABEL": "Bahasa",
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",

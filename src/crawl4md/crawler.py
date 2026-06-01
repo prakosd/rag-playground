@@ -9,7 +9,7 @@ import re
 import sys
 import time
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -151,6 +151,7 @@ from crawl4md.config import (
     PageConfig,
 )
 from crawl4md.extractor import ContentExtractor
+from crawl4md.naming import format_utc_timestamp_slug
 from crawl4md.progress import ProgressReporter
 from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar
 
@@ -300,13 +301,6 @@ _PAGE_STATUS_SKIPPED = _INTERNAL_PAGE_STATUS_SKIPPED
 _HTTPS_PREFIX_RE = re.compile(r"^https?://")
 
 # ------------------------------------------------------------------
-# Timestamp format
-# ------------------------------------------------------------------
-
-# strftime format for timestamped output directory names
-_TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
-
-# ------------------------------------------------------------------
 # Failed-page content templates
 # ------------------------------------------------------------------
 
@@ -425,6 +419,7 @@ class SiteCrawler:
         self._success_sidecar: Path | None = None
         self._fail_sidecar: Path | None = None
         self._run_metadata: dict[str, object] = {}
+        self._run_started_at_utc: datetime | None = None
         self._progress_history: ProgressHistoryRecorder | None = None
         self._site_graph = SiteGraphRecorder()
         self._pdf_client: httpx.AsyncClient | None = None
@@ -2261,7 +2256,8 @@ class SiteCrawler:
 
     def _create_output_dir(self) -> Path:
         """Create and return a timestamped output directory."""
-        folder_name = datetime.now().strftime(_TIMESTAMP_FORMAT)
+        self._run_started_at_utc = datetime.now(timezone.utc)
+        folder_name = format_utc_timestamp_slug(self._run_started_at_utc)
         output_dir = self._output_base / folder_name
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
@@ -2269,12 +2265,13 @@ class SiteCrawler:
     def _build_run_metadata(self) -> dict[str, object]:
         """Build run-level metadata used in output-file YAML front matter."""
         assert self.output_dir is not None
+        run_started_at = self._run_started_at_utc or datetime.now(timezone.utc)
         crawl_parameters: dict[str, object] = {
             "crawler_config": self.config.model_dump(mode="json"),
             "page_config": self.page_config.model_dump(mode="json"),
         }
         return {
-            "crawl_start_datetime": datetime.now().isoformat(timespec="seconds"),
+            "crawl_start_datetime": run_started_at.isoformat(timespec="seconds"),
             "session_id": self._session_id or self.output_dir.name,
             "crawl_parameters": crawl_parameters,
         }

@@ -13,9 +13,16 @@ from importlib import resources
 from pathlib import Path
 from typing import Literal
 
+from crawl4md.naming import (
+    CRAWL_FOLDER_PREFIX,
+    crawl_folder_name,
+    format_crawl_id,
+    parse_crawl_folder_sequence,
+)
+
 _CLEANUP_LOCK_FILE = ".cleanup.lock"
 _CLEANUP_LOG_FILE = "cleanup.log"
-_CRAWL_PREFIX = "crawl_"
+_CRAWL_PREFIX = CRAWL_FOLDER_PREFIX
 _DEFAULT_RETENTION_DAYS = 7
 _DEFAULT_SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
 _ID_BYTES = 9
@@ -287,9 +294,9 @@ def _format_session_created_at(value: datetime) -> str:
 
 
 def generate_crawl_id(now: datetime | None = None, *, seq: int | None = None) -> str:
-    """Return a crawl ID. With seq, returns '{seq}_{word}'; otherwise uses a timestamp prefix."""
+    """Return a crawl ID. With seq, returns a zero-padded '{seq}_{word}' ID."""
     if seq is not None:
-        return f"{seq}_{_generate_readable_crawl_suffix()}"
+        return format_crawl_id(seq, _generate_readable_crawl_suffix())
     timestamp = (now or datetime.now(timezone.utc)).strftime(_TIMESTAMP_FORMAT)
     if not _USE_READABLE_IDS:
         return f"{timestamp}_{_legacy_safe_id()}"
@@ -302,6 +309,23 @@ def count_crawl_dirs(sessions_root: Path | str, session_id: str) -> int:
     if not sdir.is_dir():
         return 0
     return sum(1 for p in sdir.iterdir() if p.is_dir() and p.name.startswith(_CRAWL_PREFIX))
+
+
+def next_crawl_sequence(sessions_root: Path | str, session_id: str) -> int:
+    """Return the next crawl sequence after existing numbered crawl folders."""
+    sdir = session_dir(sessions_root, session_id)
+    if not sdir.is_dir():
+        return 1
+    sequences = [
+        sequence
+        for path in sdir.iterdir()
+        if path.is_dir()
+        for sequence in [parse_crawl_folder_sequence(path.name)]
+        if sequence is not None
+    ]
+    if not sequences:
+        return 1
+    return max(sequences) + 1
 
 
 def session_dir(sessions_root: Path | str, session_id: str) -> Path:
@@ -354,7 +378,7 @@ def session_time_remaining(
 def crawl_output_base(sessions_root: Path | str, session_id: str, crawl_id: str) -> Path:
     """Return the output base directory for one crawl run."""
     safe_crawl_id = validate_safe_id(crawl_id)
-    return session_dir(sessions_root, session_id) / f"{_CRAWL_PREFIX}{safe_crawl_id}"
+    return session_dir(sessions_root, session_id) / crawl_folder_name(safe_crawl_id)
 
 
 def ensure_within_root(root: Path | str, path: Path | str) -> Path:

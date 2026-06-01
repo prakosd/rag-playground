@@ -40,6 +40,7 @@ from crawl4md_streamlit.support import (
     job_state_from_event,
     latest_session_id,
     list_generated_files,
+    next_crawl_sequence,
     normalize_event_urls,
     normalize_session_records,
     prepare_crawl_output_base,
@@ -909,7 +910,7 @@ def test_generate_crawl_id_uses_seq_prefix_when_given(
     monkeypatch.setattr(session_manager, "_readable_word_pool", lambda: ("boulder",))
     monkeypatch.setattr(session_manager.secrets, "choice", lambda words: words[0])
 
-    assert generate_crawl_id(seq=1) == "1_boulder"
+    assert generate_crawl_id(seq=1) == "01_boulder"
     assert generate_crawl_id(seq=42) == "42_boulder"
 
 
@@ -925,6 +926,21 @@ def test_count_crawl_dirs_counts_only_crawl_prefixed_subdirs(tmp_path: Path) -> 
     (sdir / "not_a_dir.txt").write_text("x", encoding="utf-8")
 
     assert count_crawl_dirs(tmp_path, "abc123") == 2
+
+
+def test_next_crawl_sequence_returns_one_when_session_dir_missing(tmp_path: Path) -> None:
+    assert next_crawl_sequence(tmp_path, "abc123") == 1
+
+
+def test_next_crawl_sequence_uses_highest_existing_number(tmp_path: Path) -> None:
+    session_path = prepare_session_dir(tmp_path, "abc123")
+    (session_path / "crawl_01_boulder").mkdir()
+    (session_path / "crawl_9_river").mkdir()
+    (session_path / "crawl_10_cedar").mkdir()
+    (session_path / "crawl_20260504_123045_legacy").mkdir()
+    (session_path / "other_dir").mkdir()
+
+    assert next_crawl_sequence(tmp_path, "abc123") == 11
 
 
 def test_generate_crawl_id_includes_timestamp() -> None:

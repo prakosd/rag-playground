@@ -52,6 +52,7 @@ ensure_within_root = _session_manager.ensure_within_root
 generate_crawl_id = _session_manager.generate_crawl_id
 generate_safe_id = _session_manager.generate_safe_id
 latest_session_id = _session_manager.latest_session_id
+next_crawl_sequence = _session_manager.next_crawl_sequence
 normalize_session_records = _session_manager.normalize_session_records
 prepare_crawl_output_base = _session_manager.prepare_crawl_output_base
 prepare_session_dir = _session_manager.prepare_session_dir
@@ -101,6 +102,7 @@ __all__ = [
     "is_text_previewable",
     "job_state_from_event",
     "latest_session_id",
+    "next_crawl_sequence",
     "list_generated_files",
     "normalize_event_urls",
     "normalize_session_records",
@@ -113,6 +115,7 @@ __all__ = [
     "serialize_session_records",
     "session_dir",
     "session_exists",
+    "session_time_remaining",
     "should_show_portfolio_modal",
     "start_crawl_job",
     "touch_session",

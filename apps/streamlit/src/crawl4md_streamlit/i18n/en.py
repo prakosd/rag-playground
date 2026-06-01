@@ -30,6 +30,7 @@ STRINGS_EN: Strings = {
     "PROGRESS_HEADER": "⏳ Progress",
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
+    "PROGRESS_EXPANDER_LABEL_ACTIVE": "Live statistics: {crawl_id}",
     "LANG_SELECTOR_LABEL": "Language",
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",

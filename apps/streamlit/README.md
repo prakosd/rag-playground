@@ -260,7 +260,8 @@ two constants in `session_manager.py`:
 
 Examples: `2` words + `0` digits → `"boulder_river"` · `4` words + `6` digits →
 `"stone_apple_river_oak_482917"` · `1` word + `2` digits → `"cedar_07"`.
-Crawl IDs keep their timestamp prefix and append one readable word: `YYYYMMDD_HHMMSS_boulder`.
+Crawl IDs for Start clicks use a zero-padded sequence plus one readable word: `01_boulder`.
+Existing timestamp-prefixed crawl IDs remain readable for older output folders.
 To revert to the legacy `token_urlsafe` IDs, set `_USE_READABLE_IDS = False`.
 Wordlist provided by the Electronic Frontier Foundation (eff.org), licensed CC-BY 4.0.
 
@@ -299,25 +300,30 @@ folders removed during the same startup.
 
 ## Generated Files in the App
 
-The files shown in the download tree are produced by the core `crawl4md` library — the app
-presents them without transforming or filtering. For the full file reference (purposes, naming
-conventions, and cleanup behavior), see [Output Structure](../../README.md#output-structure)
-in the root README.
+The files shown in the download tree are produced by the core `crawl4md` library. The app
+presents those files without transforming their content; when multiple successful content files
+are ready, the ready-result button may create an app-owned `final/success_content.zip` archive
+for a single download. For the full file reference (purposes, naming conventions, and cleanup
+behavior), see [Output Structure](../../README.md#output-structure) in the root README.
 
 **Folder layout under `outputs/streamlit_sessions/`:**
 
 ```mermaid
 flowchart TD
-  Session["session_{id}/<br/>browser session"] --> Crawl["crawl_{id}/<br/>one folder per Start click"]
-  Crawl --> Timestamp["YYYY-MM-DD_HH-MM-SS/<br/>SiteCrawler crawl root"]
+  Session["session_{id}/<br/>browser session"] --> Crawl["crawl_01_{word}/<br/>one folder per Start click"]
+  Crawl --> Timestamp["YYYY-MM-DD_HH-MM-SS/<br/>UTC SiteCrawler crawl root"]
   Timestamp --> RootFiles["root files<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl"]
   Timestamp --> Rounds["round_N/<br/>intermediate snapshots"]
   Timestamp --> Final["final/<br/>primary output after merge and sort"]
 ```
 
-**Why a new folder per Start click?** Each Start increments the crawl counter (`crawl_1`,
-`crawl_2`, …) and `SiteCrawler` creates a fresh timestamped directory inside it. Previous
-crawls keep their files and remain downloadable from the same session.
+**Why a new folder per Start click?** Each Start uses the next highest crawl number
+(`crawl_01_word`, `crawl_02_word`, …, `crawl_10_word`) and `SiteCrawler` creates a fresh
+UTC timestamped directory inside it. Previous crawls keep their files and remain downloadable
+from the same session. Existing legacy folders such as `crawl_1_word` remain readable.
+
+The download tree shows the UTC timestamp folder with a local-time companion label when the
+timestamp can be parsed from the run folder or `progress_history.jsonl`.
 
 **Which files to open first:**
 

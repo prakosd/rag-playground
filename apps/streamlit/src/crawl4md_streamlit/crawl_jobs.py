@@ -316,6 +316,9 @@ def start_crawl_job(
 
     def emit(event: Mapping[str, object]) -> None:
         raw = dict(event)
+        raw.setdefault("session_id", session_id)
+        raw.setdefault("crawl_id", crawl_id)
+        raw.setdefault("output_base", str(output_base))
         raw.setdefault(
             "elapsed_seconds",
             max((datetime.now(timezone.utc) - started_at).total_seconds(), 0.0),
