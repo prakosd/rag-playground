@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from pathlib import Path
+
+from vector_indexer.config import IndexingConfig
+from vector_indexer.embeddings import EmbeddingProvider, EmbeddingProviderUnavailable
+from vector_indexer.indexer import VectorIndexer
+from vector_indexer.models import VectorRecord
+from vector_indexer.vector_store.base import VectorStore
+
+
+class _FakeProvider(EmbeddingProvider):
+    @property
+    def model_id(self) -> str:
+        return "fake"
+
+    @property
+    def dimension(self) -> int:
+        return 4
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
+
+
+class _FakeStore(VectorStore):
+    def __init__(self, persist_dir: Path) -> None:
+        self.persist_dir = Path(persist_dir)
+        self.records: list[VectorRecord] = []
+        self.collection: str | None = None
+        self.persisted = False
+
+    def create_collection(self, name: str) -> None:
+        self.collection = name
+        self.persist_dir.mkdir(parents=True, exist_ok=True)
+
+    def add_documents(self, records: Sequence[VectorRecord]) -> None:
+        self.records.extend(records)
+
+    def persist(self) -> None:
+        self.persisted = True
+
+
+def _indexer_with_capture() -> tuple[VectorIndexer, dict[str, _FakeStore]]:
+    created: dict[str, _FakeStore] = {}
+
+    def factory(persist_dir: Path) -> VectorStore:
+        store = _FakeStore(persist_dir)
+        created["store"] = store
+        return store
+
+    def resolver(model: str, dimension: int | None) -> tuple[EmbeddingProvider, list[str]]:
+        return _FakeProvider(), []
+
+    return VectorIndexer(store_factory=factory, embedding_resolver=resolver), created
+
+
+def test_run_indexes_inputs_and_writes_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 50, encoding="utf-8")
+    output_base = tmp_path / "vector_01_demo"
+    indexer, created = _indexer_with_capture()
+
+    result = indexer.run(IndexingConfig(), [source], output_base)
+
+    assert result.success
+    assert result.indexed_file_count == 1
+    assert result.indexed_chunk_count >= 1
+    assert result.output_dir.parent == output_base
+    assert result.output_dir.is_dir()
+    assert (result.output_dir / "manifest.json").exists()
+    assert created["store"].persisted
+    ids = [record.id for record in created["store"].records]
+    assert len(ids) == len(set(ids))
+
+
+def test_run_reports_error_when_no_inputs(tmp_path: Path) -> None:
+    indexer, _ = _indexer_with_capture()
+
+    result = indexer.run(IndexingConfig(), [], tmp_path / "vector_01_demo")
+
+    assert not result.success
+    assert result.errors
+
+
+def test_run_skips_unsupported_inputs(tmp_path: Path) -> None:
+    binary = tmp_path / "x.bin"
+    binary.write_bytes(b"\x00\x01")
+    indexer, _ = _indexer_with_capture()
+
+    result = indexer.run(IndexingConfig(), [binary], tmp_path / "vector_01_demo")
+
+    assert result.skipped_file_count == 1
+    assert not result.success
+
+
+def test_run_stops_when_cancelled(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 50, encoding="utf-8")
+    indexer, _ = _indexer_with_capture()
+
+    result = indexer.run(
+        IndexingConfig(), [source], tmp_path / "vector_01_demo", should_cancel=lambda: True
+    )
+
+    assert not result.success
+    assert any("cancel" in warning.lower() for warning in result.warnings)
+
+
+def test_run_records_error_when_embedding_unavailable(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello", encoding="utf-8")
+
+    def factory(persist_dir: Path) -> VectorStore:
+        return _FakeStore(persist_dir)
+
+    def resolver(model: str, dimension: int | None) -> tuple[EmbeddingProvider, list[str]]:
+        raise EmbeddingProviderUnavailable("no provider configured")
+
+    indexer = VectorIndexer(store_factory=factory, embedding_resolver=resolver)
+
+    result = indexer.run(IndexingConfig(), [source], tmp_path / "vector_01_demo")
+
+    assert not result.success
+    assert any("no provider configured" in error for error in result.errors)
+
+
+def test_run_emits_progress(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 200, encoding="utf-8")
+    events: list[dict[str, int]] = []
+    indexer, _ = _indexer_with_capture()
+
+    result = indexer.run(
+        IndexingConfig(chunk_size=120, chunk_overlap=20),
+        [source],
+        tmp_path / "vector_01_demo",
+        progress_callback=events.append,
+    )
+
+    assert result.success
+    assert events
+    assert events[-1]["processed_chunks"] == result.indexed_chunk_count

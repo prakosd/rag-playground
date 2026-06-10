@@ -13,9 +13,11 @@ from typing import Any
 
 import altair as alt
 import streamlit as st
+from artifact_store.crawl_results import list_crawl_result_files
 from crawl4md.naming import crawl_folder_name
 from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
+from vector_indexer import IndexingConfig
 
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
@@ -43,6 +45,7 @@ from crawl4md_streamlit.progress_chart import (
     progress_chart_time_unit_seconds,
     select_progress_chart_time_unit,
 )
+from crawl4md_streamlit.session_manager import generate_vector_id, next_vector_sequence
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_SESSION_LANGUAGE,
@@ -88,13 +91,29 @@ from crawl4md_streamlit.support import (
     touch_session,
     validate_safe_id,
 )
+from crawl4md_streamlit.vector_index_jobs import VectorIndexJob, start_vector_index_job
+from crawl4md_streamlit.vector_index_jobs import drain_events as drain_vector_events
+from crawl4md_streamlit.vector_index_jobs import job_state_from_event as vector_job_state_from_event
+from crawl4md_streamlit.vector_index_jobs import request_cancel as request_vector_cancel
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _APP_DIR = Path(__file__).resolve().parent
+
+# Load a local .env (e.g. AWS_*/OPENAI_API_KEY for Step 2 embeddings) when
+# python-dotenv is installed. In Codespaces/CI these come from the real
+# environment instead, so a missing package or file is not an error.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+
+    _load_dotenv(_APP_DIR.parents[1] / ".env")
+except ImportError:
+    pass
+
 _DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = "7s"
 _GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
 _DIALOG_PLACEHOLDER_TITLE = " "
+_VECTOR_INDEX_PAGE_ID = "vector_index"
 _DIALOG_LOAD_SESSION_TITLE = "Load Session"
 _HOURS_PER_DAY = 24
 _ICON_BUTTON_WIDTH_PX = 44
@@ -180,6 +199,7 @@ _STATE_FAILED = "failed"
 _STATE_IDLE = "idle"
 _STATE_RUNNING = "running"
 _STATE_STOPPED = "stopped"
+_VECTOR_TERMINAL_STATES = frozenset({_STATE_CANCELLED, _STATE_COMPLETED, _STATE_FAILED})
 _REFRESH_FORM_STATES = {
     _STATE_COMPLETED,
     _STATE_FAILED,
@@ -761,6 +781,13 @@ def _init_state() -> None:
     st.session_state.setdefault("preview_file_relative_path", "")
     st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
+    st.session_state.setdefault("vector_index_job", None)
+    st.session_state.setdefault("vector_index_id", "")
+    st.session_state.setdefault("vector_index_state", _STATE_IDLE)
+    st.session_state.setdefault("vector_index_progress", {})
+    st.session_state.setdefault("vector_index_result", {})
+    st.session_state.setdefault("vector_index_started_at", None)
+    st.session_state.setdefault("vector_index_stop_confirmation_open", False)
     st.session_state.setdefault("session_load_dialog_open", False)
     st.session_state.setdefault("_load_session_enter", False)
     st.session_state.setdefault("language", _DEFAULT_LANGUAGE)
@@ -1375,6 +1402,169 @@ def _stop_confirmation_dialog() -> None:
         ):
             st.session_state.stop_confirmation_open = False
             _stop_job()
+
+
+def _current_vector_runtime() -> tuple[VectorIndexJob | None, str, bool, bool]:
+    job = st.session_state.get("vector_index_job")
+    state = st.session_state.vector_index_state
+    job_alive = job is not None and job.thread.is_alive()
+    fields_disabled = (state == _STATE_RUNNING and job_alive) or state == _STATE_CANCEL_REQUESTED
+    return job, state, job_alive, fields_disabled
+
+
+def _crawl_result_files() -> list[Any]:
+    return list(list_crawl_result_files(_session_root()))
+
+
+def _start_vector_index_job(values: dict[str, Any]) -> None:
+    try:
+        config = IndexingConfig(
+            chunk_size=values["chunk_size"],
+            chunk_overlap=values["chunk_overlap"],
+            embedding_model=values["embedding_model"],
+            embedding_dimension=values["embedding_dimension"],
+            language=values["language"],
+        )
+    except (ValidationError, ValueError) as exc:
+        st.error(str(exc))
+        return
+    uploads = [(file.name, file.getvalue()) for file in values["uploaded_files"]]
+    vector_id = generate_vector_id(
+        seq=next_vector_sequence(_SESSIONS_ROOT, st.session_state.session_id)
+    )
+    job = start_vector_index_job(
+        session_id=st.session_state.session_id,
+        vector_id=vector_id,
+        config=config,
+        selected_paths=values["selected_paths"],
+        uploads=uploads,
+        sessions_root=_SESSIONS_ROOT,
+    )
+    st.session_state.vector_index_job = job
+    st.session_state.vector_index_id = vector_id
+    st.session_state.vector_index_state = _STATE_RUNNING
+    st.session_state.vector_index_progress = {}
+    st.session_state.vector_index_result = {}
+    st.session_state.vector_index_started_at = datetime.now(timezone.utc)
+    st.rerun()
+
+
+def _stop_vector_index_job() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    job = st.session_state.get("vector_index_job")
+    if job is not None and job.thread.is_alive():
+        st.session_state.vector_index_state = _STATE_CANCEL_REQUESTED
+        request_vector_cancel(job)
+        return st.rerun()
+    st.warning(strings["VEC_ERROR_NO_ACTIVE_INDEX"])
+
+
+def _on_vector_stop_dismiss() -> None:
+    st.session_state.vector_index_stop_confirmation_open = False
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_vector_stop_dismiss)
+def _vector_index_stop_confirmation_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    st.write(strings["DIALOG_STOP_BODY"])
+    action_cols = st.columns(2)
+    with action_cols[0]:
+        if st.button(strings["DIALOG_BTN_KEEP"], key="vector_stop_cancel_button"):
+            st.session_state.vector_index_stop_confirmation_open = False
+            st.rerun()
+    with action_cols[1]:
+        if st.button(
+            strings["DIALOG_BTN_STOP"],
+            type="secondary",
+            icon=":material/stop_circle:",
+            key="vector_stop_confirm_button",
+        ):
+            st.session_state.vector_index_stop_confirmation_open = False
+            _stop_vector_index_job()
+
+
+def _apply_vector_index_event(event: Mapping[str, Any]) -> None:
+    event_name = str(event.get("event", ""))
+    st.session_state.vector_index_state = vector_job_state_from_event(event_name)
+    if event_name == "progress":
+        st.session_state.vector_index_progress = {
+            "processed": int(event.get("processed_chunks", 0)),
+            "total": int(event.get("total_chunks", 0)),
+        }
+    elif st.session_state.vector_index_state in _VECTOR_TERMINAL_STATES:
+        st.session_state.vector_index_result = {
+            "state": st.session_state.vector_index_state,
+            "indexed_file_count": int(event.get("indexed_file_count", 0)),
+            "indexed_chunk_count": int(event.get("indexed_chunk_count", 0)),
+            "skipped_file_count": int(event.get("skipped_file_count", 0)),
+            "warnings": list(event.get("warnings", [])),
+            "errors": list(event.get("errors", [])),
+        }
+
+
+def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
+    state = st.session_state.vector_index_state
+    if state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}:
+        progress = st.session_state.vector_index_progress
+        total = int(progress.get("total", 0))
+        processed = int(progress.get("processed", 0))
+        if total > 0:
+            st.progress(
+                min(processed / total, 1.0),
+                text=strings["VEC_STATUS_CHUNKS"].format(processed=processed, total=total),
+            )
+        else:
+            st.info(strings["VEC_STATUS_RUNNING"])
+        return
+    result = st.session_state.vector_index_result
+    if not result:
+        return
+    result_state = result.get("state", "")
+    if result_state == _STATE_COMPLETED:
+        st.success(
+            strings["VEC_RESULT_SUCCESS"].format(
+                files=result.get("indexed_file_count", 0),
+                chunks=result.get("indexed_chunk_count", 0),
+            )
+        )
+    elif result_state == _STATE_CANCELLED:
+        st.warning(strings["VEC_RESULT_CANCELLED"])
+    else:
+        st.error(strings["VEC_RESULT_FAILED"])
+    if result.get("skipped_file_count"):
+        st.caption(strings["VEC_RESULT_SKIPPED"].format(count=result["skipped_file_count"]))
+    warnings = result.get("warnings") or []
+    if warnings:
+        with st.expander(strings["VEC_RESULT_WARNINGS_LABEL"]):
+            for warning in warnings:
+                st.write(f"- {warning}")
+    errors = result.get("errors") or []
+    if errors:
+        with st.expander(strings["VEC_RESULT_ERRORS_LABEL"], expanded=True):
+            for error in errors:
+                st.write(f"- {error}")
+
+
+@st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
+def _render_vector_index_live_area() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    job = st.session_state.get("vector_index_job")
+    if job is not None:
+        for event in drain_vector_events(job):
+            _apply_vector_index_event(event)
+        if (
+            not job.thread.is_alive()
+            and st.session_state.vector_index_state in _VECTOR_TERMINAL_STATES
+        ):
+            st.session_state.vector_index_job = None
+            st.rerun()
+    expanded = st.session_state.vector_index_state in {
+        _STATE_RUNNING,
+        _STATE_CANCEL_REQUESTED,
+    } or bool(st.session_state.vector_index_result)
+    with st.expander(strings["VEC_PROGRESS_HEADER"], expanded=expanded):
+        st.caption(strings["VEC_PROGRESS_CAPTION"])
+        _render_vector_index_status(strings)
 
 
 def render_progress_and_files(
@@ -2528,6 +2718,18 @@ def _crawl_page_context(crawl_module: Any) -> Any:
     )
 
 
+def _vector_index_page_context(vector_module: Any) -> Any:
+    return vector_module.VectorIndexPageContext(
+        current_runtime=_current_vector_runtime,
+        crawl_result_files=_crawl_result_files,
+        start_job=_start_vector_index_job,
+        stop_confirmation_dialog=_vector_index_stop_confirmation_dialog,
+        render_live_area=_render_vector_index_live_area,
+        render_downloads=_render_downloads,
+        default_language=_DEFAULT_LANGUAGE,
+    )
+
+
 def _page_renderers() -> dict[str, Callable[[], None]]:
     renderers: dict[str, Callable[[], None]] = {}
     for page_spec in APP_PAGE_SPECS:
@@ -2536,6 +2738,11 @@ def _page_renderers() -> dict[str, Callable[[], None]]:
             renderers[page_spec.page_id] = partial(
                 page_module.render_page,
                 _crawl_page_context(page_module),
+            )
+        elif page_spec.page_id == _VECTOR_INDEX_PAGE_ID:
+            renderers[page_spec.page_id] = partial(
+                page_module.render_page,
+                _vector_index_page_context(page_module),
             )
         else:
             renderers[page_spec.page_id] = page_module.render_page

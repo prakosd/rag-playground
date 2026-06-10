@@ -13,6 +13,13 @@ from importlib import resources
 from pathlib import Path
 from typing import Literal
 
+from artifact_store.naming import (
+    VECTOR_FOLDER_PREFIX,
+    folder_name,
+    format_sequence_id,
+    parse_folder_sequence,
+)
+from artifact_store.paths import ensure_within_root as ensure_within_root
 from crawl4md.naming import (
     CRAWL_FOLDER_PREFIX,
     crawl_folder_name,
@@ -381,15 +388,6 @@ def crawl_output_base(sessions_root: Path | str, session_id: str, crawl_id: str)
     return session_dir(sessions_root, session_id) / crawl_folder_name(safe_crawl_id)
 
 
-def ensure_within_root(root: Path | str, path: Path | str) -> Path:
-    """Resolve *path* and reject it if it escapes *root*."""
-    resolved_root = Path(root).resolve()
-    resolved_path = Path(path).resolve()
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ValueError("Path is outside the allowed session folder.")
-    return resolved_path
-
-
 def prepare_session_dir(sessions_root: Path | str, session_id: str) -> Path:
     """Create and return the current Streamlit session directory."""
     path = session_dir(sessions_root, session_id)
@@ -400,6 +398,41 @@ def prepare_session_dir(sessions_root: Path | str, session_id: str) -> Path:
 def prepare_crawl_output_base(sessions_root: Path | str, session_id: str, crawl_id: str) -> Path:
     """Create and return the output base for one crawl run."""
     path = crawl_output_base(sessions_root, session_id, crawl_id)
+    path.mkdir(parents=True, exist_ok=False)
+    return path
+
+
+def next_vector_sequence(sessions_root: Path | str, session_id: str) -> int:
+    """Return the next vector-index sequence after existing numbered folders."""
+    sdir = session_dir(sessions_root, session_id)
+    if not sdir.is_dir():
+        return 1
+    sequences = [
+        sequence
+        for path in sdir.iterdir()
+        if path.is_dir()
+        for sequence in [parse_folder_sequence(path.name, prefix=VECTOR_FOLDER_PREFIX)]
+        if sequence is not None
+    ]
+    return max(sequences) + 1 if sequences else 1
+
+
+def generate_vector_id(*, seq: int) -> str:
+    """Return a zero-padded '{seq}_{word}' vector-index ID."""
+    return format_sequence_id(seq, _generate_readable_crawl_suffix())
+
+
+def vector_output_base(sessions_root: Path | str, session_id: str, vector_id: str) -> Path:
+    """Return the output base directory for one vector-index run."""
+    safe_vector_id = validate_safe_id(vector_id)
+    return session_dir(sessions_root, session_id) / folder_name(
+        VECTOR_FOLDER_PREFIX, safe_vector_id
+    )
+
+
+def prepare_vector_output_base(sessions_root: Path | str, session_id: str, vector_id: str) -> Path:
+    """Create and return the output base for one vector-index run."""
+    path = vector_output_base(sessions_root, session_id, vector_id)
     path.mkdir(parents=True, exist_ok=False)
     return path
 

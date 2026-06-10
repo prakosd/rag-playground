@@ -155,7 +155,7 @@ Run using the **ruff direct strategy** above.
 - DO NOT fix any code — only report results
 - DO NOT skip any of the commands except failure reruns when the matching quick pass succeeds, and ruff commands when tests fail
 - DO NOT summarize away error details — include the full error message for each failure
-- For Streamlit app tests, enforce the project policy: tests should cover business/data logic, mocked integrations, critical workflows, and startup smoke coverage, not static rendering, exact widget labels, layout, styling, icons, or Streamlit framework behavior.
+- For Streamlit app tests, enforce the Streamlit Tests policy in `.github/instructions/tests.instructions.md`.
 - For pytest commands, ALWAYS run in background and ask the user to confirm completion before reading output
 - For ruff commands, run directly — no confirmation needed
 - ALWAYS wait for pytest to fully complete before starting any ruff commands

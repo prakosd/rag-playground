@@ -225,5 +225,36 @@ class Strings(TypedDict):
     PORTFOLIO_MODAL_LINK_STREAMLIT_README: str
     PORTFOLIO_MODAL_CLOSE_LABEL: str
     PORTFOLIO_MODAL_PHOTO_ALT: str  # template: {author}
+    # ── Vector index (Step 2) ─────────────────────────────────────────────
+    VEC_SECTION_HEADER: str
+    VEC_SECTION_CAPTION: str
+    VEC_SOURCES_LABEL: str
+    VEC_SOURCES_HELP: str
+    VEC_SOURCES_EMPTY: str
+    VEC_UPLOAD_LABEL: str
+    VEC_UPLOAD_HELP: str
+    VEC_CHUNK_SIZE_LABEL: str
+    VEC_CHUNK_SIZE_HELP: str
+    VEC_CHUNK_OVERLAP_LABEL: str
+    VEC_CHUNK_OVERLAP_HELP: str
+    VEC_EMBEDDING_MODEL_LABEL: str
+    VEC_EMBEDDING_MODEL_HELP: str
+    VEC_EMBEDDING_DIMENSION_LABEL: str
+    VEC_EMBEDDING_DIMENSION_HELP: str
+    VEC_LANGUAGE_LABEL: str
+    VEC_LANGUAGE_HELP: str
+    VEC_ERROR_NO_INPUTS: str
+    VEC_ERROR_ALREADY_RUNNING: str
+    VEC_ERROR_NO_ACTIVE_INDEX: str
+    VEC_PROGRESS_HEADER: str
+    VEC_PROGRESS_CAPTION: str
+    VEC_STATUS_RUNNING: str
+    VEC_STATUS_CHUNKS: str  # template: {processed}, {total}
+    VEC_RESULT_SUCCESS: str  # template: {files}, {chunks}
+    VEC_RESULT_FAILED: str
+    VEC_RESULT_CANCELLED: str
+    VEC_RESULT_SKIPPED: str  # template: {count}
+    VEC_RESULT_WARNINGS_LABEL: str
+    VEC_RESULT_ERRORS_LABEL: str
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]

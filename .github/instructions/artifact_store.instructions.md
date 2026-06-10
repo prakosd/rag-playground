@@ -1,0 +1,24 @@
+---
+description: "Use when editing the artifact_store package in src/artifact_store/ or its tests. Covers the pure-foundation boundary, naming/timestamp single source of truth, path containment, and zip-slip-safe archive extraction."
+applyTo: "src/artifact_store/**, tests/test_artifact_store_*.py"
+---
+
+# artifact_store
+
+Shared, UI-agnostic foundation for managing persisted project artifacts. It is the
+lowest layer: `crawl4md`, `vector_indexer`, and the Streamlit app all depend on it.
+
+## Constraints
+
+- **Pure foundation.** `artifact_store` must not import `streamlit`, `crawl4md_streamlit`, `crawl4md`, `crawl4ai`, or `pymupdf`. It uses the standard library only. A boundary test enforces this.
+- **Single source of truth for naming.** `naming.py` owns the UTC timestamp slug (`format_utc_timestamp_slug`, `parse_utc_timestamp_slug`, `UTC_TIMESTAMP_SLUG_FORMAT`), folder prefixes (`CRAWL_FOLDER_PREFIX`, `VECTOR_FOLDER_PREFIX`), and the generic sequence helpers (`format_sequence_id`, `folder_name`, `parse_folder_sequence`, `sequence_sort_key`). `crawl4md.naming` re-exports/wraps these; do not duplicate the timestamp format or sequence regex elsewhere.
+- **Path containment.** `paths.ensure_within_root(root, path)` is the only directory-traversal guard. Call it before reading or writing any discovered/extracted file.
+- **Zip-slip safety.** `archives.py` accepts only `.md`/`.txt` members (`TEXT_MEMBER_SUFFIXES`) and rejects unsafe member names (`is_safe_member_name`: absolute paths, drive prefixes, `..`). `extract_text_members` re-checks containment with `ensure_within_root`.
+- **Crawl-result discovery.** `crawl_results.list_crawl_result_files(session_root)` returns each crawl's success content for indexing. It prefers the final sorted output (`final/sorted_success_content_*`), then unsorted final files, then the newest `round_N/` snapshot so stopped/in-progress crawls are still selectable. URL lists, failed-page content, and the generated `success_content.zip` are excluded. Keep it free of UI concerns; return the lightweight `CrawlResultFile` dataclass, not the app's `GeneratedFile`.
+- Group module-level constants as `_UPPER_SNAKE_CASE`; compile regexes once (use `functools.cache` for prefix-parameterized patterns, not `lru_cache(maxsize=None)`).
+
+## Tests
+
+- Live in `tests/` (run by `python -m pytest tests/ -q`, linted by `ruff check src/ tests/`).
+- Use `tmp_path` only — no real network or filesystem outside the fixture.
+- Cover naming round-trips, containment rejection, zip-slip rejection, and crawl-result discovery edge cases.

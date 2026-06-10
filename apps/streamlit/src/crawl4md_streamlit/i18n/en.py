@@ -39,8 +39,8 @@ STRINGS_EN: Strings = {
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/database: Step 2 - Build Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
-        "Select Markdown, text, or ZIP outputs, split them into chunks, generate embeddings, "
-        "and store them in a vector database."
+        "Turn Step 1 crawl results into a searchable vector database for "
+        "retrieval-augmented generation."
     ),
     "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Step 3 - Semantic Search",
     "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
@@ -298,6 +298,43 @@ STRINGS_EN: Strings = {
     "PORTFOLIO_MODAL_LINK_STREAMLIT_README": "App developer guide",
     "PORTFOLIO_MODAL_CLOSE_LABEL": "Close",
     "PORTFOLIO_MODAL_PHOTO_ALT": "Profile photo of {author}",
+    # ── Vector index (Step 2) ─────────────────────────────────────────────
+    "VEC_SECTION_HEADER": "Build a Searchable Vector Index",
+    "VEC_SECTION_CAPTION": (
+        "Select crawl results, configure chunking and embedding options, then create a "
+        "vector database for retrieval-augmented generation."
+    ),
+    "VEC_SOURCES_LABEL": "Crawl result files",
+    "VEC_SOURCES_HELP": (
+        "Markdown, text, or ZIP files produced by Step 1. ZIP files contribute only their "
+        ".md and .txt members."
+    ),
+    "VEC_SOURCES_EMPTY": "No crawl results found yet. Run Step 1 first or upload files below.",
+    "VEC_UPLOAD_LABEL": "Upload files",
+    "VEC_UPLOAD_HELP": "Add your own .md, .txt, or .zip files to index alongside crawl results.",
+    "VEC_CHUNK_SIZE_LABEL": "Chunk size",
+    "VEC_CHUNK_SIZE_HELP": "Maximum characters or tokens the text splitter keeps in each fragment before generating an embedding.",
+    "VEC_CHUNK_OVERLAP_LABEL": "Chunk overlap",
+    "VEC_CHUNK_OVERLAP_HELP": "Number of characters or tokens from the end of one chunk that are repeated at the start of the next.",
+    "VEC_EMBEDDING_MODEL_LABEL": "Embedding model",
+    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors.",
+    "VEC_EMBEDDING_DIMENSION_LABEL": "Embedding dimension",
+    "VEC_EMBEDDING_DIMENSION_HELP": "How detailed the embedding vectors are. Bigger dimensions can capture more detail, while smaller dimensions are lighter to store and search.",
+    "VEC_LANGUAGE_LABEL": "Language",
+    "VEC_LANGUAGE_HELP": "Source-language hint passed to the splitter or embedding layer so multilingual models can handle tokenization correctly.",
+    "VEC_ERROR_NO_INPUTS": "Select at least one crawl result or upload a file before indexing.",
+    "VEC_ERROR_ALREADY_RUNNING": "An indexing job is already running.",
+    "VEC_ERROR_NO_ACTIVE_INDEX": "No active indexing job to stop.",
+    "VEC_PROGRESS_HEADER": "\u23f3 Indexing progress",
+    "VEC_PROGRESS_CAPTION": "Track indexing activity as it runs.",
+    "VEC_STATUS_RUNNING": "Indexing in progress\u2026",
+    "VEC_STATUS_CHUNKS": "Indexed {processed} of {total} chunks",
+    "VEC_RESULT_SUCCESS": "Indexing complete \u2014 {files} files, {chunks} chunks.",
+    "VEC_RESULT_FAILED": "Indexing failed.",
+    "VEC_RESULT_CANCELLED": "Indexing stopped.",
+    "VEC_RESULT_SKIPPED": "{count} file(s) skipped.",
+    "VEC_RESULT_WARNINGS_LABEL": "Warnings",
+    "VEC_RESULT_ERRORS_LABEL": "Errors",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Ready",

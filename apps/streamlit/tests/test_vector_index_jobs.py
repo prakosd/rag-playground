@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+from vector_indexer import IndexingConfig
+from vector_indexer.models import IndexingResult
+
+from crawl4md_streamlit import session_manager
+from crawl4md_streamlit.vector_index_jobs import (
+    drain_events,
+    job_state_from_event,
+    request_cancel,
+    start_vector_index_job,
+)
+
+
+class _FakeIndexer:
+    def __init__(self, result: IndexingResult | None = None) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._result = result
+
+    def run(self, config, inputs, output_base, *, progress_callback=None, should_cancel=None):
+        self.calls.append({"inputs": list(inputs), "output_base": Path(output_base)})
+        if progress_callback is not None:
+            progress_callback({"processed_chunks": 1, "total_chunks": 1})
+        run_dir = Path(output_base) / "run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return self._result or IndexingResult(
+            success=True,
+            output_dir=run_dir,
+            indexed_file_count=len(inputs),
+            indexed_chunk_count=1,
+        )
+
+
+def _make_session(tmp_path: Path) -> str:
+    session_manager.prepare_session_dir(tmp_path, "abc")
+    return "abc"
+
+
+def test_start_vector_index_job_runs_and_emits_events(tmp_path: Path) -> None:
+    session_id = _make_session(tmp_path)
+    source = tmp_path / "a.md"
+    source.write_text("hello", encoding="utf-8")
+    fake = _FakeIndexer()
+
+    job = start_vector_index_job(
+        session_id=session_id,
+        vector_id="01_word",
+        config=IndexingConfig(),
+        selected_paths=[str(source)],
+        uploads=[("notes.txt", b"text")],
+        sessions_root=tmp_path,
+        indexer=fake,
+    )
+    job.thread.join(5.0)
+
+    assert not job.thread.is_alive()
+    names = [event["event"] for event in drain_events(job)]
+    assert "started" in names
+    assert "completed" in names
+    assert len(fake.calls) == 1
+    passed_inputs = fake.calls[0]["inputs"]
+    assert any("a.md" in path for path in passed_inputs)
+    assert any("notes.txt" in path for path in passed_inputs)
+    assert job.output_base == session_manager.vector_output_base(tmp_path, session_id, "01_word")
+    assert (job.output_base / "uploads").is_dir()
+
+
+def test_start_vector_index_job_reports_indexer_failure(tmp_path: Path) -> None:
+    session_id = _make_session(tmp_path)
+
+    class _Boom:
+        def run(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+    job = start_vector_index_job(
+        session_id=session_id,
+        vector_id="01_word",
+        config=IndexingConfig(),
+        selected_paths=[],
+        uploads=[("a.md", b"x")],
+        sessions_root=tmp_path,
+        indexer=_Boom(),
+    )
+    job.thread.join(5.0)
+
+    failed = [event for event in drain_events(job) if event["event"] == "failed"]
+    assert failed
+    assert failed[0]["errors"]
+
+
+def test_request_cancel_sets_event_and_emits(tmp_path: Path) -> None:
+    session_id = _make_session(tmp_path)
+
+    class _Waiter:
+        def run(self, config, inputs, output_base, *, progress_callback=None, should_cancel=None):
+            for _ in range(500):
+                if should_cancel is not None and should_cancel():
+                    break
+                time.sleep(0.01)
+            run_dir = Path(output_base) / "run"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            return IndexingResult(success=False, output_dir=run_dir)
+
+    job = start_vector_index_job(
+        session_id=session_id,
+        vector_id="01_word",
+        config=IndexingConfig(),
+        selected_paths=[],
+        uploads=[("a.md", b"x")],
+        sessions_root=tmp_path,
+        indexer=_Waiter(),
+    )
+    request_cancel(job)
+    job.thread.join(5.0)
+
+    assert job.cancel_event.is_set()
+    names = [event["event"] for event in drain_events(job)]
+    assert "cancel_requested" in names
+    assert "cancelled" in names
+
+
+def test_job_state_from_event_maps_states() -> None:
+    assert job_state_from_event("started") == "running"
+    assert job_state_from_event("progress") == "running"
+    assert job_state_from_event("completed") == "completed"
+    assert job_state_from_event("failed") == "failed"
+    assert job_state_from_event("cancel_requested") == "cancel_requested"
+    assert job_state_from_event("cancelled") == "cancelled"
+    assert job_state_from_event("unknown") == "running"
+
+
+def test_next_vector_sequence_increments(tmp_path: Path) -> None:
+    session_id = _make_session(tmp_path)
+
+    assert session_manager.next_vector_sequence(tmp_path, session_id) == 1
+    session_manager.prepare_vector_output_base(tmp_path, session_id, "01_alpha")
+    assert session_manager.next_vector_sequence(tmp_path, session_id) == 2
+
+
+def test_generate_vector_id_and_output_base(tmp_path: Path) -> None:
+    session_id = _make_session(tmp_path)
+
+    vector_id = session_manager.generate_vector_id(seq=2)
+    assert vector_id.startswith("02_")
+
+    base = session_manager.vector_output_base(tmp_path, session_id, "03_x")
+    assert base.name == "vector_03_x"
+    assert base.parent.name == "session_abc"

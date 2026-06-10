@@ -40,8 +40,8 @@ STRINGS_ID: Strings = {
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/database: Langkah 2 - Bangun Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
-        "Pilih output Markdown, teks, atau ZIP, pecah menjadi chunk, buat embedding, "
-        "dan simpan di vector database."
+        "Ubah hasil crawl Langkah 1 menjadi vector database yang dapat dicari untuk "
+        "retrieval-augmented generation."
     ),
     "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Langkah 3 - Semantic Search",
     "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
@@ -308,6 +308,43 @@ STRINGS_ID: Strings = {
     "PORTFOLIO_MODAL_LINK_STREAMLIT_README": "Panduan developer app",
     "PORTFOLIO_MODAL_CLOSE_LABEL": "Tutup",
     "PORTFOLIO_MODAL_PHOTO_ALT": "Foto profil {author}",
+    # ── Vector index (Step 2) ─────────────────────────────────────────────
+    "VEC_SECTION_HEADER": "Bangun Vector Index yang Dapat Dicari",
+    "VEC_SECTION_CAPTION": (
+        "Pilih hasil crawl, atur opsi chunking dan embedding, lalu buat vector database "
+        "untuk retrieval-augmented generation."
+    ),
+    "VEC_SOURCES_LABEL": "File hasil crawl",
+    "VEC_SOURCES_HELP": (
+        "File Markdown, teks, atau ZIP dari Langkah 1. File ZIP hanya menyumbang anggota "
+        ".md dan .txt."
+    ),
+    "VEC_SOURCES_EMPTY": "Belum ada hasil crawl. Jalankan Langkah 1 dahulu atau unggah file di bawah.",
+    "VEC_UPLOAD_LABEL": "Unggah file",
+    "VEC_UPLOAD_HELP": "Tambahkan file .md, .txt, atau .zip Anda untuk diindeks bersama hasil crawl.",
+    "VEC_CHUNK_SIZE_LABEL": "Ukuran chunk",
+    "VEC_CHUNK_SIZE_HELP": "Jumlah maksimum karakter atau token yang disimpan text splitter di setiap fragmen sebelum membuat embedding.",
+    "VEC_CHUNK_OVERLAP_LABEL": "Tumpang tindih chunk",
+    "VEC_CHUNK_OVERLAP_HELP": "Jumlah karakter atau token dari akhir satu chunk yang diulang di awal chunk berikutnya.",
+    "VEC_EMBEDDING_MODEL_LABEL": "Model embedding",
+    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari.",
+    "VEC_EMBEDDING_DIMENSION_LABEL": "Dimensi embedding",
+    "VEC_EMBEDDING_DIMENSION_HELP": "Seberapa detail vektor embedding. Dimensi lebih besar menangkap lebih banyak detail, dimensi lebih kecil lebih ringan untuk disimpan dan dicari.",
+    "VEC_LANGUAGE_LABEL": "Bahasa",
+    "VEC_LANGUAGE_HELP": "Petunjuk bahasa sumber yang diberikan ke splitter atau lapisan embedding agar model multibahasa menangani tokenisasi dengan benar.",
+    "VEC_ERROR_NO_INPUTS": "Pilih minimal satu hasil crawl atau unggah file sebelum mengindeks.",
+    "VEC_ERROR_ALREADY_RUNNING": "Sebuah pekerjaan pengindeksan sedang berjalan.",
+    "VEC_ERROR_NO_ACTIVE_INDEX": "Tidak ada pekerjaan pengindeksan aktif untuk dihentikan.",
+    "VEC_PROGRESS_HEADER": "\u23f3 Progres pengindeksan",
+    "VEC_PROGRESS_CAPTION": "Pantau aktivitas pengindeksan saat berjalan.",
+    "VEC_STATUS_RUNNING": "Pengindeksan sedang berlangsung\u2026",
+    "VEC_STATUS_CHUNKS": "Terindeks {processed} dari {total} chunk",
+    "VEC_RESULT_SUCCESS": "Pengindeksan selesai \u2014 {files} file, {chunks} chunk.",
+    "VEC_RESULT_FAILED": "Pengindeksan gagal.",
+    "VEC_RESULT_CANCELLED": "Pengindeksan dihentikan.",
+    "VEC_RESULT_SKIPPED": "{count} file dilewati.",
+    "VEC_RESULT_WARNINGS_LABEL": "Peringatan",
+    "VEC_RESULT_ERRORS_LABEL": "Kesalahan",
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Siap",

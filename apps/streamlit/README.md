@@ -32,6 +32,8 @@ flowchart TD
 | `crawl_jobs.py` | Background jobs, config building, progress events |
 | `form_defaults.py` | Default crawl form payload |
 | `form_ui.py` | Crawl settings form renderer |
+| `vector_form_ui.py` | Step 2 vector-index form renderer + pure option/validation helpers |
+| `vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl_jobs.py`) |
 | `generated_files.py` | Output listing, previews, and downloads |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
@@ -78,7 +80,7 @@ Everything the user sees and interacts with. Responsibilities:
   `@st.cache_resource`).
 - Renders the global footer and browser-timed portfolio modal with translated copy.
 
-The current multipage pass uses dedicated modules in `app_pages/` for every workflow step. Step 1 (`app_pages/crawl4md.py`) renders the existing crawler content area through callbacks from the shared shell. Steps 2-5 are placeholder-only modules for now. They intentionally reuse the same width, title/subtitle placement, session-control row, language selector placement, footer, and restrained Streamlit-native styling as the crawler page so navigation feels continuous while the backend RAG features are still being built.
+The current multipage pass uses dedicated modules in `app_pages/` for every workflow step. Step 1 (`app_pages/crawl4md.py`) renders the crawler content area and Step 2 (`app_pages/vector_index.py`) renders the vector-index content area, both through callbacks from the shared shell. Steps 3-5 are placeholder-only modules for now. They intentionally reuse the same width, title/subtitle placement, session-control row, language selector placement, footer, and restrained Streamlit-native styling as the crawler page so navigation feels continuous while the remaining RAG features are still being built.
 
 ### Toast Emission Model
 
@@ -95,7 +97,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | Page module | Responsibility |
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
-| `vector_index.py` | Step 2 vector index workspace placeholder |
+| `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
 | `semantic_search.py` | Step 3 semantic search workspace placeholder |
 | `rag_qa.py` | Step 4 single-turn RAG Q&A workspace placeholder |
 | `conversational_rag.py` | Step 5 conversational RAG workspace placeholder |
@@ -128,6 +130,26 @@ values to `streamlit_app.py`.
 
 `streamlit_app.py` still owns `st.session_state`; it passes the active strings, defaults, and
 disabled state into `render_crawl_form()`.
+
+### Step 2 — Build Vector Index
+
+Step 2 mirrors Step 1's shell pattern and is backed by the UI-independent
+`vector_indexer` library (chunking, embeddings, and a ChromaDB vector store behind an
+interface). The app owns only input collection, the background job, and result display.
+
+- `app_pages/vector_index.py` — content area; receives a `VectorIndexPageContext` from the shell and renders the form, the start/stop confirmation dialog, the live progress/result area, and the reused output-files panel.
+- `vector_form_ui.py` — the form renderer plus pure, testable helpers: `crawl_result_options` (build the crawl-result multiselect) and `has_index_inputs` (validate that at least one file is selected or uploaded). Crawl inputs are discovered with `artifact_store.crawl_results.list_crawl_result_files`.
+- `vector_index_jobs.py` — `start_vector_index_job` runs `VectorIndexer.run` in a daemon thread, saves uploaded files under the run directory, and emits `started` / `progress` / `completed` / `failed` / `cancelled` events through a queue. `request_cancel` sets a cooperative cancel flag; `drain_events` feeds the live area.
+
+Session keys are prefixed with `vector_index_` and kept separate from crawl keys. The shell
+provides `_start_vector_index_job`, `_stop_vector_index_job`, a `vector_index_`-scoped stop
+dialog, and a live-area fragment, then reuses the existing `_render_downloads` panel so vector
+outputs appear in the same file tree. Outputs are written under
+`outputs/streamlit_sessions/session_<id>/vector_<id>/<timestamp>/`.
+
+Cloud embedding providers (Amazon Titan default, OpenAI) read credentials from the environment
+and fail gracefully when unconfigured — the default model falls back to an offline embedder with
+a warning. See [../../src/vector_indexer/README.md](../../src/vector_indexer/README.md).
 
 ### `support.py` — compatibility exports
 

@@ -8,8 +8,9 @@ version = "0.1.0"
 description = "Bundled Streamlit app for the crawl4md Python library"
 requires-python = ">=3.10"
 dependencies = [
-    "crawl4md>=0.1.0",
+    "crawl4md[vector,bedrock]>=0.1.0",
     "pydantic>=2.0",
+    "python-dotenv>=1.0",
     "streamlit==1.56.0",
 ]
 

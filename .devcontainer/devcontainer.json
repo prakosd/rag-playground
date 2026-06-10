@@ -4,7 +4,8 @@
   // Prevent .pyc file creation and ensure logs flush immediately (standard Python-in-Docker practice)
   "containerEnv": {
     "PYTHONUNBUFFERED": "1",
-    "PYTHONDONTWRITEBYTECODE": "1"
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "ANONYMIZED_TELEMETRY": "False"
   },
   // --shm-size: Chromium crashes with Docker's default 64 MB /dev/shm;
   // 2 GB is the standard Playwright-in-Docker fix.
@@ -18,7 +19,7 @@
   "remoteUser": "vscode",
   // Install Tesseract OCR (eng + msa), then pip install + Playwright + crawl4ai-setup.
   // The yarn apt source is removed first — its GPG key is expired in this base image.
-  "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa && sudo rm -rf /var/lib/apt/lists/* && pip install --upgrade pip && pip install -e '.[dev]' -e 'apps/streamlit[dev]' && playwright install --with-deps chromium && crawl4ai-setup",
+  "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa && sudo rm -rf /var/lib/apt/lists/* && pip install --upgrade pip && pip install -e '.[dev,vector,bedrock,openai]' -e 'apps/streamlit[dev]' && playwright install --with-deps chromium && crawl4ai-setup",
   "postAttachCommand": "python -m streamlit run apps/streamlit/streamlit_app.py --server.address=0.0.0.0 --server.port=8501",
   "customizations": {
     "vscode": {
