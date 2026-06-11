@@ -138,8 +138,8 @@ Step 2 mirrors Step 1's shell pattern and is backed by the UI-independent
 interface). The app owns only input collection, the background job, and result display.
 
 - `app_pages/vector_index.py` — content area; receives a `VectorIndexPageContext` from the shell and renders the form, the start/stop confirmation dialog, the live progress/result area, and the reused output-files panel.
-- `vector_form_ui.py` — the form renderer plus pure, testable helpers: `crawl_result_options` (build the crawl-result multiselect) and `has_index_inputs` (validate that at least one file is selected or uploaded). Crawl inputs are discovered with `artifact_store.crawl_results.list_crawl_result_files`.
-- `vector_index_jobs.py` — `start_vector_index_job` runs `VectorIndexer.run` in a daemon thread, saves uploaded files under the run directory, and emits `started` / `progress` / `completed` / `failed` / `cancelled` events through a queue. `request_cancel` sets a cooperative cancel flag; `drain_events` feeds the live area.
+- `vector_form_ui.py` — the form renderer plus pure, testable helpers: `crawl_result_options` (build the crawl-result multiselect), `has_index_inputs` (validate that at least one file is selected or uploaded), `embedding_model_info_for` (per-model dimension limits + local/cloud metadata, from the library catalog), and `embedding_model_label` (tag a model as local or cloud). The embedding model and dimension render above the form so the dimension input only offers values the selected model supports; the model defaults to the local offline model. Crawl inputs are discovered with `artifact_store.crawl_results.list_crawl_result_files`.
+- `vector_index_jobs.py` — `start_vector_index_job` runs `VectorIndexer.run` in a daemon thread, saves uploaded files under the run directory, and emits `started` / `progress` / `completed` / `failed` / `cancelled` events through a queue. `progress` events carry either a pipeline `stage` or per-chunk counts; `vector_progress_fraction` maps them to a labelled progress bar and `has_ssl_certificate_error` flags certificate failures so the UI can show download guidance. `request_cancel` sets a cooperative cancel flag; `drain_events` feeds the live area.
 
 Session keys are prefixed with `vector_index_` and kept separate from crawl keys. The shell
 provides `_start_vector_index_job`, `_stop_vector_index_job`, a `vector_index_`-scoped stop
@@ -147,9 +147,11 @@ dialog, and a live-area fragment, then reuses the existing `_render_downloads` p
 outputs appear in the same file tree. Outputs are written under
 `outputs/streamlit_sessions/session_<id>/vector_<id>/<timestamp>/`.
 
-Cloud embedding providers (Amazon Titan default, OpenAI) read credentials from the environment
-and fail gracefully when unconfigured — the default model falls back to an offline embedder with
-a warning. See [../../src/vector_indexer/README.md](../../src/vector_indexer/README.md).
+Cloud embedding models (Amazon Titan, OpenAI) read credentials from the environment and fail
+gracefully when unconfigured — indexing then falls back to the local offline model with a warning.
+The form defaults to that local model, which downloads once (~80 MB) on first use; set
+`SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` on a corporate network so that one-time download can succeed.
+See [../../src/vector_indexer/README.md](../../src/vector_indexer/README.md).
 
 ### `support.py` — compatibility exports
 

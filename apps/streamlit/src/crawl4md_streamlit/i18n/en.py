@@ -39,8 +39,8 @@ STRINGS_EN: Strings = {
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/database: Step 2 - Build Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
-        "Turn Step 1 crawl results into a searchable vector database for "
-        "retrieval-augmented generation."
+        "Turn crawled pages and your own documents into a searchable vector database "
+        "that powers retrieval-augmented generation."
     ),
     "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Step 3 - Semantic Search",
     "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
@@ -299,10 +299,10 @@ STRINGS_EN: Strings = {
     "PORTFOLIO_MODAL_CLOSE_LABEL": "Close",
     "PORTFOLIO_MODAL_PHOTO_ALT": "Profile photo of {author}",
     # ── Vector index (Step 2) ─────────────────────────────────────────────
-    "VEC_SECTION_HEADER": "Build a Searchable Vector Index",
+    "VEC_SECTION_HEADER": ":material/database: Build your searchable knowledge base",
     "VEC_SECTION_CAPTION": (
-        "Select crawl results, configure chunking and embedding options, then create a "
-        "vector database for retrieval-augmented generation."
+        "Pick your source files, set how text is split and embedded, then build a "
+        "vector database you can search and query."
     ),
     "VEC_SOURCES_LABEL": "Crawl result files",
     "VEC_SOURCES_HELP": (
@@ -317,7 +317,16 @@ STRINGS_EN: Strings = {
     "VEC_CHUNK_OVERLAP_LABEL": "Chunk overlap",
     "VEC_CHUNK_OVERLAP_HELP": "Number of characters or tokens from the end of one chunk that are repeated at the start of the next.",
     "VEC_EMBEDDING_MODEL_LABEL": "Embedding model",
-    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors.",
+    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. If the selected model is unavailable, indexing falls back to the local offline model (all-MiniLM-L6-v2).",
+    "VEC_MODEL_TAG_LOCAL": "💻 Local (one-time download)",
+    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud (needs API key)",
+    "VEC_MODEL_INDICATOR_LOCAL": (
+        "Runs on this machine. Downloads the model once (about 80 MB) the first time, "
+        "then works offline."
+    ),
+    "VEC_MODEL_INDICATOR_CLOUD": (
+        "Runs in the cloud. Needs an API key or credentials configured on the server."
+    ),
     "VEC_EMBEDDING_DIMENSION_LABEL": "Embedding dimension",
     "VEC_EMBEDDING_DIMENSION_HELP": "How detailed the embedding vectors are. Bigger dimensions can capture more detail, while smaller dimensions are lighter to store and search.",
     "VEC_LANGUAGE_LABEL": "Language",
@@ -329,12 +338,23 @@ STRINGS_EN: Strings = {
     "VEC_PROGRESS_CAPTION": "Track indexing activity as it runs.",
     "VEC_STATUS_RUNNING": "Indexing in progress\u2026",
     "VEC_STATUS_CHUNKS": "Indexed {processed} of {total} chunks",
+    "VEC_STAGE_RESOLVING_MODEL": "Preparing embedding model\u2026",
+    "VEC_STAGE_LOADING": "Loading documents\u2026",
+    "VEC_STAGE_CHUNKING": "Splitting text into chunks\u2026",
+    "VEC_STAGE_EMBEDDING": "Embedding chunks\u2026",
+    "VEC_STAGE_SAVING": "Saving vector index\u2026",
     "VEC_RESULT_SUCCESS": "Indexing complete \u2014 {files} files, {chunks} chunks.",
     "VEC_RESULT_FAILED": "Indexing failed.",
     "VEC_RESULT_CANCELLED": "Indexing stopped.",
     "VEC_RESULT_SKIPPED": "{count} file(s) skipped.",
     "VEC_RESULT_WARNINGS_LABEL": "Warnings",
     "VEC_RESULT_ERRORS_LABEL": "Errors",
+    "VEC_ERROR_SSL_HINT": (
+        "This looks like a network certificate problem during the one-time model "
+        "download. The local model downloads once over the internet. On a corporate "
+        "network, set SSL_CERT_FILE or REQUESTS_CA_BUNDLE to your organization's "
+        "certificate bundle, or run once on an unrestricted network."
+    ),
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Ready",

@@ -8,7 +8,7 @@ no Streamlit dependency and is equally usable from a notebook, a CLI, or tests.
 
 ```
 VectorIndexer.run(config, inputs, output_base)
-  ├─ resolve_embedding()      → provider (+ Titan→offline fallback warnings)
+  ├─ resolve_embedding()      → provider (+ local-model fallback warnings)
   ├─ load_documents()         → .md / .txt files and .zip members (via artifact_store)
   ├─ chunk_documents()        → overlapping chunks (langchain-text-splitters)
   ├─ provider.embed_documents → vectors
@@ -61,6 +61,15 @@ print(result.success, result.indexed_chunk_count, result.warnings)
 
 Unsupported or unreadable inputs are skipped and reported in `IndexingResult.warnings`.
 
+## Progress reporting
+
+`VectorIndexer.run` accepts an optional `progress_callback`. It receives two kinds
+of event mappings: coarse stage markers `{"stage": ...}` (`resolving_model` →
+`loading` → `chunking` → `embedding` → `saving`) emitted at pipeline boundaries, and
+per-batch counts `{"processed_chunks": n, "total_chunks": m}` during embedding. A UI
+can show the current stage before chunk counts are available, then switch to a ratio
+bar. Cancellation stays cooperative via `should_cancel`.
+
 ## Embedding providers
 
 The application layer never depends on a specific provider. `EmbeddingProvider`
@@ -71,13 +80,31 @@ The application layer never depends on a specific provider. `EmbeddingProvider`
 | `amazon.titan-embed-text-v2:0` *(default)* | Amazon Bedrock Titan | `boto3` + AWS credentials |
 | `text-embedding-3-small` | OpenAI | `openai` + `OPENAI_API_KEY` |
 | `all-MiniLM-L6-v2` | Offline ONNX (ChromaDB) | none (downloads ~80 MB on first use) |
-| `BAAI/bge-*`, `intfloat/e5-*`, `sentence-transformers/*` | listed but **disabled** | not installed (no PyTorch) |
+| `BAAI/bge-*`, `intfloat/e5-*`, `sentence-transformers/*` | known but **disabled** (not shown in UI) | not installed (no PyTorch) |
 
 **Graceful failure & fallback.** When a provider's dependency or credential is
-missing, construction raises `EmbeddingProviderUnavailable`. The default model
-(Titan) then **falls back to the offline model** and records a warning, so an
-out-of-the-box run still succeeds. Other explicitly chosen but unavailable models
-fail with a clear error instead of silently changing behavior.
+missing, construction raises `EmbeddingProviderUnavailable`. `resolve_embedding`
+then **falls back to the local offline model** (`all-MiniLM-L6-v2`) and records a
+warning, so any run still succeeds. It re-raises only when the local model itself
+was the requested model, or when the local fallback is also unavailable (for
+example ChromaDB is not installed) — surfaced as a combined error.
+
+**Model metadata (no provider construction).** `get_embedding_model_info(model_id)`
+and `EMBEDDING_MODEL_INFOS` expose static `EmbeddingModelInfo` records — `kind`
+(`"local"`/`"cloud"`), `requires_api_key`, `one_time_download`, the supported
+embedding dimensions (a discrete tuple, or `None` for a `min`/`max` range), and the
+default dimension — so a UI can label models and constrain dimension inputs without
+touching the network or any credentials.
+
+### Offline model & corporate TLS
+
+The offline `all-MiniLM-L6-v2` model runs locally, but ChromaDB downloads it once
+over HTTPS on first use (~80 MB). On networks that intercept TLS with a private
+root CA, that one-time download can fail with a certificate error. Point any of
+`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, or `CURL_CA_BUNDLE` at your corporate CA
+bundle; the library mirrors a configured value across these variables before the
+download so it can succeed. After the first successful download the model is cached
+and no network is needed.
 
 ## Credentials
 

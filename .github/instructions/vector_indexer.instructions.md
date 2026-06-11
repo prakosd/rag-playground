@@ -13,7 +13,7 @@ must stay usable from a notebook, CLI, or tests without Streamlit.
 
 ```
 VectorIndexer.run(config, inputs, output_base)
-  ├─ resolve_embedding()      → provider (+ Titan→offline fallback warnings)
+  ├─ resolve_embedding()      → provider (+ local-model fallback warnings)
   ├─ load_documents()         → Document[]  (.md/.txt, .zip via artifact_store)
   ├─ chunk_documents()        → Chunk[]      (langchain RecursiveCharacterTextSplitter)
   ├─ provider.embed_documents → vectors
@@ -26,7 +26,7 @@ VectorIndexer.run(config, inputs, output_base)
 - **Lazy heavy imports.** Never import `chromadb`, `langchain_text_splitters`, `boto3`, or `openai` at module top level. Import them inside the function/method that needs them so `import vector_indexer` stays light (a subprocess test asserts none are eagerly loaded). These ship as opt-in extras (`vector`, `bedrock`, `openai`).
 - **Config.** `IndexingConfig` is Pydantic v2 (`field_validator`/`model_validator`): `chunk_size`≥1, `chunk_overlap`≥0 and `< chunk_size`, `embedding_dimension`≥1, `language` normalized and validated against `LUCENE_LANGUAGES`. Defaults: 600 / 100 / Titan / 512 / english.
 - **Embedding providers.** Implement `EmbeddingProvider` (ABC). Construction probes availability and raises `EmbeddingProviderUnavailable` when a dependency or credential is missing — never raise raw import/credential errors. Credentials come **only** from environment variables (`AWS_*`, `OPENAI_API_KEY`); never hardcode secrets.
-- **Resolution policy.** `resolve_embedding` applies the default-model fallback: when the default Titan model is unavailable it falls back to the offline local provider and appends a warning. Other unavailable models raise (the indexer records the error). Heavy HuggingFace ids in `DISABLED_MODELS` always fail gracefully (no torch).
+- **Resolution policy.** `resolve_embedding` applies a universal fallback: when the requested model is unavailable it falls back to the local offline provider (`all-MiniLM-L6-v2`) and appends a warning, so a run still succeeds. It re-raises only when the local model itself was requested and is unavailable, or when the local fallback is also unavailable (combined error the indexer records). Heavy HuggingFace ids in `DISABLED_MODELS` are not offered in the UI and fail gracefully (no torch), then fall back to local.
 - **Vector store interface.** Callers depend on `VectorStore` (ABC: `create_collection`/`add_documents`/`persist`), never on ChromaDB directly. `ChromaVectorStore` always receives explicit embeddings, so ChromaDB never invokes its own embedding function (no model download). ChromaDB collection names must be 3–512 chars of `[a-zA-Z0-9._-]`.
 - **Structured result.** `run` returns `IndexingResult` (success, output_dir, indexed/skipped counts, warnings, errors) and writes a `manifest.json`. Cancellation is cooperative via `should_cancel`.
 

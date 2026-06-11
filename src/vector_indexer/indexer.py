@@ -35,9 +35,17 @@ _CHROMA_SUBDIR = "chroma"
 _MANIFEST_NAME = "manifest.json"
 _EMBED_BATCH_SIZE = 32
 
+# Coarse pipeline stages reported through the progress callback so a UI can show
+# what the run is doing before per-chunk counts are available.
+STAGE_RESOLVING_MODEL = "resolving_model"
+STAGE_LOADING = "loading"
+STAGE_CHUNKING = "chunking"
+STAGE_EMBEDDING = "embedding"
+STAGE_SAVING = "saving"
+
 StoreFactory = Callable[[Path], VectorStore]
 EmbeddingResolver = Callable[[str, int | None], tuple[EmbeddingProvider, list[str]]]
-ProgressCallback = Callable[[dict[str, int]], None]
+ProgressCallback = Callable[[dict[str, object]], None]
 CancelCheck = Callable[[], bool]
 
 
@@ -72,11 +80,12 @@ class VectorIndexer:
         run_dir.mkdir(parents=True, exist_ok=True)
         result = IndexingResult(success=False, output_dir=run_dir)
 
+        _report_stage(progress_callback, STAGE_RESOLVING_MODEL)
         provider = self._resolve_provider(config, result)
         if provider is None:
             return self._finalize(run_dir, config, result, model_id=None)
 
-        chunks = self._prepare_chunks(config, inputs, result, should_cancel)
+        chunks = self._prepare_chunks(config, inputs, result, should_cancel, progress_callback)
         if chunks is None:
             return self._finalize(run_dir, config, result, model_id=provider.model_id)
 
@@ -110,7 +119,9 @@ class VectorIndexer:
         inputs: Sequence[Path | str],
         result: IndexingResult,
         should_cancel: CancelCheck | None,
+        progress_callback: ProgressCallback | None = None,
     ) -> list[Chunk] | None:
+        _report_stage(progress_callback, STAGE_LOADING)
         load_result = load_documents(inputs)
         result.skipped_file_count = load_result.skipped_file_count
         result.warnings.extend(load_result.warnings)
@@ -122,6 +133,7 @@ class VectorIndexer:
         if _cancelled(should_cancel):
             result.warnings.append("Indexing was cancelled before chunking started.")
             return None
+        _report_stage(progress_callback, STAGE_CHUNKING)
         try:
             chunks = chunk_documents(
                 load_result.documents,
@@ -152,6 +164,7 @@ class VectorIndexer:
         ids = count()
         indexed_sources: set[str] = set()
         total = len(chunks)
+        _report_stage(progress_callback, STAGE_EMBEDDING)
         try:
             for batch in _batched(chunks, _EMBED_BATCH_SIZE):
                 if _cancelled(should_cancel):
@@ -171,6 +184,7 @@ class VectorIndexer:
                 result.indexed_chunk_count += len(records)
                 indexed_sources.update(chunk.document_source for chunk in batch)
                 _report_progress(progress_callback, result.indexed_chunk_count, total)
+            _report_stage(progress_callback, STAGE_SAVING)
             store.persist()
         except Exception as exc:  # noqa: BLE001 - boundary around the embedding backend
             result.errors.append(f"Embedding or storage failed: {exc}")
@@ -199,6 +213,11 @@ def _report_progress(
 ) -> None:
     if progress_callback is not None:
         progress_callback({"processed_chunks": processed, "total_chunks": total})
+
+
+def _report_stage(progress_callback: ProgressCallback | None, stage: str) -> None:
+    if progress_callback is not None:
+        progress_callback({"stage": stage})
 
 
 def _batched(items: Sequence[Chunk], size: int) -> Iterator[list[Chunk]]:

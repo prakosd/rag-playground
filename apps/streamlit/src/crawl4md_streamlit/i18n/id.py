@@ -40,8 +40,8 @@ STRINGS_ID: Strings = {
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/database: Langkah 2 - Bangun Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
-        "Ubah hasil crawl Langkah 1 menjadi vector database yang dapat dicari untuk "
-        "retrieval-augmented generation."
+        "Ubah halaman hasil crawl dan dokumen Anda sendiri menjadi vector database yang "
+        "dapat dicari untuk retrieval-augmented generation."
     ),
     "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Langkah 3 - Semantic Search",
     "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
@@ -309,10 +309,10 @@ STRINGS_ID: Strings = {
     "PORTFOLIO_MODAL_CLOSE_LABEL": "Tutup",
     "PORTFOLIO_MODAL_PHOTO_ALT": "Foto profil {author}",
     # ── Vector index (Step 2) ─────────────────────────────────────────────
-    "VEC_SECTION_HEADER": "Bangun Vector Index yang Dapat Dicari",
+    "VEC_SECTION_HEADER": ":material/database: Bangun basis pengetahuan yang dapat dicari",
     "VEC_SECTION_CAPTION": (
-        "Pilih hasil crawl, atur opsi chunking dan embedding, lalu buat vector database "
-        "untuk retrieval-augmented generation."
+        "Pilih file sumber Anda, atur cara teks dipecah dan di-embed, lalu bangun vector "
+        "database yang bisa Anda cari dan tanyakan."
     ),
     "VEC_SOURCES_LABEL": "File hasil crawl",
     "VEC_SOURCES_HELP": (
@@ -327,7 +327,16 @@ STRINGS_ID: Strings = {
     "VEC_CHUNK_OVERLAP_LABEL": "Tumpang tindih chunk",
     "VEC_CHUNK_OVERLAP_HELP": "Jumlah karakter atau token dari akhir satu chunk yang diulang di awal chunk berikutnya.",
     "VEC_EMBEDDING_MODEL_LABEL": "Model embedding",
-    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari.",
+    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Jika model yang dipilih tidak tersedia, pengindeksan beralih ke model lokal luring (all-MiniLM-L6-v2).",
+    "VEC_MODEL_TAG_LOCAL": "💻 Lokal (unduh sekali)",
+    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud (perlu API key)",
+    "VEC_MODEL_INDICATOR_LOCAL": (
+        "Berjalan di mesin ini. Mengunduh model sekali (sekitar 80 MB) saat pertama kali, "
+        "lalu bekerja luring."
+    ),
+    "VEC_MODEL_INDICATOR_CLOUD": (
+        "Berjalan di cloud. Perlu API key atau kredensial yang dikonfigurasi di server."
+    ),
     "VEC_EMBEDDING_DIMENSION_LABEL": "Dimensi embedding",
     "VEC_EMBEDDING_DIMENSION_HELP": "Seberapa detail vektor embedding. Dimensi lebih besar menangkap lebih banyak detail, dimensi lebih kecil lebih ringan untuk disimpan dan dicari.",
     "VEC_LANGUAGE_LABEL": "Bahasa",
@@ -339,12 +348,23 @@ STRINGS_ID: Strings = {
     "VEC_PROGRESS_CAPTION": "Pantau aktivitas pengindeksan saat berjalan.",
     "VEC_STATUS_RUNNING": "Pengindeksan sedang berlangsung\u2026",
     "VEC_STATUS_CHUNKS": "Terindeks {processed} dari {total} chunk",
+    "VEC_STAGE_RESOLVING_MODEL": "Menyiapkan model embedding\u2026",
+    "VEC_STAGE_LOADING": "Memuat dokumen\u2026",
+    "VEC_STAGE_CHUNKING": "Memecah teks menjadi chunk\u2026",
+    "VEC_STAGE_EMBEDDING": "Meng-embed chunk\u2026",
+    "VEC_STAGE_SAVING": "Menyimpan vector index\u2026",
     "VEC_RESULT_SUCCESS": "Pengindeksan selesai \u2014 {files} file, {chunks} chunk.",
     "VEC_RESULT_FAILED": "Pengindeksan gagal.",
     "VEC_RESULT_CANCELLED": "Pengindeksan dihentikan.",
     "VEC_RESULT_SKIPPED": "{count} file dilewati.",
     "VEC_RESULT_WARNINGS_LABEL": "Peringatan",
     "VEC_RESULT_ERRORS_LABEL": "Kesalahan",
+    "VEC_ERROR_SSL_HINT": (
+        "Ini tampak seperti masalah sertifikat jaringan saat pengunduhan model sekali "
+        "pakai. Model lokal mengunduh sekali melalui internet. Di jaringan perusahaan, "
+        "atur SSL_CERT_FILE atau REQUESTS_CA_BUNDLE ke berkas sertifikat organisasi Anda, "
+        "atau jalankan sekali di jaringan tanpa batasan."
+    ),
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
         "idle": "Siap",

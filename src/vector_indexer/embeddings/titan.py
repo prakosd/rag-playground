@@ -16,12 +16,17 @@ from typing import Any
 
 from vector_indexer.embeddings.base import EmbeddingProvider, EmbeddingProviderUnavailable
 
-__all__ = ["TITAN_MODEL", "TitanEmbeddingProvider"]
+__all__ = [
+    "DEFAULT_DIMENSION",
+    "SUPPORTED_DIMENSIONS",
+    "TITAN_MODEL",
+    "TitanEmbeddingProvider",
+]
 
 TITAN_MODEL = "amazon.titan-embed-text-v2:0"
 _BEDROCK_SERVICE = "bedrock-runtime"
-_SUPPORTED_DIMENSIONS = (256, 512, 1024)
-_DEFAULT_DIMENSION = 512
+SUPPORTED_DIMENSIONS = (256, 512, 1024)
+DEFAULT_DIMENSION = 512
 
 
 def _has_aws_credentials() -> bool:
@@ -45,7 +50,7 @@ class TitanEmbeddingProvider(EmbeddingProvider):
         self._region = (
             region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
         )
-        self._dimension = dimension if dimension in _SUPPORTED_DIMENSIONS else _DEFAULT_DIMENSION
+        self._dimension = dimension if dimension in SUPPORTED_DIMENSIONS else DEFAULT_DIMENSION
         self._client: Any = None
 
     @property

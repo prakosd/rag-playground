@@ -10,6 +10,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from vector_indexer.embeddings.base import EmbeddingProvider, EmbeddingProviderUnavailable
+from vector_indexer.embeddings.catalog import (
+    EMBEDDING_MODEL_INFOS,
+    EmbeddingModelInfo,
+    get_embedding_model_info,
+)
 from vector_indexer.embeddings.local import DEFAULT_LOCAL_MODEL
 from vector_indexer.embeddings.openai import OPENAI_MODEL
 from vector_indexer.embeddings.titan import TITAN_MODEL
@@ -18,21 +23,25 @@ __all__ = [
     "DEFAULT_EMBEDDING_MODEL",
     "DEFAULT_LOCAL_MODEL",
     "DISABLED_MODELS",
+    "EMBEDDING_MODEL_INFOS",
     "EMBEDDING_MODEL_OPTIONS",
     "OPENAI_MODEL",
     "TITAN_MODEL",
+    "EmbeddingModelInfo",
     "EmbeddingProvider",
     "EmbeddingProviderUnavailable",
     "build_default_local_provider",
     "build_embedding_provider",
+    "get_embedding_model_info",
     "resolve_embedding",
 ]
 
 DEFAULT_EMBEDDING_MODEL = TITAN_MODEL
 
-# Listed in the UI but not enabled in this build: they require local model
-# dependencies (PyTorch / sentence-transformers) that are intentionally not
-# installed. Selecting one fails gracefully with guidance.
+# Known model ids that require local model dependencies (PyTorch /
+# sentence-transformers) that are intentionally not installed. They are not
+# offered in the UI; if one is requested programmatically, construction fails
+# gracefully and resolution falls back to the local offline model.
 DISABLED_MODELS: tuple[str, ...] = (
     "BAAI/bge-small-en-v1.5",
     "BAAI/bge-base-en-v1.5",
@@ -42,11 +51,12 @@ DISABLED_MODELS: tuple[str, ...] = (
     "intfloat/e5-base-v2",
 )
 
+# Runnable models offered in the UI. Any other (or failed) model resolves to the
+# local offline model via ``resolve_embedding``.
 EMBEDDING_MODEL_OPTIONS: tuple[str, ...] = (
     TITAN_MODEL,
     OPENAI_MODEL,
     DEFAULT_LOCAL_MODEL,
-    *DISABLED_MODELS,
 )
 
 
@@ -85,21 +95,32 @@ def resolve_embedding(
     build: Callable[..., EmbeddingProvider] = build_embedding_provider,
     default_build: Callable[..., EmbeddingProvider] = build_default_local_provider,
 ) -> tuple[EmbeddingProvider, list[str]]:
-    """Resolve an embedding provider, applying the default-model fallback policy.
+    """Resolve an embedding provider, falling back to the local offline model.
 
-    When the default model (Amazon Titan) is requested but unavailable, this
-    falls back to the offline default provider and returns a warning. Other
-    unavailable models raise ``EmbeddingProviderUnavailable`` for the caller to
-    surface as an error.
+    When the requested model is unavailable (missing dependency or credential),
+    this falls back to the local offline provider and returns a warning so the
+    run still succeeds. It raises ``EmbeddingProviderUnavailable`` only when the
+    local model itself was requested and is unavailable (re-raising that error),
+    or when the local fallback is also unavailable (a combined error), so the
+    caller can surface it.
     """
     warnings: list[str] = []
     try:
         provider = build(model, dimension=dimension)
     except EmbeddingProviderUnavailable as exc:
-        if model.strip() != DEFAULT_EMBEDDING_MODEL:
+        if model.strip() == DEFAULT_LOCAL_MODEL:
             raise
-        provider = default_build(dimension=dimension)
-        warnings.append(f"{exc} Falling back to offline embeddings ({DEFAULT_LOCAL_MODEL}).")
+        try:
+            provider = default_build(dimension=dimension)
+        except EmbeddingProviderUnavailable as fallback_exc:
+            raise EmbeddingProviderUnavailable(
+                f"{exc} The local offline model ({DEFAULT_LOCAL_MODEL}) is also "
+                f"unavailable: {fallback_exc}"
+            ) from fallback_exc
+        warnings.append(
+            f"The selected embedding model could not be used: {exc} "
+            f"Falling back to the local offline model ({DEFAULT_LOCAL_MODEL})."
+        )
     if dimension is not None and provider.dimension != dimension:
         warnings.append(
             f"Requested embedding dimension {dimension} is not supported by "

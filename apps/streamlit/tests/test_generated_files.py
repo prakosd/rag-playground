@@ -9,7 +9,7 @@ from crawl4md_streamlit.generated_files import (
     ReadyDownload,
     build_download_tree,
     build_ready_download,
-    collapse_crawl_run_folder,
+    collapse_artifact_run_folder,
     collect_success_content_files,
     download_tree_entry_sort_key,
     find_latest_crawl_dir,
@@ -44,7 +44,7 @@ def test_build_download_tree_nests_generated_files_by_relative_path() -> None:
     assert tree["crawl_run"]["final"]["content.md"] == nested_file
 
 
-def test_collapse_crawl_run_folder_merges_single_timestamp_child() -> None:
+def test_collapse_artifact_run_folder_merges_single_timestamp_child() -> None:
     local_timezone = timezone(timedelta(hours=10), "AEST")
     crawl_tree = {
         "2026-05-19_18-17-52": {
@@ -53,7 +53,7 @@ def test_collapse_crawl_run_folder_merges_single_timestamp_child() -> None:
         }
     }
 
-    label, folder_node = collapse_crawl_run_folder(
+    label, folder_node = collapse_artifact_run_folder(
         "crawl_1_parlor",
         crawl_tree,
         local_timezone=local_timezone,
@@ -63,25 +63,48 @@ def test_collapse_crawl_run_folder_merges_single_timestamp_child() -> None:
     assert folder_node == crawl_tree["2026-05-19_18-17-52"]
 
 
-def test_collapse_crawl_run_folder_keeps_folder_when_not_single_timestamp_child() -> None:
+def test_collapse_artifact_run_folder_keeps_folder_when_not_single_timestamp_child() -> None:
     crawl_tree = {
         "2026-05-19_18-17-52": {},
         "2026-05-19_18-17-53": {},
     }
 
-    label, folder_node = collapse_crawl_run_folder("crawl_1_parlor", crawl_tree)
+    label, folder_node = collapse_artifact_run_folder("crawl_1_parlor", crawl_tree)
 
     assert label == "crawl_1_parlor"
     assert folder_node == crawl_tree
 
 
-def test_collapse_crawl_run_folder_keeps_non_timestamp_child() -> None:
+def test_collapse_artifact_run_folder_keeps_non_timestamp_child() -> None:
     crawl_tree = {"final": {"content.md": _generated_file("crawl_1/final/content.md")}}
 
-    label, folder_node = collapse_crawl_run_folder("crawl_1_parlor", crawl_tree)
+    label, folder_node = collapse_artifact_run_folder("crawl_1_parlor", crawl_tree)
 
     assert label == "crawl_1_parlor"
     assert folder_node == crawl_tree
+
+
+def test_collapse_artifact_run_folder_merges_vector_timestamp_child() -> None:
+    local_timezone = timezone(timedelta(hours=10), "AEST")
+    vector_tree = {
+        "2026-05-19_18-17-52": {
+            "chroma": {
+                "chroma.sqlite3": _generated_file(
+                    "vector_1/2026-05-19_18-17-52/chroma/chroma.sqlite3"
+                )
+            },
+            "manifest.json": _generated_file("vector_1/2026-05-19_18-17-52/manifest.json"),
+        }
+    }
+
+    label, folder_node = collapse_artifact_run_folder(
+        "vector_01_pentagram",
+        vector_tree,
+        local_timezone=local_timezone,
+    )
+
+    assert label == "vector_01_pentagram/2026-05-19_18-17-52 (20 May 2026 04:17 AEST)"
+    assert folder_node == vector_tree["2026-05-19_18-17-52"]
 
 
 def test_generated_file_sort_key_orders_numbered_crawl_runs_descending() -> None:
@@ -115,6 +138,23 @@ def test_download_tree_entry_sort_key_orders_top_level_crawl_folders_descending(
             key=lambda item: download_tree_entry_sort_key(item[0], item[1], top_level=True),
         )
     ] == ["crawl_10_river", "crawl_01_boulder", "notes", "summary.md"]
+
+
+def test_download_tree_entry_sort_key_orders_vector_folders_after_crawl_newest_first() -> None:
+    entries = {
+        "crawl_02_river": {},
+        "vector_01_alpha": {},
+        "vector_10_omega": {},
+        "summary.md": _generated_file("summary.md"),
+    }
+
+    assert [
+        name
+        for name, entry in sorted(
+            entries.items(),
+            key=lambda item: download_tree_entry_sort_key(item[0], item[1], top_level=True),
+        )
+    ] == ["crawl_02_river", "vector_10_omega", "vector_01_alpha", "summary.md"]
 
 
 def test_format_run_timestamp_label_prefers_progress_history_timestamp(tmp_path: Path) -> None:

@@ -239,6 +239,10 @@ class Strings(TypedDict):
     VEC_CHUNK_OVERLAP_HELP: str
     VEC_EMBEDDING_MODEL_LABEL: str
     VEC_EMBEDDING_MODEL_HELP: str
+    VEC_MODEL_TAG_LOCAL: str
+    VEC_MODEL_TAG_CLOUD: str
+    VEC_MODEL_INDICATOR_LOCAL: str
+    VEC_MODEL_INDICATOR_CLOUD: str
     VEC_EMBEDDING_DIMENSION_LABEL: str
     VEC_EMBEDDING_DIMENSION_HELP: str
     VEC_LANGUAGE_LABEL: str
@@ -250,11 +254,17 @@ class Strings(TypedDict):
     VEC_PROGRESS_CAPTION: str
     VEC_STATUS_RUNNING: str
     VEC_STATUS_CHUNKS: str  # template: {processed}, {total}
+    VEC_STAGE_RESOLVING_MODEL: str
+    VEC_STAGE_LOADING: str
+    VEC_STAGE_CHUNKING: str
+    VEC_STAGE_EMBEDDING: str
+    VEC_STAGE_SAVING: str
     VEC_RESULT_SUCCESS: str  # template: {files}, {chunks}
     VEC_RESULT_FAILED: str
     VEC_RESULT_CANCELLED: str
     VEC_RESULT_SKIPPED: str  # template: {count}
     VEC_RESULT_WARNINGS_LABEL: str
     VEC_RESULT_ERRORS_LABEL: str
+    VEC_ERROR_SSL_HINT: str
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]

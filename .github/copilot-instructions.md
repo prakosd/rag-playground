@@ -14,7 +14,7 @@ crawl4md crawls websites and extracts content as Markdown. The core `crawl4md` l
 ## Data Flow
 
 - **Step 1 (crawl):** `SiteCrawler.crawl()` → Crawl4AI (raw HTML) → `ContentExtractor` (Markdown) → `FileWriter` (size-limited files + URL lists) → `ContentSorter` (sorted final output). Each crawl writes a timestamped dir; results pass through rounds (initial + retries), then merge/dedupe/sort.
-- **Step 2 (index):** `VectorIndexer.run()` → `resolve_embedding` (Titan default, offline fallback) → `load_documents` (.md/.txt/.zip) → `chunk_documents` → embed + `VectorStore` (ChromaDB) → `IndexingResult` + `manifest.json`.
+- **Step 2 (index):** `VectorIndexer.run()` → `resolve_embedding` (Titan default, local-model fallback for any failed model) → `load_documents` (.md/.txt/.zip) → `chunk_documents` → embed + `VectorStore` (ChromaDB) → `IndexingResult` + `manifest.json`.
 
 ## Module Rules
 

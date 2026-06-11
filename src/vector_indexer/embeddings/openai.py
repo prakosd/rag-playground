@@ -14,10 +14,11 @@ from typing import Any
 
 from vector_indexer.embeddings.base import EmbeddingProvider, EmbeddingProviderUnavailable
 
-__all__ = ["OPENAI_MODEL", "OpenAIEmbeddingProvider"]
+__all__ = ["MIN_DIMENSION", "NATIVE_DIMENSION", "OPENAI_MODEL", "OpenAIEmbeddingProvider"]
 
 OPENAI_MODEL = "text-embedding-3-small"
-_NATIVE_DIMENSION = 1536
+MIN_DIMENSION = 1
+NATIVE_DIMENSION = 1536
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
@@ -32,7 +33,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             raise EmbeddingProviderUnavailable(
                 "OPENAI_API_KEY is not configured for OpenAI embeddings."
             )
-        self._dimension = dimension if dimension and dimension > 0 else _NATIVE_DIMENSION
+        self._dimension = dimension if dimension and dimension > 0 else NATIVE_DIMENSION
         self._client: Any = None
 
     @property

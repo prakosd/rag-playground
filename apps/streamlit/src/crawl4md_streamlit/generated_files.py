@@ -13,6 +13,11 @@ from datetime import datetime, timezone, tzinfo
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from artifact_store.naming import (
+    VECTOR_FOLDER_PREFIX,
+    parse_folder_sequence,
+    sequence_sort_key,
+)
 from crawl4md.naming import (
     CRAWL_FOLDER_PREFIX,
     crawl_sequence_sort_key,
@@ -24,6 +29,7 @@ from crawl4md_streamlit.session_manager import ensure_within_root
 
 _ACTIVITY_LOG_FILE = "activity_log.txt"
 _CRAWL_DIR_PREFIX = CRAWL_FOLDER_PREFIX
+_VECTOR_DIR_PREFIX = VECTOR_FOLDER_PREFIX
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
@@ -287,24 +293,30 @@ def download_tree_entry_sort_key(
     *,
     top_level: bool = False,
 ) -> tuple[int, int, str]:
-    """Return a tree-entry sort key with newest numbered crawl folders first."""
+    """Return a tree-entry sort key with newest numbered crawl/vector folders first."""
     if isinstance(entry, dict):
         if top_level and parse_crawl_folder_sequence(name) is not None:
             _, sequence_key, name_key = crawl_sequence_sort_key(name)
             return (0, sequence_key, name_key)
-        return (1, 0, name.lower())
-    return (2, 0, name.lower())
+        if top_level and parse_folder_sequence(name, prefix=_VECTOR_DIR_PREFIX) is not None:
+            _, sequence_key, name_key = sequence_sort_key(name, prefix=_VECTOR_DIR_PREFIX)
+            return (1, sequence_key, name_key)
+        return (2, 0, name.lower())
+    return (3, 0, name.lower())
 
 
-def collapse_crawl_run_folder(
+def collapse_artifact_run_folder(
     folder_name: str,
     folder_node: dict[str, Any],
     *,
     local_timezone: tzinfo | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Merge crawl folder and single timestamp child into a compact UI label."""
+    """Merge a crawl/vector folder and its single timestamp child into one label."""
     label = folder_name
-    if not folder_name.startswith(_CRAWL_DIR_PREFIX) or len(folder_node) != 1:
+    is_artifact_dir = folder_name.startswith(_CRAWL_DIR_PREFIX) or folder_name.startswith(
+        _VECTOR_DIR_PREFIX
+    )
+    if not is_artifact_dir or len(folder_node) != 1:
         return label, folder_node
 
     child_name, child_entry = next(iter(folder_node.items()))

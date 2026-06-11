@@ -22,7 +22,7 @@ from vector_indexer import IndexingConfig
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
-    collapse_crawl_run_folder,
+    collapse_artifact_run_folder,
     download_tree_entry_sort_key,
     generated_files_cache_token,
 )
@@ -91,7 +91,12 @@ from crawl4md_streamlit.support import (
     touch_session,
     validate_safe_id,
 )
-from crawl4md_streamlit.vector_index_jobs import VectorIndexJob, start_vector_index_job
+from crawl4md_streamlit.vector_index_jobs import (
+    VectorIndexJob,
+    has_ssl_certificate_error,
+    start_vector_index_job,
+    vector_progress_fraction,
+)
 from crawl4md_streamlit.vector_index_jobs import drain_events as drain_vector_events
 from crawl4md_streamlit.vector_index_jobs import job_state_from_event as vector_job_state_from_event
 from crawl4md_streamlit.vector_index_jobs import request_cancel as request_vector_cancel
@@ -785,6 +790,7 @@ def _init_state() -> None:
     st.session_state.setdefault("vector_index_id", "")
     st.session_state.setdefault("vector_index_state", _STATE_IDLE)
     st.session_state.setdefault("vector_index_progress", {})
+    st.session_state.setdefault("vector_index_stage", "")
     st.session_state.setdefault("vector_index_result", {})
     st.session_state.setdefault("vector_index_started_at", None)
     st.session_state.setdefault("vector_index_stop_confirmation_open", False)
@@ -1444,6 +1450,7 @@ def _start_vector_index_job(values: dict[str, Any]) -> None:
     st.session_state.vector_index_id = vector_id
     st.session_state.vector_index_state = _STATE_RUNNING
     st.session_state.vector_index_progress = {}
+    st.session_state.vector_index_stage = ""
     st.session_state.vector_index_result = {}
     st.session_state.vector_index_started_at = datetime.now(timezone.utc)
     st.rerun()
@@ -1487,10 +1494,13 @@ def _apply_vector_index_event(event: Mapping[str, Any]) -> None:
     event_name = str(event.get("event", ""))
     st.session_state.vector_index_state = vector_job_state_from_event(event_name)
     if event_name == "progress":
-        st.session_state.vector_index_progress = {
-            "processed": int(event.get("processed_chunks", 0)),
-            "total": int(event.get("total_chunks", 0)),
-        }
+        if "stage" in event:
+            st.session_state.vector_index_stage = str(event["stage"])
+        else:
+            st.session_state.vector_index_progress = {
+                "processed": int(event.get("processed_chunks", 0)),
+                "total": int(event.get("total_chunks", 0)),
+            }
     elif st.session_state.vector_index_state in _VECTOR_TERMINAL_STATES:
         st.session_state.vector_index_result = {
             "state": st.session_state.vector_index_state,
@@ -1508,7 +1518,15 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
         progress = st.session_state.vector_index_progress
         total = int(progress.get("total", 0))
         processed = int(progress.get("processed", 0))
-        if total > 0:
+        stage = st.session_state.get("vector_index_stage", "")
+        fraction_label = vector_progress_fraction(stage, processed, total)
+        if fraction_label is not None:
+            fraction, label_key = fraction_label
+            st.progress(
+                fraction,
+                text=strings[label_key].format(processed=processed, total=total),
+            )
+        elif total > 0:
             st.progress(
                 min(processed / total, 1.0),
                 text=strings["VEC_STATUS_CHUNKS"].format(processed=processed, total=total),
@@ -1535,7 +1553,7 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
         st.caption(strings["VEC_RESULT_SKIPPED"].format(count=result["skipped_file_count"]))
     warnings = result.get("warnings") or []
     if warnings:
-        with st.expander(strings["VEC_RESULT_WARNINGS_LABEL"]):
+        with st.expander(strings["VEC_RESULT_WARNINGS_LABEL"], expanded=True):
             for warning in warnings:
                 st.write(f"- {warning}")
     errors = result.get("errors") or []
@@ -1543,6 +1561,8 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
         with st.expander(strings["VEC_RESULT_ERRORS_LABEL"], expanded=True):
             for error in errors:
                 st.write(f"- {error}")
+        if has_ssl_certificate_error(errors):
+            st.info(strings["VEC_ERROR_SSL_HINT"])
 
 
 @st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
@@ -2254,26 +2274,26 @@ def render_generated_file_download(file: GeneratedFile) -> None:
 
 
 def render_download_tree(
-    tree: Mapping[str, Any], *, allow_crawl_run_folder_collapse: bool = True
+    tree: Mapping[str, Any], *, allow_run_folder_collapse: bool = True
 ) -> None:
     entries = sorted(
         tree.items(),
         key=lambda item: download_tree_entry_sort_key(
             item[0],
             item[1],
-            top_level=allow_crawl_run_folder_collapse,
+            top_level=allow_run_folder_collapse,
         ),
     )
     for name, entry in entries:
         if isinstance(entry, dict):
             folder_label = name
             folder_node: Mapping[str, Any] = entry
-            if allow_crawl_run_folder_collapse:
-                folder_label, folder_node = collapse_crawl_run_folder(name, entry)
+            if allow_run_folder_collapse:
+                folder_label, folder_node = collapse_artifact_run_folder(name, entry)
             with st.expander(f"📁 {folder_label}"):
                 render_download_tree(
                     folder_node,
-                    allow_crawl_run_folder_collapse=False,
+                    allow_run_folder_collapse=False,
                 )
             continue
         render_generated_file_download(entry)
@@ -2548,6 +2568,10 @@ def _render_shared_styles() -> None:
             margin-right: auto;
         }}
         h3#form-subheader {{
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+        }}
+        h3#vector-index-header {{
             padding-top: 0 !important;
             padding-bottom: 0 !important;
         }}

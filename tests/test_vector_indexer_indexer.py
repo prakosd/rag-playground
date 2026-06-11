@@ -5,7 +5,14 @@ from pathlib import Path
 
 from vector_indexer.config import IndexingConfig
 from vector_indexer.embeddings import EmbeddingProvider, EmbeddingProviderUnavailable
-from vector_indexer.indexer import VectorIndexer
+from vector_indexer.indexer import (
+    STAGE_CHUNKING,
+    STAGE_EMBEDDING,
+    STAGE_LOADING,
+    STAGE_RESOLVING_MODEL,
+    STAGE_SAVING,
+    VectorIndexer,
+)
 from vector_indexer.models import VectorRecord
 from vector_indexer.vector_store.base import VectorStore
 
@@ -128,7 +135,7 @@ def test_run_records_error_when_embedding_unavailable(tmp_path: Path) -> None:
 def test_run_emits_progress(tmp_path: Path) -> None:
     source = tmp_path / "a.md"
     source.write_text("hello world " * 200, encoding="utf-8")
-    events: list[dict[str, int]] = []
+    events: list[dict[str, object]] = []
     indexer, _ = _indexer_with_capture()
 
     result = indexer.run(
@@ -139,5 +146,30 @@ def test_run_emits_progress(tmp_path: Path) -> None:
     )
 
     assert result.success
-    assert events
-    assert events[-1]["processed_chunks"] == result.indexed_chunk_count
+    count_events = [event for event in events if "processed_chunks" in event]
+    assert count_events
+    assert count_events[-1]["processed_chunks"] == result.indexed_chunk_count
+
+
+def test_run_emits_pipeline_stages_in_order(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 200, encoding="utf-8")
+    events: list[dict[str, object]] = []
+    indexer, _ = _indexer_with_capture()
+
+    result = indexer.run(
+        IndexingConfig(chunk_size=120, chunk_overlap=20),
+        [source],
+        tmp_path / "vector_01_demo",
+        progress_callback=events.append,
+    )
+
+    assert result.success
+    stages = [event["stage"] for event in events if "stage" in event]
+    assert stages == [
+        STAGE_RESOLVING_MODEL,
+        STAGE_LOADING,
+        STAGE_CHUNKING,
+        STAGE_EMBEDDING,
+        STAGE_SAVING,
+    ]

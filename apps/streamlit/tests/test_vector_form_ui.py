@@ -3,8 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from artifact_store.crawl_results import CrawlResultFile
+from vector_indexer import DEFAULT_LOCAL_MODEL
+from vector_indexer.embeddings import TITAN_MODEL
 
-from crawl4md_streamlit.vector_form_ui import crawl_result_options, has_index_inputs
+from crawl4md_streamlit.i18n import get_strings
+from crawl4md_streamlit.vector_form_ui import (
+    crawl_result_options,
+    embedding_model_info_for,
+    embedding_model_label,
+    has_index_inputs,
+)
 
 
 def _crawl_result(crawl_label: str, relative_path: str, path: str) -> CrawlResultFile:
@@ -43,3 +51,37 @@ def test_has_index_inputs() -> None:
     assert has_index_inputs(["/a"], 0)
     assert has_index_inputs([], 2)
     assert not has_index_inputs([], 0)
+
+
+def test_embedding_model_info_for_returns_catalog_metadata() -> None:
+    info = embedding_model_info_for(DEFAULT_LOCAL_MODEL)
+
+    assert info.kind == "local"
+    assert info.one_time_download is True
+    assert info.supported_dimensions == (info.default_dimension,)
+
+
+def test_embedding_model_info_for_unknown_model_uses_open_range() -> None:
+    info = embedding_model_info_for("made-up/model")
+
+    assert info.kind == "unknown"
+    assert info.supported_dimensions is None
+    assert info.min_dimension == 1
+    assert info.max_dimension is None
+
+
+def test_embedding_model_label_tags_local_and_cloud() -> None:
+    strings = get_strings("en")
+
+    local_label = embedding_model_label(DEFAULT_LOCAL_MODEL, strings)
+    cloud_label = embedding_model_label(TITAN_MODEL, strings)
+
+    assert DEFAULT_LOCAL_MODEL in local_label
+    assert strings["VEC_MODEL_TAG_LOCAL"] in local_label
+    assert strings["VEC_MODEL_TAG_CLOUD"] in cloud_label
+
+
+def test_embedding_model_label_returns_plain_id_for_unknown_model() -> None:
+    strings = get_strings("en")
+
+    assert embedding_model_label("made-up/model", strings) == "made-up/model"

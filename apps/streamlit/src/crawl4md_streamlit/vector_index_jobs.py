@@ -14,6 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from vector_indexer import IndexingConfig, VectorIndexer
+from vector_indexer.indexer import (
+    STAGE_CHUNKING,
+    STAGE_EMBEDDING,
+    STAGE_LOADING,
+    STAGE_RESOLVING_MODEL,
+    STAGE_SAVING,
+)
 
 from crawl4md_streamlit.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
 
@@ -25,6 +32,23 @@ _EVENT_CANCELLED = "cancelled"
 _EVENT_CANCEL_REQUESTED = "cancel_requested"
 
 _UPLOAD_DIR_NAME = "uploads"
+
+# Coarse (fraction, i18n label key) per pipeline stage for the progress bar.
+# Embedding maps its per-chunk ratio into a band that ends just below the saving
+# fraction so the bar advances monotonically across stages.
+_VECTOR_STAGE_PROGRESS: dict[str, tuple[float, str]] = {
+    STAGE_RESOLVING_MODEL: (0.05, "VEC_STAGE_RESOLVING_MODEL"),
+    STAGE_LOADING: (0.15, "VEC_STAGE_LOADING"),
+    STAGE_CHUNKING: (0.25, "VEC_STAGE_CHUNKING"),
+    STAGE_EMBEDDING: (0.30, "VEC_STAGE_EMBEDDING"),
+    STAGE_SAVING: (0.97, "VEC_STAGE_SAVING"),
+}
+_VECTOR_EMBED_SPAN = 0.65
+_SSL_ERROR_SIGNATURES = (
+    "certificate_verify_failed",
+    "certificate verify failed",
+    "self-signed certificate",
+)
 
 
 @dataclass(frozen=True)
@@ -150,3 +174,28 @@ def job_state_from_event(event_name: str) -> str:
         _EVENT_CANCELLED: "cancelled",
     }
     return states.get(event_name, "running")
+
+
+def vector_progress_fraction(
+    stage: str, processed: int = 0, total: int = 0
+) -> tuple[float, str] | None:
+    """Return the progress-bar fraction and label key for an indexing stage.
+
+    Returns ``None`` when *stage* is unknown (no stage reported yet) so the caller
+    can fall back to a generic message. During embedding the per-chunk ratio is
+    mapped into the embedding band and reported with the chunk-count label.
+    """
+    base = _VECTOR_STAGE_PROGRESS.get(stage)
+    if base is None:
+        return None
+    fraction, label_key = base
+    if stage == STAGE_EMBEDDING and total > 0:
+        ratio = min(processed / total, 1.0)
+        return fraction + _VECTOR_EMBED_SPAN * ratio, "VEC_STATUS_CHUNKS"
+    return fraction, label_key
+
+
+def has_ssl_certificate_error(errors: Sequence[str]) -> bool:
+    """Return True when any error looks like a TLS certificate verification failure."""
+    lowered = " ".join(errors).lower()
+    return any(signature in lowered for signature in _SSL_ERROR_SIGNATURES)

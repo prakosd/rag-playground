@@ -4,14 +4,23 @@ import time
 from pathlib import Path
 
 from vector_indexer import IndexingConfig
+from vector_indexer.indexer import (
+    STAGE_CHUNKING,
+    STAGE_EMBEDDING,
+    STAGE_LOADING,
+    STAGE_RESOLVING_MODEL,
+    STAGE_SAVING,
+)
 from vector_indexer.models import IndexingResult
 
 from crawl4md_streamlit import session_manager
 from crawl4md_streamlit.vector_index_jobs import (
     drain_events,
+    has_ssl_certificate_error,
     job_state_from_event,
     request_cancel,
     start_vector_index_job,
+    vector_progress_fraction,
 )
 
 
@@ -130,6 +139,53 @@ def test_job_state_from_event_maps_states() -> None:
     assert job_state_from_event("cancel_requested") == "cancel_requested"
     assert job_state_from_event("cancelled") == "cancelled"
     assert job_state_from_event("unknown") == "running"
+
+
+def test_vector_progress_fraction_advances_monotonically_across_stages() -> None:
+    fractions = [
+        vector_progress_fraction(stage)[0]
+        for stage in (STAGE_RESOLVING_MODEL, STAGE_LOADING, STAGE_CHUNKING, STAGE_SAVING)
+    ]
+
+    assert fractions == sorted(fractions)
+    assert fractions[0] > 0.0
+    assert fractions[-1] <= 1.0
+
+
+def test_vector_progress_fraction_maps_embedding_counts_into_band() -> None:
+    start = vector_progress_fraction(STAGE_EMBEDDING, processed=0, total=10)
+    middle = vector_progress_fraction(STAGE_EMBEDDING, processed=5, total=10)
+    end = vector_progress_fraction(STAGE_EMBEDDING, processed=10, total=10)
+    saving = vector_progress_fraction(STAGE_SAVING)
+
+    assert start[1] == "VEC_STATUS_CHUNKS"
+    assert start[0] < middle[0] < end[0] <= saving[0]
+
+
+def test_vector_progress_fraction_unknown_stage_is_none() -> None:
+    assert vector_progress_fraction("") is None
+    assert vector_progress_fraction("bogus-stage") is None
+
+
+def test_vector_progress_fraction_embedding_without_counts_uses_stage_label() -> None:
+    fraction, label_key = vector_progress_fraction(STAGE_EMBEDDING, processed=0, total=0)
+
+    assert label_key == "VEC_STAGE_EMBEDDING"
+    assert 0.0 < fraction < 1.0
+
+
+def test_has_ssl_certificate_error_detects_certificate_failures() -> None:
+    assert has_ssl_certificate_error(
+        [
+            "Embedding or storage failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate "
+            "verify failed: self-signed certificate in certificate chain (_ssl.c:1010)"
+        ]
+    )
+
+
+def test_has_ssl_certificate_error_ignores_unrelated_errors() -> None:
+    assert not has_ssl_certificate_error(["No readable .md or .txt content was found."])
+    assert not has_ssl_certificate_error([])
 
 
 def test_next_vector_sequence_increments(tmp_path: Path) -> None:

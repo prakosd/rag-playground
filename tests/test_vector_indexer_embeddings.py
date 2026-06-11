@@ -6,6 +6,7 @@ import pytest
 
 from vector_indexer.embeddings import (
     DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_LOCAL_MODEL,
     DISABLED_MODELS,
     OPENAI_MODEL,
     TITAN_MODEL,
@@ -74,15 +75,62 @@ def test_default_model_falls_back_to_offline() -> None:
     assert any("offline" in warning.lower() for warning in warnings)
 
 
-def test_non_default_unavailable_model_raises() -> None:
+def test_non_default_unavailable_model_falls_back_to_offline() -> None:
     def failing_build(model: str, *, dimension: int | None = None) -> EmbeddingProvider:
         raise EmbeddingProviderUnavailable("openai unavailable")
 
     def offline_build(*, dimension: int | None = None) -> EmbeddingProvider:
         return _FakeProvider("offline", 384)
 
+    provider, warnings = resolve_embedding(
+        OPENAI_MODEL, 512, build=failing_build, default_build=offline_build
+    )
+
+    assert provider.model_id == "offline"
+    assert any("offline" in warning.lower() for warning in warnings)
+
+
+def test_available_model_resolves_without_warnings() -> None:
+    def build(model: str, *, dimension: int | None = None) -> EmbeddingProvider:
+        return _FakeProvider(model, dimension or 384)
+
+    def offline_build(*, dimension: int | None = None) -> EmbeddingProvider:
+        return _FakeProvider("offline", 384)
+
+    provider, warnings = resolve_embedding(
+        OPENAI_MODEL, 384, build=build, default_build=offline_build
+    )
+
+    assert provider.model_id == OPENAI_MODEL
+    assert warnings == []
+
+
+def test_requested_local_model_failure_raises() -> None:
+    def failing_build(model: str, *, dimension: int | None = None) -> EmbeddingProvider:
+        raise EmbeddingProviderUnavailable("chromadb missing")
+
+    def offline_build(*, dimension: int | None = None) -> EmbeddingProvider:
+        return _FakeProvider("offline", 384)
+
     with pytest.raises(EmbeddingProviderUnavailable):
-        resolve_embedding(OPENAI_MODEL, 512, build=failing_build, default_build=offline_build)
+        resolve_embedding(
+            DEFAULT_LOCAL_MODEL, 384, build=failing_build, default_build=offline_build
+        )
+
+
+def test_fallback_failure_raises_combined_error() -> None:
+    def failing_build(model: str, *, dimension: int | None = None) -> EmbeddingProvider:
+        raise EmbeddingProviderUnavailable("titan unavailable")
+
+    def failing_offline(*, dimension: int | None = None) -> EmbeddingProvider:
+        raise EmbeddingProviderUnavailable("chromadb missing")
+
+    with pytest.raises(EmbeddingProviderUnavailable) as exc_info:
+        resolve_embedding(OPENAI_MODEL, 512, build=failing_build, default_build=failing_offline)
+
+    message = str(exc_info.value)
+    assert "titan unavailable" in message
+    assert "chromadb missing" in message
 
 
 def test_dimension_mismatch_adds_warning() -> None:
