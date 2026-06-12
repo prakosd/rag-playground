@@ -38,7 +38,7 @@ STRINGS_ID: Strings = {
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
     "NAV_RAG_QA": "4. RAG Q&A",
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
-    "PAGE_VECTOR_INDEX_TITLE": ":material/database: Langkah 2 - Bangun Vector Index",
+    "PAGE_VECTOR_INDEX_TITLE": ":material/settings: Langkah 2 - Bangun Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
         "Ubah halaman hasil crawl dan dokumen Anda sendiri menjadi vector database yang "
         "dapat dicari untuk retrieval-augmented generation."

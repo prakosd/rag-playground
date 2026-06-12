@@ -37,7 +37,7 @@ STRINGS_EN: Strings = {
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
     "NAV_RAG_QA": "4. RAG Q&A",
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
-    "PAGE_VECTOR_INDEX_TITLE": ":material/database: Step 2 - Build Vector Index",
+    "PAGE_VECTOR_INDEX_TITLE": ":material/settings: Step 2 - Build Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
         "Turn crawled pages and your own documents into a searchable vector database "
         "that powers retrieval-augmented generation."

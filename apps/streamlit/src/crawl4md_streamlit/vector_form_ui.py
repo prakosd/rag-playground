@@ -27,6 +27,8 @@ VEC_DEFAULT_CHUNK_SIZE = 600
 VEC_DEFAULT_CHUNK_OVERLAP = 100
 VEC_DEFAULT_EMBEDDING_DIMENSION = 512
 _UPLOAD_TYPES = ["md", "txt", "zip"]
+_EMBEDDING_CONTROL_COLUMN_WIDTHS = (7, 3)
+_FORM_SETTING_COLUMN_WIDTHS = (3, 3, 4)
 
 # Open-range fallback used only if a selected model is ever absent from the
 # library catalog; the catalog covers every id in EMBEDDING_MODEL_OPTIONS.
@@ -112,32 +114,33 @@ def _render_dimension_input(
 
 
 def _render_embedding_controls(*, strings: Strings, fields_disabled: bool) -> tuple[str, int]:
-    """Render the reactive embedding model + dimension inputs above the form.
+    """Render the reactive embedding model + dimension inputs inside the settings card.
 
     These live outside ``st.form`` so the dimension input can re-render with the
     options supported by the selected model instead of accepting any value.
     """
     model_options = list(EMBEDDING_MODEL_OPTIONS)
-    cols = st.columns(2)
-    with cols[0]:
-        embedding_model = st.selectbox(
-            strings["VEC_EMBEDDING_MODEL_LABEL"],
-            options=model_options,
-            index=model_options.index(DEFAULT_LOCAL_MODEL),
-            format_func=lambda model: embedding_model_label(model, strings),
-            help=strings["VEC_EMBEDDING_MODEL_HELP"],
-            disabled=fields_disabled,
-            key="vector_index_embedding_model",
-        )
-    info = embedding_model_info_for(embedding_model)
-    with cols[1]:
-        embedding_dimension = _render_dimension_input(
-            info, embedding_model, strings=strings, fields_disabled=fields_disabled
-        )
-    if info.kind == "local":
-        st.caption(strings["VEC_MODEL_INDICATOR_LOCAL"])
-    elif info.kind == "cloud":
-        st.caption(strings["VEC_MODEL_INDICATOR_CLOUD"])
+    with st.container(gap=None):
+        cols = st.columns(_EMBEDDING_CONTROL_COLUMN_WIDTHS)
+        with cols[0]:
+            embedding_model = st.selectbox(
+                strings["VEC_EMBEDDING_MODEL_LABEL"],
+                options=model_options,
+                index=model_options.index(DEFAULT_LOCAL_MODEL),
+                format_func=lambda model: embedding_model_label(model, strings),
+                help=strings["VEC_EMBEDDING_MODEL_HELP"],
+                disabled=fields_disabled,
+                key="vector_index_embedding_model",
+            )
+        info = embedding_model_info_for(embedding_model)
+        with cols[1]:
+            embedding_dimension = _render_dimension_input(
+                info, embedding_model, strings=strings, fields_disabled=fields_disabled
+            )
+        if info.kind == "local":
+            st.caption(strings["VEC_MODEL_INDICATOR_LOCAL"])
+        elif info.kind == "cloud":
+            st.caption(strings["VEC_MODEL_INDICATOR_CLOUD"])
     return embedding_model, embedding_dimension
 
 
@@ -153,10 +156,7 @@ def render_vector_index_form(
     options = crawl_result_options(crawl_result_files)
     submitted = False
     stop_submitted = False
-    embedding_model, embedding_dimension = _render_embedding_controls(
-        strings=strings, fields_disabled=fields_disabled
-    )
-    with st.form("vector_index_settings", enter_to_submit=False):
+    with st.container(border=True):
         selected_labels = st.multiselect(
             strings["VEC_SOURCES_LABEL"],
             options=list(options.keys()),
@@ -172,49 +172,54 @@ def render_vector_index_form(
             help=strings["VEC_UPLOAD_HELP"],
             disabled=fields_disabled,
         )
-        size_cols = st.columns(2)
-        with size_cols[0]:
-            chunk_size = st.number_input(
-                strings["VEC_CHUNK_SIZE_LABEL"],
-                min_value=1,
-                value=VEC_DEFAULT_CHUNK_SIZE,
-                help=strings["VEC_CHUNK_SIZE_HELP"],
-                disabled=fields_disabled,
-            )
-        with size_cols[1]:
-            chunk_overlap = st.number_input(
-                strings["VEC_CHUNK_OVERLAP_LABEL"],
-                min_value=0,
-                value=VEC_DEFAULT_CHUNK_OVERLAP,
-                help=strings["VEC_CHUNK_OVERLAP_HELP"],
-                disabled=fields_disabled,
-            )
-        language_options = list(LUCENE_LANGUAGES)
-        language = st.selectbox(
-            strings["VEC_LANGUAGE_LABEL"],
-            options=language_options,
-            index=language_options.index(DEFAULT_LANGUAGE),
-            help=strings["VEC_LANGUAGE_HELP"],
-            disabled=fields_disabled,
+        embedding_model, embedding_dimension = _render_embedding_controls(
+            strings=strings, fields_disabled=fields_disabled
         )
-        action_cols = st.columns([1.5, 3], vertical_alignment="bottom")
-        for action_col, action_button in zip(
-            action_cols,
-            crawl_action_buttons(state, job_alive=job_alive, strings=strings),
-            strict=False,
-        ):
-            with action_col:
-                pressed = st.form_submit_button(
-                    action_button.label,
-                    type=action_button.button_type,
-                    icon=action_button.icon,
-                    disabled=action_button.disabled,
-                    key=f"vector_{action_button.action}",
+        with st.form("vector_index_settings", enter_to_submit=False, border=False):
+            setting_cols = st.columns(_FORM_SETTING_COLUMN_WIDTHS)
+            with setting_cols[0]:
+                chunk_size = st.number_input(
+                    strings["VEC_CHUNK_SIZE_LABEL"],
+                    min_value=1,
+                    value=VEC_DEFAULT_CHUNK_SIZE,
+                    help=strings["VEC_CHUNK_SIZE_HELP"],
+                    disabled=fields_disabled,
                 )
-            if action_button.action == "start":
-                submitted = pressed
-            elif action_button.action == "stop":
-                stop_submitted = pressed
+            with setting_cols[1]:
+                chunk_overlap = st.number_input(
+                    strings["VEC_CHUNK_OVERLAP_LABEL"],
+                    min_value=0,
+                    value=VEC_DEFAULT_CHUNK_OVERLAP,
+                    help=strings["VEC_CHUNK_OVERLAP_HELP"],
+                    disabled=fields_disabled,
+                )
+            language_options = list(LUCENE_LANGUAGES)
+            with setting_cols[2]:
+                language = st.selectbox(
+                    strings["VEC_LANGUAGE_LABEL"],
+                    options=language_options,
+                    index=language_options.index(DEFAULT_LANGUAGE),
+                    help=strings["VEC_LANGUAGE_HELP"],
+                    disabled=fields_disabled,
+                )
+            action_cols = st.columns([1.5, 3], vertical_alignment="bottom")
+            for action_col, action_button in zip(
+                action_cols,
+                crawl_action_buttons(state, job_alive=job_alive, strings=strings),
+                strict=False,
+            ):
+                with action_col:
+                    pressed = st.form_submit_button(
+                        action_button.label,
+                        type=action_button.button_type,
+                        icon=action_button.icon,
+                        disabled=action_button.disabled,
+                        key=f"vector_{action_button.action}",
+                    )
+                if action_button.action == "start":
+                    submitted = pressed
+                elif action_button.action == "stop":
+                    stop_submitted = pressed
     selected_paths = [options[label] for label in selected_labels if label in options]
     uploaded_files = list(uploaded or [])
     return {

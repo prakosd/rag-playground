@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from vector_indexer import DEFAULT_LOCAL_MODEL, EMBEDDING_MODEL_OPTIONS
 
 from crawl4md_streamlit.pages import APP_PAGE_SPECS, DEFAULT_PAGE_ID
 from crawl4md_streamlit.support import (
@@ -200,6 +201,60 @@ def test_streamlit_preview_keeps_long_lines_unwrapped(
 
     assert not app.exception
     assert any(code.value == long_line and code.wrap_lines is False for code in app.code)
+
+
+# Risk: moving source inputs outside the inner form can break Step 2 submission or model
+# rerender behavior even when the page still loads. Type: workflow smoke.
+def test_vector_index_page_model_change_and_no_input_start_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from crawl4md_streamlit.i18n import get_strings
+
+    selected_model = next(
+        model for model in EMBEDDING_MODEL_OPTIONS if model != DEFAULT_LOCAL_MODEL
+    )
+    strings = get_strings("EN")
+
+    def render() -> None:
+        from importlib import import_module
+
+        streamlit_module = import_module("streamlit")
+        i18n_module = import_module("crawl4md_streamlit.i18n")
+        vector_form_module = import_module("crawl4md_streamlit.vector_form_ui")
+
+        strings = i18n_module.get_strings("EN")
+        values = vector_form_module.render_vector_index_form(
+            fields_disabled=False,
+            state="idle",
+            job_alive=False,
+            strings=strings,
+            crawl_result_files=[],
+        )
+        streamlit_module.session_state["vector_form_values"] = values
+        if values["submitted"] and not vector_form_module.has_index_inputs(
+            values["selected_paths"], len(values["uploaded_files"])
+        ):
+            streamlit_module.warning(strings["VEC_ERROR_NO_INPUTS"])
+
+    monkeypatch.chdir(tmp_path)
+    app = AppTest.from_function(render)
+    app.run(timeout=10)
+
+    next(
+        selectbox for selectbox in app.selectbox if selectbox.key == "vector_index_embedding_model"
+    ).set_value(selected_model)
+    app.run(timeout=10)
+
+    next(button for button in app.button if button.key == "vector_start").click()
+    app.run(timeout=10)
+
+    assert not app.exception
+    assert app.session_state["vector_index_embedding_model"] == selected_model
+    assert app.session_state["vector_form_values"]["submitted"] is True
+    assert app.session_state["vector_form_values"]["embedding_model"] == selected_model
+    assert app.session_state["vector_form_values"]["selected_paths"] == []
+    assert len(app.warning) == 1
+    assert [warning.value for warning in app.warning] == [strings["VEC_ERROR_NO_INPUTS"]]
 
 
 # Risk: stale component 'records' with empty pending overwrites browser_session_records,
