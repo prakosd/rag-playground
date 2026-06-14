@@ -8,11 +8,10 @@ no Streamlit dependency and is equally usable from a notebook, a CLI, or tests.
 
 ```
 VectorIndexer.run(config, inputs, output_base)
-  ├─ resolve_embedding()      → provider (+ local-model fallback warnings)
+  ├─ resolve_embedding()      → LangChain Embeddings (+ local-model fallback warnings)
   ├─ load_documents()         → .md / .txt files and .zip members (via artifact_store)
   ├─ chunk_documents()        → overlapping chunks (langchain-text-splitters)
-  ├─ provider.embed_documents → vectors
-  └─ VectorStore.add_documents / persist
+  └─ ChromaVectorStore.add_texts / persist   (embeds each batch with the resolved model)
         → vector_<id>/<timestamp>/chroma  +  manifest.json
 ```
 
@@ -29,9 +28,9 @@ The backends are opt-in extras on the `rag-playground` distribution (the library
 ships inside it):
 
 ```bash
-pip install -e ".[vector]"            # chromadb + langchain-text-splitters
-pip install -e ".[vector,bedrock]"    # + boto3 for Amazon Titan
-pip install -e ".[vector,openai]"     # + openai
+pip install -e ".[vector]"            # langchain-chroma + langchain-text-splitters + langchain-core
+pip install -e ".[vector,bedrock]"    # + langchain-aws for Amazon Titan
+pip install -e ".[vector,openai]"     # + langchain-openai
 ```
 
 ## Quick start
@@ -75,24 +74,26 @@ per-batch counts `{"processed_chunks": n, "total_chunks": m}` during embedding. 
 can show the current stage before chunk counts are available, then switch to a ratio
 bar. Cancellation stays cooperative via `should_cancel`.
 
-## Embedding providers
+## Embedding models
 
-The application layer never depends on a specific provider. `EmbeddingProvider`
-(an ABC) has three implementations, selected by model id:
+The application layer never depends on a specific embedding SDK: every backend is a
+LangChain `langchain_core.embeddings.Embeddings` object, built by `build_embeddings`
+and wrapped in a `ResolvedEmbedding(embeddings, model_id, dimension)`. Models are
+selected by id:
 
-| Model id | Provider | Requirement |
+| Model id | Backend | Requirement |
 |---|---|---|
-| `amazon.titan-embed-text-v2:0` *(default)* | Amazon Bedrock Titan | `boto3` + AWS credentials |
-| `text-embedding-3-small` | OpenAI | `openai` + `OPENAI_API_KEY` |
-| `all-MiniLM-L6-v2` | Offline ONNX (ChromaDB) | none (downloads ~80 MB on first use) |
+| `amazon.titan-embed-text-v2:0` *(default)* | `langchain-aws` `BedrockEmbeddings` | `langchain-aws` + AWS credentials |
+| `text-embedding-3-small` | `langchain-openai` `OpenAIEmbeddings` | `langchain-openai` + `OPENAI_API_KEY` |
+| `all-MiniLM-L6-v2` | Offline ONNX (ChromaDB), wrapped as an `Embeddings` adapter | none (downloads ~80 MB on first use) |
 | `BAAI/bge-*`, `intfloat/e5-*`, `sentence-transformers/*` | known but **disabled** (not shown in UI) | not installed (no PyTorch) |
 
-**Graceful failure & fallback.** When a provider's dependency or credential is
-missing, construction raises `EmbeddingProviderUnavailable`. `resolve_embedding`
-then **falls back to the local offline model** (`all-MiniLM-L6-v2`) and records a
-warning, so any run still succeeds. It re-raises only when the local model itself
-was the requested model, or when the local fallback is also unavailable (for
-example ChromaDB is not installed) — surfaced as a combined error.
+**Graceful failure & fallback.** When a backend's package or credential is missing,
+`build_embeddings` raises `EmbeddingProviderUnavailable`. `resolve_embedding` then
+**falls back to the local offline model** (`all-MiniLM-L6-v2`) and records a warning,
+so any run still succeeds. It re-raises only when the local model itself was the
+requested model, or when the local fallback is also unavailable (for example
+ChromaDB is not installed) — surfaced as a combined error.
 
 **Model metadata (no provider construction).** `get_embedding_model_info(model_id)`
 and `EMBEDDING_MODEL_INFOS` expose static `EmbeddingModelInfo` records — `kind`
@@ -123,21 +124,31 @@ environment secrets/variables.
 
 ## Vector store
 
-`VectorStore` (an ABC with `create_collection` / `add_documents` / `persist`) hides
-the database. `ChromaVectorStore` is the default implementation; it writes a
-persistent ChromaDB collection under `<run>/chroma/` and always receives explicit
-embeddings, so ChromaDB never runs its own embedding model. Swapping in a different
-backend only requires a new `VectorStore` implementation — callers do not change.
+`VectorStore` (an ABC with `add_texts` / `persist`) hides the database.
+`ChromaVectorStore` is the default implementation; it wraps `langchain_chroma.Chroma`
+with an explicit `embedding_function`, so each batch is embedded by the resolved
+model and written to a persistent ChromaDB collection under `<run>/chroma/`. The
+same `Chroma` class reopens the collection for retrieval (see **Reading an index
+back**), which guarantees the on-disk format matches.
+
+## Reading an index back
+
+Each run writes a `manifest.json` (via `manifest.py`) recording the embedding model,
+dimension, and `collection_name`. `load_manifest(run_dir)` returns a typed
+`IndexManifest`, and the constants `DEFAULT_COLLECTION_NAME` / `CHROMA_SUBDIR` locate
+the collection on disk. The [`rag_engine`](../rag_engine/README.md) library uses these
+to reopen an index with the same embeddings and run retrieval (Steps 3-5).
 
 ## Module map
 
 | Module | Responsibility |
 |---|---|
 | `config.py` | `IndexingConfig` (Pydantic v2 validation) |
-| `models.py` | `Document`, `Chunk`, `VectorRecord`, `IndexingResult` |
+| `models.py` | `Document`, `Chunk`, `IndexingResult` |
+| `manifest.py` | `IndexManifest`, `load_manifest` / `write_manifest`, collection + layout constants |
 | `languages.py` | `LUCENE_LANGUAGES`, `DEFAULT_LANGUAGE` |
 | `document_loader.py` | load `.md` / `.txt` / `.zip` into documents |
 | `chunking.py` | overlapping chunks via langchain-text-splitters |
-| `embeddings/` | `EmbeddingProvider` interface, providers, registry, fallback policy |
-| `vector_store/` | `VectorStore` interface and `ChromaVectorStore` |
+| `embeddings/` | LangChain `Embeddings` builders, catalog, registry, fallback policy |
+| `vector_store/` | `VectorStore` interface and `ChromaVectorStore` (langchain-chroma) |
 | `indexer.py` | `VectorIndexer.run` orchestration |

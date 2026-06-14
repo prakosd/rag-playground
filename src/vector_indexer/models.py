@@ -11,7 +11,6 @@ __all__ = [
     "Chunk",
     "Document",
     "IndexingResult",
-    "VectorRecord",
 ]
 
 
@@ -30,16 +29,6 @@ class Chunk:
     document_source: str
     index: int
     text: str
-    metadata: dict[str, str]
-
-
-@dataclass(frozen=True)
-class VectorRecord:
-    """An embedded chunk ready to be written to a vector store."""
-
-    id: str
-    text: str
-    embedding: list[float]
     metadata: dict[str, str]
 
 

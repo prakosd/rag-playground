@@ -10,7 +10,13 @@ import vector_indexer
 
 _VECTOR_INDEXER_SRC = Path(__file__).resolve().parents[1] / "src" / "vector_indexer"
 _FORBIDDEN_IMPORT_PREFIXES = ("streamlit", "crawl4md")
-_HEAVY_BACKENDS = ("chromadb", "boto3", "langchain_text_splitters", "openai")
+_HEAVY_BACKENDS = (
+    "chromadb",
+    "langchain_aws",
+    "langchain_openai",
+    "langchain_chroma",
+    "langchain_text_splitters",
+)
 
 
 def _imported_modules(path: Path) -> list[str]:

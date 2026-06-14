@@ -50,6 +50,42 @@ class Strings(TypedDict):
     PLACEHOLDER_SEMANTIC_SEARCH: str
     PLACEHOLDER_RAG_QA: str
     PLACEHOLDER_CONVERSATIONAL_RAG: str
+    # ── RAG pages (Steps 3-5) ─────────────────────────────────────────────
+    RAG_NO_INDEX_HINT: str
+    RAG_INDEX_LABEL: str
+    RAG_INDEX_HELP: str
+    RAG_INDEX_OPTION: str  # template: {folder}, {run}, {model}, {chunks}
+    RAG_LLM_LABEL: str
+    RAG_LLM_HELP: str
+    RAG_LLM_TAG_OFFLINE: str
+    RAG_LLM_TAG_CLOUD: str
+    RAG_LLM_INDICATOR_OFFLINE: str
+    RAG_LLM_INDICATOR_CLOUD: str
+    RAG_TOP_K_LABEL: str
+    RAG_TOP_K_HELP: str
+    RAG_SOURCES_HEADER: str
+    RAG_SOURCE_CAPTION: str  # template: {source}, {score}
+    RAG_MODEL_USED_CAPTION: str  # template: {model}
+    RAG_GENERATING: str
+    SEARCH_SECTION_HEADER: str
+    SEARCH_SECTION_CAPTION: str
+    SEARCH_QUERY_LABEL: str
+    SEARCH_QUERY_PLACEHOLDER: str
+    SEARCH_BUTTON: str
+    SEARCH_SEARCHING: str
+    SEARCH_RESULTS_HEADER: str
+    SEARCH_NO_RESULTS: str
+    QA_SECTION_HEADER: str
+    QA_SECTION_CAPTION: str
+    QA_QUESTION_LABEL: str
+    QA_QUESTION_PLACEHOLDER: str
+    QA_BUTTON: str
+    QA_ANSWER_HEADER: str
+    CHAT_SECTION_HEADER: str
+    CHAT_SECTION_CAPTION: str
+    CHAT_INPUT_PLACEHOLDER: str
+    CHAT_CLEAR_BUTTON: str
+    CHAT_EMPTY_HINT: str
     # ── Form ──────────────────────────────────────────────────────────────
     FORM_SUBHEADER: str
     FORM_CAPTION: str

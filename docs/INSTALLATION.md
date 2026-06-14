@@ -62,11 +62,12 @@ build a vector index:
 | `pip install -e ".[vector]"` | `vector_indexer` + offline embeddings | No |
 | `pip install -e ".[vector,bedrock]"` | + Amazon Titan embeddings | No |
 | `pip install -e ".[vector,openai]"` | + OpenAI embeddings | No |
+| `pip install -e ".[vector,rag]"` | `rag_engine` — RAG Q&A / chat (offline echo model) | No |
 | `pip install -e ".[all]"` | every library + backend | Yes |
 
-Remember to import the library names (`crawl4md`, `vector_indexer`, `artifact_store`),
-not the distribution name. Add `dev` to any of the above for pytest/ruff, e.g.
-`pip install -e ".[dev,vector]"`.
+Remember to import the library names (`crawl4md`, `vector_indexer`, `rag_engine`,
+`artifact_store`), not the distribution name. Add `dev` to any of the above for
+pytest/ruff, e.g. `pip install -e ".[dev,vector]"`.
 
 ### Optional extras
 
@@ -75,17 +76,19 @@ Every library is an opt-in extra so each install stays lightweight:
 | Extra | Adds | Used for |
 |---|---|---|
 | `crawl` | `crawl4ai`, `trafilatura`, `markdownify`, `beautifulsoup4`, `mdformat`, `mdformat-gfm`, `nest-asyncio`, `httpx`, `pydantic`, `pymupdf4llm` | crawling + Markdown extraction (Step 1) |
-| `vector` | `chromadb`, `langchain-text-splitters`, `pydantic` | chunking + vector store (Step 2) |
-| `bedrock` | `boto3` | Amazon Titan embeddings (default model) |
-| `openai` | `openai` | OpenAI embeddings |
-| `all` | `crawl` + `vector` + `bedrock` + `openai` | the full playground |
+| `vector` | `langchain-chroma` (pulls `chromadb`), `langchain-text-splitters`, `langchain-core`, `pydantic` | chunking + vector store (Step 2) |
+| `bedrock` | `langchain-aws` (pulls `boto3`) | Amazon Titan embeddings **and** Bedrock chat models |
+| `openai` | `langchain-openai` (pulls `openai`) | OpenAI embeddings **and** chat models |
+| `rag` | `langchain` (umbrella), `langchain-core`, `pydantic` | retrieval + QA + conversational RAG (Steps 3-5) |
+| `all` | `crawl` + `vector` + `bedrock` + `openai` + `rag` | the full playground |
 | `dev` | `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `ipykernel` | tests, lint, notebook kernel |
 
-Cloud embedding credentials are read from the environment. Copy
+Cloud credentials are read from the environment. Copy
 [`.env.example`](../.env.example) to `.env` and set `AWS_*` / `OPENAI_API_KEY`; the
 Streamlit app loads the repo-root `.env` automatically on startup. In Codespaces/CI,
 provide them as environment secrets/variables instead. The offline default embedding
-model needs no credentials.
+model needs no credentials, and without chat credentials `rag_engine` falls back to an
+offline echo model so Steps 3-5 still run end-to-end.
 
 > **Warning — Python 3.14 users (discovered 2026-04-20):**
 > `crawl4ai==0.8.6` pins `lxml~=5.3`, but no `lxml` 5.x pre-built wheel exists for Python 3.14.

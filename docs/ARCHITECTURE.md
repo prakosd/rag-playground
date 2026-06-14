@@ -3,20 +3,25 @@
 ← Back to [README](../README.md)
 
 The repository is organized in layers. A shared foundation (`artifact_store`) sits
-under two independent libraries (`crawl4md` for crawling, `vector_indexer` for
-indexing). The Streamlit app is a UI adapter over those libraries and owns only
-rendering, session/browser state, background jobs, and downloads.
+under three independent libraries: `crawl4md` (crawling), `vector_indexer`
+(indexing), and `rag_engine` (retrieval + answering, building on `vector_indexer`).
+The Streamlit app is a UI adapter over those libraries and owns only rendering,
+session/browser state, background jobs, and downloads.
 
 ```mermaid
 flowchart TD
   ArtifactStore["artifact_store<br/>naming · paths · archives · crawl-result discovery"]
   Crawl4md["crawl4md<br/>crawl → extract → write → sort"]
   VectorIndexer["vector_indexer<br/>load → chunk → embed → vector store"]
+  RagEngine["rag_engine<br/>retrieve → generate (QA / chat)"]
   App["apps/streamlit<br/>UI shell, pages, background jobs"]
   ArtifactStore --> Crawl4md
   ArtifactStore --> VectorIndexer
+  ArtifactStore --> RagEngine
+  VectorIndexer --> RagEngine
   Crawl4md --> App
   VectorIndexer --> App
+  RagEngine --> App
 ```
 
 ## Step 1 — how crawling works
@@ -62,14 +67,43 @@ changing the crawl pipeline.
 flowchart TD
   Inputs["selected crawl results + uploads<br/>.md / .txt / .zip"] --> Loader["document_loader<br/>(.zip → .md/.txt members)"]
   Loader --> Chunker["chunking<br/>overlapping chunks"]
-  Chunker --> Embed["EmbeddingProvider<br/>Titan / OpenAI / offline"]
-  Embed --> Store["VectorStore (ChromaDB)<br/>vector_<id>/<timestamp>/chroma"]
+  Chunker --> Embed["LangChain Embeddings<br/>Titan / OpenAI / offline"]
+  Embed --> Store["langchain-chroma (ChromaDB)<br/>vector_<id>/<timestamp>/chroma"]
   Store --> Result["IndexingResult + manifest.json"]
 ```
 
-The embedding provider and vector store are both behind interfaces, so a provider
-or database can change without touching the application layer. See
+Embeddings are LangChain `Embeddings` objects and the store is langchain-chroma, so
+a backend can change without touching the application layer. The `manifest.json`
+records the embedding model, dimension, and collection name so an index can be
+reopened later. See
 [src/vector_indexer/README.md](../src/vector_indexer/README.md).
+
+## Steps 3-5 — how RAG works
+
+Steps 3-5 read an index built by Step 2 without re-indexing. `rag_engine` reopens it
+from the run directory (using the manifest), retrieves context, and generates an
+answer with a chat model resolved through LangChain.
+
+```mermaid
+flowchart TD
+  Query["user query / question"] --> Retrieve["retrieve()<br/>load_manifest + resolve_embedding"]
+  Retrieve --> Chroma["langchain-chroma<br/>similarity search"]
+  Chroma --> Chunks["RetrievedChunk[] (+ scores)"]
+  Chunks --> Resolve["resolve_chat_model<br/>init_chat_model · echo fallback"]
+  Resolve --> Generate["prompt | model | parser<br/>(defensive prompt)"]
+  Generate --> Answer["RagAnswer<br/>answer + sources + warnings/errors"]
+```
+
+- **Step 3 (semantic search)** stops at `RetrievedChunk[]` — ranked snippets with
+  scores and sources.
+- **Step 4 (QA)** runs `answer_question` for a single-turn answer with citations.
+- **Step 5 (conversational)** runs `chat_answer`, which first rewrites the follow-up
+  into a standalone query via `condense_question` (history-aware), then retrieves and
+  answers with the recent history in the prompt.
+
+When a cloud chat model is unavailable, `resolve_chat_model` falls back to an offline
+echo model (which repeats the question) and records a warning, so the workflow runs
+with no credentials. See [src/rag_engine/README.md](../src/rag_engine/README.md).
 
 ## Library layers
 
@@ -87,9 +121,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  App["streamlit_app.py<br/>UI shell"] --> Inputs["controls.py<br/>form_ui.py · vector_form_ui.py"]
+  App["streamlit_app.py<br/>UI shell"] --> Inputs["controls.py<br/>form_ui.py · vector_form_ui.py · llm_form_ui.py"]
   App --> Pages["pages.py<br/>navigation metadata"]
   Inputs --> Jobs["crawl_jobs.py · vector_index_jobs.py<br/>background jobs"]
+  Inputs --> Rag["rag_ui.py · index_catalog.py<br/>RAG pages (sync, via rag_engine)"]
   Jobs --> Outputs["generated_files.py<br/>session_manager.py"]
   Support["support.py<br/>compat exports"] --> Jobs
   Support --> Outputs

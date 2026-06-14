@@ -3,10 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from artifact_store import LibraryMessage
 from vector_indexer import messages
 from vector_indexer.config import IndexingConfig
-from vector_indexer.embeddings import EmbeddingProvider, EmbeddingProviderUnavailable
+from vector_indexer.embeddings import EmbeddingProviderUnavailable, ResolvedEmbedding
 from vector_indexer.indexer import (
     STAGE_CHUNKING,
     STAGE_EMBEDDING,
@@ -15,53 +14,50 @@ from vector_indexer.indexer import (
     STAGE_SAVING,
     VectorIndexer,
 )
-from vector_indexer.models import VectorRecord
+from vector_indexer.manifest import load_manifest
 from vector_indexer.vector_store.base import VectorStore
 
 
-class _FakeProvider(EmbeddingProvider):
-    @property
-    def model_id(self) -> str:
-        return "fake"
-
-    @property
-    def dimension(self) -> int:
-        return 4
-
+class _FakeEmbeddings:
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [0.1, 0.2, 0.3, 0.4]
 
 
 class _FakeStore(VectorStore):
     def __init__(self, persist_dir: Path) -> None:
         self.persist_dir = Path(persist_dir)
-        self.records: list[VectorRecord] = []
-        self.collection: str | None = None
+        self.ids: list[str] = []
+        self.texts: list[str] = []
         self.persisted = False
 
-    def create_collection(self, name: str) -> None:
-        self.collection = name
+    def add_texts(
+        self,
+        texts: Sequence[str],
+        metadatas: Sequence[dict[str, str]],
+        ids: Sequence[str],
+    ) -> None:
         self.persist_dir.mkdir(parents=True, exist_ok=True)
-
-    def add_documents(self, records: Sequence[VectorRecord]) -> None:
-        self.records.extend(records)
+        self.texts.extend(texts)
+        self.ids.extend(ids)
 
     def persist(self) -> None:
         self.persisted = True
 
 
-def _indexer_with_capture() -> tuple[VectorIndexer, dict[str, _FakeStore]]:
-    created: dict[str, _FakeStore] = {}
+def _indexer_with_capture() -> tuple[VectorIndexer, dict[str, object]]:
+    created: dict[str, object] = {}
 
-    def factory(persist_dir: Path) -> VectorStore:
+    def factory(persist_dir: Path, collection_name: str, embeddings: object) -> VectorStore:
         store = _FakeStore(persist_dir)
         created["store"] = store
+        created["collection_name"] = collection_name
         return store
 
-    def resolver(
-        model: str, dimension: int | None
-    ) -> tuple[EmbeddingProvider, list[LibraryMessage]]:
-        return _FakeProvider(), []
+    def resolver(model: str, dimension: int | None) -> tuple[ResolvedEmbedding, list]:
+        return ResolvedEmbedding(embeddings=_FakeEmbeddings(), model_id="fake", dimension=4), []
 
     return VectorIndexer(store_factory=factory, embedding_resolver=resolver), created
 
@@ -80,9 +76,13 @@ def test_run_indexes_inputs_and_writes_manifest(tmp_path: Path) -> None:
     assert result.output_dir.parent == output_base
     assert result.output_dir.is_dir()
     assert (result.output_dir / "manifest.json").exists()
-    assert created["store"].persisted
-    ids = [record.id for record in created["store"].records]
-    assert len(ids) == len(set(ids))
+    store = created["store"]
+    assert isinstance(store, _FakeStore)
+    assert store.persisted
+    assert len(store.ids) == len(set(store.ids))
+    manifest = load_manifest(result.output_dir)
+    assert manifest.embedding_model_used == "fake"
+    assert manifest.collection_name == created["collection_name"]
 
 
 def test_run_reports_error_when_no_inputs(tmp_path: Path) -> None:
@@ -124,12 +124,10 @@ def test_run_records_error_when_embedding_unavailable(tmp_path: Path) -> None:
     source = tmp_path / "a.md"
     source.write_text("hello", encoding="utf-8")
 
-    def factory(persist_dir: Path) -> VectorStore:
+    def factory(persist_dir: Path, collection_name: str, embeddings: object) -> VectorStore:
         return _FakeStore(persist_dir)
 
-    def resolver(
-        model: str, dimension: int | None
-    ) -> tuple[EmbeddingProvider, list[LibraryMessage]]:
+    def resolver(model: str, dimension: int | None) -> tuple[ResolvedEmbedding, list]:
         raise EmbeddingProviderUnavailable("no provider configured")
 
     indexer = VectorIndexer(store_factory=factory, embedding_resolver=resolver)

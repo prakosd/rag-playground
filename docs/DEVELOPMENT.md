@@ -16,7 +16,7 @@ See [INSTALLATION.md](INSTALLATION.md) for the full extras matrix.
 ## Tests and lint
 
 ```bash
-# Core library (includes artifact_store and vector_indexer)
+# Core library (includes artifact_store, vector_indexer, and rag_engine)
 python -m pytest tests/ -q
 python -m ruff check src/ tests/
 python -m ruff format --check src/ tests/
@@ -27,18 +27,19 @@ python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ a
 python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 ```
 
-- Core tests (including `artifact_store` and `vector_indexer`) live in `tests/`.
+- Core tests (including `artifact_store`, `vector_indexer`, and `rag_engine`) live in `tests/`.
 - Streamlit app helper tests live in `apps/streamlit/tests/`.
-- Tests use mocked HTTP — no real network requests are made, and no embedding
-  models are downloaded (use fakes / explicit embeddings).
+- Tests use mocked HTTP — no real network requests are made, no embedding
+  models are downloaded (use fakes / explicit embeddings), and RAG tests use the
+  offline echo chat model.
 
 ## Conventions
 
 - Python 3.10+, type hints on all public APIs, Pydantic v2.
 - No inline magic values — use `_UPPER_SNAKE_CASE` constants and module-level
   compiled regexes.
-- Keep the libraries UI-independent: `crawl4md`, `artifact_store`, and
-  `vector_indexer` must not import Streamlit. Boundary tests enforce this.
+- Keep the libraries UI-independent: `crawl4md`, `artifact_store`,
+  `vector_indexer`, and `rag_engine` must not import Streamlit. Boundary tests enforce this.
 - All user-facing Streamlit text lives in the `i18n` catalog (English + Indonesian)
   and is referenced via `get_strings()` — never hardcoded in components.
 
@@ -49,6 +50,7 @@ python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app
 | Core crawler | [src/crawl4md/README.md](../src/crawl4md/README.md) |
 | Shared foundation | [src/artifact_store/README.md](../src/artifact_store/README.md) |
 | Vector indexer | [src/vector_indexer/README.md](../src/vector_indexer/README.md) |
+| RAG engine | [src/rag_engine/README.md](../src/rag_engine/README.md) |
 | Streamlit app | [apps/streamlit/README.md](../apps/streamlit/README.md) |
 | Building another UI | [BUILDING_ANOTHER_UI.md](BUILDING_ANOTHER_UI.md) |
 

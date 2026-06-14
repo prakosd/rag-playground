@@ -2,9 +2,9 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/rag-playground)
 
-A practical RAG playground that bundles three independent Python libraries plus a browser-based Streamlit app. **Step 1** crawls websites into clean Markdown (wrapping [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API that also works in Jupyter) and **Step 2** builds a searchable vector index from those outputs. Steps 3–5 (semantic search, RAG Q&A, conversational RAG) are placeholder workspaces for now.
+A practical RAG playground that bundles four independent Python libraries plus a browser-based Streamlit app. **Step 1** crawls websites into clean Markdown (wrapping [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API that also works in Jupyter) and **Step 2** builds a searchable vector index from those outputs. **Steps 3–5** add semantic search, single-turn RAG Q&A, and conversational (history-aware) RAG over those indexes — all runnable offline with a built-in echo model when no cloud credentials are set.
 
-**Naming:** the pip **distribution** is `rag-playground`. The **import packages** are unchanged — `import crawl4md`, `import vector_indexer`, `import artifact_store` (and `crawl4md_streamlit` for the app). Installing `rag-playground` does not create an `import rag_playground`; you import the individual libraries you need.
+**Naming:** the pip **distribution** is `rag-playground`. The **import packages** are unchanged — `import crawl4md`, `import vector_indexer`, `import rag_engine`, `import artifact_store` (and `crawl4md_streamlit` for the app). Installing `rag-playground` does not create an `import rag_playground`; you import the individual libraries you need.
 
 ## What's inside
 
@@ -12,8 +12,9 @@ A practical RAG playground that bundles three independent Python libraries plus 
 |---|---|
 | [`crawl4md`](src/crawl4md/README.md) | Core crawling library — crawl, extract, sort, write Markdown |
 | [`artifact_store`](src/artifact_store/README.md) | Shared foundation — naming, path safety, archives, crawl-result discovery (pure stdlib) |
-| [`vector_indexer`](src/vector_indexer/README.md) | UI-independent chunking + embedding + vector store (ChromaDB behind an interface) |
-| [`apps/streamlit`](apps/streamlit/README.md) | Browser UI adapter for non-technical users (Steps 1–2 implemented) |
+| [`vector_indexer`](src/vector_indexer/README.md) | UI-independent chunking + embedding + vector store (LangChain embeddings + langchain-chroma) |
+| [`rag_engine`](src/rag_engine/README.md) | UI-independent retrieval + RAG — semantic search, QA, and conversational answers (LangChain chat models, offline echo fallback) |
+| [`apps/streamlit`](apps/streamlit/README.md) | Browser UI adapter for non-technical users (Steps 1–5 implemented) |
 
 The libraries are UI-independent and enforced separate by boundary tests; the Streamlit app is a reference adapter over them.
 
@@ -26,11 +27,14 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 - **Size-limited, sorted output** — pages are never split across files; final files are sorted by URL path
 - **Real-time progress** — browser charts in Streamlit, spider widget in Jupyter, plain-text ETA in terminal
 - **Stop-safe output** — stopping a crawl still writes final output for completed pages
-- **Vector indexing (Step 2)** — index `.md` / `.txt` / `.zip` outputs into a ChromaDB vector store with configurable chunking and embedding providers (Amazon Titan, OpenAI, or an offline default)
+- **Vector indexing (Step 2)** — index `.md` / `.txt` / `.zip` outputs into a langchain-chroma (ChromaDB) vector store with configurable chunking and embedding backends (Amazon Titan, OpenAI, or an offline default)
+- **RAG Q&A (Steps 3–4)** — semantic search and single-turn retrieval-augmented answers over a built index, with source citations
+- **Conversational RAG (Step 5)** — history-aware chat that rewrites each follow-up before retrieving, keeping in-session memory
+- **LangChain backends** — embeddings, vector store, and chat models are wrapped with LangChain; an offline echo model lets RAG run with no cloud credentials
 
 ## Set up local development
 
-These steps install **all three libraries** (`artifact_store`, `crawl4md`, `vector_indexer`) and the **Streamlit app** so you can work on everything.
+These steps install **all four libraries** (`artifact_store`, `crawl4md`, `vector_indexer`, `rag_engine`) and the **Streamlit app** so you can work on everything.
 
 ### 1. Prerequisites
 
@@ -56,8 +60,8 @@ pip install --upgrade pip
 pip install -e ".[dev,all]" -e "apps/streamlit[dev]"
 ```
 
-- `[dev]` adds the test/lint tools (pytest, ruff); `[all]` pulls every library and backend (`crawl`, `vector`, `bedrock`, `openai`).
-- The app package depends on `rag-playground[crawl,vector,bedrock]`, so installing it alongside the root package wires the libraries together.
+- `[dev]` adds the test/lint tools (pytest, ruff); `[all]` pulls every library and backend (`crawl`, `vector`, `bedrock`, `openai`, `rag`).
+- The app package depends on `rag-playground[crawl,vector,bedrock,openai,rag]`, so installing it alongside the root package wires the libraries together.
 
 ### 4. Finish the crawler setup
 
@@ -74,7 +78,7 @@ crawl4ai-setup
 python -m streamlit run apps/streamlit/streamlit_app.py
 ```
 
-Open `http://localhost:8501`. Step 1 crawls a site; Step 2 turns the results into a vector index. Outputs are saved under `outputs/streamlit_sessions/`.
+Open `http://localhost:8501`. Step 1 crawls a site; Step 2 turns the results into a vector index; Steps 3–5 run semantic search, RAG Q&A, and conversational RAG over it. Outputs are saved under `outputs/streamlit_sessions/`.
 
 > Run from the repo root so the app picks up `apps/streamlit/.streamlit/config.toml`.
 
@@ -100,10 +104,13 @@ The base install has **zero third-party dependencies** (`artifact_store` is pure
 |---|---|---|
 | Shared helpers (`artifact_store`) only | `pip install -e .` | No |
 | Crawl websites → Markdown (`crawl4md`) | `pip install -e ".[crawl]"` | Yes |
-| Vector index, offline embeddings (`vector_indexer`) | `pip install -e ".[vector]"` | **No** |
-| Vector index + Amazon Titan embeddings | `pip install -e ".[vector,bedrock]"` | No |
-| Vector index + OpenAI embeddings | `pip install -e ".[vector,openai]"` | No |
+| Vector index, offline embeddings (`vector_indexer`, langchain-chroma) | `pip install -e ".[vector]"` | **No** |
+| Vector index + Amazon Titan embeddings (langchain-aws) | `pip install -e ".[vector,bedrock]"` | No |
+| Vector index + OpenAI embeddings (langchain-openai) | `pip install -e ".[vector,openai]"` | No |
+| RAG Q&A / chat with the offline echo model (`rag_engine`) | `pip install -e ".[vector,rag]"` | No |
 | Everything | `pip install -e ".[all]"` | Yes |
+
+The `bedrock` and `openai` extras now serve both embeddings **and** cloud chat models (via `langchain-aws` / `langchain-openai`); add them alongside `[vector,rag]` to use real LLMs instead of the offline echo model.
 
 Not yet on PyPI — install from a local clone (above) or straight from GitHub, e.g.:
 
@@ -119,9 +126,11 @@ Import the library names, not the distribution name — e.g. after installing `[
 graph TD
     crawl4md --> artifact_store
     vector_indexer --> artifact_store
+    rag_engine --> vector_indexer
+    rag_engine --> artifact_store
 ```
 
-`artifact_store` is the shared, pure-stdlib foundation. **Both `crawl4md` and `vector_indexer` require it** (it always ships in the base install), but they never depend on each other — so you can install one without the other. There is no separate `pip install artifact_store`; it comes with the `rag-playground` distribution automatically.
+`artifact_store` is the shared, pure-stdlib foundation. **`crawl4md`, `vector_indexer`, and `rag_engine` all require it** (it always ships in the base install). `crawl4md` and `vector_indexer` never depend on each other — so you can install one without the other — while `rag_engine` builds on `vector_indexer` to read the indexes it queries. There is no separate `pip install artifact_store`; it comes with the `rag-playground` distribution automatically.
 
 ### Library quick start
 
@@ -148,6 +157,7 @@ For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWrit
 | Core crawler | [src/crawl4md/README.md](src/crawl4md/README.md) |
 | Shared foundation | [src/artifact_store/README.md](src/artifact_store/README.md) |
 | Vector indexer | [src/vector_indexer/README.md](src/vector_indexer/README.md) |
+| RAG engine | [src/rag_engine/README.md](src/rag_engine/README.md) |
 | Streamlit app | [apps/streamlit/README.md](apps/streamlit/README.md) |
 
 ## License

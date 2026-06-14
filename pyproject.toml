@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rag-playground"
 version = "0.1.0"
-description = "RAG playground: crawl websites to Markdown (crawl4md), build vector indexes (vector_indexer), and shared artifact utilities (artifact_store)"
+description = "RAG playground: crawl websites to Markdown (crawl4md), build vector indexes (vector_indexer), answer questions over them (rag_engine), and shared artifact utilities (artifact_store)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -42,16 +42,27 @@ crawl = [
 ]
 # vector_indexer — chunk + embed + store (Step 2). Local offline embeddings
 # work with just this extra; cloud backends below are additional opt-ins.
+# langchain-chroma pulls chromadb (the offline ONNX embedder lives there too).
 vector = [
-    "chromadb>=0.5.0",
-    "langchain-text-splitters>=0.2.0",
+    "langchain-chroma>=1.0",
+    "langchain-text-splitters>=1.0",
+    "langchain-core>=1.0",
     "pydantic>=2.0",
 ]
-# Optional embedding backends for vector_indexer.
-bedrock = ["boto3>=1.34.0"]  # Amazon Titan embeddings (the default model).
-openai = ["openai>=1.0.0"]   # OpenAI embeddings.
+# Optional cloud backends. Each provider is a LangChain integration package that
+# carries its own SDK (langchain-aws pulls boto3, langchain-openai pulls openai)
+# and serves both embeddings (Step 2) and chat models (Steps 4-5).
+bedrock = ["langchain-aws>=1.0"]    # Amazon Titan embeddings + Bedrock chat.
+openai = ["langchain-openai>=1.0"]  # OpenAI embeddings + chat.
+# rag_engine — retrieval + QA + conversational RAG (Steps 3-5). The langchain
+# umbrella provides init_chat_model for unified provider switching.
+rag = [
+    "langchain>=1.0",
+    "langchain-core>=1.0",
+    "pydantic>=2.0",
+]
 # Convenience meta-extra: every library and backend (no dev tools).
-all = ["rag-playground[crawl,vector,bedrock,openai]"]
+all = ["rag-playground[crawl,vector,bedrock,openai,rag]"]
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.21",

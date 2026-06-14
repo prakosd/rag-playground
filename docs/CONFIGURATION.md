@@ -4,7 +4,11 @@
 
 This page documents the crawl configuration models and the output structure. For
 vector-index (Step 2) configuration, see
-[src/vector_indexer/README.md](../src/vector_indexer/README.md).
+[src/vector_indexer/README.md](../src/vector_indexer/README.md). For RAG (Steps 3-5)
+configuration — `RagConfig` (`llm_model`, `temperature` 0–2 default `0.0`, `max_tokens`
+default `1024`, `top_k` default `4`) and the chat-model catalog (`CHAT_MODEL_OPTIONS`:
+Bedrock Claude / Amazon Nova Lite, OpenAI GPT-4o / GPT-4o mini, and the offline echo
+model) — see [src/rag_engine/README.md](../src/rag_engine/README.md).
 
 ## CrawlerConfig
 

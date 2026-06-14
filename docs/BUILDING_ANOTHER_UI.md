@@ -104,6 +104,26 @@ backend error text. Map codes to your own localized strings and fall back to
 The same pattern applies to Step 2: call the `vector_indexer` library from your
 backend. Build an `IndexingConfig`, then run `VectorIndexer.run(config, inputs,
 output_base, progress_callback=..., should_cancel=...)`. It returns a structured
-`IndexingResult` and writes a ChromaDB index plus a `manifest.json`. The embedding
-provider and vector store sit behind interfaces, so you can swap either without
-changing your UI. See [src/vector_indexer/README.md](../src/vector_indexer/README.md).
+`IndexingResult` and writes a langchain-chroma index plus a `manifest.json`. The
+embeddings (LangChain `Embeddings`) and vector store sit behind the library's
+interfaces, so you can swap backends without changing your UI. See
+[src/vector_indexer/README.md](../src/vector_indexer/README.md).
+
+## Adding RAG (Steps 3-5) to your UI
+
+Steps 3-5 are driven by the `rag_engine` library, callable from any UI exactly like
+the crawler and indexer. Point it at an index directory produced by Step 2 (discover
+them from the run `manifest.json`):
+
+- **Semantic search (Step 3):** `retrieve(run_dir, query, RagConfig(...))` returns a
+  `RetrievalResult` with ranked `RetrievedChunk`s (text, source, score).
+- **QA (Step 4):** `answer_question(run_dir, question, RagConfig(...))` returns a
+  `RagAnswer` (answer text, source chunks, `model_used`).
+- **Conversational (Step 5):** `chat_answer(run_dir, question, history, RagConfig(...))`
+  rewrites the follow-up from `history` before retrieving, then answers.
+
+`RagAnswer` / `RetrievalResult` carry `warnings` / `errors` as the same
+`LibraryMessage` data (codes `rag.*`), so your UI localizes them the same way. Chat
+models resolve through LangChain's `init_chat_model`; with no cloud credentials the
+library falls back to an offline echo model so the flow still runs. See
+[src/rag_engine/README.md](../src/rag_engine/README.md).

@@ -82,6 +82,56 @@ STRINGS_ID: Strings = {
         "percakapan, menyertakan riwayat pesan terbaru, dan berkembang menjadi alur RAG "
         "dengan memory."
     ),
+    # ── RAG pages (Steps 3-5) ──────────────────────────────────
+    "RAG_NO_INDEX_HINT": "Belum ada vector index. Bangun satu di Langkah 2 dulu.",
+    "RAG_INDEX_LABEL": "Vector index",
+    "RAG_INDEX_HELP": "Pilih index hasil Langkah 2 yang akan dikueri.",
+    "RAG_INDEX_OPTION": "{folder} / {run} · {model} · {chunks} chunk",
+    "RAG_LLM_LABEL": "Model jawaban",
+    "RAG_LLM_HELP": (
+        "Model chat yang menulis jawaban. Jika tidak tersedia, aplikasi memakai model echo offline."
+    ),
+    "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
+    "RAG_LLM_TAG_CLOUD": "☁️ Cloud (perlu API key)",
+    "RAG_LLM_INDICATOR_OFFLINE": (
+        "Berjalan offline dan mengulang pertanyaan alih-alih membuat jawaban. Gunakan "
+        "untuk mencoba alur tanpa kredensial."
+    ),
+    "RAG_LLM_INDICATOR_CLOUD": (
+        "Berjalan di cloud. Perlu API key atau kredensial yang dikonfigurasi di server."
+    ),
+    "RAG_TOP_K_LABEL": "Chunk",
+    "RAG_TOP_K_HELP": "Berapa banyak chunk paling mirip yang diambil sebagai konteks.",
+    "RAG_SOURCES_HEADER": "Sumber",
+    "RAG_SOURCE_CAPTION": "{source} · skor {score}",
+    "RAG_MODEL_USED_CAPTION": "Dijawab dengan: {model}",
+    "RAG_GENERATING": "Membuat jawaban…",
+    "SEARCH_SECTION_HEADER": "🔍 Cari di index Anda",
+    "SEARCH_SECTION_CAPTION": (
+        "Temukan chunk yang paling mirip dengan kueri, lengkap dengan skor relevansi dan sumber."
+    ),
+    "SEARCH_QUERY_LABEL": "Kueri pencarian",
+    "SEARCH_QUERY_PLACEHOLDER": "Ketik yang Anda cari…",
+    "SEARCH_BUTTON": "Cari",
+    "SEARCH_SEARCHING": "Mencari…",
+    "SEARCH_RESULTS_HEADER": "Hasil",
+    "SEARCH_NO_RESULTS": "Tidak ada chunk yang cocok untuk kueri ini.",
+    "QA_SECTION_HEADER": "❓ Ajukan pertanyaan",
+    "QA_SECTION_CAPTION": (
+        "Ambil konteks dan biarkan model terpilih menjawab satu pertanyaan beserta sumbernya."
+    ),
+    "QA_QUESTION_LABEL": "Pertanyaan Anda",
+    "QA_QUESTION_PLACEHOLDER": "Ajukan pertanyaan tentang dokumen yang terindeks…",
+    "QA_BUTTON": "Tanya",
+    "QA_ANSWER_HEADER": "Jawaban",
+    "CHAT_SECTION_HEADER": "💬 Mengobrol dengan dokumen Anda",
+    "CHAT_SECTION_CAPTION": (
+        "Ajukan pertanyaan lanjutan; aplikasi menulis ulang dengan konteks percakapan dan "
+        "mengambil konteks baru tiap giliran."
+    ),
+    "CHAT_INPUT_PLACEHOLDER": "Ajukan pertanyaan…",
+    "CHAT_CLEAR_BUTTON": "Hapus percakapan",
+    "CHAT_EMPTY_HINT": "Mulai percakapan dengan mengajukan pertanyaan di bawah.",
     # ── Form ──────────────────────────────────────────────────────────────
     "FORM_SUBHEADER": "⚙️ Atur crawl Anda",
     "FORM_CAPTION": (

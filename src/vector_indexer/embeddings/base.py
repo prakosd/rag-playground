@@ -1,40 +1,42 @@
-"""Embedding provider interface and shared error type.
+"""Embedding resolution value object and shared error type.
 
-Concrete providers live in sibling modules and import their heavy or
-credentialed dependencies lazily so that importing this package never requires
-ChromaDB, boto3, or network access.
+The embedding interface itself is LangChain's ``Embeddings``; concrete builders
+live in sibling modules and import their heavy or credentialed dependencies
+lazily so that importing this package never requires ChromaDB, langchain-aws,
+langchain-openai, or network access. This module only defines the lightweight
+value object that pairs a ready embeddings client with its resolved identity.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-__all__ = ["EmbeddingProvider", "EmbeddingProviderUnavailable"]
+if TYPE_CHECKING:
+    from langchain_core.embeddings import Embeddings
+
+__all__ = ["EmbeddingProviderUnavailable", "ResolvedEmbedding"]
 
 
 class EmbeddingProviderUnavailable(RuntimeError):
     """Raised when a requested embedding model cannot be used.
 
-    Typical causes are a missing optional dependency (for example boto3 for
-    Amazon Titan) or absent credentials/configuration. Callers decide whether to
-    fail or fall back to an offline default.
+    Typical causes are a missing optional dependency (for example langchain-aws
+    for Amazon Titan) or absent credentials/configuration. Callers decide whether
+    to fail or fall back to an offline default.
     """
 
 
-class EmbeddingProvider(ABC):
-    """Turns text into numerical vectors for similarity search."""
+@dataclass(frozen=True)
+class ResolvedEmbedding:
+    """A ready LangChain embeddings client paired with its resolved identity.
 
-    @property
-    @abstractmethod
-    def model_id(self) -> str:
-        """Return the identifier of the embedding model in use."""
+    ``embeddings`` is the object handed to the vector store; ``model_id`` and
+    ``dimension`` describe what was actually resolved (after any fallback) so the
+    indexer can record them in the run manifest and the retrieval layer can
+    reopen the matching index.
+    """
 
-    @property
-    @abstractmethod
-    def dimension(self) -> int:
-        """Return the dimensionality of the vectors this provider produces."""
-
-    @abstractmethod
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        """Return one embedding vector per input text, in order."""
+    embeddings: Embeddings
+    model_id: str
+    dimension: int

@@ -27,6 +27,7 @@ from crawl4md_streamlit.generated_files import (
     generated_files_cache_token,
 )
 from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings, localize_message
+from crawl4md_streamlit.index_catalog import list_session_indexes
 from crawl4md_streamlit.pages import (
     APP_PAGE_SPECS,
     DEFAULT_PAGE_ID,
@@ -45,6 +46,7 @@ from crawl4md_streamlit.progress_chart import (
     progress_chart_time_unit_seconds,
     select_progress_chart_time_unit,
 )
+from crawl4md_streamlit.rag_ui import RagPageContext
 from crawl4md_streamlit.session_manager import generate_vector_id, next_vector_sequence
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
@@ -118,6 +120,7 @@ _DOWNLOADS_REFRESH_INTERVAL = "7s"
 _GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
 _DIALOG_PLACEHOLDER_TITLE = " "
 _VECTOR_INDEX_PAGE_ID = "vector_index"
+_RAG_PAGE_IDS = ("semantic_search", "rag_qa", "conversational_rag")
 _DIALOG_LOAD_SESSION_TITLE = "Load Session"
 _HOURS_PER_DAY = 24
 _ICON_BUTTON_WIDTH_PX = 44
@@ -1419,6 +1422,10 @@ def _current_vector_runtime() -> tuple[VectorIndexJob | None, str, bool, bool]:
 
 def _crawl_result_files() -> list[Any]:
     return list(list_crawl_result_files(_session_root()))
+
+
+def _list_session_indexes() -> list[Any]:
+    return list_session_indexes(_session_root())
 
 
 def _start_vector_index_job(values: dict[str, Any]) -> None:
@@ -2754,6 +2761,13 @@ def _vector_index_page_context(vector_module: Any) -> Any:
     )
 
 
+def _rag_page_context() -> RagPageContext:
+    return RagPageContext(
+        default_language=_DEFAULT_LANGUAGE,
+        list_indexes=_list_session_indexes,
+    )
+
+
 def _page_renderers() -> dict[str, Callable[[], None]]:
     renderers: dict[str, Callable[[], None]] = {}
     for page_spec in APP_PAGE_SPECS:
@@ -2767,6 +2781,11 @@ def _page_renderers() -> dict[str, Callable[[], None]]:
             renderers[page_spec.page_id] = partial(
                 page_module.render_page,
                 _vector_index_page_context(page_module),
+            )
+        elif page_spec.page_id in _RAG_PAGE_IDS:
+            renderers[page_spec.page_id] = partial(
+                page_module.render_page,
+                _rag_page_context(),
             )
         else:
             renderers[page_spec.page_id] = page_module.render_page

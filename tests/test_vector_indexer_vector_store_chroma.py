@@ -4,36 +4,54 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("chromadb")
+pytest.importorskip("langchain_chroma")
 
-from vector_indexer.models import VectorRecord  # noqa: E402
+from langchain_core.embeddings import Embeddings  # noqa: E402
+
+from vector_indexer.manifest import DEFAULT_COLLECTION_NAME  # noqa: E402
 from vector_indexer.vector_store.chroma import ChromaVectorStore  # noqa: E402
 
 
-def test_chroma_store_persists_records(tmp_path: Path) -> None:
+class _FakeEmbeddings(Embeddings):
+    """Deterministic embeddings so the store never downloads a model."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[float(len(text)), 0.0, 1.0] for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [float(len(text)), 0.0, 1.0]
+
+
+def test_chroma_store_persists_texts(tmp_path: Path) -> None:
     persist_dir = tmp_path / "chroma"
-    store = ChromaVectorStore(persist_dir)
-    store.create_collection("crawl4md_documents")
-    store.add_documents(
-        [
-            VectorRecord(
-                id="1", text="hello", embedding=[0.1, 0.2, 0.3], metadata={"source": "a.md"}
-            ),
-            VectorRecord(
-                id="2", text="world", embedding=[0.4, 0.5, 0.6], metadata={"source": "b.md"}
-            ),
-        ]
+    store = ChromaVectorStore(persist_dir, DEFAULT_COLLECTION_NAME, _FakeEmbeddings())
+
+    store.add_texts(
+        texts=["hello", "world"],
+        metadatas=[{"source": "a.md"}, {"source": "b.md"}],
+        ids=["1", "2"],
     )
     store.persist()
 
     assert (persist_dir / "chroma.sqlite3").exists()
-    assert store._collection.count() == 2
+
+    from chromadb.config import Settings
+    from langchain_chroma import Chroma
+
+    reopened = Chroma(
+        collection_name=DEFAULT_COLLECTION_NAME,
+        embedding_function=_FakeEmbeddings(),
+        persist_directory=str(persist_dir),
+        client_settings=Settings(anonymized_telemetry=False),
+    )
+    assert len(reopened.get()["ids"]) == 2
 
 
-def test_add_documents_requires_collection(tmp_path: Path) -> None:
-    store = ChromaVectorStore(tmp_path / "chroma")
+def test_add_texts_empty_is_noop(tmp_path: Path) -> None:
+    persist_dir = tmp_path / "chroma"
+    store = ChromaVectorStore(persist_dir, DEFAULT_COLLECTION_NAME, _FakeEmbeddings())
 
-    with pytest.raises(RuntimeError):
-        store.add_documents(
-            [VectorRecord(id="1", text="x", embedding=[0.1], metadata={"source": "a"})]
-        )
+    store.add_texts(texts=[], metadatas=[], ids=[])
+
+    # An empty batch must not touch the backend or create the persist directory.
+    assert not persist_dir.exists()

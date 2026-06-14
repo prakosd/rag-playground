@@ -2,8 +2,8 @@
 
 Shared, UI-agnostic foundation for managing persisted project artifacts. It is the
 lowest layer in the repository: the `crawl4md` core library, the `vector_indexer`
-library, and the Streamlit app all build on it. It depends on the Python standard
-library only — no crawler, no UI, no third-party packages.
+and `rag_engine` libraries, and the Streamlit app all build on it. It depends on the
+Python standard library only — no crawler, no UI, no third-party packages.
 
 ## Why it exists
 
@@ -42,8 +42,8 @@ str(message)        # English fallback for logs/notebooks/JSON
 message.as_dict()   # {code, text, severity, params} for a UI to localize
 ```
 
-`crawl4md` and `vector_indexer` build their messages on this primitive; see
-[docs/BUILDING_ANOTHER_UI.md](../../docs/BUILDING_ANOTHER_UI.md) for the full contract.
+`crawl4md`, `vector_indexer`, and `rag_engine` build their messages on this primitive;
+see [docs/BUILDING_ANOTHER_UI.md](../../docs/BUILDING_ANOTHER_UI.md) for the full contract.
 
 
 ## Examples

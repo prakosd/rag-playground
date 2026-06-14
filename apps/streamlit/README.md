@@ -34,6 +34,9 @@ flowchart TD
 | `form_ui.py` | Crawl settings form renderer |
 | `vector_form_ui.py` | Step 2 vector-index form renderer + pure option/validation helpers |
 | `vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl_jobs.py`) |
+| `index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
+| `llm_form_ui.py` | Steps 4-5 chat-model selector + pure option/label helpers |
+| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, sources, messages) |
 | `generated_files.py` | Output listing, previews, and downloads |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
@@ -49,7 +52,10 @@ Workflow content modules live in `app_pages/`. Each module exposes `render_page(
 independently of Streamlit — no Streamlit runtime needed in tests.
 Streamlit imports are limited to UI modules such as `streamlit_app.py` and `form_ui.py`.
 
-This package is a reference adapter over the core `crawl4md` library, not a second crawl engine.
+This package is a reference adapter over the core `crawl4md`, `vector_indexer`, and
+`rag_engine` libraries, not a second crawl/index/RAG engine. It depends on
+`rag-playground[crawl,vector,bedrock,openai,rag]`, so installing it pulls the crawler,
+the indexing backends, and the RAG engine.
 The library owns crawling, extraction, file writing, sorted and final outputs, run metadata,
 progress events, and cooperative cancellation hooks. The Streamlit package owns form rendering,
 browser-session persistence, background thread orchestration, and generated-file presentation.
@@ -80,7 +86,7 @@ Everything the user sees and interacts with. Responsibilities:
   `@st.cache_resource`).
 - Renders the global footer and browser-timed portfolio modal with translated copy.
 
-The current multipage pass uses dedicated modules in `app_pages/` for every workflow step. Step 1 (`app_pages/crawl4md.py`) renders the crawler content area and Step 2 (`app_pages/vector_index.py`) renders the vector-index content area, both through callbacks from the shared shell. Steps 3-5 are placeholder-only modules for now. They intentionally reuse the same width, title/subtitle placement, session-control row, language selector placement, footer, and restrained Streamlit-native styling as the crawler page so navigation feels continuous while the remaining RAG features are still being built.
+The current multipage pass uses dedicated modules in `app_pages/` for every workflow step. Step 1 (`app_pages/crawl4md.py`) renders the crawler content area and Step 2 (`app_pages/vector_index.py`) renders the vector-index content area, both through callbacks from the shared shell. Steps 3-5 (`semantic_search.py`, `rag_qa.py`, `conversational_rag.py`) are implemented over the `rag_engine` library: each receives a `RagPageContext` with an index picker, runs synchronously (a spinner), and renders the structured `RagAnswer`/`RetrievalResult`. They reuse the same width, title/subtitle placement, session-control row, language selector placement, footer, and restrained Streamlit-native styling as the crawler page so navigation feels continuous.
 
 ### Toast Emission Model
 
@@ -98,9 +104,9 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search workspace placeholder |
-| `rag_qa.py` | Step 4 single-turn RAG Q&A workspace placeholder |
-| `conversational_rag.py` | Step 5 conversational RAG workspace placeholder |
+| `semantic_search.py` | Step 3 semantic search — index picker, query, ranked snippets with scores + sources (`rag_engine.retrieve`) |
+| `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
+| `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
 When a page grows complex, keep page-specific state keys prefixed with the page id and move reusable non-UI logic into `src/crawl4md_streamlit/` or the core `crawl4md` package instead of importing from `streamlit_app.py`.
 

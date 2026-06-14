@@ -1,55 +1,72 @@
 """Offline default embeddings backed by ChromaDB's bundled ONNX MiniLM model.
 
-This provider needs no credentials and no network beyond a one-time model
-download performed by ChromaDB on first use. It does not require PyTorch.
+Wrapped as a LangChain ``Embeddings`` implementation so the indexer and the
+retrieval layer treat every backend uniformly. Needs no credentials and no
+network beyond a one-time model download ChromaDB performs on first use; it does
+not require PyTorch. The ``Embeddings`` subclass is defined lazily so importing
+this module (for its constants) does not pull langchain-core or chromadb.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
-from collections.abc import Sequence
 from typing import Any
 
-from vector_indexer.embeddings.base import EmbeddingProvider, EmbeddingProviderUnavailable
+from vector_indexer.embeddings.base import EmbeddingProviderUnavailable, ResolvedEmbedding
 
-__all__ = ["DEFAULT_LOCAL_MODEL", "LOCAL_DIMENSION", "DefaultLocalEmbeddingProvider"]
+__all__ = ["DEFAULT_LOCAL_MODEL", "LOCAL_DIMENSION", "build_local_embeddings"]
 
 DEFAULT_LOCAL_MODEL = "all-MiniLM-L6-v2"
 LOCAL_DIMENSION = 384
 _CA_BUNDLE_ENV_VARS = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
 
+_embeddings_cls: type | None = None
 
-class DefaultLocalEmbeddingProvider(EmbeddingProvider):
-    """MiniLM-L6-v2 embeddings via ChromaDB's ONNX runtime (384 dimensions)."""
 
-    def __init__(self) -> None:
-        if importlib.util.find_spec("chromadb") is None:
-            raise EmbeddingProviderUnavailable(
-                "ChromaDB is required for offline embeddings; install chromadb."
-            )
-        self._embedder: Any = None
+def build_local_embeddings(*, dimension: int | None = None) -> ResolvedEmbedding:
+    """Return the offline default embeddings, or raise if ChromaDB is missing."""
+    if importlib.util.find_spec("chromadb") is None:
+        raise EmbeddingProviderUnavailable(
+            "ChromaDB is required for offline embeddings; install the [vector] extra."
+        )
+    cls = _local_embeddings_class()
+    return ResolvedEmbedding(
+        embeddings=cls(), model_id=DEFAULT_LOCAL_MODEL, dimension=LOCAL_DIMENSION
+    )
 
-    @property
-    def model_id(self) -> str:
-        return DEFAULT_LOCAL_MODEL
 
-    @property
-    def dimension(self) -> int:
-        return LOCAL_DIMENSION
+def _local_embeddings_class() -> type:
+    """Build (once) and return the ``Embeddings`` subclass over the ONNX model."""
+    global _embeddings_cls
+    if _embeddings_cls is not None:
+        return _embeddings_cls
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        embedder = self._ensure_embedder()
-        vectors = embedder(list(texts))
-        return [[float(value) for value in vector] for vector in vectors]
+    from langchain_core.embeddings import Embeddings
 
-    def _ensure_embedder(self) -> Any:
-        if self._embedder is None:
-            _propagate_ca_bundle_env()
-            from chromadb.utils import embedding_functions
+    class LocalOnnxEmbeddings(Embeddings):
+        """MiniLM-L6-v2 embeddings via ChromaDB's ONNX runtime (384 dimensions)."""
 
-            self._embedder = embedding_functions.ONNXMiniLM_L6_V2()
-        return self._embedder
+        def __init__(self) -> None:
+            self._embedder: Any = None
+
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            embedder = self._ensure_embedder()
+            return [[float(value) for value in vector] for vector in embedder(list(texts))]
+
+        def embed_query(self, text: str) -> list[float]:
+            return self.embed_documents([text])[0]
+
+        def _ensure_embedder(self) -> Any:
+            if self._embedder is None:
+                _propagate_ca_bundle_env()
+                from chromadb.utils import embedding_functions
+
+                self._embedder = embedding_functions.ONNXMiniLM_L6_V2()
+            return self._embedder
+
+    _embeddings_cls = LocalOnnxEmbeddings
+    return _embeddings_cls
 
 
 def _propagate_ca_bundle_env() -> None:

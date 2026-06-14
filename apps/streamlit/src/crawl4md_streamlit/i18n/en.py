@@ -78,6 +78,57 @@ STRINGS_EN: Strings = {
         "Use a chat-style interface that can rewrite the retrieval query from conversation "
         "context, include recent message history, and grow into memory-aware RAG workflows."
     ),
+    # ── RAG pages (Steps 3-5) ──────────────────────────────────
+    "RAG_NO_INDEX_HINT": "No vector index found yet. Build one in Step 2 first.",
+    "RAG_INDEX_LABEL": "Vector index",
+    "RAG_INDEX_HELP": "Choose which index built in Step 2 to query.",
+    "RAG_INDEX_OPTION": "{folder} / {run} · {model} · {chunks} chunks",
+    "RAG_LLM_LABEL": "Answer model",
+    "RAG_LLM_HELP": (
+        "The chat model that writes the answer. If it is unavailable, the app falls back "
+        "to the offline echo model."
+    ),
+    "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
+    "RAG_LLM_TAG_CLOUD": "☁️ Cloud (needs API key)",
+    "RAG_LLM_INDICATOR_OFFLINE": (
+        "Runs offline and repeats the question instead of generating an answer. Use it to "
+        "try the workflow without credentials."
+    ),
+    "RAG_LLM_INDICATOR_CLOUD": (
+        "Runs in the cloud. Needs an API key or credentials configured on the server."
+    ),
+    "RAG_TOP_K_LABEL": "Chunks",
+    "RAG_TOP_K_HELP": "How many of the most similar chunks to retrieve as context.",
+    "RAG_SOURCES_HEADER": "Sources",
+    "RAG_SOURCE_CAPTION": "{source} · score {score}",
+    "RAG_MODEL_USED_CAPTION": "Answered with: {model}",
+    "RAG_GENERATING": "Generating answer…",
+    "SEARCH_SECTION_HEADER": "🔍 Search your index",
+    "SEARCH_SECTION_CAPTION": (
+        "Find the chunks most similar to a query, with relevance scores and sources."
+    ),
+    "SEARCH_QUERY_LABEL": "Search query",
+    "SEARCH_QUERY_PLACEHOLDER": "Type what you're looking for…",
+    "SEARCH_BUTTON": "Search",
+    "SEARCH_SEARCHING": "Searching…",
+    "SEARCH_RESULTS_HEADER": "Matches",
+    "SEARCH_NO_RESULTS": "No matching chunks were found for this query.",
+    "QA_SECTION_HEADER": "❓ Ask a question",
+    "QA_SECTION_CAPTION": (
+        "Retrieve context and let the selected model answer one question with sources."
+    ),
+    "QA_QUESTION_LABEL": "Your question",
+    "QA_QUESTION_PLACEHOLDER": "Ask a question about your indexed documents…",
+    "QA_BUTTON": "Ask",
+    "QA_ANSWER_HEADER": "Answer",
+    "CHAT_SECTION_HEADER": "💬 Chat with your documents",
+    "CHAT_SECTION_CAPTION": (
+        "Ask follow-up questions; the app rewrites them using the conversation and "
+        "retrieves fresh context each turn."
+    ),
+    "CHAT_INPUT_PLACEHOLDER": "Ask a question…",
+    "CHAT_CLEAR_BUTTON": "Clear conversation",
+    "CHAT_EMPTY_HINT": "Start the conversation by asking a question below.",
     # ── Form ──────────────────────────────────────────────────────────────
     "FORM_SUBHEADER": "⚙️ Set up your crawl",
     "FORM_CAPTION": (

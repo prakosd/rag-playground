@@ -1,19 +1,18 @@
 """End-to-end vector indexing orchestration.
 
-``VectorIndexer.run`` resolves an embedding provider (applying the Titan ->
-offline fallback policy), loads and chunks the inputs, embeds the chunks, and
-writes them to a vector store inside a new timestamped run directory. The store
-factory and embedding resolver are injectable so the flow can be tested without
-ChromaDB or network access.
+``VectorIndexer.run`` resolves embeddings (applying the Titan -> offline
+fallback policy), loads and chunks the inputs, and writes the embedded chunks to
+a vector store inside a new timestamped run directory. The store factory and the
+embedding resolver are injectable so the flow can be tested without
+langchain-chroma or network access.
 """
 
 from __future__ import annotations
 
-import contextlib
-import json
 from collections.abc import Callable, Iterator, Sequence
 from itertools import count
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from artifact_store import LibraryMessage
 from artifact_store.naming import format_utc_timestamp_slug
@@ -22,19 +21,24 @@ from vector_indexer.chunking import chunk_documents
 from vector_indexer.config import IndexingConfig
 from vector_indexer.document_loader import load_documents
 from vector_indexer.embeddings import (
-    EmbeddingProvider,
     EmbeddingProviderUnavailable,
+    ResolvedEmbedding,
     resolve_embedding,
 )
-from vector_indexer.models import Chunk, IndexingResult, VectorRecord
+from vector_indexer.manifest import (
+    CHROMA_SUBDIR,
+    DEFAULT_COLLECTION_NAME,
+    write_manifest,
+)
+from vector_indexer.models import Chunk, IndexingResult
 from vector_indexer.vector_store.base import VectorStore
 from vector_indexer.vector_store.chroma import ChromaVectorStore
 
+if TYPE_CHECKING:
+    from langchain_core.embeddings import Embeddings
+
 __all__ = ["DEFAULT_COLLECTION_NAME", "VectorIndexer"]
 
-DEFAULT_COLLECTION_NAME = "crawl4md_documents"
-_CHROMA_SUBDIR = "chroma"
-_MANIFEST_NAME = "manifest.json"
 _EMBED_BATCH_SIZE = 32
 
 # Coarse pipeline stages reported through the progress callback so a UI can show
@@ -45,14 +49,16 @@ STAGE_CHUNKING = "chunking"
 STAGE_EMBEDDING = "embedding"
 STAGE_SAVING = "saving"
 
-StoreFactory = Callable[[Path], VectorStore]
-EmbeddingResolver = Callable[[str, int | None], tuple[EmbeddingProvider, list[LibraryMessage]]]
+StoreFactory = Callable[[Path, str, "Embeddings"], VectorStore]
+EmbeddingResolver = Callable[[str, int | None], tuple[ResolvedEmbedding, list[LibraryMessage]]]
 ProgressCallback = Callable[[dict[str, object]], None]
 CancelCheck = Callable[[], bool]
 
 
-def _default_store_factory(persist_dir: Path) -> VectorStore:
-    return ChromaVectorStore(persist_dir)
+def _default_store_factory(
+    persist_dir: Path, collection_name: str, embeddings: Embeddings
+) -> VectorStore:
+    return ChromaVectorStore(persist_dir, collection_name, embeddings)
 
 
 class VectorIndexer:
@@ -83,37 +89,43 @@ class VectorIndexer:
         result = IndexingResult(success=False, output_dir=run_dir)
 
         _report_stage(progress_callback, STAGE_RESOLVING_MODEL)
-        provider = self._resolve_provider(config, result)
-        if provider is None:
-            return self._finalize(run_dir, config, result, model_id=None)
+        resolved = self._resolve_embeddings(config, result)
+        if resolved is None:
+            return self._finalize(
+                run_dir, config, result, model_id=None, collection_name=collection_name
+            )
 
         chunks = self._prepare_chunks(config, inputs, result, should_cancel, progress_callback)
         if chunks is None:
-            return self._finalize(run_dir, config, result, model_id=provider.model_id)
+            return self._finalize(
+                run_dir, config, result, model_id=resolved.model_id, collection_name=collection_name
+            )
 
         self._embed_and_store(
             chunks,
-            provider,
+            resolved,
             run_dir,
             collection_name,
             result,
             progress_callback,
             should_cancel,
         )
-        return self._finalize(run_dir, config, result, model_id=provider.model_id)
+        return self._finalize(
+            run_dir, config, result, model_id=resolved.model_id, collection_name=collection_name
+        )
 
-    def _resolve_provider(
+    def _resolve_embeddings(
         self, config: IndexingConfig, result: IndexingResult
-    ) -> EmbeddingProvider | None:
+    ) -> ResolvedEmbedding | None:
         try:
-            provider, warnings = self._embedding_resolver(
+            resolved, warnings = self._embedding_resolver(
                 config.embedding_model, config.embedding_dimension
             )
         except EmbeddingProviderUnavailable as exc:
             result.errors.append(messages.model_unavailable(str(exc)))
             return None
         result.warnings.extend(warnings)
-        return provider
+        return resolved
 
     def _prepare_chunks(
         self,
@@ -152,15 +164,14 @@ class VectorIndexer:
     def _embed_and_store(
         self,
         chunks: list[Chunk],
-        provider: EmbeddingProvider,
+        resolved: ResolvedEmbedding,
         run_dir: Path,
         collection_name: str,
         result: IndexingResult,
         progress_callback: ProgressCallback | None,
         should_cancel: CancelCheck | None,
     ) -> None:
-        store = self._store_factory(run_dir / _CHROMA_SUBDIR)
-        store.create_collection(collection_name)
+        store = self._store_factory(run_dir / CHROMA_SUBDIR, collection_name, resolved.embeddings)
         ids = count()
         indexed_sources: set[str] = set()
         total = len(chunks)
@@ -170,18 +181,12 @@ class VectorIndexer:
                 if _cancelled(should_cancel):
                     result.warnings.append(messages.cancelled_partial())
                     break
-                embeddings = provider.embed_documents([chunk.text for chunk in batch])
-                records = [
-                    VectorRecord(
-                        id=str(next(ids)),
-                        text=chunk.text,
-                        embedding=embedding,
-                        metadata=chunk.metadata,
-                    )
-                    for chunk, embedding in zip(batch, embeddings, strict=True)
-                ]
-                store.add_documents(records)
-                result.indexed_chunk_count += len(records)
+                store.add_texts(
+                    texts=[chunk.text for chunk in batch],
+                    metadatas=[chunk.metadata for chunk in batch],
+                    ids=[str(next(ids)) for _ in batch],
+                )
+                result.indexed_chunk_count += len(batch)
                 indexed_sources.update(chunk.document_source for chunk in batch)
                 _report_progress(progress_callback, result.indexed_chunk_count, total)
             _report_stage(progress_callback, STAGE_SAVING)
@@ -198,9 +203,10 @@ class VectorIndexer:
         result: IndexingResult,
         *,
         model_id: str | None,
+        collection_name: str,
     ) -> IndexingResult:
         result.success = result.indexed_chunk_count > 0 and not result.errors
-        _write_manifest(run_dir, config, result, model_id=model_id)
+        _write_manifest(run_dir, config, result, model_id=model_id, collection_name=collection_name)
         return result
 
 
@@ -237,22 +243,23 @@ def _write_manifest(
     result: IndexingResult,
     *,
     model_id: str | None,
+    collection_name: str,
 ) -> None:
-    manifest = {
-        "embedding_model_requested": config.embedding_model,
-        "embedding_model_used": model_id,
-        "embedding_dimension": config.embedding_dimension,
-        "chunk_size": config.chunk_size,
-        "chunk_overlap": config.chunk_overlap,
-        "language": config.language,
-        "success": result.success,
-        "indexed_file_count": result.indexed_file_count,
-        "indexed_chunk_count": result.indexed_chunk_count,
-        "skipped_file_count": result.skipped_file_count,
-        "warnings": [message.as_dict() for message in result.warnings],
-        "errors": [message.as_dict() for message in result.errors],
-    }
-    with contextlib.suppress(OSError):
-        (run_dir / _MANIFEST_NAME).write_text(
-            json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+    write_manifest(
+        run_dir,
+        {
+            "embedding_model_requested": config.embedding_model,
+            "embedding_model_used": model_id,
+            "embedding_dimension": config.embedding_dimension,
+            "collection_name": collection_name,
+            "chunk_size": config.chunk_size,
+            "chunk_overlap": config.chunk_overlap,
+            "language": config.language,
+            "success": result.success,
+            "indexed_file_count": result.indexed_file_count,
+            "indexed_chunk_count": result.indexed_chunk_count,
+            "skipped_file_count": result.skipped_file_count,
+            "warnings": [message.as_dict() for message in result.warnings],
+            "errors": [message.as_dict() for message in result.errors],
+        },
+    )

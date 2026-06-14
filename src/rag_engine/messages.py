@@ -1,0 +1,128 @@
+"""Stable message codes and builders for the rag_engine result contract.
+
+Every warning or error a UI sees on a :class:`~rag_engine.models.RagAnswer` is a
+:class:`~artifact_store.LibraryMessage` built here. Each carries a stable
+``code`` (which a UI maps to a localized template) plus the structured ``params``
+behind it; ``default_text`` is the English shown when no localization exists.
+"""
+
+from __future__ import annotations
+
+from artifact_store import SEVERITY_ERROR, SEVERITY_WARNING, LibraryMessage
+
+__all__ = [
+    "CODE_EMBEDDING_UNAVAILABLE",
+    "CODE_EMPTY_QUESTION",
+    "CODE_GENERATION_FAILED",
+    "CODE_INDEX_NOT_FOUND",
+    "CODE_INDEX_UNREADABLE",
+    "CODE_MODEL_FALLBACK_ECHO",
+    "CODE_MODEL_UNAVAILABLE",
+    "CODE_NO_CONTEXT",
+    "CODE_RETRIEVAL_FAILED",
+    "CODE_SSL_CERTIFICATE",
+    "classify_generation_failure",
+    "embedding_unavailable",
+    "empty_question",
+    "index_not_found",
+    "index_unreadable",
+    "model_fallback_echo",
+    "model_unavailable",
+    "no_context",
+    "retrieval_failed",
+]
+
+CODE_INDEX_NOT_FOUND = "rag.index_not_found"
+CODE_INDEX_UNREADABLE = "rag.index_unreadable"
+CODE_EMBEDDING_UNAVAILABLE = "rag.embedding_unavailable"
+CODE_MODEL_UNAVAILABLE = "rag.model_unavailable"
+CODE_MODEL_FALLBACK_ECHO = "rag.model_fallback_echo"
+CODE_RETRIEVAL_FAILED = "rag.retrieval_failed"
+CODE_GENERATION_FAILED = "rag.generation_failed"
+CODE_NO_CONTEXT = "rag.no_context"
+CODE_EMPTY_QUESTION = "rag.empty_question"
+CODE_SSL_CERTIFICATE = "rag.ssl_certificate"
+
+# Substrings that mark a TLS/SSL certificate failure inside a backend exception.
+_SSL_ERROR_SIGNATURES = (
+    "certificate_verify_failed",
+    "certificate verify failed",
+    "sslcertverificationerror",
+    "ssl: certificate",
+)
+
+
+def _warn(code: str, text: str, **params: object) -> LibraryMessage:
+    return LibraryMessage(code=code, default_text=text, params=params, severity=SEVERITY_WARNING)
+
+
+def _error(code: str, text: str, **params: object) -> LibraryMessage:
+    return LibraryMessage(code=code, default_text=text, params=params, severity=SEVERITY_ERROR)
+
+
+def index_not_found(path: str) -> LibraryMessage:
+    return _error(CODE_INDEX_NOT_FOUND, f"No vector index was found at {path}.", path=path)
+
+
+def index_unreadable(path: str, detail: str) -> LibraryMessage:
+    return _error(
+        CODE_INDEX_UNREADABLE,
+        f"The vector index at {path} could not be read: {detail}",
+        path=path,
+        detail=detail,
+    )
+
+
+def embedding_unavailable(detail: str) -> LibraryMessage:
+    return _error(
+        CODE_EMBEDDING_UNAVAILABLE,
+        f"The embedding model for this index is unavailable: {detail}",
+        detail=detail,
+    )
+
+
+def model_unavailable(model: str, detail: str) -> LibraryMessage:
+    return _error(
+        CODE_MODEL_UNAVAILABLE,
+        f"The chat model {model!r} is unavailable: {detail}",
+        model=model,
+        detail=detail,
+    )
+
+
+def model_fallback_echo(requested_model: str, detail: str) -> LibraryMessage:
+    return _warn(
+        CODE_MODEL_FALLBACK_ECHO,
+        f"The selected chat model could not be used: {detail} "
+        "Falling back to the offline echo model, which repeats the question "
+        "instead of generating an answer.",
+        requested_model=requested_model,
+        detail=detail,
+    )
+
+
+def no_context() -> LibraryMessage:
+    return _warn(
+        CODE_NO_CONTEXT,
+        "No relevant context was found in the index for this question.",
+    )
+
+
+def empty_question() -> LibraryMessage:
+    return _error(CODE_EMPTY_QUESTION, "Enter a question to ask.")
+
+
+def retrieval_failed(detail: str) -> LibraryMessage:
+    return _error(CODE_RETRIEVAL_FAILED, f"Retrieving context failed: {detail}", detail=detail)
+
+
+def classify_generation_failure(detail: str) -> LibraryMessage:
+    """Return an SSL-specific or generic generation-failure error."""
+    if any(signature in detail.lower() for signature in _SSL_ERROR_SIGNATURES):
+        return _error(
+            CODE_SSL_CERTIFICATE,
+            "Could not reach the chat model because its TLS/SSL certificate "
+            f"could not be verified: {detail}",
+            detail=detail,
+        )
+    return _error(CODE_GENERATION_FAILED, f"Generating the answer failed: {detail}", detail=detail)
