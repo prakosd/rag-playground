@@ -174,11 +174,7 @@ _GITHUB_ICON_DATA_URI = (
     "NzAuNyA5OCA0OS4xIDk4IDIyIDc2IDAgNDguOSAweicgY2xpcC1ydWxlPSdldmVub2RkJy8+"
     "PC9zdmc+"
 )
-_AUTHOR_PHOTO_URL = (
-    "https://media.licdn.com/dms/image/v2/D5635AQFefjHsJTUdIA/"
-    "profile-framedphoto-shrink_400_400/B56Zgrsi34G4Ag-/0/1753079754750"
-    "?e=1780549200&v=beta&t=sL7UhTUKZUnpSGqaC8UGkKl-yGnQz8XV5UqwLfDwp3o"
-)
+_AUTHOR_PHOTO_URL = "https://media.licdn.com/dms/image/v2/D5635AQFefjHsJTUdIA/profile-framedphoto-shrink_100_100/B56Zgrsi34G4Ao-/0/1753079754750?e=1782032400&v=beta&t=5VL6DhItXFgyvlE98Ao_UYjqG3YQBaMTYnoLoARryPg"
 _PREVIEW_DIALOG_WIDTH = "large"
 # Adjust this percentage to resize the preview modal relative to the viewport.
 _PREVIEW_DIALOG_VIEWPORT_PERCENT = 70
