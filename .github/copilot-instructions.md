@@ -11,6 +11,8 @@ crawl4md crawls websites and extracts content as Markdown. The core `crawl4md` l
 - `src/vector_indexer/` — load → chunk → embed → vector store; no UI imports.
 - `apps/streamlit/` — UI adapter only (rendering, session/browser state, background jobs, downloads). Keep the libraries usable without Streamlit; never push UI or path conventions into them.
 
+**Packaging:** one pip distribution named `rag-playground` (import packages unchanged: `crawl4md`, `vector_indexer`, `artifact_store`). The base install is dependency-free; each library is an opt-in extra — `[crawl]`, `[vector]`, `[bedrock]`, `[openai]`, `[all]` — so installs stay atomic. The Streamlit app installs `rag-playground[crawl,vector,bedrock]`.
+
 ## Data Flow
 
 - **Step 1 (crawl):** `SiteCrawler.crawl()` → Crawl4AI (raw HTML) → `ContentExtractor` (Markdown) → `FileWriter` (size-limited files + URL lists) → `ContentSorter` (sorted final output). Each crawl writes a timestamped dir; results pass through rounds (initial + retries), then merge/dedupe/sort.
@@ -24,6 +26,7 @@ Per-module constraints auto-attach from `.github/instructions/*.instructions.md`
 
 - Python 3.10+, type hints on all public APIs. Pydantic v2 (`model_validator`, `field_validator`). Lint via ruff.
 - Tests use mocked HTTP — never real network requests. Keep Streamlit UX plain-language, no jargon.
+- **Structured messages:** libraries report user-facing warnings/errors/progress as `artifact_store.LibraryMessage` (stable `code` + English `default_text` + `params`), never UI strings; codes/builders live in `crawl4md.messages` and `vector_indexer.messages`. `CrawlResult.error_code` and `crawl_warning` events carry crawl codes; `IndexingResult.warnings/errors` are `LibraryMessage` lists. UIs localize by code (app: `i18n.localize_message`) and fall back to `default_text` — never substring-match library text.
 - **No inline magic values:** thresholds, tag lists, regex patterns, repeated string literals → `_UPPER_SNAKE_CASE` constants grouped after imports; regex `re.compile()`d at module level. **Exempt:** Pydantic field defaults, standard idioms, single-use spec keys, trivial markdown (`"- "`, `"### "`).
 
 ## Planning
