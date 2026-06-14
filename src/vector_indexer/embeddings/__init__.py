@@ -3,7 +3,8 @@
 This package keeps the application layer independent of any specific embedding
 backend. ``build_embeddings`` maps a model id to a concrete LangChain
 ``Embeddings`` client (wrapped in :class:`ResolvedEmbedding`), and
-``resolve_embedding`` applies the default-model fallback policy.
+``resolve_embedding`` returns it with any non-fatal warnings, raising
+``EmbeddingProviderUnavailable`` when the requested model cannot be used.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ DEFAULT_EMBEDDING_MODEL = TITAN_MODEL
 # Known model ids that require local model dependencies (PyTorch /
 # sentence-transformers) that are intentionally not installed. They are not
 # offered in the UI; if one is requested programmatically, the build fails
-# gracefully and resolution falls back to the local offline model.
+# gracefully with ``EmbeddingProviderUnavailable`` (never importing torch).
 DISABLED_MODELS: tuple[str, ...] = (
     "BAAI/bge-small-en-v1.5",
     "BAAI/bge-base-en-v1.5",
@@ -54,8 +55,9 @@ DISABLED_MODELS: tuple[str, ...] = (
     "intfloat/e5-base-v2",
 )
 
-# Runnable models offered in the UI. Any other (or failed) model resolves to the
-# local offline model via ``resolve_embedding``.
+# Runnable models offered in the UI. The local offline model needs no
+# credentials; cloud models raise ``EmbeddingProviderUnavailable`` when their
+# package or credential is missing, which the caller surfaces as an error.
 EMBEDDING_MODEL_OPTIONS: tuple[str, ...] = (
     TITAN_MODEL,
     OPENAI_MODEL,
@@ -96,37 +98,18 @@ def resolve_embedding(
     dimension: int | None,
     *,
     build: Callable[..., ResolvedEmbedding] = build_embeddings,
-    default_build: Callable[..., ResolvedEmbedding] = build_default_local_embeddings,
 ) -> tuple[ResolvedEmbedding, list[LibraryMessage]]:
-    """Resolve embeddings, falling back to the local offline model.
+    """Resolve embeddings for *model*, plus any non-fatal warnings.
 
-    When the requested model is unavailable (missing dependency or credential),
-    this falls back to the local offline embeddings and returns a warning so the
-    run still succeeds. It raises ``EmbeddingProviderUnavailable`` only when the
-    local model itself was requested and is unavailable (re-raising that error),
-    or when the local fallback is also unavailable (a combined error), so the
-    caller can surface it.
+    Raises ``EmbeddingProviderUnavailable`` when the requested model cannot be
+    used (a missing provider package or credential). There is no automatic
+    fallback to the local offline model: a failed cloud model surfaces an
+    actionable error rather than silently switching backends, so the caller can
+    record it and recommend the local offline model. The only warning today is a
+    dimension-mismatch notice when a model ignores the requested dimension.
     """
+    resolved = build(model, dimension=dimension)
     warnings: list[LibraryMessage] = []
-    try:
-        resolved = build(model, dimension=dimension)
-    except EmbeddingProviderUnavailable as exc:
-        if model.strip() == DEFAULT_LOCAL_MODEL:
-            raise
-        try:
-            resolved = default_build(dimension=dimension)
-        except EmbeddingProviderUnavailable as fallback_exc:
-            raise EmbeddingProviderUnavailable(
-                f"{exc} The local offline model ({DEFAULT_LOCAL_MODEL}) is also "
-                f"unavailable: {fallback_exc}"
-            ) from fallback_exc
-        warnings.append(
-            messages.embedding_fallback(
-                requested_model=model.strip(),
-                local_model=DEFAULT_LOCAL_MODEL,
-                detail=str(exc),
-            )
-        )
     if dimension is not None and resolved.dimension != dimension:
         warnings.append(
             messages.dimension_mismatch(

@@ -33,9 +33,9 @@ a JSON-serializable `{code, text, severity, params}`.
 from artifact_store import LibraryMessage, SEVERITY_WARNING
 
 message = LibraryMessage(
-    code="vector.embedding_fallback",
-    default_text="The selected model was unavailable; using the local model.",
-    params={"local_model": "all-MiniLM-L6-v2"},
+    code="vector.dimension_mismatch",
+    default_text="Requested dimension 1024 is unsupported; using 384.",
+    params={"requested_dimension": 1024, "actual_dimension": 384},
     severity=SEVERITY_WARNING,
 )
 str(message)        # English fallback for logs/notebooks/JSON

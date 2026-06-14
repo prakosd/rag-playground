@@ -286,7 +286,6 @@ class Strings(TypedDict):
     VEC_ERROR_ALREADY_RUNNING: str
     VEC_ERROR_NO_ACTIVE_INDEX: str
     VEC_PROGRESS_HEADER: str
-    VEC_PROGRESS_CAPTION: str
     VEC_STATUS_RUNNING: str
     VEC_STATUS_CHUNKS: str  # template: {processed}, {total}
     VEC_STAGE_RESOLVING_MODEL: str
@@ -301,6 +300,10 @@ class Strings(TypedDict):
     VEC_RESULT_WARNINGS_LABEL: str
     VEC_RESULT_ERRORS_LABEL: str
     VEC_ERROR_SSL_HINT: str
+    VEC_ERROR_OPENAI_KEY_HINT: str
+    VEC_ERROR_AWS_CREDENTIALS_HINT: str
+    VEC_ERROR_EMBEDDING_FAILED_HINT: str
+    VEC_ERROR_MODEL_UNAVAILABLE_HINT: str
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]
     # ── Library message code -> localized template (str.format params) ─────

@@ -8,7 +8,7 @@ no Streamlit dependency and is equally usable from a notebook, a CLI, or tests.
 
 ```
 VectorIndexer.run(config, inputs, output_base)
-  ├─ resolve_embedding()      → LangChain Embeddings (+ local-model fallback warnings)
+  ├─ resolve_embedding()      → LangChain Embeddings (or raises if unavailable)
   ├─ load_documents()         → .md / .txt files and .zip members (via artifact_store)
   ├─ chunk_documents()        → overlapping chunks (langchain-text-splitters)
   └─ ChromaVectorStore.add_texts / persist   (embeds each batch with the resolved model)
@@ -88,12 +88,16 @@ selected by id:
 | `all-MiniLM-L6-v2` | Offline ONNX (ChromaDB), wrapped as an `Embeddings` adapter | none (downloads ~80 MB on first use) |
 | `BAAI/bge-*`, `intfloat/e5-*`, `sentence-transformers/*` | known but **disabled** (not shown in UI) | not installed (no PyTorch) |
 
-**Graceful failure & fallback.** When a backend's package or credential is missing,
-`build_embeddings` raises `EmbeddingProviderUnavailable`. `resolve_embedding` then
-**falls back to the local offline model** (`all-MiniLM-L6-v2`) and records a warning,
-so any run still succeeds. It re-raises only when the local model itself was the
-requested model, or when the local fallback is also unavailable (for example
-ChromaDB is not installed) — surfaced as a combined error.
+**Graceful failure (no silent fallback).** When a backend's package or credential is
+missing, `build_embeddings` raises `EmbeddingProviderUnavailable` and `resolve_embedding`
+propagates it — there is **no automatic fallback** to the local offline model, so a
+failed cloud model surfaces an actionable error instead of silently switching backends
+(which would change the index's embeddings). The indexer records that error on
+`IndexingResult.errors`, classified by cause via `classify_model_unavailable`
+(`vector.missing_openai_key`, `vector.missing_aws_credentials`, or the generic
+`vector.model_unavailable`), so a UI can guide the user. The local offline model
+(`all-MiniLM-L6-v2`) is always selectable explicitly and needs no credentials or network
+after its one-time download.
 
 **Model metadata (no provider construction).** `get_embedding_model_info(model_id)`
 and `EMBEDDING_MODEL_INFOS` expose static `EmbeddingModelInfo` records — `kind`
@@ -149,6 +153,6 @@ to reopen an index with the same embeddings and run retrieval (Steps 3-5).
 | `languages.py` | `LUCENE_LANGUAGES`, `DEFAULT_LANGUAGE` |
 | `document_loader.py` | load `.md` / `.txt` / `.zip` into documents |
 | `chunking.py` | overlapping chunks via langchain-text-splitters |
-| `embeddings/` | LangChain `Embeddings` builders, catalog, registry, fallback policy |
+| `embeddings/` | LangChain `Embeddings` builders, catalog, registry, resolution policy |
 | `vector_store/` | `VectorStore` interface and `ChromaVectorStore` (langchain-chroma) |
 | `indexer.py` | `VectorIndexer.run` orchestration |

@@ -94,7 +94,7 @@ from crawl4md_streamlit.support import (
 )
 from crawl4md_streamlit.vector_index_jobs import (
     VectorIndexJob,
-    has_ssl_certificate_error,
+    embedding_error_hint_key,
     start_vector_index_job,
     vector_progress_fraction,
 )
@@ -203,6 +203,7 @@ _STATE_IDLE = "idle"
 _STATE_RUNNING = "running"
 _STATE_STOPPED = "stopped"
 _VECTOR_TERMINAL_STATES = frozenset({_STATE_CANCELLED, _STATE_COMPLETED, _STATE_FAILED})
+_ACTIVE_JOB_STATES = frozenset({_STATE_RUNNING, _STATE_CANCEL_REQUESTED})
 _REFRESH_FORM_STATES = {
     _STATE_COMPLETED,
     _STATE_FAILED,
@@ -1227,6 +1228,35 @@ def _job_is_alive(job: CrawlJob | None = None) -> bool:
     return bool(current_job is not None and current_job.thread.is_alive())
 
 
+def _crawl_job_active() -> bool:
+    """Return True while the crawl job is running, cancelling, or still alive."""
+    return _job_is_alive() or st.session_state.job_state in _ACTIVE_JOB_STATES
+
+
+def _vector_job_active() -> bool:
+    """Return True while the vector-index job is running, cancelling, or still alive."""
+    job = st.session_state.get("vector_index_job")
+    alive = job is not None and job.thread.is_alive()
+    return alive or st.session_state.vector_index_state in _ACTIVE_JOB_STATES
+
+
+def _auto_refresh_fragment(
+    body: Callable[[], None],
+    *,
+    active: bool,
+    interval: str = _LIVE_AREA_REFRESH_INTERVAL,
+) -> None:
+    """Render *body* as a fragment that auto-reruns only while *active*.
+
+    Passing ``run_every=None`` while idle schedules no auto-rerun timer, so an
+    idle or navigated-away page leaves no stale fragment timer to fire after a
+    later full-app rerun (which otherwise logs a benign "fragment ... does not
+    exist anymore" warning). Starting a job triggers a full-app rerun that
+    re-registers the fragment with the polling interval.
+    """
+    st.fragment(run_every=interval if active else None)(body)()
+
+
 def _drain_job_events(job: CrawlJob | None) -> bool:
     """Apply worker events to the Streamlit-facing crawl state."""
     if job is None:
@@ -1563,12 +1593,12 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
         with st.expander(strings["VEC_RESULT_ERRORS_LABEL"], expanded=True):
             for error in errors:
                 st.write(f"- {localize_message(strings, error)}")
-        if has_ssl_certificate_error(errors):
-            st.info(strings["VEC_ERROR_SSL_HINT"])
+        hint_key = embedding_error_hint_key(errors)
+        if hint_key:
+            st.info(strings[hint_key])
 
 
-@st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
-def _render_vector_index_live_area() -> None:
+def _vector_index_live_area_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     job = st.session_state.get("vector_index_job")
     if job is not None:
@@ -1580,13 +1610,16 @@ def _render_vector_index_live_area() -> None:
         ):
             st.session_state.vector_index_job = None
             st.rerun()
-    expanded = st.session_state.vector_index_state in {
-        _STATE_RUNNING,
-        _STATE_CANCEL_REQUESTED,
-    } or bool(st.session_state.vector_index_result)
+    expanded = st.session_state.vector_index_state in _ACTIVE_JOB_STATES or bool(
+        st.session_state.vector_index_result
+    )
     with st.expander(strings["VEC_PROGRESS_HEADER"], expanded=expanded):
-        st.caption(strings["VEC_PROGRESS_CAPTION"])
         _render_vector_index_status(strings)
+
+
+def _render_vector_index_live_area() -> None:
+    """Auto-rerun the vector-index live area only while a vector job is active."""
+    _auto_refresh_fragment(_vector_index_live_area_body, active=_vector_job_active())
 
 
 def render_progress_and_files(
@@ -1765,14 +1798,18 @@ def _emit_crawl_progress_toasts(strings: Strings) -> None:
     st.session_state.prev_discovered_pages = discovered_pages
 
 
-@st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
-def _render_crawl_event_loop() -> None:
+def _crawl_event_loop_body() -> None:
     """Drain crawl events and emit shell-owned toasts on every workflow page."""
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     state_changed = _drain_job_events(st.session_state.job)
     if state_changed and st.session_state.job_state in _REFRESH_FORM_STATES:
         st.rerun()
     _emit_crawl_progress_toasts(strings)
+
+
+def _render_crawl_event_loop() -> None:
+    """Auto-rerun the crawl event loop only while a crawl job is active."""
+    _auto_refresh_fragment(_crawl_event_loop_body, active=_crawl_job_active())
 
 
 def _render_status_boxes() -> None:
@@ -2373,8 +2410,7 @@ def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
     _file_preview_dialog()
 
 
-@st.fragment(run_every=_DOWNLOADS_REFRESH_INTERVAL)
-def _render_downloads() -> None:
+def _downloads_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
     session_folder_str = str(session_folder.resolve())
@@ -2419,15 +2455,28 @@ def _render_downloads() -> None:
     _render_open_preview_dialog(files)
 
 
-@st.fragment(run_every=_LIVE_AREA_REFRESH_INTERVAL)
-def _render_live_area() -> None:
+def _render_downloads() -> None:
+    """Auto-rerun downloads only while a crawl or vector-index job is active."""
+    _auto_refresh_fragment(
+        _downloads_body,
+        active=_crawl_job_active() or _vector_job_active(),
+        interval=_DOWNLOADS_REFRESH_INTERVAL,
+    )
+
+
+def _live_area_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    live_expanded = st.session_state.job_state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}
+    live_expanded = st.session_state.job_state in _ACTIVE_JOB_STATES
     with st.expander(_live_statistics_label(strings), expanded=live_expanded):
         _render_status_boxes()
         _render_progress_charts()
         _render_status_rows()
         _render_activity_log()
+
+
+def _render_live_area() -> None:
+    """Auto-rerun the crawl live area only while a crawl job is active."""
+    _auto_refresh_fragment(_live_area_body, active=_crawl_job_active())
 
 
 def _live_statistics_label(strings: Mapping[str, Any]) -> str:

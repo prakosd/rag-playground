@@ -1,10 +1,10 @@
 """End-to-end vector indexing orchestration.
 
-``VectorIndexer.run`` resolves embeddings (applying the Titan -> offline
-fallback policy), loads and chunks the inputs, and writes the embedded chunks to
-a vector store inside a new timestamped run directory. The store factory and the
-embedding resolver are injectable so the flow can be tested without
-langchain-chroma or network access.
+``VectorIndexer.run`` resolves embeddings (recording a cause-specific error when
+the requested model is unavailable, with no silent local fallback), loads and
+chunks the inputs, and writes the embedded chunks to a vector store inside a new
+timestamped run directory. The store factory and the embedding resolver are
+injectable so the flow can be tested without langchain-chroma or network access.
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ class VectorIndexer:
                 config.embedding_model, config.embedding_dimension
             )
         except EmbeddingProviderUnavailable as exc:
-            result.errors.append(messages.model_unavailable(str(exc)))
+            result.errors.append(messages.classify_model_unavailable(str(exc)))
             return None
         result.warnings.extend(warnings)
         return resolved

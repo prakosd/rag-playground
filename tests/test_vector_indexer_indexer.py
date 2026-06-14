@@ -139,6 +139,26 @@ def test_run_records_error_when_embedding_unavailable(tmp_path: Path) -> None:
     assert any("no provider configured" in str(error) for error in result.errors)
 
 
+def test_run_records_cause_specific_error_for_missing_credentials(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello", encoding="utf-8")
+
+    def factory(persist_dir: Path, collection_name: str, embeddings: object) -> VectorStore:
+        return _FakeStore(persist_dir)
+
+    def resolver(model: str, dimension: int | None) -> tuple[ResolvedEmbedding, list]:
+        raise EmbeddingProviderUnavailable(
+            "OPENAI_API_KEY is not configured for OpenAI embeddings."
+        )
+
+    indexer = VectorIndexer(store_factory=factory, embedding_resolver=resolver)
+
+    result = indexer.run(IndexingConfig(), [source], tmp_path / "vector_01_demo")
+
+    assert not result.success
+    assert any(error.code == messages.CODE_MISSING_OPENAI_KEY for error in result.errors)
+
+
 def test_run_emits_progress(tmp_path: Path) -> None:
     source = tmp_path / "a.md"
     source.write_text("hello world " * 200, encoding="utf-8")

@@ -43,7 +43,7 @@ class RetrievalResult:
 def load_index_embeddings(
     run_dir: Path | str,
 ) -> tuple[ResolvedEmbedding, list[LibraryMessage]]:
-    """Build the embeddings recorded in *run_dir*'s manifest (with fallback)."""
+    """Build the embeddings recorded in *run_dir*'s manifest."""
     manifest = load_manifest(run_dir)
     model = manifest.embedding_model_used or manifest.embedding_model_requested
     if not model:

@@ -372,7 +372,7 @@ STRINGS_ID: Strings = {
     "VEC_CHUNK_OVERLAP_LABEL": "Tumpang tindih chunk",
     "VEC_CHUNK_OVERLAP_HELP": "Jumlah karakter atau token dari akhir satu chunk yang diulang di awal chunk berikutnya.",
     "VEC_EMBEDDING_MODEL_LABEL": "Model embedding",
-    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Jika model yang dipilih tidak tersedia, pengindeksan beralih ke model lokal luring (all-MiniLM-L6-v2).",
+    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Jika model yang dipilih tidak tersedia (kunci API, kredensial, atau internet tidak ada), pengindeksan berhenti dengan kesalahan dan Anda dapat beralih ke model lokal luring (all-MiniLM-L6-v2) yang tidak memerlukan penyiapan.",
     "VEC_MODEL_TAG_LOCAL": "💻 Lokal (unduh sekali)",
     "VEC_MODEL_TAG_CLOUD": "☁️ Cloud (perlu API key)",
     "VEC_MODEL_INDICATOR_LOCAL": (
@@ -390,7 +390,6 @@ STRINGS_ID: Strings = {
     "VEC_ERROR_ALREADY_RUNNING": "Sebuah pekerjaan pengindeksan sedang berjalan.",
     "VEC_ERROR_NO_ACTIVE_INDEX": "Tidak ada pekerjaan pengindeksan aktif untuk dihentikan.",
     "VEC_PROGRESS_HEADER": "\u23f3 Progres pengindeksan",
-    "VEC_PROGRESS_CAPTION": "Pantau aktivitas pengindeksan saat berjalan.",
     "VEC_STATUS_RUNNING": "Pengindeksan sedang berlangsung\u2026",
     "VEC_STATUS_CHUNKS": "Terindeks {processed} dari {total} chunk",
     "VEC_STAGE_RESOLVING_MODEL": "Menyiapkan model embedding\u2026",
@@ -409,6 +408,27 @@ STRINGS_ID: Strings = {
         "pakai. Model lokal mengunduh sekali melalui internet. Di jaringan perusahaan, "
         "atur SSL_CERT_FILE atau REQUESTS_CA_BUNDLE ke berkas sertifikat organisasi Anda, "
         "atau jalankan sekali di jaringan tanpa batasan."
+    ),
+    "VEC_ERROR_OPENAI_KEY_HINT": (
+        "Embedding OpenAI memerlukan kunci API. Setel OPENAI_API_KEY di berkas .env "
+        "(atau environment) lalu mulai ulang aplikasi \u2014 atau pilih model offline "
+        "lokal, yang tidak memerlukan kunci atau internet."
+    ),
+    "VEC_ERROR_AWS_CREDENTIALS_HINT": (
+        "Embedding Amazon Titan memerlukan kredensial AWS. Setel AWS_ACCESS_KEY_ID, "
+        "AWS_SECRET_ACCESS_KEY, dan AWS_REGION (atau AWS_PROFILE) di berkas .env lalu "
+        "mulai ulang aplikasi \u2014 atau pilih model offline lokal, yang tidak "
+        "memerlukan kredensial atau internet."
+    ),
+    "VEC_ERROR_EMBEDDING_FAILED_HINT": (
+        "Layanan embedding tidak dapat dijangkau. Periksa koneksi internet serta proxy "
+        "atau firewall, lalu coba lagi \u2014 atau pilih model offline lokal, yang "
+        "berjalan tanpa internet."
+    ),
+    "VEC_ERROR_MODEL_UNAVAILABLE_HINT": (
+        "Model embedding yang dipilih tidak tersedia. Pastikan paket penyedia dan "
+        "kredensialnya terpasang serta terkonfigurasi \u2014 atau pilih model offline "
+        "lokal, yang tidak memerlukan penyiapan."
     ),
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {
@@ -443,9 +463,9 @@ STRINGS_ID: Strings = {
             "Situs tampaknya memblokir akses otomatis; "
             "berhenti sejenak sekitar {wait_seconds:.0f}d sebelum melanjutkan."
         ),
-        "vector.embedding_fallback": (
-            "Model embedding yang dipilih tidak dapat digunakan: {detail} "
-            "Beralih ke model offline lokal ({local_model})."
+        "vector.missing_openai_key": ("Model embedding OpenAI memerlukan kunci API: {detail}"),
+        "vector.missing_aws_credentials": (
+            "Model embedding Amazon Titan memerlukan kredensial AWS: {detail}"
         ),
         "vector.dimension_mismatch": (
             "Dimensi embedding {requested_dimension} tidak didukung oleh "

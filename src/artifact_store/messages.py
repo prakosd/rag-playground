@@ -34,7 +34,7 @@ class LibraryMessage:
 
     Attributes:
         code: Stable identifier a UI maps to a localized template, e.g.
-            ``"vector.embedding_fallback"``. Not meant to be shown verbatim.
+            ``"vector.dimension_mismatch"``. Not meant to be shown verbatim.
         default_text: Complete English sentence shown when no localization is
             available. ``str(message)`` returns this, so notebooks, logs, and
             JSON manifests stay readable.

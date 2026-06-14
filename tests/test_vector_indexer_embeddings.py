@@ -48,48 +48,29 @@ def test_openai_without_key_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> N
         build_embeddings(OPENAI_MODEL)
 
 
-def test_default_model_falls_back_to_offline() -> None:
+def test_unavailable_default_model_raises_without_fallback() -> None:
     def failing_build(model: str, *, dimension: int | None = None) -> ResolvedEmbedding:
         raise EmbeddingProviderUnavailable("titan unavailable")
 
-    def offline_build(*, dimension: int | None = None) -> ResolvedEmbedding:
-        return _resolved("offline", 384)
-
-    resolved, warnings = resolve_embedding(
-        DEFAULT_EMBEDDING_MODEL, 512, build=failing_build, default_build=offline_build
-    )
-
-    assert resolved.model_id == "offline"
-    assert any(warning.code == messages.CODE_EMBEDDING_FALLBACK for warning in warnings)
-    assert any("offline" in str(warning).lower() for warning in warnings)
+    with pytest.raises(EmbeddingProviderUnavailable):
+        resolve_embedding(DEFAULT_EMBEDDING_MODEL, 512, build=failing_build)
 
 
-def test_non_default_unavailable_model_falls_back_to_offline() -> None:
+def test_unavailable_cloud_model_raises_without_fallback() -> None:
     def failing_build(model: str, *, dimension: int | None = None) -> ResolvedEmbedding:
         raise EmbeddingProviderUnavailable("openai unavailable")
 
-    def offline_build(*, dimension: int | None = None) -> ResolvedEmbedding:
-        return _resolved("offline", 384)
-
-    resolved, warnings = resolve_embedding(
-        OPENAI_MODEL, 512, build=failing_build, default_build=offline_build
-    )
-
-    assert resolved.model_id == "offline"
-    assert any(warning.code == messages.CODE_EMBEDDING_FALLBACK for warning in warnings)
-    assert any("offline" in str(warning).lower() for warning in warnings)
+    # A failed cloud model surfaces the error; it does not silently switch to the
+    # local offline model (resolve_embedding has no fallback path).
+    with pytest.raises(EmbeddingProviderUnavailable):
+        resolve_embedding(OPENAI_MODEL, 512, build=failing_build)
 
 
 def test_available_model_resolves_without_warnings() -> None:
     def build(model: str, *, dimension: int | None = None) -> ResolvedEmbedding:
         return _resolved(model, dimension or 384)
 
-    def offline_build(*, dimension: int | None = None) -> ResolvedEmbedding:
-        return _resolved("offline", 384)
-
-    resolved, warnings = resolve_embedding(
-        OPENAI_MODEL, 384, build=build, default_build=offline_build
-    )
+    resolved, warnings = resolve_embedding(OPENAI_MODEL, 384, build=build)
 
     assert resolved.model_id == OPENAI_MODEL
     assert warnings == []
@@ -99,38 +80,15 @@ def test_requested_local_model_failure_raises() -> None:
     def failing_build(model: str, *, dimension: int | None = None) -> ResolvedEmbedding:
         raise EmbeddingProviderUnavailable("chromadb missing")
 
-    def offline_build(*, dimension: int | None = None) -> ResolvedEmbedding:
-        return _resolved("offline", 384)
-
     with pytest.raises(EmbeddingProviderUnavailable):
-        resolve_embedding(
-            DEFAULT_LOCAL_MODEL, 384, build=failing_build, default_build=offline_build
-        )
-
-
-def test_fallback_failure_raises_combined_error() -> None:
-    def failing_build(model: str, *, dimension: int | None = None) -> ResolvedEmbedding:
-        raise EmbeddingProviderUnavailable("titan unavailable")
-
-    def failing_offline(*, dimension: int | None = None) -> ResolvedEmbedding:
-        raise EmbeddingProviderUnavailable("chromadb missing")
-
-    with pytest.raises(EmbeddingProviderUnavailable) as exc_info:
-        resolve_embedding(OPENAI_MODEL, 512, build=failing_build, default_build=failing_offline)
-
-    message = str(exc_info.value)
-    assert "titan unavailable" in message
-    assert "chromadb missing" in message
+        resolve_embedding(DEFAULT_LOCAL_MODEL, 384, build=failing_build)
 
 
 def test_dimension_mismatch_adds_warning() -> None:
     def build(model: str, *, dimension: int | None = None) -> ResolvedEmbedding:
         return _resolved("fixed", 384)
 
-    def offline_build(*, dimension: int | None = None) -> ResolvedEmbedding:
-        return _resolved("offline", 384)
-
-    resolved, warnings = resolve_embedding("fixed", 512, build=build, default_build=offline_build)
+    resolved, warnings = resolve_embedding("fixed", 512, build=build)
 
     assert resolved.dimension == 384
     assert any(warning.code == messages.CODE_DIMENSION_MISMATCH for warning in warnings)

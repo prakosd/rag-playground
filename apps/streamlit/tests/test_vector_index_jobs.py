@@ -11,13 +11,19 @@ from vector_indexer.indexer import (
     STAGE_RESOLVING_MODEL,
     STAGE_SAVING,
 )
-from vector_indexer.messages import CODE_SSL_CERTIFICATE
+from vector_indexer.messages import (
+    CODE_EMBEDDING_FAILED,
+    CODE_MISSING_AWS_CREDENTIALS,
+    CODE_MISSING_OPENAI_KEY,
+    CODE_MODEL_UNAVAILABLE,
+    CODE_SSL_CERTIFICATE,
+)
 from vector_indexer.models import IndexingResult
 
 from crawl4md_streamlit import session_manager
 from crawl4md_streamlit.vector_index_jobs import (
     drain_events,
-    has_ssl_certificate_error,
+    embedding_error_hint_key,
     job_state_from_event,
     request_cancel,
     start_vector_index_job,
@@ -175,23 +181,33 @@ def test_vector_progress_fraction_embedding_without_counts_uses_stage_label() ->
     assert 0.0 < fraction < 1.0
 
 
-def test_has_ssl_certificate_error_detects_certificate_failures() -> None:
-    assert has_ssl_certificate_error(
-        [
-            {
-                "code": CODE_SSL_CERTIFICATE,
-                "text": "Could not reach the embedding service because its TLS/SSL "
-                "certificate could not be verified.",
-            }
-        ]
+def test_embedding_error_hint_key_maps_each_cause() -> None:
+    assert embedding_error_hint_key([{"code": CODE_SSL_CERTIFICATE}]) == "VEC_ERROR_SSL_HINT"
+    assert (
+        embedding_error_hint_key([{"code": CODE_MISSING_OPENAI_KEY}]) == "VEC_ERROR_OPENAI_KEY_HINT"
+    )
+    assert (
+        embedding_error_hint_key([{"code": CODE_MISSING_AWS_CREDENTIALS}])
+        == "VEC_ERROR_AWS_CREDENTIALS_HINT"
+    )
+    assert (
+        embedding_error_hint_key([{"code": CODE_EMBEDDING_FAILED}])
+        == "VEC_ERROR_EMBEDDING_FAILED_HINT"
+    )
+    assert (
+        embedding_error_hint_key([{"code": CODE_MODEL_UNAVAILABLE}])
+        == "VEC_ERROR_MODEL_UNAVAILABLE_HINT"
     )
 
 
-def test_has_ssl_certificate_error_ignores_unrelated_errors() -> None:
-    assert not has_ssl_certificate_error(
-        [{"code": "vector.no_readable_content", "text": "No readable content."}]
-    )
-    assert not has_ssl_certificate_error([])
+def test_embedding_error_hint_key_prefers_most_specific_cause() -> None:
+    errors = [{"code": CODE_MODEL_UNAVAILABLE}, {"code": CODE_SSL_CERTIFICATE}]
+    assert embedding_error_hint_key(errors) == "VEC_ERROR_SSL_HINT"
+
+
+def test_embedding_error_hint_key_returns_none_when_no_hint() -> None:
+    assert embedding_error_hint_key([{"code": "vector.no_readable_content"}]) is None
+    assert embedding_error_hint_key([]) is None
 
 
 def test_next_vector_sequence_increments(tmp_path: Path) -> None:

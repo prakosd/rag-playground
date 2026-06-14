@@ -22,14 +22,14 @@ def test_defaults_are_info_and_empty_params() -> None:
 
 def test_as_dict_is_json_shaped() -> None:
     message = LibraryMessage(
-        code="vector.embedding_fallback",
-        default_text="Falling back.",
+        code="vector.dimension_mismatch",
+        default_text="Dimension mismatch.",
         params={"model": "m"},
         severity=SEVERITY_WARNING,
     )
     assert message.as_dict() == {
-        "code": "vector.embedding_fallback",
-        "text": "Falling back.",
+        "code": "vector.dimension_mismatch",
+        "text": "Dimension mismatch.",
         "severity": "warning",
         "params": {"model": "m"},
     }

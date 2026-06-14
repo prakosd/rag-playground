@@ -19,8 +19,9 @@ __all__ = [
     "CODE_CHUNKING_FAILED",
     "CODE_DIMENSION_MISMATCH",
     "CODE_EMBEDDING_FAILED",
-    "CODE_EMBEDDING_FALLBACK",
     "CODE_FILE_UNREADABLE",
+    "CODE_MISSING_AWS_CREDENTIALS",
+    "CODE_MISSING_OPENAI_KEY",
     "CODE_MODEL_UNAVAILABLE",
     "CODE_NO_CHUNKS",
     "CODE_NO_READABLE_CONTENT",
@@ -32,9 +33,11 @@ __all__ = [
     "cancelled_partial",
     "chunking_failed",
     "classify_embedding_failure",
+    "classify_model_unavailable",
     "dimension_mismatch",
-    "embedding_fallback",
     "file_unreadable",
+    "missing_aws_credentials",
+    "missing_openai_key",
     "model_unavailable",
     "no_chunks",
     "no_readable_content",
@@ -53,7 +56,8 @@ CODE_NO_CHUNKS = "vector.no_chunks"
 CODE_EMBEDDING_FAILED = "vector.embedding_failed"
 CODE_SSL_CERTIFICATE = "vector.ssl_certificate"
 CODE_MODEL_UNAVAILABLE = "vector.model_unavailable"
-CODE_EMBEDDING_FALLBACK = "vector.embedding_fallback"
+CODE_MISSING_OPENAI_KEY = "vector.missing_openai_key"
+CODE_MISSING_AWS_CREDENTIALS = "vector.missing_aws_credentials"
 CODE_DIMENSION_MISMATCH = "vector.dimension_mismatch"
 
 # Substrings that mark a TLS/SSL certificate failure inside a backend exception.
@@ -63,6 +67,12 @@ _SSL_ERROR_SIGNATURES = (
     "sslcertverificationerror",
     "ssl: certificate",
 )
+
+# Substrings (lowercased) that mark a specific missing-credential cause inside an
+# ``EmbeddingProviderUnavailable`` message, so the indexer can record a precise
+# error code that a UI maps to actionable guidance.
+_OPENAI_KEY_SIGNATURE = "openai_api_key"
+_AWS_CREDENTIALS_SIGNATURE = "aws credentials"
 
 
 def _warn(code: str, text: str, **params: object) -> LibraryMessage:
@@ -123,15 +133,35 @@ def model_unavailable(detail: str) -> LibraryMessage:
     )
 
 
-def embedding_fallback(requested_model: str, local_model: str, detail: str) -> LibraryMessage:
-    return _warn(
-        CODE_EMBEDDING_FALLBACK,
-        f"The selected embedding model could not be used: {detail} "
-        f"Falling back to the local offline model ({local_model}).",
-        requested_model=requested_model,
-        local_model=local_model,
+def missing_openai_key(detail: str) -> LibraryMessage:
+    return _error(
+        CODE_MISSING_OPENAI_KEY,
+        f"The OpenAI embedding model needs an API key: {detail}",
         detail=detail,
     )
+
+
+def missing_aws_credentials(detail: str) -> LibraryMessage:
+    return _error(
+        CODE_MISSING_AWS_CREDENTIALS,
+        f"The Amazon Titan embedding model needs AWS credentials: {detail}",
+        detail=detail,
+    )
+
+
+def classify_model_unavailable(detail: str) -> LibraryMessage:
+    """Return a cause-specific error from an ``EmbeddingProviderUnavailable`` message.
+
+    Distinguishes a missing OpenAI API key or missing AWS credentials from a
+    generic provider/dependency failure, so a UI can show targeted guidance
+    instead of a one-size-fits-all message.
+    """
+    lowered = detail.lower()
+    if _OPENAI_KEY_SIGNATURE in lowered:
+        return missing_openai_key(detail)
+    if _AWS_CREDENTIALS_SIGNATURE in lowered:
+        return missing_aws_credentials(detail)
+    return model_unavailable(detail)
 
 
 def dimension_mismatch(

@@ -3,8 +3,8 @@
 ``build_chat_model`` maps a catalogued model id to a concrete LangChain
 ``BaseChatModel`` via ``init_chat_model`` (the umbrella ``langchain`` package),
 gating on the provider package and credentials *before* construction so the
-offline path never touches the network. ``resolve_chat_model`` applies the
-universal echo fallback, mirroring ``vector_indexer.resolve_embedding``.
+offline path never touches the network. ``resolve_chat_model`` applies a
+universal echo fallback so the offline path still produces output.
 """
 
 from __future__ import annotations

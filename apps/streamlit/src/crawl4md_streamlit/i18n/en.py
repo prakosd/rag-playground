@@ -363,7 +363,7 @@ STRINGS_EN: Strings = {
     "VEC_CHUNK_OVERLAP_LABEL": "Chunk overlap",
     "VEC_CHUNK_OVERLAP_HELP": "Number of characters or tokens from the end of one chunk that are repeated at the start of the next.",
     "VEC_EMBEDDING_MODEL_LABEL": "Embedding model",
-    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. If the selected model is unavailable, indexing falls back to the local offline model (all-MiniLM-L6-v2).",
+    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. If the selected model is unavailable (missing API key, credentials, or internet), indexing stops with an error and you can switch to the local offline model (all-MiniLM-L6-v2), which needs no setup.",
     "VEC_MODEL_TAG_LOCAL": "💻 Local (one-time download)",
     "VEC_MODEL_TAG_CLOUD": "☁️ Cloud (needs API key)",
     "VEC_MODEL_INDICATOR_LOCAL": (
@@ -381,7 +381,6 @@ STRINGS_EN: Strings = {
     "VEC_ERROR_ALREADY_RUNNING": "An indexing job is already running.",
     "VEC_ERROR_NO_ACTIVE_INDEX": "No active indexing job to stop.",
     "VEC_PROGRESS_HEADER": "\u23f3 Indexing progress",
-    "VEC_PROGRESS_CAPTION": "Track indexing activity as it runs.",
     "VEC_STATUS_RUNNING": "Indexing in progress\u2026",
     "VEC_STATUS_CHUNKS": "Indexed {processed} of {total} chunks",
     "VEC_STAGE_RESOLVING_MODEL": "Preparing embedding model\u2026",
@@ -400,6 +399,27 @@ STRINGS_EN: Strings = {
         "download. The local model downloads once over the internet. On a corporate "
         "network, set SSL_CERT_FILE or REQUESTS_CA_BUNDLE to your organization's "
         "certificate bundle, or run once on an unrestricted network."
+    ),
+    "VEC_ERROR_OPENAI_KEY_HINT": (
+        "OpenAI embeddings need an API key. Set OPENAI_API_KEY in your .env file "
+        "(or environment) and restart the app \u2014 or pick the local offline "
+        "model, which needs no key or internet."
+    ),
+    "VEC_ERROR_AWS_CREDENTIALS_HINT": (
+        "Amazon Titan embeddings need AWS credentials. Set AWS_ACCESS_KEY_ID, "
+        "AWS_SECRET_ACCESS_KEY, and AWS_REGION (or AWS_PROFILE) in your .env file "
+        "and restart the app \u2014 or pick the local offline model, which needs no "
+        "credentials or internet."
+    ),
+    "VEC_ERROR_EMBEDDING_FAILED_HINT": (
+        "The embedding service could not be reached. Check your internet connection "
+        "and any proxy or firewall, then try again \u2014 or pick the local offline "
+        "model, which runs without internet."
+    ),
+    "VEC_ERROR_MODEL_UNAVAILABLE_HINT": (
+        "The selected embedding model is unavailable. Check that its provider "
+        "package and credentials are installed and configured \u2014 or pick the "
+        "local offline model, which needs no setup."
     ),
     # ── State display labels ──────────────────────────────────────────────
     "STATE_LABELS": {

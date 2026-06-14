@@ -10,7 +10,7 @@ and stays usable from a notebook, CLI, or tests without Streamlit.
 ```
 retrieve(run_dir, query, config)            # Step 3
   ├─ load_manifest(run_dir)                  → embedding model + collection name
-  ├─ resolve_embedding(model, dim)           → LangChain Embeddings (+ fallback)
+  ├─ resolve_embedding(model, dim)           → LangChain Embeddings (or raises if unavailable)
   └─ Chroma(...).similarity_search_*          → RetrievedChunk[] (+ relevance scores)
 
 answer_question(run_dir, question, config)  # Step 4

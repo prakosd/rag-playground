@@ -21,7 +21,13 @@ from vector_indexer.indexer import (
     STAGE_RESOLVING_MODEL,
     STAGE_SAVING,
 )
-from vector_indexer.messages import CODE_SSL_CERTIFICATE
+from vector_indexer.messages import (
+    CODE_EMBEDDING_FAILED,
+    CODE_MISSING_AWS_CREDENTIALS,
+    CODE_MISSING_OPENAI_KEY,
+    CODE_MODEL_UNAVAILABLE,
+    CODE_SSL_CERTIFICATE,
+)
 
 from crawl4md_streamlit.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
 
@@ -192,6 +198,28 @@ def vector_progress_fraction(
     return fraction, label_key
 
 
-def has_ssl_certificate_error(errors: Sequence[Mapping[str, object]]) -> bool:
-    """Return True when any error carries the library's TLS-certificate code."""
-    return any(str(error.get("code", "")) == CODE_SSL_CERTIFICATE for error in errors)
+# Embedding error code -> app i18n hint key, ordered most specific first. The
+# first matching error decides which actionable hint the UI shows below the
+# error list.
+_EMBEDDING_ERROR_HINT_KEYS: tuple[tuple[str, str], ...] = (
+    (CODE_SSL_CERTIFICATE, "VEC_ERROR_SSL_HINT"),
+    (CODE_MISSING_OPENAI_KEY, "VEC_ERROR_OPENAI_KEY_HINT"),
+    (CODE_MISSING_AWS_CREDENTIALS, "VEC_ERROR_AWS_CREDENTIALS_HINT"),
+    (CODE_EMBEDDING_FAILED, "VEC_ERROR_EMBEDDING_FAILED_HINT"),
+    (CODE_MODEL_UNAVAILABLE, "VEC_ERROR_MODEL_UNAVAILABLE_HINT"),
+)
+
+
+def embedding_error_hint_key(errors: Sequence[Mapping[str, object]]) -> str | None:
+    """Return the i18n hint key for the most specific embedding error, if any.
+
+    Maps a structured ``vector_indexer`` error code to the app string key whose
+    text tells the user what to do (set an API key, configure AWS credentials,
+    check the network, or pick the local offline model). Returns ``None`` when no
+    error carries an actionable hint.
+    """
+    codes = {str(error.get("code", "")) for error in errors}
+    for code, hint_key in _EMBEDDING_ERROR_HINT_KEYS:
+        if code in codes:
+            return hint_key
+    return None
