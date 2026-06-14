@@ -20,6 +20,31 @@ consistent and no module re-implements (or diverges on) naming or path safety.
 | `paths.py` | `ensure_within_root(root, path)` — the directory-traversal guard used before any file read or write. |
 | `archives.py` | Zip-slip-safe extraction of `.md` / `.txt` members only (`iter_text_members`, `extract_text_members`, `is_safe_member_name`). |
 | `crawl_results.py` | `list_crawl_result_files(session_root)` — discover a crawl's success content, preferring the final sorted output and falling back to `round_N/` snapshots for stopped crawls. |
+| `messages.py` | `LibraryMessage` — the shared structured-message primitive (`code`, `default_text`, `params`, `severity`) every library uses to report warnings/errors/progress to any UI. |
+
+## Structured messages
+
+`LibraryMessage` lets the libraries report user-facing warnings and errors as
+**data**, so any UI can localize them without parsing English text. `str(message)`
+returns `default_text` (a complete English sentence), and `message.as_dict()` returns
+a JSON-serializable `{code, text, severity, params}`.
+
+```python
+from artifact_store import LibraryMessage, SEVERITY_WARNING
+
+message = LibraryMessage(
+    code="vector.embedding_fallback",
+    default_text="The selected model was unavailable; using the local model.",
+    params={"local_model": "all-MiniLM-L6-v2"},
+    severity=SEVERITY_WARNING,
+)
+str(message)        # English fallback for logs/notebooks/JSON
+message.as_dict()   # {code, text, severity, params} for a UI to localize
+```
+
+`crawl4md` and `vector_indexer` build their messages on this primitive; see
+[docs/BUILDING_ANOTHER_UI.md](../../docs/BUILDING_ANOTHER_UI.md) for the full contract.
+
 
 ## Examples
 

@@ -1,12 +1,10 @@
-# crawl4md
+# rag-playground
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/rag-playground)
 
-A Python library for crawling websites and extracting their content as Markdown-formatted text files, plus a browser-based Streamlit app. It wraps [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API and a Jupyter Notebook for technical users.
+A practical RAG playground that bundles three independent Python libraries plus a browser-based Streamlit app. **Step 1** crawls websites into clean Markdown (wrapping [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API that also works in Jupyter) and **Step 2** builds a searchable vector index from those outputs. Steps 3–5 (semantic search, RAG Q&A, conversational RAG) are placeholder workspaces for now.
 
-This repository is evolving into a practical RAG playground: **Step 1** crawls websites into clean Markdown and **Step 2** builds a searchable vector index from those outputs. Steps 3–5 (semantic search, RAG Q&A, conversational RAG) are placeholder workspaces for now.
-
-**Repo rename note:** the public GitHub repository is moving to `prakosd/rag-playground`. The Python package, imports, notebook name, and Streamlit helper package remain `crawl4md` / `crawl4md_streamlit` in this phase.
+**Naming:** the pip **distribution** is `rag-playground`. The **import packages** are unchanged — `import crawl4md`, `import vector_indexer`, `import artifact_store` (and `crawl4md_streamlit` for the app). Installing `rag-playground` does not create an `import rag_playground`; you import the individual libraries you need.
 
 ## What's inside
 
@@ -30,7 +28,102 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 - **Stop-safe output** — stopping a crawl still writes final output for completed pages
 - **Vector indexing (Step 2)** — index `.md` / `.txt` / `.zip` outputs into a ChromaDB vector store with configurable chunking and embedding providers (Amazon Titan, OpenAI, or an offline default)
 
-## Quick start (library)
+## Set up local development
+
+These steps install **all three libraries** (`artifact_store`, `crawl4md`, `vector_indexer`) and the **Streamlit app** so you can work on everything.
+
+### 1. Prerequisites
+
+- **Python 3.10+** (3.12 recommended).
+- **Tesseract OCR** — only needed to read scanned/image PDFs while crawling:
+  - macOS: `brew install tesseract tesseract-lang`
+  - Debian/Ubuntu: `sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa`
+  - Windows: see the [Tesseract project](https://github.com/tesseract-ocr/tesseract).
+
+### 2. Clone and create a virtual environment
+
+```bash
+git clone https://github.com/prakosd/rag-playground.git
+cd rag-playground
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install --upgrade pip
+```
+
+### 3. Install everything (editable)
+
+```bash
+pip install -e ".[dev,all]" -e "apps/streamlit[dev]"
+```
+
+- `[dev]` adds the test/lint tools (pytest, ruff); `[all]` pulls every library and backend (`crawl`, `vector`, `bedrock`, `openai`).
+- The app package depends on `rag-playground[crawl,vector,bedrock]`, so installing it alongside the root package wires the libraries together.
+
+### 4. Finish the crawler setup
+
+The crawler drives a real browser, so run this once after the pip step:
+
+```bash
+playwright install --with-deps chromium
+crawl4ai-setup
+```
+
+### 5. Run the Streamlit app
+
+```bash
+python -m streamlit run apps/streamlit/streamlit_app.py
+```
+
+Open `http://localhost:8501`. Step 1 crawls a site; Step 2 turns the results into a vector index. Outputs are saved under `outputs/streamlit_sessions/`.
+
+> Run from the repo root so the app picks up `apps/streamlit/.streamlit/config.toml`.
+
+### 6. Run the tests
+
+```bash
+pytest                      # core library tests (root)
+pytest apps/streamlit/tests # Streamlit app tests
+ruff check .                # lint
+```
+
+**Prefer not to install anything?** Open the repo in GitHub Codespaces (badge above) or VS Code Dev Containers — the container installs all of the above and auto-starts the app at `http://localhost:8501`. See [docs/INSTALLATION.md](docs/INSTALLATION.md). Or open `notebooks/crawl4md.ipynb` for the notebook workflow.
+
+## Use the libraries without Streamlit
+
+The libraries are UI-independent — install only the component you need and drive it from your own frontend (React, Vue, PHP, a CLI, an API server, …). Each library returns plain Python result objects and emits structured progress / warning / error **events** (stable codes + data, with no UI strings baked in), so any UI can render them in its own language. See [docs/BUILDING_ANOTHER_UI.md](docs/BUILDING_ANOTHER_UI.md).
+
+### Atomic installs — pull only what you use
+
+The base install has **zero third-party dependencies** (`artifact_store` is pure standard library). Everything else is an opt-in extra, so you never download the crawler's browser stack just to build a vector index:
+
+| You want… | Install (from a clone) | Pulls Crawl4AI + browser? |
+|---|---|---|
+| Shared helpers (`artifact_store`) only | `pip install -e .` | No |
+| Crawl websites → Markdown (`crawl4md`) | `pip install -e ".[crawl]"` | Yes |
+| Vector index, offline embeddings (`vector_indexer`) | `pip install -e ".[vector]"` | **No** |
+| Vector index + Amazon Titan embeddings | `pip install -e ".[vector,bedrock]"` | No |
+| Vector index + OpenAI embeddings | `pip install -e ".[vector,openai]"` | No |
+| Everything | `pip install -e ".[all]"` | Yes |
+
+Not yet on PyPI — install from a local clone (above) or straight from GitHub, e.g.:
+
+```bash
+pip install "rag-playground[vector] @ git+https://github.com/prakosd/rag-playground.git"
+```
+
+Import the library names, not the distribution name — e.g. after installing `[vector]` you `from vector_indexer import VectorIndexer`.
+
+### How the packages depend on each other
+
+```mermaid
+graph TD
+    crawl4md --> artifact_store
+    vector_indexer --> artifact_store
+```
+
+`artifact_store` is the shared, pure-stdlib foundation. **Both `crawl4md` and `vector_indexer` require it** (it always ships in the base install), but they never depend on each other — so you can install one without the other. There is no separate `pip install artifact_store`; it comes with the `rag-playground` distribution automatically.
+
+### Library quick start
 
 ```python
 from crawl4md import SiteCrawler, CrawlerConfig, PageConfig
@@ -38,21 +131,10 @@ from crawl4md import SiteCrawler, CrawlerConfig, PageConfig
 config = CrawlerConfig(urls=["https://example.com"], limit=20, max_depth=2)
 crawler = SiteCrawler(config, PageConfig())
 results = crawler.crawl()
-crawler.print_summary(results)  # output in a timestamped folder; primary: final/sorted_success_content_*.md
+crawler.print_summary(results)  # timestamped folder; primary: final/sorted_success_content_*.md
 ```
 
-For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWriter` individually (see [src/crawl4md/README.md](src/crawl4md/README.md)).
-
-## Run it
-
-- **No-install (Codespaces / Dev Container):** click the badge above or reopen in the dev container — Streamlit auto-starts at `http://localhost:8501`. See [docs/INSTALLATION.md](docs/INSTALLATION.md).
-- **Streamlit app locally:**
-  ```bash
-  pip install -e ".[vector,bedrock]" -e "apps/streamlit"
-  cd apps/streamlit && streamlit run
-  ```
-  Then open `http://localhost:8501`. Step 1 crawls a site; Step 2 turns the results into a vector index. Outputs are saved under `outputs/streamlit_sessions/`.
-- **Notebook:** open `notebooks/crawl4md.ipynb`.
+For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWriter` individually (see [src/crawl4md/README.md](src/crawl4md/README.md)). To index the results, see [src/vector_indexer/README.md](src/vector_indexer/README.md).
 
 ## Documentation
 

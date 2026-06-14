@@ -11,7 +11,6 @@ _EXPECTED_FACADE_EXPORTS = {
     "DEFAULT_SESSIONS_ROOT": session_manager.DEFAULT_SESSIONS_ROOT,
     "GeneratedFile": generated_files.GeneratedFile,
     "JobSnapshot": crawl_jobs.JobSnapshot,
-    "PLAYWRIGHT_MISSING_BROWSER_MESSAGE": crawl_jobs.PLAYWRIGHT_MISSING_BROWSER_MESSAGE,
     "ProgressEstimate": crawl_jobs.ProgressEstimate,
     "ReadyDownload": generated_files.ReadyDownload,
     "SESSION_PREFIX": session_manager.SESSION_PREFIX,

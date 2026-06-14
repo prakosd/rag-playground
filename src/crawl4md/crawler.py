@@ -17,6 +17,8 @@ from typing import Any
 import httpx
 import nest_asyncio
 
+from artifact_store import LibraryMessage
+from crawl4md import messages
 from crawl4md._internal.block_detector import (
     _BLOCK_MAX_CONTENT_LENGTH,
 )
@@ -46,6 +48,12 @@ from crawl4md._internal.crawler_progress import (
 )
 from crawl4md._internal.crawler_progress import (
     _PROGRESS_EVENT_STATUS as _INTERNAL_PROGRESS_EVENT_STATUS,
+)
+from crawl4md._internal.crawler_progress import (
+    _PROGRESS_EVENT_WARNING as _INTERNAL_PROGRESS_EVENT_WARNING,
+)
+from crawl4md._internal.crawler_progress import (
+    emit_crawl_warning as _emit_crawl_warning_impl,
 )
 from crawl4md._internal.crawler_progress import (
     emit_page_progress as _emit_page_progress_impl,
@@ -352,6 +360,7 @@ _PROGRESS_EVENT_INTERRUPTED = _INTERNAL_PROGRESS_EVENT_INTERRUPTED
 _PROGRESS_EVENT_PAGE = _INTERNAL_PROGRESS_EVENT_PAGE
 _PROGRESS_EVENT_STARTED = _INTERNAL_PROGRESS_EVENT_STARTED
 _PROGRESS_EVENT_STATUS = _INTERNAL_PROGRESS_EVENT_STATUS
+_PROGRESS_EVENT_WARNING = _INTERNAL_PROGRESS_EVENT_WARNING
 _PROGRESS_HISTORY_FILE = _INTERNAL_PROGRESS_HISTORY_FILE
 
 # Compatibility re-export for tests and callers that imported the private
@@ -696,7 +705,7 @@ class SiteCrawler:
                 self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
                 if self._progress_history is not None:
                     self._progress_history.set_round(1)
-                print(
+                self._report_status(
                     f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---"
                 )
                 round_results = await self._crawl_urls_async(
@@ -726,7 +735,7 @@ class SiteCrawler:
                 for round_num in range(2, total_rounds + 1):
                     self._raise_if_cancelled()
                     if not failed_urls:
-                        print("\nAll pages succeeded — skipping remaining retries.")
+                        self._report_status("\nAll pages succeeded — skipping remaining retries.")
                         break
 
                     round_dir = self._round_dir(round_num)
@@ -744,7 +753,7 @@ class SiteCrawler:
                     cooldown = _ROUND_COOLDOWN * random.uniform(
                         _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
                     )
-                    print(
+                    self._report_status(
                         f"\n--- Round {round_num}/{total_rounds}: Retrying "
                         f"{len(failed_urls)} failed URL(s) "
                         f"(waiting {cooldown:.0f}s cooldown) ---"
@@ -784,7 +793,7 @@ class SiteCrawler:
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True
-            print("\n\nCrawl stopped! Writing final files...")
+            self._report_status("\n\nCrawl stopped! Writing final files...")
             saved_success, saved_fail = self._saved_results_from_sidecars()
             if saved_success or saved_fail:
                 all_success = saved_success
@@ -836,7 +845,7 @@ class SiteCrawler:
                 clear_output(wait=True)
         except ImportError:
             pass
-        print(
+        self._report_status(
             f"\n{label}! {len(all_success)} succeeded, {len(all_fail)} failed out of {total_crawled} total."
         )
         self._emit_progress(
@@ -859,7 +868,7 @@ class SiteCrawler:
             }
         )
         if self.output_dir is not None:
-            print(f"Output folder: {self.output_dir}")
+            self._report_status(f"Output folder: {self.output_dir}")
 
         # Return all results (success + remaining failures) for API consumers
         return all_success + all_fail
@@ -869,6 +878,23 @@ class SiteCrawler:
         _emit_progress_impl(self._progress_callback, event)
         if self._progress_history is not None:
             self._progress_history.record(event)
+
+    def _emit_crawl_warning(self, message: LibraryMessage) -> None:
+        """Emit a structured ``crawl_warning`` event for UI consumers."""
+        _emit_crawl_warning_impl(getattr(self, "_progress_callback", None), message)
+
+    def _warn_ocr_unavailable_once(self, *, was_warned: bool) -> None:
+        """Emit the OCR-unavailable warning once, on the False->True transition."""
+        if not was_warned and self._ocr_warned:
+            self._emit_crawl_warning(messages.ocr_unavailable())
+
+    def _report_status(self, message: str) -> None:
+        """Render a crawl-flow status line for terminal and notebook users.
+
+        Centralizes the crawler's own stdout so core logic does not call
+        ``print`` directly; a UI that consumes progress events can ignore it.
+        """
+        print(message)
 
     def _emit_page_progress(
         self,
@@ -1484,6 +1510,7 @@ class SiteCrawler:
                 ):
                     crawl_result.success = False
                     crawl_result.error = "Blocked by WAF"
+                    crawl_result.error_code = messages.CODE_BLOCKED
                     crawl_result.markdown = ""
                     waf_blocked = True
 
@@ -1503,6 +1530,7 @@ class SiteCrawler:
                     ):
                         crawl_result.success = False
                         crawl_result.error = "Blocked — page returned only boilerplate"
+                        crawl_result.error_code = messages.CODE_BLOCKED
                         crawl_result.markdown = raw_markdown
                         waf_blocked = True
                     elif page.markdown.strip():
@@ -1516,6 +1544,7 @@ class SiteCrawler:
                         )
                         crawl_result.success = False
                         crawl_result.error = _EMPTY_EXTRACTION_ERROR
+                        crawl_result.error_code = messages.CODE_EMPTY_CONTENT
                         crawl_result.markdown = raw_markdown
 
                 # PDF fallback: when a page returns very little content and is
@@ -1566,6 +1595,7 @@ class SiteCrawler:
                             self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
                         )
                     progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
+                    self._emit_crawl_warning(messages.blocked_backoff(backoff))
                     await self._sleep_with_cancel(backoff)
                 else:
                     consecutive_blocks = 0
@@ -1685,6 +1715,7 @@ class SiteCrawler:
                 progress.set_activity(f"No content found on {_shorten_url(pdf_result.url)}")
                 pdf_result.success = False
                 pdf_result.error = _EMPTY_EXTRACTION_ERROR
+                pdf_result.error_code = messages.CODE_EMPTY_CONTENT
         return crawl_result, terminal_page
 
     async def _handle_direct_pdf_url(
@@ -1720,6 +1751,7 @@ class SiteCrawler:
                 progress.set_activity(f"No content found on {_shorten_url(crawl_result.url)}")
                 crawl_result.success = False
                 crawl_result.error = _EMPTY_EXTRACTION_ERROR
+                crawl_result.error_code = messages.CODE_EMPTY_CONTENT
 
         if not crawl_result.success:
             raw_body = crawl_result.markdown.strip() or crawl_result.html.strip() or None
@@ -1853,6 +1885,7 @@ class SiteCrawler:
             markdown="",
             success=False,
             error=_REDIRECT_STORM_ERROR,
+            error_code=messages.CODE_REDIRECT_LOOP,
         )
         results.append(crawl_result)
         self._record_failed_page_content(crawl_result)
@@ -1884,6 +1917,7 @@ class SiteCrawler:
             self.config.delay * random.uniform(_WAF_BACKOFF_MIN, _WAF_BACKOFF_MAX),
         )
         progress.set_activity(f"Website is blocking us \u2014 waiting {backoff:.1f}s")
+        self._emit_crawl_warning(messages.blocked_backoff(backoff))
         await self._sleep_with_cancel(backoff)
 
     def _discover_links_from_result(
@@ -1991,6 +2025,7 @@ class SiteCrawler:
 
     async def _download_pdf(self, url: str) -> CrawlResult:
         """Download a PDF and convert it to Markdown via pymupdf4llm."""
+        was_warned = self._ocr_warned
         result, self._ocr_warned = await _download_pdf_impl(
             url,
             headers=dict(self.config.headers) if self.config.headers else {},
@@ -2001,16 +2036,19 @@ class SiteCrawler:
             client=getattr(self, "_pdf_client", None),
             http_client_cls=httpx.AsyncClient,
         )
+        self._warn_ocr_unavailable_once(was_warned=was_warned)
         return result
 
     def _pdf_to_markdown(self, doc: Any) -> str:
         """Convert a PyMuPDF document to Markdown, with optional OCR."""
+        was_warned = self._ocr_warned
         markdown, self._ocr_warned = _pdf_to_markdown_impl(
             doc,
             ocr_languages=self.page_config.ocr_languages,
             ocr_warned=self._ocr_warned,
             to_markdown=pymupdf4llm.to_markdown,
         )
+        self._warn_ocr_unavailable_once(was_warned=was_warned)
         return markdown
 
     # ------------------------------------------------------------------

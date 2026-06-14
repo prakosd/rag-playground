@@ -5,6 +5,7 @@ from crawl4md_streamlit.i18n import (
     STRINGS_EN,
     STRINGS_ID,
     get_strings,
+    localize_message,
 )
 
 
@@ -78,6 +79,35 @@ def test_discovered_delta_has_n_and_m_placeholders() -> None:
         val = catalog["METRIC_DISCOVERED_DELTA"]
         assert "{n}" in val, f"STRINGS_{name}[METRIC_DISCOVERED_DELTA] missing {{n}}"
         assert "{m}" in val, f"STRINGS_{name}[METRIC_DISCOVERED_DELTA] missing {{m}}"
+
+
+def test_localize_message_falls_back_to_default_text_when_code_unknown() -> None:
+    message = {"code": "vector.no_chunks", "text": "No chunks were produced.", "params": {}}
+    # EN has no override for this code, so the library default text is returned.
+    assert localize_message(STRINGS_EN, message) == "No chunks were produced."
+
+
+def test_localize_message_uses_language_template_with_params() -> None:
+    message = {
+        "code": "vector.skipped_unsupported_file",
+        "text": "Skipped unsupported file: a.pdf",
+        "params": {"file": "a.pdf"},
+    }
+    localized = localize_message(STRINGS_ID, message)
+    assert localized != message["text"]
+    assert "a.pdf" in localized
+
+
+def test_localize_message_browser_missing_is_overridden_in_english() -> None:
+    message = {"code": "crawl.browser_missing", "text": "Library default.", "params": {}}
+    localized = localize_message(STRINGS_EN, message)
+    assert "playwright install --with-deps chromium" in localized
+
+
+def test_localize_message_bad_params_fall_back_to_default_text() -> None:
+    # Template expects {file} but params omit it -> fall back to default text.
+    message = {"code": "vector.skipped_unsupported_file", "text": "Skipped a.pdf", "params": {}}
+    assert localize_message(STRINGS_ID, message) == "Skipped a.pdf"
 
 
 def test_processed_retry_delta_has_n_placeholder() -> None:

@@ -49,6 +49,7 @@ def _build_splitter(chunk_size: int, chunk_overlap: int) -> Any:
         from langchain_text_splitters import RecursiveCharacterTextSplitter
     except ImportError as exc:  # pragma: no cover - exercised only without the dep
         raise RuntimeError(
-            "langchain-text-splitters is required for chunking; install it."
+            "langchain-text-splitters is required for chunking. Install it with: "
+            'pip install "rag-playground[vector]"'
         ) from exc
     return RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)

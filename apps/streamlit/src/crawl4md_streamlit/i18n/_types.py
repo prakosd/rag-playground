@@ -176,7 +176,6 @@ class Strings(TypedDict):
     ERROR_SESSION_STORAGE_WRITE: str
     ERROR_SESSION_FOLDER_MISSING: str
     ERROR_CRAWL_FAILED_FALLBACK: str
-    ERROR_PLAYWRIGHT_MISSING: str
     # ── Activity log ──────────────────────────────────────────────────────
     ACTIVITY_LOG_HEADER: str
     # ── Files section ─────────────────────────────────────────────────────
@@ -268,3 +267,8 @@ class Strings(TypedDict):
     VEC_ERROR_SSL_HINT: str
     # ── State display labels (state_key -> display name) ──────────────────
     STATE_LABELS: dict[str, str]
+    # ── Library message code -> localized template (str.format params) ─────
+    # Keys are stable codes emitted by the crawl4md / vector_indexer libraries.
+    # Codes absent here fall back to the library-provided English text, so the
+    # libraries stay the single source of truth for wording.
+    MESSAGE_CODES: dict[str, str]

@@ -11,6 +11,7 @@ from vector_indexer.indexer import (
     STAGE_RESOLVING_MODEL,
     STAGE_SAVING,
 )
+from vector_indexer.messages import CODE_SSL_CERTIFICATE
 from vector_indexer.models import IndexingResult
 
 from crawl4md_streamlit import session_manager
@@ -177,14 +178,19 @@ def test_vector_progress_fraction_embedding_without_counts_uses_stage_label() ->
 def test_has_ssl_certificate_error_detects_certificate_failures() -> None:
     assert has_ssl_certificate_error(
         [
-            "Embedding or storage failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate "
-            "verify failed: self-signed certificate in certificate chain (_ssl.c:1010)"
+            {
+                "code": CODE_SSL_CERTIFICATE,
+                "text": "Could not reach the embedding service because its TLS/SSL "
+                "certificate could not be verified.",
+            }
         ]
     )
 
 
 def test_has_ssl_certificate_error_ignores_unrelated_errors() -> None:
-    assert not has_ssl_certificate_error(["No readable .md or .txt content was found."])
+    assert not has_ssl_certificate_error(
+        [{"code": "vector.no_readable_content", "text": "No readable content."}]
+    )
     assert not has_ssl_certificate_error([])
 
 

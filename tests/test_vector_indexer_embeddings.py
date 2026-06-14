@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import pytest
 
+from vector_indexer import messages
 from vector_indexer.embeddings import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_LOCAL_MODEL,
@@ -72,7 +73,8 @@ def test_default_model_falls_back_to_offline() -> None:
     )
 
     assert provider.model_id == "offline"
-    assert any("offline" in warning.lower() for warning in warnings)
+    assert any(warning.code == messages.CODE_EMBEDDING_FALLBACK for warning in warnings)
+    assert any("offline" in str(warning).lower() for warning in warnings)
 
 
 def test_non_default_unavailable_model_falls_back_to_offline() -> None:
@@ -87,7 +89,8 @@ def test_non_default_unavailable_model_falls_back_to_offline() -> None:
     )
 
     assert provider.model_id == "offline"
-    assert any("offline" in warning.lower() for warning in warnings)
+    assert any(warning.code == messages.CODE_EMBEDDING_FALLBACK for warning in warnings)
+    assert any("offline" in str(warning).lower() for warning in warnings)
 
 
 def test_available_model_resolves_without_warnings() -> None:
@@ -143,4 +146,5 @@ def test_dimension_mismatch_adds_warning() -> None:
     provider, warnings = resolve_embedding("fixed", 512, build=build, default_build=offline_build)
 
     assert provider.dimension == 384
-    assert any("dimension" in warning.lower() for warning in warnings)
+    assert any(warning.code == messages.CODE_DIMENSION_MISMATCH for warning in warnings)
+    assert any("dimension" in str(warning).lower() for warning in warnings)

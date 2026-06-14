@@ -204,6 +204,7 @@ class CrawlResult(BaseModel):
     markdown: str = ""
     success: bool = True
     error: str | None = None
+    error_code: str | None = None
     redirected_url: str | None = None
     is_pdf: bool = False
 

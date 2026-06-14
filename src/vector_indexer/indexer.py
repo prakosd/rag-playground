@@ -15,7 +15,9 @@ from collections.abc import Callable, Iterator, Sequence
 from itertools import count
 from pathlib import Path
 
+from artifact_store import LibraryMessage
 from artifact_store.naming import format_utc_timestamp_slug
+from vector_indexer import messages
 from vector_indexer.chunking import chunk_documents
 from vector_indexer.config import IndexingConfig
 from vector_indexer.document_loader import load_documents
@@ -44,7 +46,7 @@ STAGE_EMBEDDING = "embedding"
 STAGE_SAVING = "saving"
 
 StoreFactory = Callable[[Path], VectorStore]
-EmbeddingResolver = Callable[[str, int | None], tuple[EmbeddingProvider, list[str]]]
+EmbeddingResolver = Callable[[str, int | None], tuple[EmbeddingProvider, list[LibraryMessage]]]
 ProgressCallback = Callable[[dict[str, object]], None]
 CancelCheck = Callable[[], bool]
 
@@ -108,7 +110,7 @@ class VectorIndexer:
                 config.embedding_model, config.embedding_dimension
             )
         except EmbeddingProviderUnavailable as exc:
-            result.errors.append(str(exc))
+            result.errors.append(messages.model_unavailable(str(exc)))
             return None
         result.warnings.extend(warnings)
         return provider
@@ -126,12 +128,10 @@ class VectorIndexer:
         result.skipped_file_count = load_result.skipped_file_count
         result.warnings.extend(load_result.warnings)
         if not load_result.documents:
-            result.errors.append(
-                "No readable .md or .txt content was found in the selected inputs."
-            )
+            result.errors.append(messages.no_readable_content())
             return None
         if _cancelled(should_cancel):
-            result.warnings.append("Indexing was cancelled before chunking started.")
+            result.warnings.append(messages.cancelled_before_chunking())
             return None
         _report_stage(progress_callback, STAGE_CHUNKING)
         try:
@@ -142,10 +142,10 @@ class VectorIndexer:
                 language=config.language,
             )
         except RuntimeError as exc:
-            result.errors.append(str(exc))
+            result.errors.append(messages.chunking_failed(str(exc)))
             return None
         if not chunks:
-            result.errors.append("The selected inputs produced no indexable text chunks.")
+            result.errors.append(messages.no_chunks())
             return None
         return chunks
 
@@ -168,7 +168,7 @@ class VectorIndexer:
         try:
             for batch in _batched(chunks, _EMBED_BATCH_SIZE):
                 if _cancelled(should_cancel):
-                    result.warnings.append("Indexing was cancelled; partial results were saved.")
+                    result.warnings.append(messages.cancelled_partial())
                     break
                 embeddings = provider.embed_documents([chunk.text for chunk in batch])
                 records = [
@@ -187,7 +187,7 @@ class VectorIndexer:
             _report_stage(progress_callback, STAGE_SAVING)
             store.persist()
         except Exception as exc:  # noqa: BLE001 - boundary around the embedding backend
-            result.errors.append(f"Embedding or storage failed: {exc}")
+            result.errors.append(messages.classify_embedding_failure(str(exc)))
             return
         result.indexed_file_count = len(indexed_sources)
 
@@ -249,8 +249,8 @@ def _write_manifest(
         "indexed_file_count": result.indexed_file_count,
         "indexed_chunk_count": result.indexed_chunk_count,
         "skipped_file_count": result.skipped_file_count,
-        "warnings": result.warnings,
-        "errors": result.errors,
+        "warnings": [message.as_dict() for message in result.warnings],
+        "errors": [message.as_dict() for message in result.errors],
     }
     with contextlib.suppress(OSError):
         (run_dir / _MANIFEST_NAME).write_text(

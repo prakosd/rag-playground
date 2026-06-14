@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from vector_indexer import IndexingConfig, VectorIndexer
+from vector_indexer import IndexingConfig, VectorIndexer, messages
 from vector_indexer.indexer import (
     STAGE_CHUNKING,
     STAGE_EMBEDDING,
@@ -21,6 +21,7 @@ from vector_indexer.indexer import (
     STAGE_RESOLVING_MODEL,
     STAGE_SAVING,
 )
+from vector_indexer.messages import CODE_SSL_CERTIFICATE
 
 from crawl4md_streamlit.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
 
@@ -44,11 +45,6 @@ _VECTOR_STAGE_PROGRESS: dict[str, tuple[float, str]] = {
     STAGE_SAVING: (0.97, "VEC_STAGE_SAVING"),
 }
 _VECTOR_EMBED_SPAN = 0.65
-_SSL_ERROR_SIGNATURES = (
-    "certificate_verify_failed",
-    "certificate verify failed",
-    "self-signed certificate",
-)
 
 
 @dataclass(frozen=True)
@@ -127,12 +123,13 @@ def start_vector_index_job(
                     "indexed_file_count": result.indexed_file_count,
                     "indexed_chunk_count": result.indexed_chunk_count,
                     "skipped_file_count": result.skipped_file_count,
-                    "warnings": list(result.warnings),
-                    "errors": list(result.errors),
+                    "warnings": [message.as_dict() for message in result.warnings],
+                    "errors": [message.as_dict() for message in result.errors],
                 }
             )
         except Exception as exc:  # noqa: BLE001 - surface background errors to the UI.
-            emit({"event": _EVENT_FAILED, "errors": [f"{type(exc).__name__}: {exc}"]})
+            failure = messages.classify_embedding_failure(f"{type(exc).__name__}: {exc}")
+            emit({"event": _EVENT_FAILED, "errors": [failure.as_dict()]})
 
     thread = threading.Thread(target=run, name=f"vector-index-{vector_id}", daemon=True)
     job = VectorIndexJob(
@@ -195,7 +192,6 @@ def vector_progress_fraction(
     return fraction, label_key
 
 
-def has_ssl_certificate_error(errors: Sequence[str]) -> bool:
-    """Return True when any error looks like a TLS certificate verification failure."""
-    lowered = " ".join(errors).lower()
-    return any(signature in lowered for signature in _SSL_ERROR_SIGNATURES)
+def has_ssl_certificate_error(errors: Sequence[Mapping[str, object]]) -> bool:
+    """Return True when any error carries the library's TLS-certificate code."""
+    return any(str(error.get("code", "")) == CODE_SSL_CERTIFICATE for error in errors)

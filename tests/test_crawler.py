@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from crawl4md import messages
 from crawl4md.config import CrawlerConfig, PageConfig
 from crawl4md.crawler import _BLOCK_SIGNATURES, _PROGRESS_EVENT_STATUS, SiteCrawler
 from crawl4md.extractor import ContentExtractor
@@ -1461,6 +1462,7 @@ class TestIsBlocked:
 
         assert results[0].success is False
         assert results[0].error == "Blocked by WAF"
+        assert results[0].error_code == messages.CODE_BLOCKED
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_waf_signature_with_nav_chrome_still_blocked(self, mock_crawler_cls, tmp_path: Path):

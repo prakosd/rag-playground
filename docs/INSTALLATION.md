@@ -6,7 +6,7 @@ Requires Python 3.10+ (3.12 or 3.13 recommended).
 
 ## Run without installing anything
 
-The easiest way to use crawl4md is via a pre-configured environment — no Python,
+The easiest way to get started is via a pre-configured environment — no Python,
 Chromium, or Tesseract setup required.
 
 ```mermaid
@@ -33,34 +33,53 @@ configured VS Code environment in your browser. Free tier: 120 core-hours/month.
 
 ## Local install
 
+The pip distribution is `rag-playground`. Install it from a clone. The **base
+install pulls no third-party packages** (the `artifact_store` library is pure
+standard library) — add the extra(s) for the component you need.
+
 ```bash
-pip install -e .
+# Everything (all libraries + dev tools) plus the Streamlit app:
+pip install -e ".[dev,all]" -e "apps/streamlit[dev]"
+```
+
+If you installed the `crawl` or `all` extra, finish the **crawler** setup once (it
+drives a real browser):
+
+```bash
 crawl4ai-setup                          # one-time browser setup
 playwright install --with-deps chromium # install Chromium for JS rendering
 ```
 
-For library development, install the core development tools:
+### Install only what you need
 
-```bash
-pip install -e ".[dev]"
-```
+Each component is opt-in, so you never download the crawler's browser stack just to
+build a vector index:
 
-For the bundled Streamlit app (and the Step 2 vector-index backends), install the
-app package too:
+| Install | Gives you | Heavy crawler stack? |
+|---|---|---|
+| `pip install -e .` | `artifact_store` helpers (pure stdlib) | No |
+| `pip install -e ".[crawl]"` | `crawl4md` crawler | Yes |
+| `pip install -e ".[vector]"` | `vector_indexer` + offline embeddings | No |
+| `pip install -e ".[vector,bedrock]"` | + Amazon Titan embeddings | No |
+| `pip install -e ".[vector,openai]"` | + OpenAI embeddings | No |
+| `pip install -e ".[all]"` | every library + backend | Yes |
 
-```bash
-pip install -e ".[dev,vector,bedrock,openai]" -e "apps/streamlit[dev]"
-```
+Remember to import the library names (`crawl4md`, `vector_indexer`, `artifact_store`),
+not the distribution name. Add `dev` to any of the above for pytest/ruff, e.g.
+`pip install -e ".[dev,vector]"`.
 
 ### Optional extras
 
-The vector-indexing backends are opt-in so the core crawler stays lightweight:
+Every library is an opt-in extra so each install stays lightweight:
 
 | Extra | Adds | Used for |
 |---|---|---|
-| `vector` | `chromadb`, `langchain-text-splitters` | chunking + vector store (Step 2) |
+| `crawl` | `crawl4ai`, `trafilatura`, `markdownify`, `beautifulsoup4`, `mdformat`, `mdformat-gfm`, `nest-asyncio`, `httpx`, `pydantic`, `pymupdf4llm` | crawling + Markdown extraction (Step 1) |
+| `vector` | `chromadb`, `langchain-text-splitters`, `pydantic` | chunking + vector store (Step 2) |
 | `bedrock` | `boto3` | Amazon Titan embeddings (default model) |
 | `openai` | `openai` | OpenAI embeddings |
+| `all` | `crawl` + `vector` + `bedrock` + `openai` | the full playground |
+| `dev` | `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `ipykernel` | tests, lint, notebook kernel |
 
 Cloud embedding credentials are read from the environment. Copy
 [`.env.example`](../.env.example) to `.env` and set `AWS_*` / `OPENAI_API_KEY`; the
@@ -77,7 +96,7 @@ model needs no credentials.
 >
 > **Workaround if you must use Python 3.14:**
 > ```bash
-> pip install -e . --no-deps
+> pip install -e ".[crawl]" --no-deps
 > pip install --only-binary lxml crawl4ai trafilatura markdownify pydantic nest-asyncio "chardet<6,>=5.2.0" beautifulsoup4 mdformat mdformat-gfm pymupdf4llm httpx --no-deps
 > # then install the remaining transitive deps via pip as needed
 > ```

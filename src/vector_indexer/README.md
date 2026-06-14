@@ -17,12 +17,16 @@ VectorIndexer.run(config, inputs, output_base)
 ```
 
 The result is a structured `IndexingResult` (success flag, output directory,
-indexed/skipped counts, warnings, errors) that any caller can render.
+indexed/skipped counts, warnings, errors) that any caller can render. `warnings` and
+`errors` are `artifact_store.LibraryMessage` objects: each carries a stable `code`
+plus structured `params`, and `str(message)` yields a ready-to-show English
+sentence. A UI localizes by `code` and falls back to that text. See
+[docs/BUILDING_ANOTHER_UI.md](../../docs/BUILDING_ANOTHER_UI.md).
 
 ## Install
 
-The backends are opt-in extras on the `crawl4md` distribution (the library ships
-inside it):
+The backends are opt-in extras on the `rag-playground` distribution (the library
+ships inside it):
 
 ```bash
 pip install -e ".[vector]"            # chromadb + langchain-text-splitters
@@ -59,7 +63,8 @@ print(result.success, result.indexed_chunk_count, result.warnings)
 - `.zip` archives — only their `.md` / `.txt` members are indexed; everything else
   is ignored. Extraction is zip-slip-safe (handled by `artifact_store.archives`).
 
-Unsupported or unreadable inputs are skipped and reported in `IndexingResult.warnings`.
+Unsupported or unreadable inputs are skipped and reported in `IndexingResult.warnings`
+as `LibraryMessage` objects (e.g. code `vector.skipped_unsupported_file`).
 
 ## Progress reporting
 

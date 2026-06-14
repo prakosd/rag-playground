@@ -12,22 +12,29 @@ Dev container is defined in `.devcontainer/devcontainer.json` (Python 3.12 + Chr
 - `--shm-size=2g` is required — Chromium crashes with Docker's default 64 MB `/dev/shm`.
 - Tesseract `eng` + `msa` are pre-installed to match `PageConfig.ocr_languages` defaults.
 - The yarn apt source is removed before `apt-get update` (expired GPG key in the base image).
-- Setup order: `pip install -e '.[dev,vector,bedrock,openai]' -e 'apps/streamlit[dev]'` → `playwright install --with-deps chromium` → `crawl4ai-setup`.
-- Port `8501` is forwarded for the Streamlit app and should keep the `Streamlit crawl4md app` label.
+- Setup order: `pip install -e '.[dev,all]' -e 'apps/streamlit[dev]'` → `playwright install --with-deps chromium` → `crawl4ai-setup`. The `all` extra pulls every library (`crawl`, `vector`, `bedrock`, `openai`); `dev` adds the test/lint tools.
+- Port `8501` is forwarded for the Streamlit app and should keep the `Streamlit rag-playground app` label.
 - `postAttachCommand` starts Streamlit with `python -m streamlit run apps/streamlit/streamlit_app.py --server.address=0.0.0.0 --server.port=8501`; keep `0.0.0.0` so forwarded ports work from containers and Codespaces.
 - `ANONYMIZED_TELEMETRY=False` is set in `containerEnv` to disable ChromaDB telemetry.
 
 ## Dependencies
 
-Core library dependencies live in the root `pyproject.toml`. The `vector_indexer`
-library ships within the same distribution; its backends are opt-in extras:
+The distribution is named `rag-playground`. The base install carries **no**
+third-party dependencies (the `artifact_store` library is pure standard library);
+every library is an opt-in extra in the root `pyproject.toml` so installs stay
+lightweight and atomic:
 
-- `vector` → `chromadb`, `langchain-text-splitters` (chunking + vector store).
+- `crawl` → `crawl4ai`, `trafilatura`, `markdownify`, `beautifulsoup4`, `mdformat`,
+  `mdformat-gfm`, `nest-asyncio`, `httpx`, `pydantic`, `pymupdf4llm` (the crawler).
+- `vector` → `chromadb`, `langchain-text-splitters`, `pydantic` (chunking + vector
+  store; local offline embeddings work with just this).
 - `bedrock` → `boto3` (Amazon Titan embeddings, the default model).
 - `openai` → `openai` (OpenAI embeddings).
+- `all` → `crawl` + `vector` + `bedrock` + `openai` (convenience meta-extra).
 
 Streamlit app dependencies, including `streamlit`, live in `apps/streamlit/pyproject.toml`;
-the app depends on `crawl4md[vector,bedrock]` so installing it pulls the indexing backends.
+the app depends on `rag-playground[crawl,vector,bedrock]` so installing it pulls the
+crawler and indexing backends.
 
 Cloud embedding credentials are read from the environment (`AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `OPENAI_API_KEY`). See `.env.example`. In

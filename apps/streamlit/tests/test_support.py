@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from crawl4md.messages import CODE_BROWSER_MISSING, CODE_CRAWL_FAILED
 from pydantic import ValidationError
 
 from crawl4md_streamlit import session_manager
@@ -1129,7 +1130,8 @@ def test_start_crawl_job_reports_missing_playwright_browser_hint(
     events = drain_events(job)
 
     assert [event["event"] for event in events] == ["started", "failed"]
-    assert "python -m playwright install chromium" in str(events[-1]["error"])
+    assert events[-1]["error_code"] == CODE_BROWSER_MISSING
+    assert "playwright install" in str(events[-1]["error"]).lower()
 
 
 def test_start_crawl_job_reports_generic_error_details(
@@ -1158,7 +1160,8 @@ def test_start_crawl_job_reports_generic_error_details(
     events = drain_events(job)
 
     assert [event["event"] for event in events] == ["started", "failed"]
-    assert events[-1]["error"] == "ValueError: boom"
+    assert events[-1]["error_code"] == CODE_CRAWL_FAILED
+    assert "boom" in str(events[-1]["error"])
     assert events[-1]["current_url"] == ""
     assert events[-1]["next_url"] == ""
     assert events[-1]["eta_remaining_seconds"] is None

@@ -14,6 +14,7 @@ from typing import Any, Literal
 from crawl4md.config import CrawlerConfig, PageConfig
 from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
+from crawl4md.messages import classify_crawl_error
 from crawl4md.writer import FileWriter
 
 from crawl4md_streamlit.form_defaults import (
@@ -37,18 +38,16 @@ _ELAPSED_ACTIVE_STATES = frozenset({_STATE_RUNNING, _EVENT_CANCEL_REQUESTED})
 # Terminal states whose registry entries may be pruned on the next registration.
 _TERMINAL_STATES = frozenset({_EVENT_COMPLETED, _EVENT_FAILED, "stopped", "cancelled"})
 
-_PLAYWRIGHT_INSTALL_HINT = "playwright install"
-_PLAYWRIGHT_MISSING_EXECUTABLE_MARKER = "BrowserType.launch: Executable doesn't exist at"
+# Side-band warning event emitted by the crawler library; it carries a localizable
+# message rather than progress counts, so it must not overwrite the progress
+# snapshot used to render the live area.
+_EVENT_CRAWL_WARNING = "crawl_warning"
+
 _STATUS_URL_ITEM_STYLE = "display:block;overflow-wrap:anywhere;line-height:1.35"
 _STATUS_URL_LABEL_STYLE = "font-weight:600"
 _STATUS_URL_LIST_STYLE = "min-width:0"
 _STATUS_URL_OVERFLOW_STYLE = "display:block;opacity:0.75"
 _STATUS_URL_RIGHT_STYLE = "white-space:nowrap;margin-left:1rem"
-PLAYWRIGHT_MISSING_BROWSER_MESSAGE = (
-    "Playwright browser binaries are missing in this Python environment. "
-    "Install Chromium and then retry the crawl:\n"
-    "python -m playwright install chromium"
-)
 
 
 @dataclass(frozen=True)
@@ -325,6 +324,9 @@ def start_crawl_job(
         )
         event_queue.put(raw)
         event_name = str(raw.get("event", ""))
+        if event_name == _EVENT_CRAWL_WARNING:
+            # Queue for the UI to display, but keep progress snapshot intact.
+            return
         state = job_state_from_event(event_name)
         if event_name == _EVENT_CANCELLED:
             state = "stopped"
@@ -375,12 +377,15 @@ def start_crawl_job(
                 }
             )
         except Exception as exc:  # noqa: BLE001 - surface background errors to the UI.
+            failure = classify_crawl_error(str(exc))
             emit(
                 {
                     "event": _EVENT_FAILED,
                     "session_id": session_id,
                     "crawl_id": crawl_id,
-                    "error": _format_crawl_error(exc),
+                    "error": failure.default_text,
+                    "error_code": failure.code,
+                    "error_params": dict(failure.params),
                     "limit": crawler_config.limit,
                     **_cleared_concurrent_progress(crawler_config),
                 }
@@ -416,13 +421,6 @@ def request_cancel(job: CrawlJob) -> None:
     }
     job.events.put(cancel_event_dict)
     _update_snapshot(job.session_id, cancel_event_dict, _STATE_CANCEL_REQUESTED)
-
-
-def _format_crawl_error(exc: Exception) -> str:
-    details = str(exc)
-    if _PLAYWRIGHT_MISSING_EXECUTABLE_MARKER in details and _PLAYWRIGHT_INSTALL_HINT in details:
-        return PLAYWRIGHT_MISSING_BROWSER_MESSAGE
-    return f"{type(exc).__name__}: {exc}"
 
 
 def drain_events(job: CrawlJob) -> list[dict[str, object]]:

@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "crawl4md-streamlit"
 version = "0.1.0"
-description = "Bundled Streamlit app for the crawl4md Python library"
+description = "Bundled Streamlit app for the rag-playground libraries"
 requires-python = ">=3.10"
 dependencies = [
-    "crawl4md[vector,bedrock]>=0.1.0",
+    "rag-playground[crawl,vector,bedrock]>=0.1.0",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
     "streamlit==1.56.0",

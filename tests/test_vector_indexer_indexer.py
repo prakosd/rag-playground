@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from artifact_store import LibraryMessage
+from vector_indexer import messages
 from vector_indexer.config import IndexingConfig
 from vector_indexer.embeddings import EmbeddingProvider, EmbeddingProviderUnavailable
 from vector_indexer.indexer import (
@@ -56,7 +58,9 @@ def _indexer_with_capture() -> tuple[VectorIndexer, dict[str, _FakeStore]]:
         created["store"] = store
         return store
 
-    def resolver(model: str, dimension: int | None) -> tuple[EmbeddingProvider, list[str]]:
+    def resolver(
+        model: str, dimension: int | None
+    ) -> tuple[EmbeddingProvider, list[LibraryMessage]]:
         return _FakeProvider(), []
 
     return VectorIndexer(store_factory=factory, embedding_resolver=resolver), created
@@ -111,7 +115,9 @@ def test_run_stops_when_cancelled(tmp_path: Path) -> None:
     )
 
     assert not result.success
-    assert any("cancel" in warning.lower() for warning in result.warnings)
+    assert any(
+        warning.code == messages.CODE_CANCELLED_BEFORE_CHUNKING for warning in result.warnings
+    )
 
 
 def test_run_records_error_when_embedding_unavailable(tmp_path: Path) -> None:
@@ -121,7 +127,9 @@ def test_run_records_error_when_embedding_unavailable(tmp_path: Path) -> None:
     def factory(persist_dir: Path) -> VectorStore:
         return _FakeStore(persist_dir)
 
-    def resolver(model: str, dimension: int | None) -> tuple[EmbeddingProvider, list[str]]:
+    def resolver(
+        model: str, dimension: int | None
+    ) -> tuple[EmbeddingProvider, list[LibraryMessage]]:
         raise EmbeddingProviderUnavailable("no provider configured")
 
     indexer = VectorIndexer(store_factory=factory, embedding_resolver=resolver)
@@ -129,7 +137,8 @@ def test_run_records_error_when_embedding_unavailable(tmp_path: Path) -> None:
     result = indexer.run(IndexingConfig(), [source], tmp_path / "vector_01_demo")
 
     assert not result.success
-    assert any("no provider configured" in error for error in result.errors)
+    assert any(error.code == messages.CODE_MODEL_UNAVAILABLE for error in result.errors)
+    assert any("no provider configured" in str(error) for error in result.errors)
 
 
 def test_run_emits_progress(tmp_path: Path) -> None:

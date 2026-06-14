@@ -246,11 +246,6 @@ STRINGS_ID: Strings = {
     ),
     "ERROR_SESSION_FOLDER_MISSING": "Folder sesi tidak ada.",
     "ERROR_CRAWL_FAILED_FALLBACK": "Crawl gagal.",
-    "ERROR_PLAYWRIGHT_MISSING": (
-        "Binari browser Playwright tidak ada di lingkungan Python ini. "
-        "Instal Chromium lalu coba crawl lagi:\n"
-        "python -m playwright install chromium"
-    ),
     # ── Activity log ──────────────────────────────────────────────────────
     "ACTIVITY_LOG_HEADER": "Log aktivitas",
     # ── Files section ─────────────────────────────────────────────────────
@@ -373,5 +368,55 @@ STRINGS_ID: Strings = {
         "completed": "Selesai",
         "cancel_requested": "Pembatalan Diminta",
         "stopped": "Dihentikan",
+    },
+    # ── Kode pesan library (terjemahan; kode yang tidak ada pakai teks library) ─
+    "MESSAGE_CODES": {
+        "crawl.browser_missing": (
+            "Binari browser Playwright tidak ada di lingkungan Python ini. "
+            "Instal Chromium lalu coba crawl lagi:\n"
+            "playwright install --with-deps chromium"
+        ),
+        "crawl.engine_missing": (
+            'Mesin crawler belum terpasang. Instal dengan: pip install "rag-playground[crawl]"'
+        ),
+        "crawl.ssl_certificate": (
+            "Tidak dapat melakukan crawl karena sertifikat TLS/SSL tidak dapat "
+            "diverifikasi: {detail}"
+        ),
+        "crawl.crawl_failed": "Crawl tidak dapat diselesaikan: {detail}",
+        "crawl.ocr_unavailable": (
+            "Sebagian halaman PDF berupa gambar hasil pindai, tetapi OCR tidak "
+            "tersedia karena Tesseract belum terpasang, sehingga teks pada halaman "
+            "tersebut tidak dapat diekstrak."
+        ),
+        "crawl.blocked_backoff": (
+            "Situs tampaknya memblokir akses otomatis; "
+            "berhenti sejenak sekitar {wait_seconds:.0f}d sebelum melanjutkan."
+        ),
+        "vector.embedding_fallback": (
+            "Model embedding yang dipilih tidak dapat digunakan: {detail} "
+            "Beralih ke model offline lokal ({local_model})."
+        ),
+        "vector.dimension_mismatch": (
+            "Dimensi embedding {requested_dimension} tidak didukung oleh "
+            "{model!r}; menggunakan {actual_dimension}."
+        ),
+        "vector.no_readable_content": (
+            "Tidak ada konten .md atau .txt yang dapat dibaca pada input yang dipilih."
+        ),
+        "vector.no_chunks": "Input yang dipilih tidak menghasilkan potongan teks untuk diindeks.",
+        "vector.cancelled_partial": "Pengindeksan dibatalkan; hasil sebagian telah disimpan.",
+        "vector.cancelled_before_chunking": ("Pengindeksan dibatalkan sebelum pemotongan dimulai."),
+        "vector.skipped_unsupported_file": "Melewati berkas yang tidak didukung: {file}",
+        "vector.file_unreadable": "Tidak dapat membaca {file}: {detail}",
+        "vector.archive_unreadable": "Tidak dapat membaca arsip {file}: {detail}",
+        "vector.archive_empty": "Tidak ada berkas .md atau .txt di {file}",
+        "vector.ssl_certificate": (
+            "Tidak dapat menjangkau layanan embedding karena sertifikat TLS/SSL-nya "
+            "tidak dapat diverifikasi: {detail}"
+        ),
+        "vector.embedding_failed": "Embedding atau penyimpanan gagal: {detail}",
+        "vector.model_unavailable": "Model embedding tidak tersedia: {detail}",
+        "vector.chunking_failed": "Pemotongan gagal: {detail}",
     },
 }

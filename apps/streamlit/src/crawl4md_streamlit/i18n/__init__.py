@@ -10,11 +10,20 @@ Call ``get_strings(lang)`` to retrieve the active language's translations.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from crawl4md_streamlit.i18n._types import Strings
 from crawl4md_streamlit.i18n.en import STRINGS_EN
 from crawl4md_streamlit.i18n.id import STRINGS_ID
 
-__all__ = ["CATALOG", "Strings", "STRINGS_EN", "STRINGS_ID", "get_strings"]
+__all__ = [
+    "CATALOG",
+    "Strings",
+    "STRINGS_EN",
+    "STRINGS_ID",
+    "get_strings",
+    "localize_message",
+]
 
 CATALOG: dict[str, Strings] = {
     "EN": STRINGS_EN,
@@ -26,3 +35,26 @@ def get_strings(lang: str) -> Strings:
     """Return the translation catalog for *lang*, falling back to English."""
     normalized_lang = str(lang).strip().upper()
     return CATALOG.get(normalized_lang, STRINGS_EN)
+
+
+def localize_message(strings: Strings, message: Mapping[str, object]) -> str:
+    """Localize a structured library message for display.
+
+    *message* is the dict form of a library ``LibraryMessage`` (``code`` /
+    ``text`` / ``params``). When the active language has a template for the
+    message ``code`` it is formatted with the message params; otherwise the
+    library-provided English ``text`` is returned, so the libraries remain the
+    single source of truth for wording and any UI can localize incrementally.
+    """
+    code = str(message.get("code", ""))
+    default_text = str(message.get("text", ""))
+    template = strings["MESSAGE_CODES"].get(code)
+    if not template:
+        return default_text
+    params = message.get("params")
+    if isinstance(params, Mapping):
+        try:
+            return template.format(**params)
+        except (KeyError, IndexError, ValueError):
+            return default_text
+    return template

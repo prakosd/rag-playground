@@ -5,8 +5,13 @@
 ## Setup
 
 ```bash
-pip install -e ".[dev,vector,bedrock,openai]" -e "apps/streamlit[dev]"
+pip install -e ".[dev,all]" -e "apps/streamlit[dev]"
 ```
+
+The distribution is `rag-playground`; `[all]` pulls every library extra
+(`crawl`, `vector`, `bedrock`, `openai`) and `[dev]` adds pytest/ruff. To work on a
+single library, install just its extra instead (e.g. `pip install -e ".[dev,vector]"`).
+See [INSTALLATION.md](INSTALLATION.md) for the full extras matrix.
 
 ## Tests and lint
 

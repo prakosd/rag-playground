@@ -7,7 +7,6 @@ from crawl4md_streamlit import generated_files as _generated_files
 from crawl4md_streamlit import session_manager as _session_manager
 
 DEFAULT_ACTIVITY_LOG_SIZE = _crawl_jobs.DEFAULT_ACTIVITY_LOG_SIZE
-PLAYWRIGHT_MISSING_BROWSER_MESSAGE = _crawl_jobs.PLAYWRIGHT_MISSING_BROWSER_MESSAGE
 CrawlJob = _crawl_jobs.CrawlJob
 JobSnapshot = _crawl_jobs.JobSnapshot
 ProgressEstimate = _crawl_jobs.ProgressEstimate
@@ -71,7 +70,6 @@ __all__ = [
     "DEFAULT_SESSIONS_ROOT",
     "GeneratedFile",
     "JobSnapshot",
-    "PLAYWRIGHT_MISSING_BROWSER_MESSAGE",
     "ProgressEstimate",
     "ReadyDownload",
     "SESSION_PREFIX",

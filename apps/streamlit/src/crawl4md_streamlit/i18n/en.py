@@ -237,11 +237,6 @@ STRINGS_EN: Strings = {
     ),
     "ERROR_SESSION_FOLDER_MISSING": "Session folder does not exist.",
     "ERROR_CRAWL_FAILED_FALLBACK": "The crawl failed.",
-    "ERROR_PLAYWRIGHT_MISSING": (
-        "Playwright browser binaries are missing in this Python environment. "
-        "Install Chromium and then retry the crawl:\n"
-        "python -m playwright install chromium"
-    ),
     # ── Activity log ──────────────────────────────────────────────────────
     "ACTIVITY_LOG_HEADER": "Activity log",
     # ── Files section ─────────────────────────────────────────────────────
@@ -363,5 +358,13 @@ STRINGS_EN: Strings = {
         "completed": "Completed",
         "cancel_requested": "Cancel Requested",
         "stopped": "Stopped",
+    },
+    # ── Library message codes (English overrides; absent codes use library text) ─
+    "MESSAGE_CODES": {
+        "crawl.browser_missing": (
+            "Playwright browser binaries are missing in this Python environment. "
+            "Install Chromium and then retry the crawl:\n"
+            "playwright install --with-deps chromium"
+        ),
     },
 }

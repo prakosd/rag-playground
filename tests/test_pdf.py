@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+from crawl4md import messages
 from crawl4md.config import CrawlerConfig, CrawlResult, PageConfig
 from crawl4md.crawler import (
     _JITTER_RETRY_MAX,
@@ -658,6 +659,28 @@ class TestPdfToMarkdownOcr:
         assert result == "# Fallback"
         assert crawler._ocr_warned is True
         assert any(_OCR_UNAVAILABLE_WARNING in str(warning.message) for warning in w)
+
+    def test_tesseract_unavailable_emits_structured_warning_event(self):
+        """OCR-unavailable also emits a structured crawl_warning progress event."""
+        crawler = self._make_crawler(["eng"])
+        captured: list[dict] = []
+        crawler._progress_callback = captured.append
+        mock_doc = MagicMock()
+
+        with (
+            patch(
+                "crawl4md.crawler.pymupdf4llm.to_markdown",
+                side_effect=[RuntimeError("tesseract not found"), "# Fallback"],
+            ),
+            warnings.catch_warnings(),
+        ):
+            warnings.simplefilter("always")
+            crawler._pdf_to_markdown(mock_doc)
+
+        warning_events = [e for e in captured if e.get("event") == "crawl_warning"]
+        assert warning_events
+        assert warning_events[0]["code"] == messages.CODE_OCR_UNAVAILABLE
+        assert warning_events[0]["severity"] == "warning"
 
     def test_tesseract_warning_fires_only_once(self):
         """The OCR-unavailable warning should only fire once per crawler instance."""

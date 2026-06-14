@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "crawl4md"
+name = "rag-playground"
 version = "0.1.0"
-description = "Python library for crawling websites and extracting content as Markdown-formatted text files"
+description = "RAG playground: crawl websites to Markdown (crawl4md), build vector indexes (vector_indexer), and shared artifact utilities (artifact_store)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "crawl4md contributors" }]
-keywords = ["crawling", "markdown", "extraction", "web-scraping"]
+authors = [{ name = "rag-playground contributors" }]
+keywords = ["crawling", "markdown", "extraction", "web-scraping", "rag", "embeddings", "vector-search"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -21,20 +21,37 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-dependencies = [
+# The base install carries no third-party dependencies: the artifact_store
+# library is pure standard library. Every other library is an opt-in extra so
+# installs stay lightweight and pull only what a component actually uses.
+dependencies = []
+
+[project.optional-dependencies]
+# crawl4md — crawl websites and extract Markdown (Step 1).
+crawl = [
     "crawl4ai>=0.8.6",
     "trafilatura>=1.6.0",
     "markdownify>=0.11.0",
-    "pydantic>=2.0",
-    "nest-asyncio>=1.5.0",
     "beautifulsoup4>=4.12.0",
     "mdformat>=0.7.19",
     "mdformat-gfm>=0.3.6",
-    "pymupdf4llm>=0.0.17",
+    "nest-asyncio>=1.5.0",
     "httpx>=0.27.0",
+    "pydantic>=2.0",
+    "pymupdf4llm>=0.0.17",
 ]
-
-[project.optional-dependencies]
+# vector_indexer — chunk + embed + store (Step 2). Local offline embeddings
+# work with just this extra; cloud backends below are additional opt-ins.
+vector = [
+    "chromadb>=0.5.0",
+    "langchain-text-splitters>=0.2.0",
+    "pydantic>=2.0",
+]
+# Optional embedding backends for vector_indexer.
+bedrock = ["boto3>=1.34.0"]  # Amazon Titan embeddings (the default model).
+openai = ["openai>=1.0.0"]   # OpenAI embeddings.
+# Convenience meta-extra: every library and backend (no dev tools).
+all = ["rag-playground[crawl,vector,bedrock,openai]"]
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
@@ -42,14 +59,6 @@ dev = [
     "ruff>=0.4.0",
     "ipykernel>=6.0",
 ]
-# vector_indexer ships within this distribution; its backends are opt-in so the
-# core crawler stays lightweight. Install with: pip install -e '.[vector,bedrock]'
-vector = [
-    "chromadb>=0.5.0",
-    "langchain-text-splitters>=0.2.0",
-]
-bedrock = ["boto3>=1.34.0"]
-openai = ["openai>=1.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

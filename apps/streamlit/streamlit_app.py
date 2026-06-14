@@ -26,7 +26,7 @@ from crawl4md_streamlit.generated_files import (
     download_tree_entry_sort_key,
     generated_files_cache_token,
 )
-from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings
+from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings, localize_message
 from crawl4md_streamlit.pages import (
     APP_PAGE_SPECS,
     DEFAULT_PAGE_ID,
@@ -49,7 +49,6 @@ from crawl4md_streamlit.session_manager import generate_vector_id, next_vector_s
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_SESSION_LANGUAGE,
-    PLAYWRIGHT_MISSING_BROWSER_MESSAGE,
     CrawlJob,
     GeneratedFile,
     ReadyDownload,
@@ -1555,12 +1554,12 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
     if warnings:
         with st.expander(strings["VEC_RESULT_WARNINGS_LABEL"], expanded=True):
             for warning in warnings:
-                st.write(f"- {warning}")
+                st.write(f"- {localize_message(strings, warning)}")
     errors = result.get("errors") or []
     if errors:
         with st.expander(strings["VEC_RESULT_ERRORS_LABEL"], expanded=True):
             for error in errors:
-                st.write(f"- {error}")
+                st.write(f"- {localize_message(strings, error)}")
         if has_ssl_certificate_error(errors):
             st.info(strings["VEC_ERROR_SSL_HINT"])
 
@@ -1880,11 +1879,12 @@ def _render_status_rows() -> None:
         )
 
     if st.session_state.job_state == _STATE_FAILED:
-        err = str(latest.get("error", ""))
-        if err == PLAYWRIGHT_MISSING_BROWSER_MESSAGE:
-            st.error(strings["ERROR_PLAYWRIGHT_MISSING"])
-        else:
-            st.error(err or strings["ERROR_CRAWL_FAILED_FALLBACK"])
+        message = {
+            "code": str(latest.get("error_code", "")),
+            "text": str(latest.get("error", "")),
+            "params": latest.get("error_params", {}),
+        }
+        st.error(localize_message(strings, message) or strings["ERROR_CRAWL_FAILED_FALLBACK"])
 
 
 def _active_file_root() -> Path:

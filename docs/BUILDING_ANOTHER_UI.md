@@ -54,6 +54,51 @@ results = crawler.crawl()
 A different frontend stack needs a Python service, worker, or desktop shell to call
 the library.
 
+## Structured messages — let the library own the wording
+
+Every progress, warning, and error that needs to reach a user originates in the
+libraries as **structured data**, never as UI-only strings. This keeps any frontend
+(React, Vue, PHP, a CLI, an API server) able to render and localize the same
+information without parsing English prose.
+
+The shared primitive is `artifact_store.LibraryMessage`:
+
+| Field | Meaning |
+|---|---|
+| `code` | Stable identifier, e.g. `"vector.embedding_fallback"` or `"crawl.browser_missing"`. Map it to your own localized template. Never shown verbatim. |
+| `default_text` | A complete English sentence. `str(message)` returns it, so logs, notebooks, and JSON stay readable when you have no localization. |
+| `params` | Structured values behind the message (counts, file names, model ids) to interpolate into your localized template. |
+| `severity` | `"info"`, `"warning"`, or `"error"`. |
+
+`message.as_dict()` returns a JSON-serializable `{code, text, severity, params}` for
+APIs and message queues.
+
+**Vector indexing** returns these directly on the result:
+
+```python
+result = VectorIndexer().run(config, inputs, output_base)
+for message in result.warnings + result.errors:
+    payload = message.as_dict()          # send to your frontend
+    text = my_i18n.get(payload["code"], payload["text"]).format(**payload["params"])
+```
+
+`manifest.json` records the same `code`/`text` for each warning and error.
+
+**Crawling** surfaces messages two ways:
+
+- Per-page failures set `CrawlResult.error_code` (e.g. `"crawl.blocked"`,
+  `"crawl.empty_content"`) alongside the free-text `error`.
+- Crawl-level warnings arrive through the `progress_callback` as `crawl_warning`
+  events: `{"event": "crawl_warning", "code", "text", "severity", "params"}` — for
+  example OCR-unavailable or "the site is blocking us, backing off". Classify a fatal
+  crawl exception with `crawl4md.messages.classify_crawl_error(str(exc))` to get a
+  coded `LibraryMessage` (missing browser, missing engine, TLS failure, or generic).
+
+Because the classification lives in the libraries, your UI never has to substring-match
+backend error text. Map codes to your own localized strings and fall back to
+`default_text` for any code you have not translated yet. The Streamlit app's
+`i18n.localize_message` helper is a minimal reference implementation of exactly this.
+
 ## Adding vector indexing to your UI
 
 The same pattern applies to Step 2: call the `vector_indexer` library from your

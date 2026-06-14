@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from artifact_store import LibraryMessage
+from vector_indexer import messages
 from vector_indexer.embeddings.base import EmbeddingProvider, EmbeddingProviderUnavailable
 from vector_indexer.embeddings.catalog import (
     EMBEDDING_MODEL_INFOS,
@@ -94,7 +96,7 @@ def resolve_embedding(
     *,
     build: Callable[..., EmbeddingProvider] = build_embedding_provider,
     default_build: Callable[..., EmbeddingProvider] = build_default_local_provider,
-) -> tuple[EmbeddingProvider, list[str]]:
+) -> tuple[EmbeddingProvider, list[LibraryMessage]]:
     """Resolve an embedding provider, falling back to the local offline model.
 
     When the requested model is unavailable (missing dependency or credential),
@@ -104,7 +106,7 @@ def resolve_embedding(
     or when the local fallback is also unavailable (a combined error), so the
     caller can surface it.
     """
-    warnings: list[str] = []
+    warnings: list[LibraryMessage] = []
     try:
         provider = build(model, dimension=dimension)
     except EmbeddingProviderUnavailable as exc:
@@ -118,12 +120,18 @@ def resolve_embedding(
                 f"unavailable: {fallback_exc}"
             ) from fallback_exc
         warnings.append(
-            f"The selected embedding model could not be used: {exc} "
-            f"Falling back to the local offline model ({DEFAULT_LOCAL_MODEL})."
+            messages.embedding_fallback(
+                requested_model=model.strip(),
+                local_model=DEFAULT_LOCAL_MODEL,
+                detail=str(exc),
+            )
         )
     if dimension is not None and provider.dimension != dimension:
         warnings.append(
-            f"Requested embedding dimension {dimension} is not supported by "
-            f"{provider.model_id!r}; using {provider.dimension}."
+            messages.dimension_mismatch(
+                requested_dimension=dimension,
+                model=provider.model_id,
+                actual_dimension=provider.dimension,
+            )
         )
     return provider, warnings

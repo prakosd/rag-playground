@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from artifact_store import LibraryMessage
+
 __all__ = [
     "Chunk",
     "Document",
@@ -43,12 +45,17 @@ class VectorRecord:
 
 @dataclass
 class IndexingResult:
-    """Structured outcome of an indexing run that any UI can render."""
+    """Structured outcome of an indexing run that any UI can render.
+
+    ``warnings`` and ``errors`` are :class:`~artifact_store.LibraryMessage`
+    objects carrying a stable ``code`` plus structured ``params``; ``str()`` of
+    each yields its English ``default_text`` for UIs without localization.
+    """
 
     success: bool
     output_dir: Path
     indexed_file_count: int = 0
     indexed_chunk_count: int = 0
     skipped_file_count: int = 0
-    warnings: list[str] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
+    warnings: list[LibraryMessage] = field(default_factory=list)
+    errors: list[LibraryMessage] = field(default_factory=list)

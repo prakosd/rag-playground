@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from artifact_store import LibraryMessage
 from crawl4md.config import CrawlResult
 
 __all__ = [
+    "emit_crawl_warning",
     "emit_page_progress",
     "emit_progress",
 ]
@@ -18,6 +20,7 @@ _PROGRESS_EVENT_INTERRUPTED = "crawl_interrupted"
 _PROGRESS_EVENT_PAGE = "page_processed"
 _PROGRESS_EVENT_STARTED = "crawl_started"
 _PROGRESS_EVENT_STATUS = "crawl_status"
+_PROGRESS_EVENT_WARNING = "crawl_warning"
 
 
 def emit_progress(
@@ -28,6 +31,22 @@ def emit_progress(
     if callback is None:
         return
     callback(event)
+
+
+def emit_crawl_warning(
+    callback: Callable[[Mapping[str, object]], None] | None,
+    message: LibraryMessage,
+) -> dict[str, object]:
+    """Emit a structured ``crawl_warning`` event carrying a localizable message."""
+    event: dict[str, object] = {
+        "event": _PROGRESS_EVENT_WARNING,
+        "code": message.code,
+        "text": message.default_text,
+        "severity": message.severity,
+        "params": dict(message.params),
+    }
+    emit_progress(callback, event)
+    return event
 
 
 def emit_page_progress(

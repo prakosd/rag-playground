@@ -3,6 +3,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+from vector_indexer import messages
 from vector_indexer.document_loader import load_documents
 
 
@@ -50,4 +51,5 @@ def test_zip_without_text_members_warns(tmp_path: Path) -> None:
     result = load_documents([zip_path])
 
     assert result.documents == []
-    assert any("No .md or .txt" in warning for warning in result.warnings)
+    assert any(warning.code == messages.CODE_ARCHIVE_EMPTY for warning in result.warnings)
+    assert any("No .md or .txt" in str(warning) for warning in result.warnings)

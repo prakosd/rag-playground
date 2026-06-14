@@ -34,7 +34,18 @@ Output is written to a UTC-timestamped folder; the primary result is
 | `writer.py` | `FileWriter` — size-limited content files + URL lists |
 | `naming.py` | Crawl folder/timestamp names (re-exports `artifact_store.naming`) |
 | `progress.py` | `ProgressReporter` — Jupyter/terminal progress |
+| `messages.py` | Stable result codes + `classify_crawl_error` (built on `artifact_store.LibraryMessage`) |
 | `_internal/` | Implementation details (final output, PDF, URL filter, …) |
+
+## Structured messages
+
+User-facing warnings and errors come from the library as data, so any UI can localize
+them. A failed page sets `CrawlResult.error_code` (e.g. `crawl.blocked`,
+`crawl.empty_content`) next to the free-text `error`. Crawl-level warnings reach the
+`progress_callback` as `crawl_warning` events (`{"event": "crawl_warning", "code",
+"text", "severity", "params"}`) — for example OCR-unavailable or block back-off. A
+fatal crawl exception can be classified with `crawl4md.messages.classify_crawl_error`.
+See [docs/BUILDING_ANOTHER_UI.md](../../docs/BUILDING_ANOTHER_UI.md).
 
 ## Boundary
 
