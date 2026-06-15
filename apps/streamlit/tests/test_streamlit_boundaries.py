@@ -12,6 +12,7 @@ _PURE_HELPER_MODULES = frozenset(
     {
         "controls.py",
         "crawl_jobs.py",
+        "crawl_runtime.py",
         "form_defaults.py",
         "generated_files.py",
         "progress_chart.py",

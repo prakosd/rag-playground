@@ -17,6 +17,7 @@ from crawl4md.extractor import ContentExtractor
 from crawl4md.messages import classify_crawl_error
 from crawl4md.writer import FileWriter
 
+from crawl4md_streamlit.crawl_runtime import ensure_playwright_browser
 from crawl4md_streamlit.form_defaults import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_MAX_CONCURRENT,
@@ -343,6 +344,7 @@ def start_crawl_job(
             }
         )
         try:
+            ensure_playwright_browser()
             extractor = ContentExtractor(page_config)
             writer = FileWriter(
                 max_file_size_mb=page_config.max_file_size_mb,

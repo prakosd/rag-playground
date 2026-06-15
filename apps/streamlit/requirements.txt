@@ -1,0 +1,5 @@
+# Streamlit Community Cloud installs dependencies from this file (pip), not from
+# pyproject.toml (Poetry). The rag-playground packages are not published to PyPI,
+# so install them from the repo checkout: the root package first, then the app.
+.[crawl,vector,bedrock,openai,rag]
+./apps/streamlit
