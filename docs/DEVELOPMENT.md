@@ -42,6 +42,13 @@ python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app
   `vector_indexer`, and `rag_engine` must not import Streamlit. Boundary tests enforce this.
 - All user-facing Streamlit text lives in the `i18n` catalog (English + Indonesian)
   and is referenced via `get_strings()` — never hardcoded in components.
+- The Streamlit app's deployment-tunable, non-secret config lives in
+  `crawl4md_streamlit.settings` (`pydantic-settings`), loaded from `.env.defaults`
+  → `.env` → environment; secrets (`AWS_*`, `OPENAI_API_KEY`) stay environment-only.
+  See [CONFIGURATION.md](CONFIGURATION.md#environment-configuration--secrets-streamlit-app).
+- Lint and format with **Ruff** (configured in `pyproject.toml`); the repo does not
+  use Pylint. `.vscode/` disables the Pylint extension and recommends the Ruff
+  extension so editor diagnostics match the CI gate.
 
 ## Component guides
 

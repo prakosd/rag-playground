@@ -10,7 +10,7 @@ crawl4md crawls websites and extracts content as Markdown. The core `crawl4md` l
 - `src/artifact_store/` — shared foundation; pure stdlib, no crawler/UI imports.
 - `src/vector_indexer/` — load → chunk → embed (LangChain `Embeddings`) → langchain-chroma vector store; no UI imports.
 - `src/rag_engine/` — retrieve (reopen index via manifest) → resolve chat model → generate (QA + conversational); no UI imports; depends on `vector_indexer`.
-- `apps/streamlit/` — UI adapter only (rendering, session/browser state, background jobs, downloads). Keep the libraries usable without Streamlit; never push UI or path conventions into them.
+- `apps/streamlit/` — UI adapter only (rendering, session/browser state, background jobs, downloads). Keep the libraries usable without Streamlit; never push UI or path conventions into them. Deployment-tunable, non-secret config lives in `crawl4md_streamlit.settings` (pydantic-settings, loaded `.env.defaults` → `.env` → environment); secrets stay environment-only (`.env` locally, `.streamlit/secrets.toml` on Cloud).
 
 **Packaging:** one pip distribution named `rag-playground` (import packages unchanged: `crawl4md`, `vector_indexer`, `rag_engine`, `artifact_store`). The base install is dependency-free; each library is an opt-in extra — `[crawl]`, `[vector]`, `[bedrock]`, `[openai]`, `[rag]`, `[all]` — so installs stay atomic. `[vector]` uses langchain-chroma; `[bedrock]`/`[openai]` (langchain-aws/langchain-openai) serve both embeddings and chat models; `[rag]` adds the `langchain` umbrella for `init_chat_model`. The Streamlit app installs `rag-playground[crawl,vector,bedrock,openai,rag]`.
 
@@ -18,7 +18,7 @@ crawl4md crawls websites and extracts content as Markdown. The core `crawl4md` l
 
 - **Step 1 (crawl):** `SiteCrawler.crawl()` → Crawl4AI (raw HTML) → `ContentExtractor` (Markdown) → `FileWriter` (size-limited files + URL lists) → `ContentSorter` (sorted final output). Each crawl writes a timestamped dir; results pass through rounds (initial + retries), then merge/dedupe/sort.
 - **Step 2 (index):** `VectorIndexer.run()` → `resolve_embedding` (Titan default → LangChain `Embeddings`; raises `EmbeddingProviderUnavailable` when a model's package/credential is missing — recorded as a cause-specific error via `classify_model_unavailable`, no silent local fallback) → `load_documents` (.md/.txt/.zip) → `chunk_documents` → langchain-chroma `Chroma` store → `IndexingResult` + `manifest.json` (records embedding model + `collection_name`).
-- **Steps 3-5 (RAG):** `rag_engine.retrieve()` reopens the index via `load_manifest` + `resolve_embedding` + langchain-chroma; `answer_question` / `chat_answer` then call `resolve_chat_model` (LangChain `init_chat_model`, offline echo fallback when a cloud model is unavailable) and run a defensive prompt → `RagAnswer` (answer + source `RetrievedChunk`s + warnings/errors). Conversational chat rewrites the follow-up via `condense_question`.
+- **Steps 3-5 (RAG):** `rag_engine.retrieve()` reopens the index via `load_manifest` + `resolve_embedding` + a `VectorSearcher` (`ChromaSearcher` wraps langchain-chroma behind a backend-neutral interface); `answer_question` / `chat_answer` then call `resolve_chat_model` (LangChain `init_chat_model`, offline echo fallback when a cloud model is unavailable) and run a defensive prompt → `RagAnswer` (answer + source `RetrievedChunk`s + warnings/errors). Conversational chat rewrites the follow-up via `condense_question`.
 
 ## Module Rules
 

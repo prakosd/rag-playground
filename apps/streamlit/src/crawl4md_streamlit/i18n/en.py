@@ -113,6 +113,26 @@ STRINGS_EN: Strings = {
     "SEARCH_SEARCHING": "Searching…",
     "SEARCH_RESULTS_HEADER": "Matches",
     "SEARCH_NO_RESULTS": "No matching chunks were found for this query.",
+    "SEARCH_META_HEADER": "Index details",
+    "SEARCH_META_DIMENSION": "Dimension",
+    "SEARCH_META_FILES": "Files",
+    "SEARCH_META_CHUNKS": "Chunks",
+    "SEARCH_META_CHUNK_SIZE": "Chunk size",
+    "SEARCH_META_CAPTION": (
+        "Embedding model: {model} · Language: {language} · Overlap: {overlap} · "
+        "Collection: {collection}"
+    ),
+    "SEARCH_TOP_N_LABEL": "Top results",
+    "SEARCH_TOP_N_HELP": "How many of the highest-scoring chunks to show, ranked by similarity.",
+    "SEARCH_SEMANTIC_HINT": (
+        "Semantic search matches by meaning, not exact words — a query like “not dog” can "
+        "still surface dog-related chunks."
+    ),
+    "SEARCH_RESULTS_SUMMARY": "Top {count} matches, ranked by similarity (highest first).",
+    "SEARCH_RESULT_HEADER": "**#{rank}** · {source}",
+    "SEARCH_RESULT_SCORE": "{score}% similarity",
+    "SEARCH_RESULT_CHUNK": "Chunk {index}",
+    "SEARCH_RESULT_LANGUAGE": "Language {language}",
     "QA_SECTION_HEADER": "❓ Ask a question",
     "QA_SECTION_CAPTION": (
         "Retrieve context and let the selected model answer one question with sources."

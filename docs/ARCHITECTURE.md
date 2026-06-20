@@ -87,7 +87,7 @@ answer with a chat model resolved through LangChain.
 ```mermaid
 flowchart TD
   Query["user query / question"] --> Retrieve["retrieve()<br/>load_manifest + resolve_embedding"]
-  Retrieve --> Chroma["langchain-chroma<br/>similarity search"]
+  Retrieve --> Chroma["VectorSearcher<br/>ChromaSearcher → langchain-chroma"]
   Chroma --> Chunks["RetrievedChunk[] (+ scores)"]
   Chunks --> Resolve["resolve_chat_model<br/>init_chat_model · echo fallback"]
   Resolve --> Generate["prompt | model | parser<br/>(defensive prompt)"]

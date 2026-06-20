@@ -75,6 +75,20 @@ class Strings(TypedDict):
     SEARCH_SEARCHING: str
     SEARCH_RESULTS_HEADER: str
     SEARCH_NO_RESULTS: str
+    SEARCH_META_HEADER: str
+    SEARCH_META_DIMENSION: str
+    SEARCH_META_FILES: str
+    SEARCH_META_CHUNKS: str
+    SEARCH_META_CHUNK_SIZE: str
+    SEARCH_META_CAPTION: str  # template: {model}, {language}, {overlap}, {collection}
+    SEARCH_TOP_N_LABEL: str
+    SEARCH_TOP_N_HELP: str
+    SEARCH_SEMANTIC_HINT: str
+    SEARCH_RESULTS_SUMMARY: str  # template: {count}
+    SEARCH_RESULT_HEADER: str  # template: {rank}, {source}
+    SEARCH_RESULT_SCORE: str  # template: {score}
+    SEARCH_RESULT_CHUNK: str  # template: {index}
+    SEARCH_RESULT_LANGUAGE: str  # template: {language}
     QA_SECTION_HEADER: str
     QA_SECTION_CAPTION: str
     QA_QUESTION_LABEL: str

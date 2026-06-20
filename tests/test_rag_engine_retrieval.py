@@ -7,6 +7,7 @@ import pytest
 from rag_engine import messages
 from rag_engine.config import RagConfig
 from rag_engine.retrieval import retrieve
+from rag_engine.search import ChromaSearcher, SearchHit, VectorSearcher
 from vector_indexer import EmbeddingProviderUnavailable, ResolvedEmbedding
 
 
@@ -24,16 +25,24 @@ class _FakeStore:
         return self._hits[:k]
 
 
+class _FakeSearcher(VectorSearcher):
+    def __init__(self, hits: list[SearchHit]) -> None:
+        self._hits = hits
+
+    def search(self, query: str, k: int) -> list[SearchHit]:
+        return self._hits[:k]
+
+
 def _loader_ok(run_dir: Path | str):
     return ResolvedEmbedding(embeddings=object(), model_id="fake", dimension=4), []
 
 
 def test_retrieve_returns_ranked_chunks() -> None:
-    # Hits are (document, distance); the store returns raw distances which the
-    # retriever maps to a 0-1 similarity (lower distance -> higher score).
+    # The searcher returns raw distances which the retriever maps to a 0-1
+    # similarity (lower distance -> higher score).
     hits = [
-        (_FakeDoc("hello", {"source": "a.md"}), 0.0),
-        (_FakeDoc("world", {"source": "b.md"}), 1.0),
+        SearchHit(text="hello", source="a.md", distance=0.0, metadata={"source": "a.md"}),
+        SearchHit(text="world", source="b.md", distance=1.0, metadata={"source": "b.md"}),
     ]
 
     result = retrieve(
@@ -41,7 +50,7 @@ def test_retrieve_returns_ranked_chunks() -> None:
         "q",
         RagConfig(top_k=2),
         embedding_loader=_loader_ok,
-        store_opener=lambda run_dir, embeddings: _FakeStore(hits),
+        searcher_factory=lambda run_dir, embeddings: _FakeSearcher(hits),
     )
 
     assert [chunk.source for chunk in result.chunks] == ["a.md", "b.md"]
@@ -56,7 +65,7 @@ def test_retrieve_empty_warns_no_context() -> None:
         "q",
         RagConfig(),
         embedding_loader=_loader_ok,
-        store_opener=lambda run_dir, embeddings: _FakeStore([]),
+        searcher_factory=lambda run_dir, embeddings: _FakeSearcher([]),
     )
 
     assert result.chunks == []
@@ -81,8 +90,8 @@ def test_retrieve_embedding_unavailable_reports_error() -> None:
     assert any(e.code == messages.CODE_EMBEDDING_UNAVAILABLE for e in result.errors)
 
 
-def test_retrieve_store_failure_reports_error() -> None:
-    def opener(run_dir: Path | str, embeddings: object):
+def test_retrieve_searcher_failure_reports_error() -> None:
+    def factory(run_dir: Path | str, embeddings: object):
         raise RuntimeError("boom")
 
     result = retrieve(
@@ -90,7 +99,7 @@ def test_retrieve_store_failure_reports_error() -> None:
         "q",
         RagConfig(),
         embedding_loader=_loader_ok,
-        store_opener=opener,
+        searcher_factory=factory,
     )
 
     assert any(e.code == messages.CODE_RETRIEVAL_FAILED for e in result.errors)
@@ -134,3 +143,19 @@ def test_retrieve_real_index_round_trip(tmp_path: Path) -> None:
 
     assert result.chunks
     assert any("Paris" in chunk.text for chunk in result.chunks)
+
+
+def test_chroma_searcher_maps_documents_to_search_hits() -> None:
+    store = _FakeStore([(_FakeDoc("hello", {"source": "a.md", "language": "en"}), 0.25)])
+    searcher = ChromaSearcher("/tmp/index", embeddings=object(), store=store)
+
+    hits = searcher.search("q", k=5)
+
+    assert hits == [
+        SearchHit(
+            text="hello",
+            source="a.md",
+            distance=0.25,
+            metadata={"source": "a.md", "language": "en"},
+        )
+    ]

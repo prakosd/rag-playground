@@ -31,6 +31,7 @@ from rag_engine.llm import (
 from rag_engine.models import ChatTurn, RagAnswer, RetrievedChunk
 from rag_engine.qa import answer_question, generate_answer, stream_answer
 from rag_engine.retrieval import RetrievalResult, retrieve
+from rag_engine.search import ChromaSearcher, SearchHit, VectorSearcher, open_searcher
 
 __all__ = [
     "CHAT_MODEL_OPTIONS",
@@ -39,17 +40,21 @@ __all__ = [
     "ChatModelInfo",
     "ChatModelUnavailable",
     "ChatTurn",
+    "ChromaSearcher",
     "RagAnswer",
     "RagConfig",
     "ResolvedChatModel",
     "RetrievalResult",
     "RetrievedChunk",
+    "SearchHit",
+    "VectorSearcher",
     "answer_question",
     "chat_answer",
     "condense_question",
     "generate_answer",
     "generate_chat_answer",
     "get_chat_model_info",
+    "open_searcher",
     "resolve_chat_model",
     "retrieve",
     "stream_answer",

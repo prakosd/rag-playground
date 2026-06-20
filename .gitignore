@@ -18,6 +18,8 @@ coverage*.xml
 htmlcov/
 .mypy_cache/
 .ipynb_checkpoints/
+.env
+.streamlit/secrets.toml
 
 # Crawl output directories (timestamped folders created by crawl4md)
 notebooks/*/

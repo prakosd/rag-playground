@@ -11,6 +11,7 @@ from crawl4md_streamlit.generated_files import (
     build_ready_download,
     collapse_artifact_run_folder,
     collect_success_content_files,
+    download_folder_icon,
     download_tree_entry_sort_key,
     find_latest_crawl_dir,
     find_ready_download_in_session,
@@ -105,6 +106,13 @@ def test_collapse_artifact_run_folder_merges_vector_timestamp_child() -> None:
 
     assert label == "vector_01_pentagram/2026-05-19_18-17-52 (20 May 2026 04:17 AEST)"
     assert folder_node == vector_tree["2026-05-19_18-17-52"]
+
+
+def test_download_folder_icon_maps_artifact_type_to_material_icon() -> None:
+    assert download_folder_icon("crawl_1_parlor") == ":material/travel_explore:"
+    assert download_folder_icon("vector_01_pentagram") == ":material/database:"
+    assert download_folder_icon("final") == ":material/folder_open:"
+    assert download_folder_icon("2026-05-19_18-17-52") == ":material/folder_open:"
 
 
 def test_generated_file_sort_key_orders_numbered_crawl_runs_descending() -> None:

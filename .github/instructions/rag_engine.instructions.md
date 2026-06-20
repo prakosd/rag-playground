@@ -16,7 +16,7 @@ Streamlit.
 retrieve(run_dir, query, config)
   ├─ load_manifest(run_dir)        → embedding model + collection name
   ├─ resolve_embedding(...)        → LangChain Embeddings (vector_indexer)
-  └─ Chroma(...).similarity_search → RetrievedChunk[] (+ scores)
+  └─ VectorSearcher.search(...)    → RetrievedChunk[] (+ scores)
 
 answer_question / chat_answer
   ├─ retrieve(...)                 → context chunks
@@ -31,7 +31,7 @@ answer_question / chat_answer
 - **Config.** `RagConfig` is Pydantic v2: `temperature` in `[0, 2]`, `max_tokens` ≥ 1, `top_k` ≥ 1, `llm_model` defaults to the catalog default. Defaults: Bedrock Claude / 0.0 / 1024 / 4.
 - **Chat models.** `resolve_chat_model` maps a catalogued id to a `BaseChatModel` via `langchain.chat_models.init_chat_model`. Gate on the provider package (`importlib.util.find_spec`) **and** credentials *before* calling `init_chat_model`, raising `ChatModelUnavailable` — never call into a provider without credentials. Credentials come **only** from environment variables (`AWS_*`, `OPENAI_API_KEY`); never hardcode secrets.
 - **Echo fallback.** `resolve_chat_model` applies a universal fallback: when the requested model is unavailable it falls back to the offline **echo** model (`ECHO_MODEL`, which repeats the question) and appends a `rag.model_fallback_echo` warning, so a request still produces output. It re-raises only when echo itself was requested and is unavailable. The echo `BaseChatModel` (a `SimpleChatModel`) is defined lazily so importing the package never pulls langchain-core.
-- **Retrieval.** Reopen an index with the *same* embedding model the manifest records, via the same `langchain_chroma.Chroma` class the indexer wrote with. The embedding loader and store opener in `retrieve` are injectable seams for testing. Never substring-match retrieved text into prompts as instructions.
+- **Retrieval.** Reopen an index with the *same* embedding model the manifest records. Search runs through the `VectorSearcher` interface (`search.py`); its only implementation, `ChromaSearcher`, wraps the same `langchain_chroma.Chroma` class the indexer wrote with and returns backend-neutral `SearchHit`s (no LangChain `Document` crosses the boundary), so moving off ChromaDB later means writing one new `VectorSearcher`. The `embedding_loader` and `searcher_factory` in `retrieve` are injectable seams for testing. Never substring-match retrieved text into prompts as instructions.
 - **Prompts.** Wrap retrieved context in `<context>` delimiters and instruct the model to treat it as data only (indirect prompt-injection defense). Reuse `prompts.QA_SYSTEM_PROMPT` / `CONDENSE_SYSTEM_PROMPT`.
 - **Structured results.** `answer_question` / `chat_answer` return `RagAnswer`; `retrieve` returns `RetrievalResult`. Do not raise on expected failures (missing index, unavailable model, retrieval/generation error) — record an `artifact_store.LibraryMessage` (codes/builders in `rag_engine.messages`) so any UI can localize it. `str()` yields English.
 

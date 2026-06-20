@@ -11,7 +11,7 @@ and stays usable from a notebook, CLI, or tests without Streamlit.
 retrieve(run_dir, query, config)            # Step 3
   ├─ load_manifest(run_dir)                  → embedding model + collection name
   ├─ resolve_embedding(model, dim)           → LangChain Embeddings (or raises if unavailable)
-  └─ Chroma(...).similarity_search_*          → RetrievedChunk[] (+ relevance scores)
+  └─ VectorSearcher.search(...)               → RetrievedChunk[] (+ similarity scores)
 
 answer_question(run_dir, question, config)  # Step 4
   ├─ retrieve(...)                           → context chunks
@@ -72,9 +72,13 @@ echo) for a UI to render a model picker without constructing anything.
 
 `retrieve` reads the run `manifest.json` to learn which embedding model and
 collection produced the vectors, rebuilds the matching embeddings with
-`vector_indexer.resolve_embedding`, and reopens the collection with the same
-`langchain_chroma.Chroma` class the indexer wrote with — guaranteeing on-disk
-compatibility. The embedding loader and store opener are injectable so the flow
+`vector_indexer.resolve_embedding`, and runs the query through a `VectorSearcher`
+— a small backend-neutral interface (`search.py`). Its only implementation,
+`ChromaSearcher`, reopens the collection with the same `langchain_chroma.Chroma`
+class the indexer wrote with (guaranteeing on-disk compatibility) and returns
+plain `SearchHit`s, so no LangChain types leak across the boundary. Swapping
+vector backends later means writing one new `VectorSearcher`, not touching the
+pipeline. The embedding loader and `searcher_factory` are injectable so the flow
 can be tested without ChromaDB or network access.
 
 ### Prompts — injection-defensive
@@ -99,7 +103,8 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k` |
 | `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS`, `DEFAULT_CHAT_MODEL`, `ECHO_MODEL` |
 | `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), lazy echo model |
-| `retrieval.py` | open a persisted index and run similarity search (Step 3) |
+| `retrieval.py` | reopen a persisted index via a `VectorSearcher` and run similarity search (Step 3) |
+| `search.py` | `VectorSearcher` interface + `ChromaSearcher` + backend-neutral `SearchHit` |
 | `prompts.py` | QA + condense-question prompts, context formatting |
 | `qa.py` | `answer_question` / `generate_answer` / `stream_answer` (Step 4) |
 | `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (Step 5) |

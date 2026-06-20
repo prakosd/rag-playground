@@ -11,6 +11,7 @@ import streamlit as st
 from rag_engine import CHAT_MODEL_OPTIONS, ChatModelInfo, get_chat_model_info
 
 from crawl4md_streamlit.i18n import Strings
+from crawl4md_streamlit.settings import get_settings
 
 __all__ = [
     "chat_model_info_for",
@@ -19,7 +20,7 @@ __all__ = [
     "render_llm_controls",
 ]
 
-_DEFAULT_TOP_K = 4
+_DEFAULT_TOP_K = get_settings().rag_top_k
 _MAX_TOP_K = 20
 _LLM_CONTROL_COLUMN_WIDTHS = (7, 3)
 

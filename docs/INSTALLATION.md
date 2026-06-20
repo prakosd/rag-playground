@@ -84,11 +84,16 @@ Every library is an opt-in extra so each install stays lightweight:
 | `dev` | `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `ipykernel` | tests, lint, notebook kernel |
 
 Cloud credentials are read from the environment. Copy
-[`.env.example`](../.env.example) to `.env` and set `AWS_*` / `OPENAI_API_KEY`; the
-Streamlit app loads the repo-root `.env` automatically on startup. In Codespaces/CI,
-provide them as environment secrets/variables instead. The offline default embedding
-model needs no credentials, and without chat credentials `rag_engine` falls back to an
-offline echo model so Steps 3-5 still run end-to-end.
+[`.env.example`](../.env.example) to `.env` (git-ignored) and set `AWS_*` /
+`OPENAI_API_KEY`; the Streamlit app loads the repo-root `.env` automatically on
+startup. Non-secret, deployment-tunable defaults live separately in the committed
+[`.env.defaults`](../.env.defaults) (loaded by `crawl4md_streamlit.settings`) — see
+[CONFIGURATION.md](CONFIGURATION.md#environment-configuration--secrets-streamlit-app).
+In Codespaces/CI, provide credentials as environment secrets/variables instead; on
+Streamlit Community Cloud, paste them into the Secrets console (template:
+[`.streamlit/secrets.toml.example`](../.streamlit/secrets.toml.example)). The offline
+default embedding model needs no credentials, and without chat credentials
+`rag_engine` falls back to an offline echo model so Steps 3-5 still run end-to-end.
 
 > **Warning — Python 3.14 users (discovered 2026-04-20):**
 > `crawl4ai==0.8.6` pins `lxml~=5.3`, but no `lxml` 5.x pre-built wheel exists for Python 3.14.

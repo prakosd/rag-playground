@@ -22,10 +22,13 @@ from vector_indexer import (
 
 from crawl4md_streamlit.controls import crawl_action_buttons
 from crawl4md_streamlit.i18n import Strings
+from crawl4md_streamlit.settings import get_settings
 
-VEC_DEFAULT_CHUNK_SIZE = 600
-VEC_DEFAULT_CHUNK_OVERLAP = 100
-VEC_DEFAULT_EMBEDDING_DIMENSION = 512
+_settings = get_settings()
+
+VEC_DEFAULT_CHUNK_SIZE = _settings.vector_chunk_size
+VEC_DEFAULT_CHUNK_OVERLAP = _settings.vector_chunk_overlap
+VEC_DEFAULT_EMBEDDING_DIMENSION = _settings.vector_embedding_dimension
 _UPLOAD_TYPES = ["md", "txt", "zip"]
 _EMBEDDING_CONTROL_COLUMN_WIDTHS = (7, 3)
 _FORM_SETTING_COLUMN_WIDTHS = (3, 3, 4)

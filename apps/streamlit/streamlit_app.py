@@ -23,6 +23,7 @@ from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
     collapse_artifact_run_folder,
+    download_folder_icon,
     download_tree_entry_sort_key,
     generated_files_cache_token,
 )
@@ -48,6 +49,7 @@ from crawl4md_streamlit.progress_chart import (
 )
 from crawl4md_streamlit.rag_ui import RagPageContext
 from crawl4md_streamlit.session_manager import generate_vector_id, next_vector_sequence
+from crawl4md_streamlit.settings import get_settings
 from crawl4md_streamlit.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_SESSION_LANGUAGE,
@@ -115,7 +117,7 @@ try:
 except ImportError:
     pass
 
-_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
+_DOWNLOAD_LIMIT_BYTES = get_settings().ui_download_limit_mb * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = "7s"
 _GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
 _DIALOG_PLACEHOLDER_TITLE = " "
@@ -181,7 +183,7 @@ _PREVIEW_DIALOG_VIEWPORT_PERCENT = 70
 _PREVIEW_DIALOG_VIEWPORT_WIDTH = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vw"
 _PREVIEW_DIALOG_VIEWPORT_HEIGHT = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vh"
 _PREVIEW_DIALOG_SCOPE_CLASS = "crawl4md-preview-dialog-scope"
-_PREVIEW_LIMIT_BYTES = 256 * 1024
+_PREVIEW_LIMIT_BYTES = get_settings().ui_preview_limit_kb * 1024
 _PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
 _UTC_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
@@ -2330,7 +2332,7 @@ def render_download_tree(
             folder_node: Mapping[str, Any] = entry
             if allow_run_folder_collapse:
                 folder_label, folder_node = collapse_artifact_run_folder(name, entry)
-            with st.expander(f"📁 {folder_label}"):
+            with st.expander(folder_label, icon=download_folder_icon(name)):
                 render_download_tree(
                     folder_node,
                     allow_run_folder_collapse=False,
@@ -2810,6 +2812,7 @@ def _rag_page_context() -> RagPageContext:
     return RagPageContext(
         default_language=_DEFAULT_LANGUAGE,
         list_indexes=_list_session_indexes,
+        render_downloads=_render_downloads,
     )
 
 
@@ -2885,6 +2888,13 @@ if (
         icon=":material/folder_open:",
     )
 
+# Register the page router on *every* run before any st.stop() so a deep-linked
+# URL (e.g. /vector-index) survives the session-bootstrap reruns below. Were
+# st.navigation() reached only after the gates, stopping during hydration would
+# drop the requested page and Streamlit would fall back to the default page.
+_render_shared_styles()
+navigation_page = st.navigation(_navigation_pages(active_strings), position="top")
+
 bootstrap_state = bootstrap_gate_state(
     browser_sessions_hydrated=st.session_state.browser_sessions_hydrated,
     pending_bootstrap_session_id=st.session_state.pending_bootstrap_session_id,
@@ -2919,8 +2929,6 @@ _run_startup_cleanup(tuple(sorted(set(_session_options()) | active_registry_sess
 active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 _render_crawl_event_loop()
 
-_render_shared_styles()
-navigation_page = st.navigation(_navigation_pages(active_strings), position="top")
 selected_page_spec = page_spec_by_nav_label(navigation_page.title, active_strings)
 _render_page_header(selected_page_spec, active_strings)
 _, _, _, session_fields_disabled = _current_crawl_runtime()

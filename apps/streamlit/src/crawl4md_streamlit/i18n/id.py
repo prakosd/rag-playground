@@ -116,6 +116,25 @@ STRINGS_ID: Strings = {
     "SEARCH_SEARCHING": "Mencari…",
     "SEARCH_RESULTS_HEADER": "Hasil",
     "SEARCH_NO_RESULTS": "Tidak ada chunk yang cocok untuk kueri ini.",
+    "SEARCH_META_HEADER": "Detail index",
+    "SEARCH_META_DIMENSION": "Dimensi",
+    "SEARCH_META_FILES": "File",
+    "SEARCH_META_CHUNKS": "Chunk",
+    "SEARCH_META_CHUNK_SIZE": "Ukuran chunk",
+    "SEARCH_META_CAPTION": (
+        "Model embedding: {model} · Bahasa: {language} · Overlap: {overlap} · Koleksi: {collection}"
+    ),
+    "SEARCH_TOP_N_LABEL": "Hasil teratas",
+    "SEARCH_TOP_N_HELP": "Berapa banyak chunk skor tertinggi yang ditampilkan, diurutkan menurut kemiripan.",
+    "SEARCH_SEMANTIC_HINT": (
+        "Pencarian semantik mencocokkan berdasarkan makna, bukan kata persis — kueri seperti "
+        "“not dog” tetap bisa memunculkan chunk terkait anjing."
+    ),
+    "SEARCH_RESULTS_SUMMARY": "Top {count} hasil, diurutkan menurut kemiripan (tertinggi dulu).",
+    "SEARCH_RESULT_HEADER": "**#{rank}** · {source}",
+    "SEARCH_RESULT_SCORE": "{score}% kemiripan",
+    "SEARCH_RESULT_CHUNK": "Chunk {index}",
+    "SEARCH_RESULT_LANGUAGE": "Bahasa {language}",
     "QA_SECTION_HEADER": "❓ Ajukan pertanyaan",
     "QA_SECTION_CAPTION": (
         "Ambil konteks dan biarkan model terpilih menjawab satu pertanyaan beserta sumbernya."

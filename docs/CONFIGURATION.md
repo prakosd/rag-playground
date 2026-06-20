@@ -10,6 +10,69 @@ default `1024`, `top_k` default `4`) and the chat-model catalog (`CHAT_MODEL_OPT
 Bedrock Claude / Amazon Nova Lite, OpenAI GPT-4o / GPT-4o mini, and the offline echo
 model) — see [src/rag_engine/README.md](../src/rag_engine/README.md).
 
+## Environment configuration & secrets (Streamlit app)
+
+The Streamlit app reads deployment-tunable, **non-secret** defaults from a typed
+settings layer (`crawl4md_streamlit.settings`, built on `pydantic-settings`) so an
+operator can change them per environment **without editing code or redeploying** —
+update the value and restart. Values load in increasing precedence from:
+
+1. `.env.defaults` — committed defaults (documented inline), the source of truth.
+2. `.env` — local, git-ignored overrides **and secrets**.
+3. the process environment — used by Streamlit Community Cloud, which exposes
+   root-level `secrets.toml` keys as environment variables.
+
+The libraries stay pure: only the app reads these and feeds them into the
+crawl/index/RAG config models.
+
+### Settings (non-secret)
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CRAWL_LIMIT` | `10` | Default pages-to-crawl in the form |
+| `CRAWL_MAX_DEPTH` | `5` | Default link depth |
+| `CRAWL_MAX_CONCURRENT` | `5` | Default parallel page fetches |
+| `CRAWL_FLUSH_INTERVAL` | `5` | Pages buffered before each disk flush |
+| `CRAWL_DELAY` | `3.0` | Default polite delay (s) between fetches |
+| `CRAWL_MAX_RETRIES` | `5` | Default retry rounds (minimum 2) |
+| `CRAWL_WAIT_FOR` | `3.0` | Extra wait (s) for late content |
+| `CRAWL_TIMEOUT` | `60.0` | Per-page load timeout (s) |
+| `CRAWL_MAX_FILE_SIZE_MB` | `10.0` | Max size per output file (MB) |
+| `CRAWL_ACTIVITY_LOG_SIZE` | `10` | Live activity-log lines retained |
+| `VECTOR_CHUNK_SIZE` | `600` | Tokens per chunk |
+| `VECTOR_CHUNK_OVERLAP` | `100` | Overlap between chunks |
+| `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
+| `RAG_TOP_K` | `4` | Chunks retrieved as context (Steps 4-5) |
+| `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |
+| `UI_DOWNLOAD_LIMIT_MB` | `50` | Largest file served as a download |
+| `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |
+
+These are *starting defaults* for the forms; users can still override most of them
+per crawl/index in the UI. See `.env.defaults` for the inline documentation.
+
+### Secrets (kept separate)
+
+Credentials never live in `.env.defaults` or `settings`. They are plain
+environment variables read by their SDKs:
+
+| Variable | Used for |
+|---|---|
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | Amazon Bedrock (Titan embeddings + Claude/Nova chat) |
+| `OPENAI_API_KEY` | OpenAI embeddings + chat |
+
+Locally, copy `.env.example` to `.env` (git-ignored) and fill them in. Leave them
+blank to run fully offline (local embeddings + echo chat model).
+
+### Streamlit Community Cloud
+
+The deployed app reads secrets from the Cloud **Secrets** console (TOML).
+Root-level keys are exposed automatically as environment variables, so the same
+`AWS_*` / `OPENAI_API_KEY` reads work unchanged. Copy
+`.streamlit/secrets.toml.example` into **Manage app → Settings → Secrets**, fill in
+real values, and save (changes propagate in ~1 minute). You can also override any
+non-secret setting there. Never commit a real `.streamlit/secrets.toml` — it is
+git-ignored.
+
 ## CrawlerConfig
 
 | Parameter | Type | Default | Description |

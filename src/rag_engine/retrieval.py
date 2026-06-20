@@ -1,9 +1,9 @@
 """Open a persisted vector index and run similarity search over it (Step 3).
 
 The index is reopened with the *same* embedding model that wrote it (read from
-the run manifest) via the same ``langchain_chroma.Chroma`` class the indexer
-used, which guarantees on-disk compatibility. Heavy imports (langchain-chroma,
-chromadb) stay inside the functions that need them.
+the run manifest) through a :class:`~rag_engine.search.VectorSearcher`, so the
+retrieval pipeline never touches a specific vector store directly. Heavy imports
+(langchain-chroma, chromadb) stay inside the searcher that needs them.
 """
 
 from __future__ import annotations
@@ -11,24 +11,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from artifact_store import LibraryMessage
 from rag_engine import messages
 from rag_engine.config import RagConfig
 from rag_engine.models import RetrievedChunk
+from rag_engine.search import VectorSearcher, open_searcher
 from vector_indexer import (
-    CHROMA_SUBDIR,
     EmbeddingProviderUnavailable,
     ResolvedEmbedding,
     load_manifest,
     resolve_embedding,
 )
 
-if TYPE_CHECKING:
-    from langchain_core.embeddings import Embeddings
-
-__all__ = ["RetrievalResult", "load_index_embeddings", "open_index", "retrieve"]
+__all__ = ["RetrievalResult", "load_index_embeddings", "retrieve"]
 
 
 @dataclass
@@ -51,20 +48,6 @@ def load_index_embeddings(
     return resolve_embedding(model, manifest.embedding_dimension)
 
 
-def open_index(run_dir: Path | str, embeddings: Embeddings) -> Any:
-    """Open the persisted ChromaDB collection for *run_dir*."""
-    from chromadb.config import Settings
-    from langchain_chroma import Chroma
-
-    manifest = load_manifest(run_dir)
-    return Chroma(
-        collection_name=manifest.collection_name,
-        embedding_function=embeddings,
-        persist_directory=str(Path(run_dir) / CHROMA_SUBDIR),
-        client_settings=Settings(anonymized_telemetry=False),
-    )
-
-
 def retrieve(
     run_dir: Path | str,
     query: str,
@@ -73,7 +56,7 @@ def retrieve(
     embedding_loader: Callable[
         [Path | str], tuple[ResolvedEmbedding, list[LibraryMessage]]
     ] = load_index_embeddings,
-    store_opener: Callable[[Path | str, Any], Any] = open_index,
+    searcher_factory: Callable[[Path | str, Any], VectorSearcher] = open_searcher,
 ) -> RetrievalResult:
     """Run similarity search for *query* over the index in *run_dir*."""
     result = RetrievalResult()
@@ -91,19 +74,19 @@ def retrieve(
         return result
     result.warnings.extend(emb_warnings)
     try:
-        store = store_opener(run_path, resolved_emb.embeddings)
-        hits = store.similarity_search_with_score(query, k=config.top_k)
+        searcher = searcher_factory(run_path, resolved_emb.embeddings)
+        hits = searcher.search(query, config.top_k)
     except Exception as exc:  # noqa: BLE001 - boundary around the vector store
         result.errors.append(messages.retrieval_failed(str(exc)))
         return result
     result.chunks = [
         RetrievedChunk(
-            text=document.page_content,
-            source=str(document.metadata.get("source", "")),
-            score=_distance_to_similarity(distance),
-            metadata={str(key): str(value) for key, value in document.metadata.items()},
+            text=hit.text,
+            source=hit.source,
+            score=_distance_to_similarity(hit.distance),
+            metadata=hit.metadata,
         )
-        for document, distance in hits
+        for hit in hits
     ]
     if not result.chunks:
         result.warnings.append(messages.no_context())

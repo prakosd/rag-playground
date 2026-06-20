@@ -3,5 +3,13 @@
         "./src",
         "./apps/streamlit/src"
     ],
-    "python.analysis.typeCheckingMode": "basic"
+    "python.analysis.typeCheckingMode": "basic",
+    // This project lints and formats with Ruff (configured in pyproject.toml).
+    // Disable Pylint, whose default rules conflict with the codebase's style
+    // (intentional broad-except guarded by `# noqa: BLE001`, single-method
+    // classes, and dependency-injection/test seams with deliberately unused
+    // arguments) and produced most of the editor squiggles. Ruff stays the
+    // single source of truth for linting.
+    "pylint.enabled": false,
+    "ruff.enable": true
 }

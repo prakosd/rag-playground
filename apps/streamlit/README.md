@@ -36,11 +36,12 @@ flowchart TD
 | `vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl_jobs.py`) |
 | `index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
 | `llm_form_ui.py` | Steps 4-5 chat-model selector + pure option/label helpers |
-| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, sources, messages) |
+| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, index metadata, ranked result cards, sources, messages) |
 | `generated_files.py` | Output listing, previews, and downloads |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
 | `support.py` | Compatibility exports for the split helper modules |
+| `settings.py` | Typed, env-driven non-secret app settings (`pydantic-settings`) |
 
 Workflow content modules live in `app_pages/`. Each module exposes `render_page()` and renders only the content area for one navigation step. The shared page shell stays in `streamlit_app.py`.
 
@@ -106,7 +107,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search — index picker, query, ranked snippets with scores + sources (`rag_engine.retrieve`) |
+| `semantic_search.py` | Step 3 semantic search — index picker + `manifest.json` metadata, top-N query, ranked result cards (similarity %), and Output Files (`rag_engine.retrieve`) |
 | `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 

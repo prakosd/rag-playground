@@ -30,6 +30,11 @@ from crawl4md_streamlit.session_manager import ensure_within_root
 _ACTIVITY_LOG_FILE = "activity_log.txt"
 _CRAWL_DIR_PREFIX = CRAWL_FOLDER_PREFIX
 _VECTOR_DIR_PREFIX = VECTOR_FOLDER_PREFIX
+# Material icons for download-tree folders, picked by artifact type so a crawl
+# run reads as exploration and a vector index as a database at a glance.
+_FOLDER_ICON_DEFAULT = ":material/folder_open:"
+_FOLDER_ICON_CRAWL = ":material/travel_explore:"
+_FOLDER_ICON_VECTOR = ":material/database:"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
@@ -329,6 +334,19 @@ def collapse_artifact_run_folder(
         local_timezone=local_timezone,
     )
     return f"{label}/{timestamp_label}", child_entry
+
+
+def download_folder_icon(folder_name: str) -> str:
+    """Return the Material icon for a download-tree folder by its artifact type.
+
+    Crawl runs (``crawl_*``) and vector indexes (``vector_*``) get distinct icons
+    so the tree is scannable; every other folder keeps the neutral folder icon.
+    """
+    if folder_name.startswith(_CRAWL_DIR_PREFIX):
+        return _FOLDER_ICON_CRAWL
+    if folder_name.startswith(_VECTOR_DIR_PREFIX):
+        return _FOLDER_ICON_VECTOR
+    return _FOLDER_ICON_DEFAULT
 
 
 def format_run_timestamp_label(
