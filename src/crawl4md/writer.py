@@ -20,6 +20,14 @@ _CONTENT_PREFIX = "content_"
 _FILE_INDEX_WIDTH = 3
 _YAML_FRONT_MATTER_DELIMITER = "---\n"
 
+# Render-invisible markers that bracket each page's human-readable header (the
+# title heading and "*Source: <url>*" line). Downstream tools (vector_indexer)
+# use them to recover a page's source and exclude the header from indexed chunk
+# text, while humans still see the heading. Keep in sync with vector_indexer's
+# page parser.
+_PAGE_HEADER_START_MARKER = "<!-- crawl4md:source -->"
+_PAGE_HEADER_END_MARKER = "<!-- /crawl4md:source -->"
+
 
 @dataclass(frozen=True)
 class PageIndexEntry:
@@ -239,11 +247,17 @@ class FileWriter:
 
     @staticmethod
     def _format_page(page: ExtractedPage) -> str:
-        """Format a single page as a Markdown block with metadata header."""
-        parts = [_SEPARATOR]
+        """Format a single page as a Markdown block with a tagged metadata header.
+
+        The title heading and source URL sit between render-invisible markers so
+        downstream tools (vector_indexer) can recover the page source and drop the
+        header from indexed chunk text, while humans still see the heading.
+        """
+        parts = [_SEPARATOR, _PAGE_HEADER_START_MARKER, "\n"]
         if page.title:
             parts.append(f"# {page.title}\n\n")
         parts.append(f"*Source: {page.url}*\n")
+        parts.append(_PAGE_HEADER_END_MARKER)
         parts.append(_SEPARATOR)
         parts.append(page.markdown)
         parts.append("\n")

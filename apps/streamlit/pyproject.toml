@@ -36,6 +36,11 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "W", "UP", "B", "SIM"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# streamlit_app.py sets PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION before importing
+# Streamlit/chromadb, so module imports intentionally follow that statement.
+"streamlit_app.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short"

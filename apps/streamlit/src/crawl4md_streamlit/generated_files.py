@@ -143,6 +143,35 @@ def generated_files_cache_token(path: Path | str) -> tuple[float, int]:
     return (stat_result.st_mtime, stat_result.st_size)
 
 
+def delete_generated_file(session_root: Path | str, relative_path: str) -> bool:
+    """Delete one generated file within the session, pruning emptied folders.
+
+    Returns ``True`` when a file was removed. After deletion, parent directories
+    that became empty are removed too, stopping at — and never removing — the
+    session root. Raises ``ValueError`` when *relative_path* escapes the session
+    root (path containment is enforced via :func:`ensure_within_root`).
+    """
+    root = Path(session_root).resolve()
+    target = ensure_within_root(root, root / relative_path)
+    if not target.is_file():
+        return False
+    target.unlink()
+    _prune_empty_parents(target.parent, root)
+    return True
+
+
+def _prune_empty_parents(start: Path, root: Path) -> None:
+    """Remove now-empty directories from *start* up to (excluding) *root*."""
+    current = start.resolve()
+    root = root.resolve()
+    while current != root and root in current.parents:
+        try:
+            current.rmdir()  # only succeeds while the directory is empty
+        except OSError:
+            return
+        current = current.parent
+
+
 def _scan_generated_files(root: Path, target_root: Path) -> list[_ScannedGeneratedFile]:
     scanned: list[_ScannedGeneratedFile] = []
     stack = [target_root]

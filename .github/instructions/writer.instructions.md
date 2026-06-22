@@ -11,6 +11,7 @@ applyTo: "src/crawl4md/writer.py, src/crawl4md/sorter.py, tests/test_writer.py, 
 - Oversized pages get their own file with `UserWarning`.
 - Symmetric `_fail_writer` for failed pages.
 - Extension comes from `PageConfig.output_extension`.
+- **Page source markers.** `_format_page` wraps each page's human-readable header (the `# title` heading and `*Source: <url>*` line) in render-invisible HTML-comment markers `_PAGE_HEADER_START_MARKER` (`<!-- crawl4md:source -->`) and `_PAGE_HEADER_END_MARKER` (`<!-- /crawl4md:source -->`). They let `vector_indexer` recover a page's source and drop the header from indexed chunks while humans still see the heading. The two marker strings are duplicated in `vector_indexer.page_source` with a "keep in sync" comment — do not change one without the other, and do not add a cross-library import. `test_writer.py` asserts the markers bracket each page header and that the leading front matter is still written once.
 
 ## Output file naming
 

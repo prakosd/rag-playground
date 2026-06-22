@@ -76,18 +76,26 @@ class Strings(TypedDict):
     SEARCH_RESULTS_HEADER: str
     SEARCH_NO_RESULTS: str
     SEARCH_META_HEADER: str
+    SEARCH_META_CREATED: str
+    SEARCH_META_MODEL: str
     SEARCH_META_DIMENSION: str
+    SEARCH_META_LANGUAGE: str
     SEARCH_META_FILES: str
     SEARCH_META_CHUNKS: str
     SEARCH_META_CHUNK_SIZE: str
-    SEARCH_META_CAPTION: str  # template: {model}, {language}, {overlap}, {collection}
+    SEARCH_META_OVERLAP: str
+    SEARCH_META_SKIPPED: str
+    SEARCH_META_COLLECTION: str
     SEARCH_TOP_N_LABEL: str
     SEARCH_TOP_N_HELP: str
     SEARCH_SEMANTIC_HINT: str
     SEARCH_RESULTS_SUMMARY: str  # template: {count}
     SEARCH_RESULT_HEADER: str  # template: {rank}, {source}
-    SEARCH_RESULT_SCORE: str  # template: {score}
-    SEARCH_RESULT_CHUNK: str  # template: {index}
+    SEARCH_RESULT_SIMILARITY: str
+    SEARCH_RESULT_TAB_PREVIEW: str
+    SEARCH_RESULT_TAB_RAW: str
+    SEARCH_RESULT_ID: str  # template: {id}
+    SEARCH_RESULT_SIZE: str  # template: {size}
     SEARCH_RESULT_LANGUAGE: str  # template: {language}
     QA_SECTION_HEADER: str
     QA_SECTION_CAPTION: str
@@ -251,6 +259,12 @@ class Strings(TypedDict):
     FILES_PREVIEW_READ_ERROR: str  # template: {file}
     FILES_PREVIEW_EMPTY: str  # template: {file}
     FILES_PREVIEW_TRUNCATED: str  # template: {limit_kib}
+    FILES_DELETE_BUTTON: str
+    FILES_DELETE_HELP: str  # template: {file}
+    FILES_DELETE_DIALOG_TITLE: str
+    FILES_DELETE_DIALOG_BODY: str  # template: {file}
+    FILES_DELETE_DIALOG_CONFIRM: str
+    FILES_DELETE_DIALOG_CANCEL: str
     # ── Ready result download ─────────────────────────────────────────────
     READY_RESULT_HEADER: str
     READY_RESULT_SINGLE_SUBTITLE: str

@@ -4,6 +4,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from crawl4md_streamlit.generated_files import (
     GeneratedFile,
     ReadyDownload,
@@ -11,6 +13,7 @@ from crawl4md_streamlit.generated_files import (
     build_ready_download,
     collapse_artifact_run_folder,
     collect_success_content_files,
+    delete_generated_file,
     download_folder_icon,
     download_tree_entry_sort_key,
     find_latest_crawl_dir,
@@ -207,6 +210,49 @@ def test_generated_files_cache_token_reflects_path_stat(tmp_path: Path) -> None:
 
     assert second_token[0] > first_token[0]
     assert second_token[1] == first_token[1]
+
+
+# ── delete_generated_file ────────────────────────────────────────────────
+
+
+def test_delete_generated_file_removes_file_and_empty_parents(tmp_path: Path) -> None:
+    run_dir = tmp_path / "crawl_01" / "2026-05-17_10-00-00"
+    run_dir.mkdir(parents=True)
+    target = run_dir / "content_001.md"
+    target.write_text("data", encoding="utf-8")
+
+    deleted = delete_generated_file(tmp_path, "crawl_01/2026-05-17_10-00-00/content_001.md")
+
+    assert deleted is True
+    assert not target.exists()
+    # The now-empty run and crawl folders are pruned, but the session root stays.
+    assert not run_dir.exists()
+    assert not (tmp_path / "crawl_01").exists()
+    assert tmp_path.exists()
+
+
+def test_delete_generated_file_keeps_non_empty_parents(tmp_path: Path) -> None:
+    run_dir = tmp_path / "crawl_01"
+    run_dir.mkdir()
+    (run_dir / "keep.md").write_text("keep", encoding="utf-8")
+    (run_dir / "drop.md").write_text("drop", encoding="utf-8")
+
+    deleted = delete_generated_file(tmp_path, "crawl_01/drop.md")
+
+    assert deleted is True
+    assert run_dir.exists()
+    assert (run_dir / "keep.md").exists()
+
+
+def test_delete_generated_file_returns_false_when_missing(tmp_path: Path) -> None:
+    assert delete_generated_file(tmp_path, "crawl_01/nope.md") is False
+
+
+def test_delete_generated_file_rejects_path_escape(tmp_path: Path) -> None:
+    (tmp_path.parent / "outside.md").write_text("x", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        delete_generated_file(tmp_path, "../outside.md")
 
 
 # ── collect_success_content_files ────────────────────────────────────────────

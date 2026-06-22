@@ -114,14 +114,16 @@ STRINGS_EN: Strings = {
     "SEARCH_RESULTS_HEADER": "Matches",
     "SEARCH_NO_RESULTS": "No matching chunks were found for this query.",
     "SEARCH_META_HEADER": "Index details",
+    "SEARCH_META_CREATED": "Created",
+    "SEARCH_META_MODEL": "Embedding model",
     "SEARCH_META_DIMENSION": "Dimension",
+    "SEARCH_META_LANGUAGE": "Language",
     "SEARCH_META_FILES": "Files",
     "SEARCH_META_CHUNKS": "Chunks",
     "SEARCH_META_CHUNK_SIZE": "Chunk size",
-    "SEARCH_META_CAPTION": (
-        "Embedding model: {model} · Language: {language} · Overlap: {overlap} · "
-        "Collection: {collection}"
-    ),
+    "SEARCH_META_OVERLAP": "Chunk overlap",
+    "SEARCH_META_SKIPPED": "Skipped files",
+    "SEARCH_META_COLLECTION": "Collection",
     "SEARCH_TOP_N_LABEL": "Top results",
     "SEARCH_TOP_N_HELP": "How many of the highest-scoring chunks to show, ranked by similarity.",
     "SEARCH_SEMANTIC_HINT": (
@@ -129,9 +131,12 @@ STRINGS_EN: Strings = {
         "still surface dog-related chunks."
     ),
     "SEARCH_RESULTS_SUMMARY": "Top {count} matches, ranked by similarity (highest first).",
-    "SEARCH_RESULT_HEADER": "**#{rank}** · {source}",
-    "SEARCH_RESULT_SCORE": "{score}% similarity",
-    "SEARCH_RESULT_CHUNK": "Chunk {index}",
+    "SEARCH_RESULT_HEADER": "#### #{rank} · {source}",
+    "SEARCH_RESULT_SIMILARITY": "Similarity",
+    "SEARCH_RESULT_TAB_PREVIEW": "Preview",
+    "SEARCH_RESULT_TAB_RAW": "Raw",
+    "SEARCH_RESULT_ID": "Chunk {id}",
+    "SEARCH_RESULT_SIZE": "{size} chars",
     "SEARCH_RESULT_LANGUAGE": "Language {language}",
     "QA_SECTION_HEADER": "❓ Ask a question",
     "QA_SECTION_CAPTION": (
@@ -312,7 +317,7 @@ STRINGS_EN: Strings = {
     "ACTIVITY_LOG_HEADER": "Activity log",
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "File Details",
-    "FILES_CRAWL_RESULT_LABEL": "📁 Crawl result",
+    "FILES_CRAWL_RESULT_LABEL": "📁 Files & folders",
     "FILES_DOWNLOADS_SUBHEADER": "🗂️ Output Files",
     "FILES_COL_NAME": "File",
     "FILES_COL_TYPE": "Type",
@@ -333,6 +338,15 @@ STRINGS_EN: Strings = {
     "FILES_PREVIEW_READ_ERROR": "Unable to read file for preview: {file}",
     "FILES_PREVIEW_EMPTY": "{file} is empty.",
     "FILES_PREVIEW_TRUNCATED": "Preview is capped to the first {limit_kib} KiB.",
+    "FILES_DELETE_BUTTON": ":material/delete:",
+    "FILES_DELETE_HELP": "Delete {file}",
+    "FILES_DELETE_DIALOG_TITLE": "Delete file?",
+    "FILES_DELETE_DIALOG_BODY": (
+        "Permanently delete **{file}**? This can't be undone — make sure you've "
+        "downloaded anything you want to keep first."
+    ),
+    "FILES_DELETE_DIALOG_CONFIRM": "Delete",
+    "FILES_DELETE_DIALOG_CANCEL": "Keep",
     # ── Ready result download ──────────────────────────────────────────
     "READY_RESULT_HEADER": "📦 Crawl results ready",
     "READY_RESULT_SINGLE_SUBTITLE": "1 success file ready to download",
@@ -384,8 +398,8 @@ STRINGS_EN: Strings = {
     "VEC_CHUNK_OVERLAP_HELP": "Number of characters or tokens from the end of one chunk that are repeated at the start of the next.",
     "VEC_EMBEDDING_MODEL_LABEL": "Embedding model",
     "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. If the selected model is unavailable (missing API key, credentials, or internet), indexing stops with an error and you can switch to the local offline model (all-MiniLM-L6-v2), which needs no setup.",
-    "VEC_MODEL_TAG_LOCAL": "💻 Local (one-time download)",
-    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud (needs API key)",
+    "VEC_MODEL_TAG_LOCAL": "💻 Local",
+    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud needs 🔑",
     "VEC_MODEL_INDICATOR_LOCAL": (
         "Runs on this machine. Downloads the model once (about 80 MB) the first time, "
         "then works offline."

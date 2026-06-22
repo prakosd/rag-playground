@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     # Default number of ranked matches shown on the Semantic Search page.
     semantic_search_top_n: int = 5
 
+    # ── Session lifecycle ────────────────────────────────────────────────────
+    # Days an inactive browser session's files are kept before the startup
+    # cleanup deletes them. Loading or crawling in a session resets its clock.
+    session_retention_days: int = 7
+
     # ── App UI limits ────────────────────────────────────────────────────────
     # Largest file (MB) the app will serve as a download (above this it is
     # shown but view-only).

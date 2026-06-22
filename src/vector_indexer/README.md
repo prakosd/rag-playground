@@ -10,7 +10,8 @@ no Streamlit dependency and is equally usable from a notebook, a CLI, or tests.
 VectorIndexer.run(config, inputs, output_base)
   ├─ resolve_embedding()      → LangChain Embeddings (or raises if unavailable)
   ├─ load_documents()         → .md / .txt files and .zip members (via artifact_store)
-  ├─ chunk_documents()        → overlapping chunks (langchain-text-splitters)
+  ├─ split_into_pages()       → drop crawl run metadata, recover per-page title/url (page_source)
+  ├─ chunk_documents()        → overlapping chunks, each stamped with a Source line (langchain-text-splitters)
   └─ ChromaVectorStore.add_texts / persist   (embeds each batch with the resolved model)
         → vector_<id>/<timestamp>/chroma  +  manifest.json
 ```
@@ -64,6 +65,19 @@ print(result.success, result.indexed_chunk_count, result.warnings)
 
 Unsupported or unreadable inputs are skipped and reported in `IndexingResult.warnings`
 as `LibraryMessage` objects (e.g. code `vector.skipped_unsupported_file`).
+
+## Page-aware indexing
+
+crawl4md output begins with a YAML *front matter* block (crawl run metadata) and wraps
+each page's human-readable header (title + `*Source: <url>*`) in render-invisible markers
+(`<!-- crawl4md:source -->` … `<!-- /crawl4md:source -->`). `page_source.split_into_pages`
+strips the front matter so run metadata never reaches a chunk, splits the body into pages,
+and recovers each page's title/URL. `chunk_documents` then prepends a
+`Source: [title](url)` line to every chunk and copies the title/URL into chunk metadata
+(`source_title`, `source_url`) so retrieval can cite the page. Inputs without markers
+(plain `.txt` or non-crawl4md Markdown) degrade to a single untitled page and get no Source
+prefix. The marker strings are duplicated in `crawl4md.writer` with a "keep in sync" note;
+`vector_indexer` does **not** import `crawl4md`.
 
 ## Progress reporting
 
@@ -138,7 +152,8 @@ back**), which guarantees the on-disk format matches.
 ## Reading an index back
 
 Each run writes a `manifest.json` (via `manifest.py`) recording the embedding model,
-dimension, and `collection_name`. `load_manifest(run_dir)` returns a typed
+dimension, `collection_name`, and the run's `created_at` (ISO-8601 UTC, derived from the
+run-directory timestamp; `None` for older manifests). `load_manifest(run_dir)` returns a typed
 `IndexManifest`, and the constants `DEFAULT_COLLECTION_NAME` / `CHROMA_SUBDIR` locate
 the collection on disk. The [`rag_engine`](../rag_engine/README.md) library uses these
 to reopen an index with the same embeddings and run retrieval (Steps 3-5).
@@ -152,7 +167,8 @@ to reopen an index with the same embeddings and run retrieval (Steps 3-5).
 | `manifest.py` | `IndexManifest`, `load_manifest` / `write_manifest`, collection + layout constants |
 | `languages.py` | `LUCENE_LANGUAGES`, `DEFAULT_LANGUAGE` |
 | `document_loader.py` | load `.md` / `.txt` / `.zip` into documents |
-| `chunking.py` | overlapping chunks via langchain-text-splitters |
+| `page_source.py` | strip crawl run metadata, split crawl4md output into per-page sections, build the `Source: [title](url)` line (pure stdlib) |
+| `chunking.py` | overlapping chunks via langchain-text-splitters, each stamped with its page Source line |
 | `embeddings/` | LangChain `Embeddings` builders, catalog, registry, resolution policy |
 | `vector_store/` | `VectorStore` interface and `ChromaVectorStore` (langchain-chroma) |
 | `indexer.py` | `VectorIndexer.run` orchestration |

@@ -44,6 +44,7 @@ crawl/index/RAG config models.
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
 | `RAG_TOP_K` | `4` | Chunks retrieved as context (Steps 4-5) |
 | `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |
+| `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `50` | Largest file served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |
 
@@ -159,6 +160,12 @@ To keep every intermediate file on disk (useful for debugging), set
 Every generated content file (`*_content_*.txt` / `*_content_*.md`) starts with YAML
 front matter recording the crawl start time, session ID, stored directory, full
 crawl parameters, and status. It covers the entire file, not individual pages within it.
+
+Each page's human-readable header (the title heading and `*Source: <url>*` line) is
+wrapped in render-invisible HTML-comment markers (`<!-- crawl4md:source -->` …
+`<!-- /crawl4md:source -->`). They do not show when the Markdown is rendered; the
+`vector_indexer` library uses them to recover each page's source and to keep both the
+front matter and the header out of indexed chunk text.
 
 ### What to look at first
 

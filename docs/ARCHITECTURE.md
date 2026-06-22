@@ -66,16 +66,22 @@ changing the crawl pipeline.
 ```mermaid
 flowchart TD
   Inputs["selected crawl results + uploads<br/>.md / .txt / .zip"] --> Loader["document_loader<br/>(.zip → .md/.txt members)"]
-  Loader --> Chunker["chunking<br/>overlapping chunks"]
+  Loader --> Pages["page_source<br/>strip front matter · split pages"]
+  Pages --> Chunker["chunking<br/>overlapping chunks + Source line"]
   Chunker --> Embed["LangChain Embeddings<br/>Titan / OpenAI / offline"]
   Embed --> Store["langchain-chroma (ChromaDB)<br/>vector_<id>/<timestamp>/chroma"]
   Store --> Result["IndexingResult + manifest.json"]
 ```
 
 Embeddings are LangChain `Embeddings` objects and the store is langchain-chroma, so
-a backend can change without touching the application layer. The `manifest.json`
-records the embedding model, dimension, and collection name so an index can be
-reopened later. See
+a backend can change without touching the application layer. Before chunking, the
+indexer strips each file's leading crawl run metadata (the YAML front matter) and
+splits the body on the render-invisible page markers crawl4md emits, so run metadata
+never reaches a chunk and every chunk is stamped with its page's
+`Source: [title](url)` line (also carried as `source_title` / `source_url`
+metadata). Files without markers degrade to a single untitled page. The `manifest.json`
+records the embedding model, dimension, collection name, and the run's `created_at`
+timestamp so an index can be reopened later. See
 [src/vector_indexer/README.md](../src/vector_indexer/README.md).
 
 ## Steps 3-5 — how RAG works

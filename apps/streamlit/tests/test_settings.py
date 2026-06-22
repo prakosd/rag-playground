@@ -15,18 +15,21 @@ def test_settings_use_code_defaults_without_env_files() -> None:
     assert settings.crawl_timeout == 60.0
     assert settings.crawl_max_file_size_mb == 10.0
     assert settings.ui_download_limit_mb == 50
+    assert settings.session_retention_days == 7
 
 
 def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RAG_TOP_K", "9")
     monkeypatch.setenv("VECTOR_CHUNK_SIZE", "900")
     monkeypatch.setenv("UI_PREVIEW_LIMIT_KB", "512")
+    monkeypatch.setenv("SESSION_RETENTION_DAYS", "30")
 
     settings = Settings(_env_file=None)
 
     assert settings.rag_top_k == 9
     assert settings.vector_chunk_size == 900
     assert settings.ui_preview_limit_kb == 512
+    assert settings.session_retention_days == 30
 
 
 def test_settings_ignore_unrelated_secret_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:

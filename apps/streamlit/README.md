@@ -37,7 +37,7 @@ flowchart TD
 | `index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
 | `llm_form_ui.py` | Steps 4-5 chat-model selector + pure option/label helpers |
 | `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, index metadata, ranked result cards, sources, messages) |
-| `generated_files.py` | Output listing, previews, and downloads |
+| `generated_files.py` | Output listing, previews, downloads, and per-file deletion |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
 | `support.py` | Compatibility exports for the split helper modules |
@@ -107,7 +107,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search — index picker + `manifest.json` metadata, top-N query, ranked result cards (similarity %), and Output Files (`rag_engine.retrieve`) |
+| `semantic_search.py` | Step 3 semantic search — index picker + `manifest.json` metadata card, query with a top-N number input, ranked result cards (similarity metric + Preview/Raw tabs), and Output Files (`rag_engine.retrieve`) |
 | `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
@@ -280,7 +280,7 @@ another browser, device, or after clearing browser cache. The dialog:
 3. If the session is already in the browser's records, shows a toast and switches to it without
    creating a duplicate.
 4. If found but not yet local, registers the record in browser localStorage, then selects it.
-5. Calls `touch_session()` to reset the session's mtime so the 7-day retention clock restarts.
+5. Calls `touch_session()` to reset the session's mtime so the retention clock (`SESSION_RETENTION_DAYS`, default 7) restarts.
 
 The button is disabled while a crawl is running (`_STATE_RUNNING` / `_STATE_CANCEL_REQUESTED`)
 to prevent switching sessions mid-job. Error messages are translated via the i18n catalog
@@ -326,10 +326,14 @@ they can affect any server-side path.
 `validate_safe_id(id)` enforces that IDs only contain `[a-z0-9_-]` before they are
 interpolated into directory names.
 
-Session folders older than 7 days are removed by `cleanup_old_sessions_with_lock` after browser
-session hydration (using a `.cleanup.lock` file so only one Streamlit worker runs the cleanup).
-Session IDs known to the browser are passed as active IDs so the selector does not point to
-folders removed during the same startup.
+Session folders whose files have been inactive longer than the retention window
+(`SESSION_RETENTION_DAYS`, default 7 — see [CONFIGURATION.md](../../docs/CONFIGURATION.md#settings-non-secret))
+are removed by `cleanup_old_sessions_with_lock` after browser session hydration (using a
+`.cleanup.lock` file so only one Streamlit worker runs the cleanup). The shell reads the window
+from `get_settings().session_retention_days` and passes it into the cleanup call; loading or
+crawling in a session calls `touch_session()`, which resets its clock. Session IDs known to the
+browser are passed as active IDs so the selector does not point to folders removed during the
+same startup.
 
 ---
 
@@ -340,6 +344,17 @@ presents those files without transforming their content; when multiple successfu
 are ready, the ready-result button may create an app-owned `final/success_content.zip` archive
 for a single download. For the full file reference (purposes, naming conventions, and cleanup
 behavior), see [Output Structure](../../README.md#output-structure) in the root README.
+
+**Deleting a file.** Each file row carries a red delete button next to its preview/download
+controls. Clicking it opens a small confirmation dialog (deletion is permanent, so it advises
+downloading first) before `generated_files.delete_generated_file(session_root, relative_path)`
+removes the file. That pure helper validates the path with `ensure_within_root` (so the target
+must stay inside the session root), deletes it, then prunes now-empty parent folders up to — but
+not including — the session root. After a delete the shell clears the cached file list and
+download tree (`_cached_list_generated_files.clear()`, `_cached_download_tree.clear()`) because
+the session-root stat token does not change for nested deletes. Deleting an individual file from
+inside a `vector_<id>` Chroma folder can corrupt that index; the permanent-deletion warning in
+the dialog covers it.
 
 **Folder layout under `outputs/streamlit_sessions/`:**
 
@@ -409,7 +424,8 @@ flowchart TD
 | --- | --- |
 | `tests/test_controls.py` | Every `job_state` value → correct buttons (label, disabled, type) |
 | `tests/test_form_defaults.py` | Default crawl form payload and independent dict creation |
-| `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads |
+| `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads, plus file deletion with empty-parent pruning and path containment |
+| `tests/test_rag_ui.py` | Pure Steps 3-5 render helpers: ranked-result detail caption (chunk id / size / language) and index-metadata rows (including `created_at` formatting) |
 | `tests/test_progress_chart.py` | Pure chart helper behavior: live sample append, persisted JSONL parsing, cumulative/pace row derivation |
 | `tests/test_pages.py` | Pure page-registry behavior for workflow ordering, placeholders, translated navigation labels, and importable page modules |
 | `tests/test_support.py` | ID safety, browser session records, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |

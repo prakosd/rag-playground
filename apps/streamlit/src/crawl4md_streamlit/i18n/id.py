@@ -117,13 +117,16 @@ STRINGS_ID: Strings = {
     "SEARCH_RESULTS_HEADER": "Hasil",
     "SEARCH_NO_RESULTS": "Tidak ada chunk yang cocok untuk kueri ini.",
     "SEARCH_META_HEADER": "Detail index",
+    "SEARCH_META_CREATED": "Dibuat",
+    "SEARCH_META_MODEL": "Model embedding",
     "SEARCH_META_DIMENSION": "Dimensi",
+    "SEARCH_META_LANGUAGE": "Bahasa",
     "SEARCH_META_FILES": "File",
     "SEARCH_META_CHUNKS": "Chunk",
     "SEARCH_META_CHUNK_SIZE": "Ukuran chunk",
-    "SEARCH_META_CAPTION": (
-        "Model embedding: {model} · Bahasa: {language} · Overlap: {overlap} · Koleksi: {collection}"
-    ),
+    "SEARCH_META_OVERLAP": "Overlap chunk",
+    "SEARCH_META_SKIPPED": "Berkas dilewati",
+    "SEARCH_META_COLLECTION": "Koleksi",
     "SEARCH_TOP_N_LABEL": "Hasil teratas",
     "SEARCH_TOP_N_HELP": "Berapa banyak chunk skor tertinggi yang ditampilkan, diurutkan menurut kemiripan.",
     "SEARCH_SEMANTIC_HINT": (
@@ -131,9 +134,12 @@ STRINGS_ID: Strings = {
         "“not dog” tetap bisa memunculkan chunk terkait anjing."
     ),
     "SEARCH_RESULTS_SUMMARY": "Top {count} hasil, diurutkan menurut kemiripan (tertinggi dulu).",
-    "SEARCH_RESULT_HEADER": "**#{rank}** · {source}",
-    "SEARCH_RESULT_SCORE": "{score}% kemiripan",
-    "SEARCH_RESULT_CHUNK": "Chunk {index}",
+    "SEARCH_RESULT_HEADER": "#### #{rank} · {source}",
+    "SEARCH_RESULT_SIMILARITY": "Kemiripan",
+    "SEARCH_RESULT_TAB_PREVIEW": "Pratinjau",
+    "SEARCH_RESULT_TAB_RAW": "Mentah",
+    "SEARCH_RESULT_ID": "Chunk {id}",
+    "SEARCH_RESULT_SIZE": "{size} karakter",
     "SEARCH_RESULT_LANGUAGE": "Bahasa {language}",
     "QA_SECTION_HEADER": "❓ Ajukan pertanyaan",
     "QA_SECTION_CAPTION": (
@@ -319,7 +325,7 @@ STRINGS_ID: Strings = {
     "ACTIVITY_LOG_HEADER": "Log aktivitas",
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "Detail File",
-    "FILES_CRAWL_RESULT_LABEL": "📁 Hasil crawl",
+    "FILES_CRAWL_RESULT_LABEL": "📁 Berkas & folder",
     "FILES_DOWNLOADS_SUBHEADER": "🗂️ File Output",
     "FILES_COL_NAME": "File",
     "FILES_COL_TYPE": "Tipe",
@@ -340,6 +346,15 @@ STRINGS_ID: Strings = {
     "FILES_PREVIEW_READ_ERROR": "Tidak dapat membaca file untuk pratinjau: {file}",
     "FILES_PREVIEW_EMPTY": "{file} kosong.",
     "FILES_PREVIEW_TRUNCATED": "Pratinjau dibatasi pada {limit_kib} KiB pertama.",
+    "FILES_DELETE_BUTTON": ":material/delete:",
+    "FILES_DELETE_HELP": "Hapus {file}",
+    "FILES_DELETE_DIALOG_TITLE": "Hapus berkas?",
+    "FILES_DELETE_DIALOG_BODY": (
+        "Hapus permanen **{file}**? Tindakan ini tidak bisa dibatalkan — pastikan "
+        "Anda sudah mengunduh berkas yang ingin disimpan."
+    ),
+    "FILES_DELETE_DIALOG_CONFIRM": "Hapus",
+    "FILES_DELETE_DIALOG_CANCEL": "Simpan",
     # ── Ready result download ──────────────────────────────────────────
     "READY_RESULT_HEADER": "📦 Hasil crawl siap",
     "READY_RESULT_SINGLE_SUBTITLE": "1 file berhasil siap diunduh",
@@ -392,8 +407,8 @@ STRINGS_ID: Strings = {
     "VEC_CHUNK_OVERLAP_HELP": "Jumlah karakter atau token dari akhir satu chunk yang diulang di awal chunk berikutnya.",
     "VEC_EMBEDDING_MODEL_LABEL": "Model embedding",
     "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Jika model yang dipilih tidak tersedia (kunci API, kredensial, atau internet tidak ada), pengindeksan berhenti dengan kesalahan dan Anda dapat beralih ke model lokal luring (all-MiniLM-L6-v2) yang tidak memerlukan penyiapan.",
-    "VEC_MODEL_TAG_LOCAL": "💻 Lokal (unduh sekali)",
-    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud (perlu API key)",
+    "VEC_MODEL_TAG_LOCAL": "💻 Lokal",
+    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud perlu 🔑",
     "VEC_MODEL_INDICATOR_LOCAL": (
         "Berjalan di mesin ini. Mengunduh model sekali (sekitar 80 MB) saat pertama kali, "
         "lalu bekerja luring."

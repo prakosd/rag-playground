@@ -30,6 +30,22 @@ class TestFileWriter:
         assert "*Source: https://example.com/page1*" in content
         assert "# Page One" in content
 
+    def test_page_header_is_wrapped_in_source_markers(self, tmp_path: Path, sample_pages):
+        writer = FileWriter()
+        files = writer.write(sample_pages, tmp_path)
+        content = files[0].read_text(encoding="utf-8")
+
+        # Each page's title + source line sit between render-invisible markers so
+        # vector_indexer can recover them and exclude the header from chunk text.
+        assert "<!-- crawl4md:source -->" in content
+        assert "<!-- /crawl4md:source -->" in content
+        header = content.split("<!-- crawl4md:source -->", 1)[1].split(
+            "<!-- /crawl4md:source -->", 1
+        )[0]
+        assert "# Page One" in header
+        assert "*Source: https://example.com/page1*" in header
+        assert content.count("<!-- crawl4md:source -->") == len(sample_pages)
+
     def test_file_contains_separators(self, tmp_path: Path, sample_pages):
         writer = FileWriter()
         files = writer.write(sample_pages, tmp_path)

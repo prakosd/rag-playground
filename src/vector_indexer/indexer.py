@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from artifact_store import LibraryMessage
-from artifact_store.naming import format_utc_timestamp_slug
+from artifact_store.naming import format_utc_timestamp_slug, parse_utc_timestamp_slug
 from vector_indexer import messages
 from vector_indexer.chunking import chunk_documents
 from vector_indexer.config import IndexingConfig
@@ -248,6 +248,7 @@ def _write_manifest(
     write_manifest(
         run_dir,
         {
+            "created_at": _run_created_at(run_dir),
             "embedding_model_requested": config.embedding_model,
             "embedding_model_used": model_id,
             "embedding_dimension": config.embedding_dimension,
@@ -263,3 +264,9 @@ def _write_manifest(
             "errors": [message.as_dict() for message in result.errors],
         },
     )
+
+
+def _run_created_at(run_dir: Path) -> str | None:
+    """Return the run's creation time (ISO-8601 UTC) from its timestamp slug."""
+    created = parse_utc_timestamp_slug(run_dir.name)
+    return created.isoformat() if created else None

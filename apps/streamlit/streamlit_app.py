@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+import os
+
+# Force protobuf's pure-Python parser before importing Streamlit or any library
+# that bundles pre-generated ``*_pb2`` modules (chromadb, reached via
+# vector_indexer). On Streamlit Community Cloud the resolved protobuf runtime is
+# newer than chromadb's generated descriptors, which otherwise aborts indexing
+# with "Descriptors cannot be created directly". This must run before the first
+# protobuf import, so it sits above the module imports (see E402 ignore below).
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+
 import html
 import importlib
 import mimetypes
@@ -23,6 +33,7 @@ from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
     collapse_artifact_run_folder,
+    delete_generated_file,
     download_folder_icon,
     download_tree_entry_sort_key,
     generated_files_cache_token,
@@ -176,7 +187,7 @@ _GITHUB_ICON_DATA_URI = (
     "NzAuNyA5OCA0OS4xIDk4IDIyIDc2IDAgNDguOSAweicgY2xpcC1ydWxlPSdldmVub2RkJy8+"
     "PC9zdmc+"
 )
-_AUTHOR_PHOTO_URL = "https://media.licdn.com/dms/image/v2/D5635AQFefjHsJTUdIA/profile-framedphoto-shrink_100_100/B56Zgrsi34G4Ao-/0/1753079754750?e=1782032400&v=beta&t=5VL6DhItXFgyvlE98Ao_UYjqG3YQBaMTYnoLoARryPg"
+_AUTHOR_PHOTO_URL = "https://media.licdn.com/dms/image/v2/D5603AQEraqyhOd5bOg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1731589103775?e=2147483647&v=beta&t=RTXvNnlM_jS1bPSRiBSC1hBfeIAAwhYVxXKv3ON9MUs"
 _PREVIEW_DIALOG_WIDTH = "large"
 # Adjust this percentage to resize the preview modal relative to the viewport.
 _PREVIEW_DIALOG_VIEWPORT_PERCENT = 70
@@ -760,7 +771,11 @@ _PORTFOLIO_MODAL_COMPONENT = component_v2(
 
 @st.cache_resource(show_spinner=False)
 def _run_startup_cleanup(active_session_ids: tuple[str, ...]) -> None:
-    cleanup_old_sessions_with_lock(_SESSIONS_ROOT, active_session_ids=active_session_ids)
+    cleanup_old_sessions_with_lock(
+        _SESSIONS_ROOT,
+        active_session_ids=active_session_ids,
+        retention_days=get_settings().session_retention_days,
+    )
 
 
 def _init_state() -> None:
@@ -785,6 +800,7 @@ def _init_state() -> None:
     st.session_state.setdefault("activity_log_size", DEFAULT_ACTIVITY_LOG_SIZE)
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("preview_file_relative_path", "")
+    st.session_state.setdefault("delete_file_relative_path", "")
     st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
     st.session_state.setdefault("vector_index_job", None)
@@ -2263,6 +2279,65 @@ def _file_preview_dialog() -> None:
         st.caption(strings["FILES_PREVIEW_TRUNCATED"].format(limit_kib=_PREVIEW_LIMIT_KIB))
 
 
+def _on_delete_dismiss() -> None:
+    st.session_state.delete_file_relative_path = ""
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_delete_dismiss)
+def _delete_confirmation_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    relative_path = str(st.session_state.get("delete_file_relative_path", ""))
+    if not relative_path:
+        return
+    file_name = Path(relative_path).name
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stElementContainer"].st-key-delete_confirm_button button {
+            background-color: #dc3545; border-color: #dc3545; color: white;
+        }
+        div[data-testid="stElementContainer"].st-key-delete_confirm_button button:hover {
+            background-color: #c82333; border-color: #bd2130; color: white;
+        }
+        div[data-testid="stColumn"]:has(.st-key-delete_confirm_button) [data-testid="stVerticalBlock"] {
+            align-items: flex-end;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.subheader(strings["FILES_DELETE_DIALOG_TITLE"])
+    st.warning(strings["FILES_DELETE_DIALOG_BODY"].format(file=file_name))
+    action_cols = st.columns(2)
+    with action_cols[0]:
+        if st.button(strings["FILES_DELETE_DIALOG_CANCEL"], key="delete_cancel_button"):
+            st.session_state.delete_file_relative_path = ""
+            st.rerun()
+    with action_cols[1]:
+        if st.button(
+            strings["FILES_DELETE_DIALOG_CONFIRM"],
+            type="secondary",
+            icon=":material/delete:",
+            key="delete_confirm_button",
+        ):
+            _delete_file(relative_path)
+
+
+def _delete_file(relative_path: str) -> None:
+    session_folder = _session_root()
+    try:
+        deleted = delete_generated_file(session_folder, relative_path)
+    except (OSError, ValueError):
+        deleted = False
+    st.session_state.delete_file_relative_path = ""
+    if deleted:
+        if st.session_state.get("preview_file_relative_path") == relative_path:
+            st.session_state.preview_file_relative_path = ""
+        _cached_list_generated_files.clear()
+        _cached_download_tree.clear()
+    st.rerun()
+
+
 def _render_file_preview_button(file: GeneratedFile) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     previewable = is_text_previewable(file.name)
@@ -2282,6 +2357,18 @@ def _render_file_preview_button(file: GeneratedFile) -> None:
         st.rerun()
 
 
+def _render_file_delete_button(file: GeneratedFile) -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    if st.button(
+        label=strings["FILES_DELETE_BUTTON"],
+        width=_ICON_BUTTON_WIDTH_PX,
+        key=f"delete_file_{st.session_state.session_id}_{file.relative_path}",
+        help=strings["FILES_DELETE_HELP"].format(file=file.name),
+    ):
+        st.session_state.delete_file_relative_path = file.relative_path
+        st.rerun()
+
+
 def render_generated_file_download(file: GeneratedFile) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     try:
@@ -2295,6 +2382,7 @@ def render_generated_file_download(file: GeneratedFile) -> None:
         gap="xxsmall",
     ):
         _render_file_preview_button(file)
+        _render_file_delete_button(file)
         if not file.download_allowed or current_size > _DOWNLOAD_LIMIT_BYTES:
             st.button(
                 label=f"📄 {file.name}",
@@ -2412,6 +2500,17 @@ def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
     _file_preview_dialog()
 
 
+def _render_open_delete_dialog(files: list[GeneratedFile]) -> None:
+    delete_relative_path = str(st.session_state.get("delete_file_relative_path", ""))
+    if not delete_relative_path:
+        return
+    file_by_relative_path = {file.relative_path: file for file in files}
+    if delete_relative_path not in file_by_relative_path:
+        st.session_state.delete_file_relative_path = ""
+        return
+    _delete_confirmation_dialog()
+
+
 def _downloads_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
@@ -2431,6 +2530,19 @@ def _downloads_body() -> None:
     st.markdown(
         f'<h3 style="padding-bottom:0">{strings["FILES_DOWNLOADS_SUBHEADER"]}</h3>'
         f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 1rem">{subtitle_text}</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button {
+            color: #dc3545;
+        }
+        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button:hover {
+            color: #c82333; border-color: #dc3545;
+        }
+        </style>
+        """,
         unsafe_allow_html=True,
     )
     if files:
@@ -2455,6 +2567,7 @@ def _downloads_body() -> None:
             render_download_tree(download_tree)
 
     _render_open_preview_dialog(files)
+    _render_open_delete_dialog(files)
 
 
 def _render_downloads() -> None:
@@ -2728,7 +2841,9 @@ def _render_session_controls(
                         st.session_state[_EXTEND_TOAST_STATE] = _EXTEND_TOAST_FAILED
                     st.rerun()
             days_left, hours_left = session_time_remaining(
-                _SESSIONS_ROOT, st.session_state.session_id
+                _SESSIONS_ROOT,
+                st.session_state.session_id,
+                retention_days=get_settings().session_retention_days,
             )
             if days_left == 0:
                 if hours_left == 0:

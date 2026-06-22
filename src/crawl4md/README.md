@@ -22,6 +22,13 @@ crawler.print_summary(results)
 Output is written to a UTC-timestamped folder; the primary result is
 `final/sorted_success_content_*.md`.
 
+Each content file opens with a YAML front-matter block (crawl run metadata) and wraps
+every page's human-readable header (title + `*Source: <url>*`) in render-invisible markers
+(`<!-- crawl4md:source -->` … `<!-- /crawl4md:source -->`). The markers do not show when the
+Markdown is rendered; they let `vector_indexer` recover each page's source and exclude both the
+front matter and the header from indexed chunks. The marker strings live in `writer.py` and are
+mirrored in `vector_indexer.page_source` with a "keep in sync" note (no cross-library import).
+
 ## Module map
 
 | Module | Responsibility |
@@ -31,8 +38,7 @@ Output is written to a UTC-timestamped folder; the primary result is
 | `crawler.py` | `SiteCrawler` — crawl loop, retries, WAF handling, progress/cancel hooks |
 | `extractor.py` | `ContentExtractor` — HTML → Markdown (trafilatura / markdownify) |
 | `sorter.py` | `ContentSorter` — order pages by URL path |
-| `writer.py` | `FileWriter` — size-limited content files + URL lists |
-| `naming.py` | Crawl folder/timestamp names (re-exports `artifact_store.naming`) |
+| `writer.py` | `FileWriter` — size-limited content files + URL lists || `naming.py` | Crawl folder/timestamp names (re-exports `artifact_store.naming`) |
 | `progress.py` | `ProgressReporter` — Jupyter/terminal progress |
 | `messages.py` | Stable result codes + `classify_crawl_error` (built on `artifact_store.LibraryMessage`) |
 | `_internal/` | Implementation details (final output, PDF, URL filter, …) |
