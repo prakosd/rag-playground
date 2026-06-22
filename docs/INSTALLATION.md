@@ -95,12 +95,17 @@ Streamlit Community Cloud, paste them into the Secrets console (template:
 default embedding model needs no credentials, and without chat credentials
 `rag_engine` falls back to an offline echo model so Steps 3-5 still run end-to-end.
 
-> **Note — protobuf/chromadb on Streamlit Cloud:** the app sets
-> `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` at the very top of
-> `apps/streamlit/streamlit_app.py`, before any Streamlit/chromadb import, to avoid a
-> protobuf C++ backend crash seen on some managed runtimes. It is handled
-> automatically — you do not need to set it yourself — which is why module imports in
-> that file intentionally follow the env-var statement (ruff `E402` is ignored there).
+> **Note — protobuf/chromadb on Streamlit Cloud:** vector indexing can abort with
+> "Descriptors cannot be created directly" when a fresh build resolves a `protobuf`
+> runtime newer than the chromadb/opentelemetry generated `*_pb2` code. To prevent
+> this, [`apps/streamlit/requirements.txt`](../apps/streamlit/requirements.txt) pins
+> `protobuf` to the supported range (`>=5,<7`). The app also sets
+> `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` at the top of
+> `apps/streamlit/streamlit_app.py` as a best-effort fallback — effective only when that
+> module is imported before protobuf; under `streamlit run` Streamlit imports protobuf
+> first, so the pin is the reliable fix (which is why module imports in that file follow
+> the env-var statement and ruff `E402` is ignored there). Both are handled for you — no
+> action needed.
 
 > **Warning — Python 3.14 users (discovered 2026-04-20):**
 > `crawl4ai==0.8.6` pins `lxml~=5.3`, but no `lxml` 5.x pre-built wheel exists for Python 3.14.

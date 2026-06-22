@@ -3,3 +3,13 @@
 # so install them from the repo checkout: the root package first, then the app.
 .[crawl,vector,bedrock,openai,rag]
 ./apps/streamlit
+
+# Bracket the protobuf runtime to the range the chromadb/opentelemetry generated
+# *_pb2 code supports. A fresh Cloud build can otherwise pair a newer protobuf with
+# out-of-date generated descriptors and abort vector indexing with "Descriptors
+# cannot be created directly". The >=5 floor forces any stale proto package (e.g. an
+# old opentelemetry-proto that capped protobuf<5) to upgrade; the <7 ceiling keeps
+# protobuf from outpacing that code. This pin is the reliable fix — the
+# PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python line in streamlit_app.py is only
+# best-effort because `streamlit run` imports protobuf before the app can set it.
+protobuf>=5,<7

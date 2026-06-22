@@ -29,3 +29,17 @@ def test_requirements_install_local_root_and_app() -> None:
 
     assert any(line.startswith(".[") for line in active)
     assert "./apps/streamlit" in active
+
+
+# Risk: a fresh Streamlit Cloud build can resolve a protobuf runtime newer than the
+# chromadb/opentelemetry generated *_pb2 code, aborting vector indexing with
+# "Descriptors cannot be created directly". requirements.txt brackets protobuf to the
+# supported range; guard the pin so the fix is not silently dropped. Type: unit.
+def test_requirements_pin_protobuf_runtime() -> None:
+    lines = _nonblank_lines(_REQUIREMENTS_FILE)
+    active = [line for line in lines if not line.startswith("#")]
+
+    pins = [line for line in active if line.replace(" ", "").lower().startswith("protobuf")]
+    assert pins, "expected a protobuf version pin in requirements.txt"
+    normalized = pins[0].replace(" ", "").lower()
+    assert ">=5" in normalized and "<7" in normalized

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 
-# Force protobuf's pure-Python parser before importing Streamlit or any library
-# that bundles pre-generated ``*_pb2`` modules (chromadb, reached via
-# vector_indexer). On Streamlit Community Cloud the resolved protobuf runtime is
-# newer than chromadb's generated descriptors, which otherwise aborts indexing
-# with "Descriptors cannot be created directly". This must run before the first
-# protobuf import, so it sits above the module imports (see E402 ignore below).
+# Best-effort: prefer protobuf's pure-Python parser, which tolerates out-of-date
+# ``*_pb2`` modules that the C/upb backend rejects with "Descriptors cannot be
+# created directly" (seen when a newer protobuf is paired with stale generated code,
+# e.g. via chromadb reached through vector_indexer). This only takes effect when
+# this module is imported before protobuf; under ``streamlit run`` Streamlit imports
+# protobuf first, so the reliable fix is the ``protobuf`` version pin in
+# apps/streamlit/requirements.txt. Kept here for non-``streamlit run`` entry points,
+# set before the module imports below (see E402 ignore).
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 import html
