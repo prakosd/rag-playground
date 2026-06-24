@@ -14,6 +14,7 @@ from crawl4md_streamlit.generated_files import (
     collapse_artifact_run_folder,
     collect_success_content_files,
     delete_generated_file,
+    delete_generated_folder,
     download_folder_icon,
     download_tree_entry_sort_key,
     find_latest_crawl_dir,
@@ -21,6 +22,7 @@ from crawl4md_streamlit.generated_files import (
     format_run_timestamp_label,
     generated_file_sort_key,
     generated_files_cache_token,
+    is_run_folder,
 )
 
 _MODIFIED_AT = datetime(2026, 5, 17, 10, 0, tzinfo=timezone.utc)
@@ -253,6 +255,62 @@ def test_delete_generated_file_rejects_path_escape(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         delete_generated_file(tmp_path, "../outside.md")
+
+
+# ── delete_generated_folder ────────────────────────────────────────────────
+
+
+def test_is_run_folder_detects_crawl_and_vector_prefixes() -> None:
+    assert is_run_folder("crawl_01_boulder") is True
+    assert is_run_folder("vector_01_pentagram") is True
+    assert is_run_folder("final") is False
+    assert is_run_folder("2026-05-17_10-00-00") is False
+
+
+def test_delete_generated_folder_removes_folder_and_contents(tmp_path: Path) -> None:
+    run_dir = tmp_path / "crawl_01" / "2026-05-17_10-00-00"
+    run_dir.mkdir(parents=True)
+    (run_dir / "content_001.md").write_text("data", encoding="utf-8")
+
+    deleted = delete_generated_folder(tmp_path, "crawl_01")
+
+    assert deleted is True
+    assert not (tmp_path / "crawl_01").exists()
+    assert tmp_path.exists()
+
+
+def test_delete_generated_folder_prunes_empty_parents(tmp_path: Path) -> None:
+    nested = tmp_path / "crawl_01" / "2026-05-17_10-00-00" / "final"
+    nested.mkdir(parents=True)
+    (nested / "content.md").write_text("data", encoding="utf-8")
+
+    deleted = delete_generated_folder(tmp_path, "crawl_01/2026-05-17_10-00-00/final")
+
+    assert deleted is True
+    # The emptied run and crawl folders are pruned up to the session root.
+    assert not (tmp_path / "crawl_01").exists()
+    assert tmp_path.exists()
+
+
+def test_delete_generated_folder_returns_false_for_session_root(tmp_path: Path) -> None:
+    assert delete_generated_folder(tmp_path, "") is False
+    assert tmp_path.exists()
+
+
+def test_delete_generated_folder_returns_false_when_missing(tmp_path: Path) -> None:
+    assert delete_generated_folder(tmp_path, "crawl_01") is False
+
+
+def test_delete_generated_folder_returns_false_for_file_target(tmp_path: Path) -> None:
+    (tmp_path / "summary.md").write_text("x", encoding="utf-8")
+
+    assert delete_generated_folder(tmp_path, "summary.md") is False
+    assert (tmp_path / "summary.md").exists()
+
+
+def test_delete_generated_folder_rejects_path_escape(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        delete_generated_folder(tmp_path, "../outside_dir")
 
 
 # ── collect_success_content_files ────────────────────────────────────────────

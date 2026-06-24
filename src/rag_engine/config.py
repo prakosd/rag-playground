@@ -7,6 +7,8 @@ parameters. It is UI-independent and validated with Pydantic v2.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, field_validator
 
 from rag_engine.catalog import DEFAULT_CHAT_MODEL
@@ -17,6 +19,9 @@ _DEFAULT_TEMPERATURE = 0.0
 _MAX_TEMPERATURE = 2.0
 _DEFAULT_MAX_TOKENS = 1024
 _DEFAULT_TOP_K = 4
+_DEFAULT_SCORE_THRESHOLD = 0.0
+_DEFAULT_FETCH_K = 20
+_DEFAULT_LAMBDA_MULT = 0.5
 
 
 class RagConfig(BaseModel):
@@ -26,6 +31,16 @@ class RagConfig(BaseModel):
     temperature: float = _DEFAULT_TEMPERATURE
     max_tokens: int = _DEFAULT_MAX_TOKENS
     top_k: int = _DEFAULT_TOP_K
+    # Minimum 0-1 similarity a chunk must reach to be returned (0 = keep all).
+    score_threshold: float = _DEFAULT_SCORE_THRESHOLD
+    # "similarity" (plain nearest-neighbour) or "mmr" (diversified results).
+    search_type: Literal["similarity", "mmr"] = "similarity"
+    # MMR candidate pool size; the k results are diversified from these.
+    fetch_k: int = _DEFAULT_FETCH_K
+    # MMR diversity 0-1: 1.0 favours relevance, 0.0 favours diversity.
+    lambda_mult: float = _DEFAULT_LAMBDA_MULT
+    # Restrict results to these source files (empty = search all sources).
+    source_filter: tuple[str, ...] = ()
 
     @field_validator("temperature")
     @classmethod
@@ -34,7 +49,14 @@ class RagConfig(BaseModel):
             raise ValueError(f"temperature must be between 0 and {_MAX_TEMPERATURE}.")
         return value
 
-    @field_validator("max_tokens", "top_k")
+    @field_validator("score_threshold", "lambda_mult")
+    @classmethod
+    def _validate_unit_interval(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("Value must be between 0 and 1.")
+        return value
+
+    @field_validator("max_tokens", "top_k", "fetch_k")
     @classmethod
     def _require_positive(cls, value: int) -> int:
         if value < 1:

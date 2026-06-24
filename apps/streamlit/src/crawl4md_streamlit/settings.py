@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     # Default embedding vector size. Must be supported by the chosen model;
     # smaller = cheaper/faster search, larger = potentially higher quality.
     vector_embedding_dimension: int = 512
+    # Embedding models offered in the Vector Index dropdown, in display order
+    # (comma-separated). Unknown ids are ignored; supported models not listed
+    # here are still appended so none disappear.
+    vector_embedding_models: str = (
+        "all-MiniLM-L6-v2,amazon.titan-embed-text-v2:0,text-embedding-3-small"
+    )
+    # The embedding model pre-selected in that dropdown.
+    vector_default_embedding_model: str = "all-MiniLM-L6-v2"
 
     # ── Steps 3-5 · RAG (rag_engine) ─────────────────────────────────────────
     # Chunks retrieved as context for QA/conversational answers. More = broader
@@ -87,6 +95,16 @@ class Settings(BaseSettings):
     rag_top_k: int = 4
     # Default number of ranked matches shown on the Semantic Search page.
     semantic_search_top_n: int = 5
+    # Default open tab for each Semantic Search result card: "raw" or "preview".
+    semantic_search_default_tab: str = "raw"
+    # Default Semantic Search mode: "similarity" (closest) or "mmr" (diversified).
+    semantic_search_default_mode: str = "similarity"
+    # Default minimum-similarity slider value (percent); 0 keeps all matches.
+    semantic_search_min_score_percent: int = 0
+    # Default MMR candidate-pool size (results are diversified from these).
+    semantic_search_fetch_k: int = 20
+    # Default MMR diversity (0-1): 1 favours relevance, 0 favours variety.
+    semantic_search_mmr_lambda: float = 0.5
 
     # ── Session lifecycle ────────────────────────────────────────────────────
     # Days an inactive browser session's files are kept before the startup

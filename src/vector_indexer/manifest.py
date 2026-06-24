@@ -46,6 +46,7 @@ class IndexManifest:
     indexed_chunk_count: int
     skipped_file_count: int
     created_at: str | None = None
+    indexed_sources: tuple[str, ...] = ()
 
 
 def write_manifest(run_dir: Path | str, payload: dict[str, Any]) -> None:
@@ -80,4 +81,5 @@ def load_manifest(run_dir: Path | str) -> IndexManifest:
         indexed_chunk_count=int(data.get("indexed_chunk_count", 0)),
         skipped_file_count=int(data.get("skipped_file_count", 0)),
         created_at=data.get("created_at"),
+        indexed_sources=tuple(data.get("indexed_sources") or ()),
     )

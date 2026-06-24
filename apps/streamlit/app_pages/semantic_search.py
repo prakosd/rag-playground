@@ -15,7 +15,14 @@ from crawl4md_streamlit.rag_ui import (
 )
 from crawl4md_streamlit.settings import get_settings
 
-_DEFAULT_TOP_N = get_settings().semantic_search_top_n
+_settings = get_settings()
+_DEFAULT_TOP_N = _settings.semantic_search_top_n
+_DEFAULT_RESULT_TAB = _settings.semantic_search_default_tab
+_DEFAULT_MODE = _settings.semantic_search_default_mode
+_DEFAULT_MIN_SCORE_PERCENT = _settings.semantic_search_min_score_percent
+_DEFAULT_FETCH_K = _settings.semantic_search_fetch_k
+_DEFAULT_MMR_LAMBDA = _settings.semantic_search_mmr_lambda
+_SEARCH_MODES = ("similarity", "mmr")
 
 
 def render_page(context: RagPageContext) -> None:
@@ -29,7 +36,8 @@ def render_page(context: RagPageContext) -> None:
         unsafe_allow_html=True,
     )
 
-    index = select_index(strings, list(context.list_indexes()), key="semantic_search_index")
+    with st.container(border=True):
+        index = select_index(strings, list(context.list_indexes()), key="semantic_search_index")
     if index is not None:
         render_index_metadata(strings, index)
 
@@ -51,20 +59,80 @@ def render_page(context: RagPageContext) -> None:
                 help=strings["SEARCH_TOP_N_HELP"],
                 disabled=index is None,
             )
+        with st.expander(strings["SEARCH_OPTIONS_EXPANDER"]):
+            search_mode = st.segmented_control(
+                strings["SEARCH_MODE_LABEL"],
+                options=_SEARCH_MODES,
+                default=_DEFAULT_MODE if _DEFAULT_MODE in _SEARCH_MODES else "similarity",
+                format_func=lambda mode: (
+                    strings["SEARCH_MODE_MMR"]
+                    if mode == "mmr"
+                    else strings["SEARCH_MODE_SIMILARITY"]
+                ),
+                help=strings["SEARCH_MODE_HELP"],
+                disabled=index is None,
+                key="semantic_search_mode",
+            )
+            min_score_percent = st.slider(
+                strings["SEARCH_MIN_SCORE_LABEL"],
+                min_value=0,
+                max_value=100,
+                value=_DEFAULT_MIN_SCORE_PERCENT,
+                step=5,
+                format="%d%%",
+                help=strings["SEARCH_MIN_SCORE_HELP"],
+                disabled=index is None,
+            )
+            mmr_cols = st.columns(2)
+            with mmr_cols[0]:
+                mmr_lambda = st.slider(
+                    strings["SEARCH_MMR_LAMBDA_LABEL"],
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=_DEFAULT_MMR_LAMBDA,
+                    step=0.05,
+                    help=strings["SEARCH_MMR_LAMBDA_HELP"],
+                    disabled=index is None,
+                )
+            with mmr_cols[1]:
+                fetch_k = st.number_input(
+                    strings["SEARCH_FETCH_K_LABEL"],
+                    min_value=1,
+                    max_value=200,
+                    value=_DEFAULT_FETCH_K,
+                    step=5,
+                    help=strings["SEARCH_FETCH_K_HELP"],
+                    disabled=index is None,
+                )
+            source_options = list(index.manifest.indexed_sources) if index is not None else []
+            selected_sources = st.multiselect(
+                strings["SEARCH_SOURCE_FILTER_LABEL"],
+                options=source_options,
+                help=strings["SEARCH_SOURCE_FILTER_HELP"],
+                placeholder=strings["SEARCH_SOURCE_FILTER_PLACEHOLDER"],
+                disabled=index is None or not source_options,
+            )
         submitted = st.form_submit_button(
             strings["SEARCH_BUTTON"],
             type="primary",
             icon=":material/search:",
             disabled=index is None,
         )
-    st.caption(strings["SEARCH_SEMANTIC_HINT"])
 
     if submitted and index is not None and query.strip():
+        config = RagConfig(
+            top_k=int(top_n),
+            score_threshold=min_score_percent / 100,
+            search_type=search_mode or "similarity",
+            fetch_k=int(fetch_k),
+            lambda_mult=float(mmr_lambda),
+            source_filter=tuple(selected_sources),
+        )
         with st.spinner(strings["SEARCH_SEARCHING"]):
-            result = retrieve(index.run_dir, query.strip(), RagConfig(top_k=int(top_n)))
+            result = retrieve(index.run_dir, query.strip(), config)
         render_messages(strings, result.warnings, result.errors)
         if result.chunks:
-            render_ranked_results(strings, result.chunks)
+            render_ranked_results(strings, result.chunks, default_tab=_DEFAULT_RESULT_TAB)
         elif not result.errors:
             st.info(strings["SEARCH_NO_RESULTS"])
 

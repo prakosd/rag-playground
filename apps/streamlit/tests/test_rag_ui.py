@@ -7,6 +7,7 @@ from crawl4md_streamlit.i18n import STRINGS_EN
 from crawl4md_streamlit.rag_ui import (
     format_score_percent,
     index_metadata_rows,
+    ordered_result_tabs,
     result_detail_caption,
     sort_results_by_score,
 )
@@ -23,6 +24,17 @@ def test_format_score_percent_clamps_to_0_100() -> None:
     assert format_score_percent(0.873) == 87
     assert format_score_percent(-0.2) == 0
     assert format_score_percent(1.4) == 100
+
+
+def test_ordered_result_tabs_defaults_to_raw_first() -> None:
+    assert ordered_result_tabs("raw") == ("raw", "preview")
+    assert ordered_result_tabs("RAW") == ("raw", "preview")
+    assert ordered_result_tabs("unknown") == ("raw", "preview")
+
+
+def test_ordered_result_tabs_preview_first_when_configured() -> None:
+    assert ordered_result_tabs("preview") == ("preview", "raw")
+    assert ordered_result_tabs(" Preview ") == ("preview", "raw")
 
 
 def test_sort_results_by_score_orders_highest_first() -> None:

@@ -80,8 +80,9 @@ splits the body on the render-invisible page markers crawl4md emits, so run meta
 never reaches a chunk and every chunk is stamped with its page's
 `Source: [title](url)` line (also carried as `source_title` / `source_url`
 metadata). Files without markers degrade to a single untitled page. The `manifest.json`
-records the embedding model, dimension, collection name, and the run's `created_at`
-timestamp so an index can be reopened later. See
+records the embedding model, dimension, collection name, the run's `created_at`
+timestamp, and the distinct `indexed_sources` (for the Step 3 source filter) so an index
+can be reopened later. See
 [src/vector_indexer/README.md](../src/vector_indexer/README.md).
 
 ## Steps 3-5 — how RAG works

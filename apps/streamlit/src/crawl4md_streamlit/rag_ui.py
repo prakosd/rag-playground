@@ -21,10 +21,16 @@ from vector_indexer import IndexManifest
 from crawl4md_streamlit.i18n import Strings, localize_message
 from crawl4md_streamlit.index_catalog import IndexRef
 
+# Result-card tab identifiers. Streamlit always activates the first tab, so the
+# configured default tab is rendered first to make it the initial selection.
+_RESULT_TAB_RAW = "raw"
+_RESULT_TAB_PREVIEW = "preview"
+
 __all__ = [
     "RagPageContext",
     "format_score_percent",
     "index_metadata_rows",
+    "ordered_result_tabs",
     "render_index_metadata",
     "render_messages",
     "render_model_caption",
@@ -145,47 +151,73 @@ def result_detail_caption(strings: Strings, chunk: RetrievedChunk) -> str:
 
 
 def render_index_metadata(strings: Strings, index: IndexRef) -> None:
-    """Show the selected index's manifest details as a compact key/value list."""
-    rows = "".join(
-        '<div style="display:flex;justify-content:space-between;gap:1rem;'
-        'padding:1px 0;font-size:0.875rem">'
-        f'<span style="opacity:0.65">{html.escape(label)}</span>'
-        f'<span style="text-align:right">{html.escape(value)}</span></div>'
+    """Show the selected index's manifest details as a compact 4-column grid."""
+    cells = "".join(
+        f'<div style="opacity:0.65">{html.escape(label)}</div>'
+        f'<div style="text-align:right">{html.escape(value)}</div>'
         for label, value in index_metadata_rows(strings, index.manifest)
+    )
+    grid = (
+        '<div style="display:grid;grid-template-columns:auto 1fr auto 1fr;'
+        f'gap:2px 1.5rem;font-size:0.875rem">{cells}</div>'
     )
     with st.container(border=True):
         st.markdown(f":material/database: **{strings['SEARCH_META_HEADER']}**")
-        st.markdown(rows, unsafe_allow_html=True)
+        st.markdown(grid, unsafe_allow_html=True)
 
 
-def render_ranked_results(strings: Strings, chunks: Sequence[RetrievedChunk]) -> None:
+def ordered_result_tabs(default_tab: str) -> tuple[str, str]:
+    """Return the (first, second) result-tab order with *default_tab* first.
+
+    Streamlit always activates the first tab, so placing the configured tab
+    first makes it the initial selection. Unknown values fall back to raw-first.
+    """
+    if default_tab.strip().lower() == _RESULT_TAB_PREVIEW:
+        return (_RESULT_TAB_PREVIEW, _RESULT_TAB_RAW)
+    return (_RESULT_TAB_RAW, _RESULT_TAB_PREVIEW)
+
+
+def render_ranked_results(
+    strings: Strings, chunks: Sequence[RetrievedChunk], *, default_tab: str = _RESULT_TAB_RAW
+) -> None:
     """Render search hits as ranked cards.
 
-    Each card shows a source + similarity header row, then the chunk text in a
-    Preview/Raw tabbed card, then the chunk's id and character size.
+    Each card shows a source + similarity header row, then the chunk text in
+    Raw/Preview tabs (each wrapped in its own card), then the chunk's id and
+    character size. The configured *default_tab* is shown first.
     """
     ranked = sort_results_by_score(chunks)
     if not ranked:
         return
-    st.markdown(f"**{strings['SEARCH_RESULTS_HEADER']}**")
-    st.caption(strings["SEARCH_RESULTS_SUMMARY"].format(count=len(ranked)))
+    st.markdown(
+        f"**{strings['SEARCH_RESULTS_HEADER']}**  \n"
+        f'<span style="opacity:0.6;font-size:0.875rem">'
+        f"{strings['SEARCH_RESULTS_SUMMARY'].format(count=len(ranked))}</span>",
+        unsafe_allow_html=True,
+    )
+    tab_order = ordered_result_tabs(default_tab)
+    tab_labels = {
+        _RESULT_TAB_RAW: strings["SEARCH_RESULT_TAB_RAW"],
+        _RESULT_TAB_PREVIEW: strings["SEARCH_RESULT_TAB_PREVIEW"],
+    }
     for rank, chunk in enumerate(ranked, start=1):
         with st.container(border=True):
             title_col, score_col = st.columns([0.7, 0.3], vertical_alignment="center")
             title_col.markdown(
                 strings["SEARCH_RESULT_HEADER"].format(rank=rank, source=chunk.source or "?")
             )
-            score_col.metric(
-                strings["SEARCH_RESULT_SIMILARITY"], f"{format_score_percent(chunk.score)}%"
+            score_col.markdown(
+                f'<h4 style="text-align:right;margin:0">'
+                f"{strings['SEARCH_RESULT_SIMILARITY']} {format_score_percent(chunk.score)}%</h4>",
+                unsafe_allow_html=True,
             )
-            with st.container(border=True):
-                preview_tab, raw_tab = st.tabs(
-                    [strings["SEARCH_RESULT_TAB_PREVIEW"], strings["SEARCH_RESULT_TAB_RAW"]]
-                )
-                with preview_tab:
-                    st.markdown(chunk.text)
-                with raw_tab:
-                    st.code(chunk.text, language="markdown")
+            tabs = st.tabs([tab_labels[key] for key in tab_order])
+            for key, tab in zip(tab_order, tabs, strict=True):
+                with tab, st.container(border=True):
+                    if key == _RESULT_TAB_RAW:
+                        st.code(chunk.text, language="markdown", wrap_lines=True)
+                    else:
+                        st.markdown(chunk.text)
             st.caption(result_detail_caption(strings, chunk))
 
 

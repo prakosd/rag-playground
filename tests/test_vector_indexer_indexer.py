@@ -85,6 +85,9 @@ def test_run_indexes_inputs_and_writes_manifest(tmp_path: Path) -> None:
     assert manifest.collection_name == created["collection_name"]
     # The run directory is a UTC timestamp slug, so created_at is recoverable.
     assert manifest.created_at is not None
+    # Distinct indexed sources are recorded and round-trip through the manifest.
+    assert result.indexed_sources
+    assert manifest.indexed_sources == tuple(result.indexed_sources)
 
 
 def test_run_reports_error_when_no_inputs(tmp_path: Path) -> None:

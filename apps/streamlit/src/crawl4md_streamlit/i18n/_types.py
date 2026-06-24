@@ -88,7 +88,20 @@ class Strings(TypedDict):
     SEARCH_META_COLLECTION: str
     SEARCH_TOP_N_LABEL: str
     SEARCH_TOP_N_HELP: str
-    SEARCH_SEMANTIC_HINT: str
+    SEARCH_OPTIONS_EXPANDER: str
+    SEARCH_MODE_LABEL: str
+    SEARCH_MODE_SIMILARITY: str
+    SEARCH_MODE_MMR: str
+    SEARCH_MODE_HELP: str
+    SEARCH_MIN_SCORE_LABEL: str
+    SEARCH_MIN_SCORE_HELP: str
+    SEARCH_MMR_LAMBDA_LABEL: str
+    SEARCH_MMR_LAMBDA_HELP: str
+    SEARCH_FETCH_K_LABEL: str
+    SEARCH_FETCH_K_HELP: str
+    SEARCH_SOURCE_FILTER_LABEL: str
+    SEARCH_SOURCE_FILTER_HELP: str
+    SEARCH_SOURCE_FILTER_PLACEHOLDER: str
     SEARCH_RESULTS_SUMMARY: str  # template: {count}
     SEARCH_RESULT_HEADER: str  # template: {rank}, {source}
     SEARCH_RESULT_SIMILARITY: str
@@ -155,6 +168,9 @@ class Strings(TypedDict):
     DIALOG_STOP_BODY: str
     DIALOG_BTN_KEEP: str
     DIALOG_BTN_STOP: str
+    # Vector-indexing stop dialog (reuses DIALOG_BTN_KEEP for "Keep running").
+    VEC_DIALOG_STOP_BODY: str
+    VEC_DIALOG_BTN_STOP: str
     # ── Load session dialog ───────────────────────────────────────────────
     # Note: @st.dialog title is fixed at decoration time and cannot be translated.
     DIALOG_LOAD_SESSION_ID_LABEL: str
@@ -265,6 +281,11 @@ class Strings(TypedDict):
     FILES_DELETE_DIALOG_BODY: str  # template: {file}
     FILES_DELETE_DIALOG_CONFIRM: str
     FILES_DELETE_DIALOG_CANCEL: str
+    FILES_DELETE_FOLDER_BUTTON: str
+    FILES_DELETE_FOLDER_HELP: str  # template: {folder}
+    FILES_DELETE_FOLDER_DIALOG_TITLE: str
+    FILES_DELETE_FOLDER_DIALOG_BODY: str  # template: {folder}
+    FILES_DELETE_FOLDER_DIALOG_CONFIRM: str
     # ── Ready result download ─────────────────────────────────────────────
     READY_RESULT_HEADER: str
     READY_RESULT_SINGLE_SUBTITLE: str

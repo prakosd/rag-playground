@@ -28,6 +28,7 @@ def test_write_then_load_round_trip(tmp_path: Path) -> None:
         "indexed_chunk_count": 10,
         "skipped_file_count": 1,
         "created_at": "2026-06-22T10:30:00+00:00",
+        "indexed_sources": ["guide.md", "intro.md"],
     }
     write_manifest(tmp_path, payload)
 
@@ -39,6 +40,7 @@ def test_write_then_load_round_trip(tmp_path: Path) -> None:
     assert manifest.success is True
     assert manifest.indexed_chunk_count == 10
     assert manifest.created_at == "2026-06-22T10:30:00+00:00"
+    assert manifest.indexed_sources == ("guide.md", "intro.md")
 
 
 def test_load_manifest_defaults_collection_when_missing(tmp_path: Path) -> None:
@@ -50,6 +52,7 @@ def test_load_manifest_defaults_collection_when_missing(tmp_path: Path) -> None:
     assert manifest.success is False
     assert manifest.embedding_model_used is None
     assert manifest.created_at is None
+    assert manifest.indexed_sources == ()
 
 
 def test_load_manifest_missing_file_raises(tmp_path: Path) -> None:

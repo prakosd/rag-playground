@@ -152,8 +152,10 @@ back**), which guarantees the on-disk format matches.
 ## Reading an index back
 
 Each run writes a `manifest.json` (via `manifest.py`) recording the embedding model,
-dimension, `collection_name`, and the run's `created_at` (ISO-8601 UTC, derived from the
-run-directory timestamp; `None` for older manifests). `load_manifest(run_dir)` returns a typed
+dimension, `collection_name`, the run's `created_at` (ISO-8601 UTC, derived from the
+run-directory timestamp; `None` for older manifests), and `indexed_sources` (the distinct
+source files that produced chunks, for the Step 3 source filter; `()` for older manifests).
+`load_manifest(run_dir)` returns a typed
 `IndexManifest`, and the constants `DEFAULT_COLLECTION_NAME` / `CHROMA_SUBDIR` locate
 the collection on disk. The [`rag_engine`](../rag_engine/README.md) library uses these
 to reopen an index with the same embeddings and run retrieval (Steps 3-5).

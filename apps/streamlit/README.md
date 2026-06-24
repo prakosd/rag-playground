@@ -107,7 +107,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search — index picker + `manifest.json` metadata card, query with a top-N number input, ranked result cards (similarity metric + Preview/Raw tabs), and Output Files (`rag_engine.retrieve`) |
+| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid, query with a top-N input plus a Search-options expander (mode similarity/MMR, min-similarity, MMR diversity/pool, source filter), ranked result cards (right-docked similarity text + Raw/Preview tabs), and Output Files (`rag_engine.retrieve`) |
 | `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
@@ -147,7 +147,7 @@ Step 2 mirrors Step 1's shell pattern and is backed by the UI-independent
 interface). The app owns only input collection, the background job, and result display.
 
 - `app_pages/vector_index.py` — content area; receives a `VectorIndexPageContext` from the shell and renders the form, the start/stop confirmation dialog, the live progress/result area, and the reused output-files panel.
-- `vector_form_ui.py` — the form renderer plus pure, testable helpers: `crawl_result_options` (build the crawl-result multiselect), `has_index_inputs` (validate that at least one file is selected or uploaded), `embedding_model_info_for` (per-model dimension limits + local/cloud metadata, from the library catalog), and `embedding_model_label` (tag a model as local or cloud). The embedding model and dimension render above the form so the dimension input only offers values the selected model supports; the model defaults to the local offline model. Crawl inputs are discovered with `artifact_store.crawl_results.list_crawl_result_files`.
+- `vector_form_ui.py` — the form renderer plus pure, testable helpers: `crawl_result_options` (build the crawl-result multiselect), `has_index_inputs` (validate that at least one file is selected or uploaded), `embedding_model_info_for` (per-model dimension limits + local/cloud metadata, from the library catalog), `embedding_model_label` (tag a model as local or cloud), and `resolve_embedding_model_choices` (order the dropdown and pick its default from `VECTOR_EMBEDDING_MODELS` / `VECTOR_DEFAULT_EMBEDDING_MODEL`, validated against the library's supported models). The embedding model and dimension render above the form so the dimension input only offers values the selected model supports; the dropdown lists `all-MiniLM-L6-v2` first and pre-selects it by default. Crawl inputs are discovered with `artifact_store.crawl_results.list_crawl_result_files`.
 - `vector_index_jobs.py` — `start_vector_index_job` runs `VectorIndexer.run` in a daemon thread, saves uploaded files under the run directory, and emits `started` / `progress` / `completed` / `failed` / `cancelled` events through a queue. `progress` events carry either a pipeline `stage` or per-chunk counts; `vector_progress_fraction` maps them to a labelled progress bar. `IndexingResult` warnings/errors are emitted as structured `LibraryMessage` dicts (the UI localizes them via `i18n.localize_message`); `embedding_error_hint_key` maps an embedding error **code** (not string matching) to a cause-specific hint key so the UI can recommend a fix (set an API key, configure AWS credentials, check the network, or use the local offline model). `request_cancel` sets a cooperative cancel flag; `drain_events` feeds the live area.
 
 Session keys are prefixed with `vector_index_` and kept separate from crawl keys. The shell
@@ -356,6 +356,15 @@ the session-root stat token does not change for nested deletes. Deleting an indi
 inside a `vector_<id>` Chroma folder can corrupt that index; the permanent-deletion warning in
 the dialog covers it.
 
+**Deleting a folder.** Each top-level `crawl_*`/`vector_*` run folder in the download tree
+carries a red **Delete this folder** button beneath its files. It opens the same style of
+confirmation dialog (permanent, advises downloading first) before
+`generated_files.delete_generated_folder(session_root, relative_path)` removes the whole folder —
+the pure helper validates with `ensure_within_root`, refuses the session root itself,
+`shutil.rmtree`s the folder, and prunes emptied parents. All confirmation dialogs (crawl/index
+stop, file delete, folder delete) share one `dialog_ui.render_confirm_dialog` helper (green keep +
+red right-docked confirm) so they look and behave identically.
+
 **Folder layout under `outputs/streamlit_sessions/`:**
 
 ```mermaid
@@ -424,8 +433,9 @@ flowchart TD
 | --- | --- |
 | `tests/test_controls.py` | Every `job_state` value → correct buttons (label, disabled, type) |
 | `tests/test_form_defaults.py` | Default crawl form payload and independent dict creation |
-| `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads, plus file deletion with empty-parent pruning and path containment |
-| `tests/test_rag_ui.py` | Pure Steps 3-5 render helpers: ranked-result detail caption (chunk id / size / language) and index-metadata rows (including `created_at` formatting) |
+| `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads, plus file and folder deletion with empty-parent pruning and path containment |
+| `tests/test_dialog_ui.py` | Pure confirm-dialog CSS builder (scoped keys, green keep / red right-docked confirm) shared by every confirmation dialog |
+| `tests/test_rag_ui.py` | Pure Steps 3-5 render helpers: ranked-result detail caption (chunk id / size / language), index-metadata rows (including `created_at` formatting), and Raw/Preview tab ordering |
 | `tests/test_progress_chart.py` | Pure chart helper behavior: live sample append, persisted JSONL parsing, cumulative/pace row derivation |
 | `tests/test_pages.py` | Pure page-registry behavior for workflow ordering, placeholders, translated navigation labels, and importable page modules |
 | `tests/test_support.py` | ID safety, browser session records, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |
@@ -448,6 +458,8 @@ Tests mock `SiteCrawler` — no real network calls are made. The split between `
 | Add a new output panel | A new page-local renderer in `app_pages/crawl4md.py` or a shell callback in `streamlit_app.py`; use `_render_live_area` for crawl-status panels and a separate fragment for selected-session downloads |
 | Add or rename a workflow page | `app_pages/<page>.py` + `pages.py` + i18n keys in `en.py` / `id.py` + `tests/test_pages.py`; keep Steps 2-5 visually aligned with the crawler shell |
 | Change retention or cleanup logic | `cleanup_old_sessions()` in `session_manager.py` + `test_support.py` |
+| Add or change a confirmation dialog | `dialog_ui.render_confirm_dialog` (+ `confirm_dialog_css`) wrapped in a thin `@st.dialog` in `streamlit_app.py`; reuse for any keep/confirm modal |
+| Change Semantic Search options | `app_pages/semantic_search.py` form + `RagConfig` fields in `rag_engine` + `SEMANTIC_SEARCH_*` settings in `settings.py` / `.env.defaults` |
 | Change the Load Session dialog | `_load_session_dialog()` + `_register_and_select_session()` in `streamlit_app.py`; update i18n keys in `en.py` / `id.py` |
 | Change the server port or theme | `apps/streamlit/.streamlit/config.toml` |
 

@@ -46,5 +46,6 @@ class IndexingResult:
     indexed_file_count: int = 0
     indexed_chunk_count: int = 0
     skipped_file_count: int = 0
+    indexed_sources: list[str] = field(default_factory=list)
     warnings: list[LibraryMessage] = field(default_factory=list)
     errors: list[LibraryMessage] = field(default_factory=list)

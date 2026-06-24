@@ -75,11 +75,18 @@ def retrieve(
     result.warnings.extend(emb_warnings)
     try:
         searcher = searcher_factory(run_path, resolved_emb.embeddings)
-        hits = searcher.search(query, config.top_k)
+        hits = searcher.search(
+            query,
+            config.top_k,
+            search_type=config.search_type,
+            fetch_k=config.fetch_k,
+            lambda_mult=config.lambda_mult,
+            source_filter=config.source_filter,
+        )
     except Exception as exc:  # noqa: BLE001 - boundary around the vector store
         result.errors.append(messages.retrieval_failed(str(exc)))
         return result
-    result.chunks = [
+    chunks = [
         RetrievedChunk(
             text=hit.text,
             source=hit.source,
@@ -88,6 +95,7 @@ def retrieve(
         )
         for hit in hits
     ]
+    result.chunks = [chunk for chunk in chunks if chunk.score >= config.score_threshold]
     if not result.chunks:
         result.warnings.append(messages.no_context())
     return result

@@ -12,6 +12,7 @@ from crawl4md_streamlit.vector_form_ui import (
     embedding_model_info_for,
     embedding_model_label,
     has_index_inputs,
+    resolve_embedding_model_choices,
 )
 
 
@@ -22,6 +23,47 @@ def _crawl_result(crawl_label: str, relative_path: str, path: str) -> CrawlResul
         crawl_label=crawl_label,
         size_bytes=1,
     )
+
+
+def test_resolve_embedding_model_choices_orders_configured_first() -> None:
+    ordered, index = resolve_embedding_model_choices(
+        [DEFAULT_LOCAL_MODEL, TITAN_MODEL],
+        [TITAN_MODEL, DEFAULT_LOCAL_MODEL],
+        DEFAULT_LOCAL_MODEL,
+    )
+    assert ordered == [DEFAULT_LOCAL_MODEL, TITAN_MODEL]
+    assert index == 0
+
+
+def test_resolve_embedding_model_choices_appends_unlisted_allowed_models() -> None:
+    # MiniLM is configured first; Titan is appended so a supported model isn't hidden.
+    ordered, index = resolve_embedding_model_choices(
+        [DEFAULT_LOCAL_MODEL],
+        [TITAN_MODEL, DEFAULT_LOCAL_MODEL],
+        DEFAULT_LOCAL_MODEL,
+    )
+    assert ordered == [DEFAULT_LOCAL_MODEL, TITAN_MODEL]
+    assert index == 0
+
+
+def test_resolve_embedding_model_choices_drops_unknown_configured_ids() -> None:
+    ordered, index = resolve_embedding_model_choices(
+        ["made-up-model", TITAN_MODEL],
+        [TITAN_MODEL, DEFAULT_LOCAL_MODEL],
+        TITAN_MODEL,
+    )
+    assert ordered == [TITAN_MODEL, DEFAULT_LOCAL_MODEL]
+    assert index == 0
+
+
+def test_resolve_embedding_model_choices_falls_back_to_first_when_default_unsupported() -> None:
+    ordered, index = resolve_embedding_model_choices(
+        [TITAN_MODEL, DEFAULT_LOCAL_MODEL],
+        [TITAN_MODEL, DEFAULT_LOCAL_MODEL],
+        "unknown-default",
+    )
+    assert ordered == [TITAN_MODEL, DEFAULT_LOCAL_MODEL]
+    assert index == 0
 
 
 def test_crawl_result_options_maps_label_to_path() -> None:

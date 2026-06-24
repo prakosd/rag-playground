@@ -195,6 +195,7 @@ class VectorIndexer:
             result.errors.append(messages.classify_embedding_failure(str(exc)))
             return
         result.indexed_file_count = len(indexed_sources)
+        result.indexed_sources = sorted(indexed_sources)
 
     def _finalize(
         self,
@@ -260,6 +261,7 @@ def _write_manifest(
             "indexed_file_count": result.indexed_file_count,
             "indexed_chunk_count": result.indexed_chunk_count,
             "skipped_file_count": result.skipped_file_count,
+            "indexed_sources": result.indexed_sources,
             "warnings": [message.as_dict() for message in result.warnings],
             "errors": [message.as_dict() for message in result.errors],
         },

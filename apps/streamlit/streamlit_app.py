@@ -31,14 +31,17 @@ from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
 from vector_indexer import IndexingConfig
 
+from crawl4md_streamlit.dialog_ui import render_confirm_dialog
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
     collapse_artifact_run_folder,
     delete_generated_file,
+    delete_generated_folder,
     download_folder_icon,
     download_tree_entry_sort_key,
     generated_files_cache_token,
+    is_run_folder,
 )
 from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings, localize_message
 from crawl4md_streamlit.index_catalog import list_session_indexes
@@ -803,6 +806,7 @@ def _init_state() -> None:
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("preview_file_relative_path", "")
     st.session_state.setdefault("delete_file_relative_path", "")
+    st.session_state.setdefault("delete_folder_relative_path", "")
     st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
     st.session_state.setdefault("vector_index_job", None)
@@ -1419,43 +1423,25 @@ def _on_stop_dismiss() -> None:
 @st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_stop_dismiss)
 def _stop_confirmation_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stElementContainer"].st-key-stop_cancel_button button {
-            background-color: #28a745; border-color: #28a745; color: white;
-        }
-        div[data-testid="stElementContainer"].st-key-stop_cancel_button button:hover {
-            background-color: #218838; border-color: #1e7e34; color: white;
-        }
-        div[data-testid="stElementContainer"].st-key-stop_confirm_button button {
-            background-color: #dc3545; border-color: #dc3545; color: white;
-        }
-        div[data-testid="stElementContainer"].st-key-stop_confirm_button button:hover {
-            background-color: #c82333; border-color: #bd2130; color: white;
-        }
-        div[data-testid="stColumn"]:has(.st-key-stop_confirm_button) [data-testid="stVerticalBlock"] {
-            align-items: flex-end;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+
+    def _cancel() -> None:
+        st.session_state.stop_confirmation_open = False
+        st.rerun()
+
+    def _confirm() -> None:
+        st.session_state.stop_confirmation_open = False
+        _stop_job()
+
+    render_confirm_dialog(
+        body=strings["DIALOG_STOP_BODY"],
+        cancel_label=strings["DIALOG_BTN_KEEP"],
+        cancel_key="stop_cancel_button",
+        on_cancel=_cancel,
+        confirm_label=strings["DIALOG_BTN_STOP"],
+        confirm_key="stop_confirm_button",
+        confirm_icon=":material/stop_circle:",
+        on_confirm=_confirm,
     )
-    st.write(strings["DIALOG_STOP_BODY"])
-    action_cols = st.columns(2)
-    with action_cols[0]:
-        if st.button(strings["DIALOG_BTN_KEEP"], key="stop_cancel_button"):
-            st.session_state.stop_confirmation_open = False
-            st.rerun()
-    with action_cols[1]:
-        if st.button(
-            strings["DIALOG_BTN_STOP"],
-            type="secondary",
-            icon=":material/stop_circle:",
-            key="stop_confirm_button",
-        ):
-            st.session_state.stop_confirmation_open = False
-            _stop_job()
 
 
 def _current_vector_runtime() -> tuple[VectorIndexJob | None, str, bool, bool]:
@@ -1525,21 +1511,25 @@ def _on_vector_stop_dismiss() -> None:
 @st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_vector_stop_dismiss)
 def _vector_index_stop_confirmation_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    st.write(strings["DIALOG_STOP_BODY"])
-    action_cols = st.columns(2)
-    with action_cols[0]:
-        if st.button(strings["DIALOG_BTN_KEEP"], key="vector_stop_cancel_button"):
-            st.session_state.vector_index_stop_confirmation_open = False
-            st.rerun()
-    with action_cols[1]:
-        if st.button(
-            strings["DIALOG_BTN_STOP"],
-            type="secondary",
-            icon=":material/stop_circle:",
-            key="vector_stop_confirm_button",
-        ):
-            st.session_state.vector_index_stop_confirmation_open = False
-            _stop_vector_index_job()
+
+    def _cancel() -> None:
+        st.session_state.vector_index_stop_confirmation_open = False
+        st.rerun()
+
+    def _confirm() -> None:
+        st.session_state.vector_index_stop_confirmation_open = False
+        _stop_vector_index_job()
+
+    render_confirm_dialog(
+        body=strings["VEC_DIALOG_STOP_BODY"],
+        cancel_label=strings["DIALOG_BTN_KEEP"],
+        cancel_key="vector_stop_cancel_button",
+        on_cancel=_cancel,
+        confirm_label=strings["VEC_DIALOG_BTN_STOP"],
+        confirm_key="vector_stop_confirm_button",
+        confirm_icon=":material/stop_circle:",
+        on_confirm=_confirm,
+    )
 
 
 def _apply_vector_index_event(event: Mapping[str, Any]) -> None:
@@ -2292,37 +2282,23 @@ def _delete_confirmation_dialog() -> None:
     if not relative_path:
         return
     file_name = Path(relative_path).name
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stElementContainer"].st-key-delete_confirm_button button {
-            background-color: #dc3545; border-color: #dc3545; color: white;
-        }
-        div[data-testid="stElementContainer"].st-key-delete_confirm_button button:hover {
-            background-color: #c82333; border-color: #bd2130; color: white;
-        }
-        div[data-testid="stColumn"]:has(.st-key-delete_confirm_button) [data-testid="stVerticalBlock"] {
-            align-items: flex-end;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+
+    def _cancel() -> None:
+        st.session_state.delete_file_relative_path = ""
+        st.rerun()
+
+    render_confirm_dialog(
+        title=strings["FILES_DELETE_DIALOG_TITLE"],
+        body=strings["FILES_DELETE_DIALOG_BODY"].format(file=file_name),
+        body_as_warning=True,
+        cancel_label=strings["FILES_DELETE_DIALOG_CANCEL"],
+        cancel_key="delete_cancel_button",
+        on_cancel=_cancel,
+        confirm_label=strings["FILES_DELETE_DIALOG_CONFIRM"],
+        confirm_key="delete_confirm_button",
+        confirm_icon=":material/delete:",
+        on_confirm=lambda: _delete_file(relative_path),
     )
-    st.subheader(strings["FILES_DELETE_DIALOG_TITLE"])
-    st.warning(strings["FILES_DELETE_DIALOG_BODY"].format(file=file_name))
-    action_cols = st.columns(2)
-    with action_cols[0]:
-        if st.button(strings["FILES_DELETE_DIALOG_CANCEL"], key="delete_cancel_button"):
-            st.session_state.delete_file_relative_path = ""
-            st.rerun()
-    with action_cols[1]:
-        if st.button(
-            strings["FILES_DELETE_DIALOG_CONFIRM"],
-            type="secondary",
-            icon=":material/delete:",
-            key="delete_confirm_button",
-        ):
-            _delete_file(relative_path)
 
 
 def _delete_file(relative_path: str) -> None:
@@ -2335,6 +2311,56 @@ def _delete_file(relative_path: str) -> None:
     if deleted:
         if st.session_state.get("preview_file_relative_path") == relative_path:
             st.session_state.preview_file_relative_path = ""
+        _cached_list_generated_files.clear()
+        _cached_download_tree.clear()
+    st.rerun()
+
+
+def _on_delete_folder_dismiss() -> None:
+    st.session_state.delete_folder_relative_path = ""
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_delete_folder_dismiss)
+def _delete_folder_confirmation_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    relative_path = str(st.session_state.get("delete_folder_relative_path", ""))
+    if not relative_path:
+        return
+    folder_name = Path(relative_path).name
+
+    def _cancel() -> None:
+        st.session_state.delete_folder_relative_path = ""
+        st.rerun()
+
+    render_confirm_dialog(
+        title=strings["FILES_DELETE_FOLDER_DIALOG_TITLE"],
+        body=strings["FILES_DELETE_FOLDER_DIALOG_BODY"].format(folder=folder_name),
+        body_as_warning=True,
+        cancel_label=strings["FILES_DELETE_DIALOG_CANCEL"],
+        cancel_key="delete_folder_cancel_button",
+        on_cancel=_cancel,
+        confirm_label=strings["FILES_DELETE_FOLDER_DIALOG_CONFIRM"],
+        confirm_key="delete_folder_confirm_button",
+        confirm_icon=":material/delete_forever:",
+        on_confirm=lambda: _delete_folder(relative_path),
+    )
+
+
+def _delete_folder(relative_path: str) -> None:
+    session_folder = _session_root()
+    try:
+        deleted = delete_generated_folder(session_folder, relative_path)
+    except (OSError, ValueError):
+        deleted = False
+    st.session_state.delete_folder_relative_path = ""
+    if deleted:
+        prefix = f"{relative_path}/"
+        preview_path = str(st.session_state.get("preview_file_relative_path", ""))
+        if preview_path == relative_path or preview_path.startswith(prefix):
+            st.session_state.preview_file_relative_path = ""
+        delete_path = str(st.session_state.get("delete_file_relative_path", ""))
+        if delete_path == relative_path or delete_path.startswith(prefix):
+            st.session_state.delete_file_relative_path = ""
         _cached_list_generated_files.clear()
         _cached_download_tree.clear()
     st.rerun()
@@ -2368,6 +2394,19 @@ def _render_file_delete_button(file: GeneratedFile) -> None:
         help=strings["FILES_DELETE_HELP"].format(file=file.name),
     ):
         st.session_state.delete_file_relative_path = file.relative_path
+        st.rerun()
+
+
+def _render_folder_delete_button(relative_path: str) -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    folder_name = Path(relative_path).name
+    if st.button(
+        label=strings["FILES_DELETE_FOLDER_BUTTON"],
+        icon=":material/delete_forever:",
+        key=f"delete_folder_{st.session_state.session_id}_{relative_path}",
+        help=strings["FILES_DELETE_FOLDER_HELP"].format(folder=folder_name),
+    ):
+        st.session_state.delete_folder_relative_path = relative_path
         st.rerun()
 
 
@@ -2427,6 +2466,8 @@ def render_download_tree(
                     folder_node,
                     allow_run_folder_collapse=False,
                 )
+                if allow_run_folder_collapse and is_run_folder(name):
+                    _render_folder_delete_button(name)
             continue
         render_generated_file_download(entry)
 
@@ -2513,6 +2554,17 @@ def _render_open_delete_dialog(files: list[GeneratedFile]) -> None:
     _delete_confirmation_dialog()
 
 
+def _render_open_delete_folder_dialog() -> None:
+    delete_folder_path = str(st.session_state.get("delete_folder_relative_path", ""))
+    if not delete_folder_path:
+        return
+    target = _session_root() / delete_folder_path
+    if not target.is_dir():
+        st.session_state.delete_folder_relative_path = ""
+        return
+    _delete_folder_confirmation_dialog()
+
+
 def _downloads_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
@@ -2537,10 +2589,12 @@ def _downloads_body() -> None:
     st.markdown(
         """
         <style>
-        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button {
+        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button,
+        div[data-testid="stElementContainer"][class*="st-key-delete_folder_"] button {
             color: #dc3545;
         }
-        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button:hover {
+        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button:hover,
+        div[data-testid="stElementContainer"][class*="st-key-delete_folder_"] button:hover {
             color: #c82333; border-color: #dc3545;
         }
         </style>
@@ -2570,6 +2624,7 @@ def _downloads_body() -> None:
 
     _render_open_preview_dialog(files)
     _render_open_delete_dialog(files)
+    _render_open_delete_folder_dialog()
 
 
 def _render_downloads() -> None:

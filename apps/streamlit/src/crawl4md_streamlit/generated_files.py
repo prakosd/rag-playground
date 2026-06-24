@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone, tzinfo
@@ -156,6 +157,29 @@ def delete_generated_file(session_root: Path | str, relative_path: str) -> bool:
     if not target.is_file():
         return False
     target.unlink()
+    _prune_empty_parents(target.parent, root)
+    return True
+
+
+def is_run_folder(name: str) -> bool:
+    """Return ``True`` when *name* is a top-level crawl/vector run folder."""
+    return name.startswith(_CRAWL_DIR_PREFIX) or name.startswith(_VECTOR_DIR_PREFIX)
+
+
+def delete_generated_folder(session_root: Path | str, relative_path: str) -> bool:
+    """Delete one generated folder (and all its contents) within the session.
+
+    Returns ``True`` when a folder was removed. After deletion, parent
+    directories that became empty are removed too, stopping at — and never
+    removing — the session root. Returns ``False`` for the session root itself or
+    a non-folder target. Raises ``ValueError`` when *relative_path* escapes the
+    session root (path containment is enforced via :func:`ensure_within_root`).
+    """
+    root = Path(session_root).resolve()
+    target = ensure_within_root(root, root / relative_path)
+    if target == root or not target.is_dir():
+        return False
+    shutil.rmtree(target)
     _prune_empty_parents(target.parent, root)
     return True
 

@@ -42,8 +42,15 @@ crawl/index/RAG config models.
 | `VECTOR_CHUNK_SIZE` | `600` | Tokens per chunk |
 | `VECTOR_CHUNK_OVERLAP` | `100` | Overlap between chunks |
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
+| `VECTOR_EMBEDDING_MODELS` | `all-MiniLM-L6-v2,amazon.titan-embed-text-v2:0,text-embedding-3-small` | Embedding models offered in the dropdown, in display order |
+| `VECTOR_DEFAULT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model pre-selected in the dropdown |
 | `RAG_TOP_K` | `4` | Chunks retrieved as context (Steps 4-5) |
 | `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |
+| `SEMANTIC_SEARCH_DEFAULT_TAB` | `raw` | Default open tab on each result card (`raw` or `preview`) |
+| `SEMANTIC_SEARCH_DEFAULT_MODE` | `similarity` | Default search mode (`similarity` or `mmr`) |
+| `SEMANTIC_SEARCH_MIN_SCORE_PERCENT` | `0` | Default minimum-similarity filter (percent; 0 keeps all) |
+| `SEMANTIC_SEARCH_FETCH_K` | `20` | Default MMR candidate-pool size |
+| `SEMANTIC_SEARCH_MMR_LAMBDA` | `0.5` | Default MMR diversity (0 = variety, 1 = relevance) |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `50` | Largest file served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |

@@ -126,10 +126,23 @@ STRINGS_EN: Strings = {
     "SEARCH_META_COLLECTION": "Collection",
     "SEARCH_TOP_N_LABEL": "Top results",
     "SEARCH_TOP_N_HELP": "How many of the highest-scoring chunks to show, ranked by similarity.",
-    "SEARCH_SEMANTIC_HINT": (
-        "Semantic search matches by meaning, not exact words — a query like “not dog” can "
-        "still surface dog-related chunks."
+    "SEARCH_OPTIONS_EXPANDER": "Search options",
+    "SEARCH_MODE_LABEL": "Search mode",
+    "SEARCH_MODE_SIMILARITY": "Closest",
+    "SEARCH_MODE_MMR": "Diverse",
+    "SEARCH_MODE_HELP": (
+        "Closest returns the most similar chunks. Diverse (MMR) trades a little "
+        "closeness for less repetitive results."
     ),
+    "SEARCH_MIN_SCORE_LABEL": "Minimum similarity",
+    "SEARCH_MIN_SCORE_HELP": "Hide matches below this similarity. 0% keeps them all.",
+    "SEARCH_MMR_LAMBDA_LABEL": "Diversity",
+    "SEARCH_MMR_LAMBDA_HELP": "Diverse mode only: 0 favours variety, 1 favours relevance.",
+    "SEARCH_FETCH_K_LABEL": "Candidate pool",
+    "SEARCH_FETCH_K_HELP": "Diverse mode only: how many top matches to diversify from.",
+    "SEARCH_SOURCE_FILTER_LABEL": "Limit to files",
+    "SEARCH_SOURCE_FILTER_HELP": "Search only inside the chosen source files. Leave empty to search all.",
+    "SEARCH_SOURCE_FILTER_PLACEHOLDER": "All files",
     "SEARCH_RESULTS_SUMMARY": "Top {count} matches, ranked by similarity (highest first).",
     "SEARCH_RESULT_HEADER": "#### #{rank} · {source}",
     "SEARCH_RESULT_SIMILARITY": "Similarity",
@@ -227,6 +240,11 @@ STRINGS_EN: Strings = {
     "DIALOG_STOP_BODY": "Stop this crawl now? This will cancel any pages still in progress.",
     "DIALOG_BTN_KEEP": "Keep running",
     "DIALOG_BTN_STOP": "Stop crawl",
+    # Vector-indexing stop dialog (reuses DIALOG_BTN_KEEP for "Keep running").
+    "VEC_DIALOG_STOP_BODY": (
+        "Stop indexing now? This will cancel any documents still being processed."
+    ),
+    "VEC_DIALOG_BTN_STOP": "Stop indexing",
     # ── Load session dialog ───────────────────────────────────────────────
     # Note: @st.dialog title is fixed at decoration time and cannot be translated.
     "DIALOG_LOAD_SESSION_ID_LABEL": "Session ID",
@@ -347,6 +365,14 @@ STRINGS_EN: Strings = {
     ),
     "FILES_DELETE_DIALOG_CONFIRM": "Delete",
     "FILES_DELETE_DIALOG_CANCEL": "Keep",
+    "FILES_DELETE_FOLDER_BUTTON": "Delete this folder",
+    "FILES_DELETE_FOLDER_HELP": "Permanently delete the {folder} folder and everything inside.",
+    "FILES_DELETE_FOLDER_DIALOG_TITLE": "Delete folder?",
+    "FILES_DELETE_FOLDER_DIALOG_BODY": (
+        "Permanently delete **{folder}** and all files inside? This can't be undone — "
+        "make sure you've downloaded anything you want to keep first."
+    ),
+    "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Delete folder",
     # ── Ready result download ──────────────────────────────────────────
     "READY_RESULT_HEADER": "📦 Crawl results ready",
     "READY_RESULT_SINGLE_SUBTITLE": "1 success file ready to download",

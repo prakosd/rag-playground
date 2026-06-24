@@ -13,7 +13,6 @@ import streamlit as st
 from artifact_store.crawl_results import CrawlResultFile
 from vector_indexer import (
     DEFAULT_LANGUAGE,
-    DEFAULT_LOCAL_MODEL,
     EMBEDDING_MODEL_OPTIONS,
     LUCENE_LANGUAGES,
     EmbeddingModelInfo,
@@ -29,6 +28,10 @@ _settings = get_settings()
 VEC_DEFAULT_CHUNK_SIZE = _settings.vector_chunk_size
 VEC_DEFAULT_CHUNK_OVERLAP = _settings.vector_chunk_overlap
 VEC_DEFAULT_EMBEDDING_DIMENSION = _settings.vector_embedding_dimension
+VEC_EMBEDDING_MODEL_ORDER = tuple(
+    model.strip() for model in _settings.vector_embedding_models.split(",") if model.strip()
+)
+VEC_DEFAULT_EMBEDDING_MODEL = _settings.vector_default_embedding_model
 _UPLOAD_TYPES = ["md", "txt", "zip"]
 _EMBEDDING_CONTROL_COLUMN_WIDTHS = (7, 3)
 _FORM_SETTING_COLUMN_WIDTHS = (3, 3, 4)
@@ -79,6 +82,30 @@ def has_index_inputs(selected_paths: Sequence[str], uploaded_count: int) -> bool
     return bool(selected_paths) or uploaded_count > 0
 
 
+def resolve_embedding_model_choices(
+    configured: Sequence[str],
+    allowed: Sequence[str],
+    default: str,
+) -> tuple[list[str], int]:
+    """Return the ordered embedding-model options and the default-selected index.
+
+    Options are ordered by *configured* (operator-tunable) first, keeping only
+    models the library supports (*allowed*), then any remaining allowed models so
+    nothing supported is hidden. The index points at *default* when it is among
+    the options, otherwise the first option.
+    """
+    allowed_set = set(allowed)
+    ordered: list[str] = []
+    for model in configured:
+        if model in allowed_set and model not in ordered:
+            ordered.append(model)
+    for model in allowed:
+        if model not in ordered:
+            ordered.append(model)
+    default_index = ordered.index(default) if default in ordered else 0
+    return ordered, default_index
+
+
 def _render_dimension_input(
     info: EmbeddingModelInfo,
     model: str,
@@ -122,14 +149,16 @@ def _render_embedding_controls(*, strings: Strings, fields_disabled: bool) -> tu
     These live outside ``st.form`` so the dimension input can re-render with the
     options supported by the selected model instead of accepting any value.
     """
-    model_options = list(EMBEDDING_MODEL_OPTIONS)
+    model_options, default_index = resolve_embedding_model_choices(
+        VEC_EMBEDDING_MODEL_ORDER, EMBEDDING_MODEL_OPTIONS, VEC_DEFAULT_EMBEDDING_MODEL
+    )
     with st.container(gap=None):
         cols = st.columns(_EMBEDDING_CONTROL_COLUMN_WIDTHS)
         with cols[0]:
             embedding_model = st.selectbox(
                 strings["VEC_EMBEDDING_MODEL_LABEL"],
                 options=model_options,
-                index=model_options.index(DEFAULT_LOCAL_MODEL),
+                index=default_index,
                 format_func=lambda model: embedding_model_label(model, strings),
                 help=strings["VEC_EMBEDDING_MODEL_HELP"],
                 disabled=fields_disabled,

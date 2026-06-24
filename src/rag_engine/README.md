@@ -100,10 +100,10 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 
 | Module | Responsibility |
 |---|---|
-| `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k` |
+| `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter` |
 | `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS`, `DEFAULT_CHAT_MODEL`, `ECHO_MODEL` |
 | `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), lazy echo model |
-| `retrieval.py` | reopen a persisted index via a `VectorSearcher` and run similarity search (Step 3) |
+| `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, and post-filter by score threshold (Step 3) |
 | `search.py` | `VectorSearcher` interface + `ChromaSearcher` + backend-neutral `SearchHit` |
 | `prompts.py` | QA + condense-question prompts, context formatting |
 | `qa.py` | `answer_question` / `generate_answer` / `stream_answer` (Step 4) |

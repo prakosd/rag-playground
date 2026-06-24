@@ -129,10 +129,23 @@ STRINGS_ID: Strings = {
     "SEARCH_META_COLLECTION": "Koleksi",
     "SEARCH_TOP_N_LABEL": "Hasil teratas",
     "SEARCH_TOP_N_HELP": "Berapa banyak chunk skor tertinggi yang ditampilkan, diurutkan menurut kemiripan.",
-    "SEARCH_SEMANTIC_HINT": (
-        "Pencarian semantik mencocokkan berdasarkan makna, bukan kata persis — kueri seperti "
-        "“not dog” tetap bisa memunculkan chunk terkait anjing."
+    "SEARCH_OPTIONS_EXPANDER": "Opsi pencarian",
+    "SEARCH_MODE_LABEL": "Mode pencarian",
+    "SEARCH_MODE_SIMILARITY": "Terdekat",
+    "SEARCH_MODE_MMR": "Beragam",
+    "SEARCH_MODE_HELP": (
+        "Terdekat mengembalikan chunk paling mirip. Beragam (MMR) menukar sedikit "
+        "kemiripan demi hasil yang tidak berulang."
     ),
+    "SEARCH_MIN_SCORE_LABEL": "Kemiripan minimum",
+    "SEARCH_MIN_SCORE_HELP": "Sembunyikan kecocokan di bawah kemiripan ini. 0% menyimpan semua.",
+    "SEARCH_MMR_LAMBDA_LABEL": "Keberagaman",
+    "SEARCH_MMR_LAMBDA_HELP": "Khusus mode Beragam: 0 mengutamakan variasi, 1 mengutamakan relevansi.",
+    "SEARCH_FETCH_K_LABEL": "Kumpulan kandidat",
+    "SEARCH_FETCH_K_HELP": "Khusus mode Beragam: berapa banyak kecocokan teratas untuk diragamkan.",
+    "SEARCH_SOURCE_FILTER_LABEL": "Batasi ke berkas",
+    "SEARCH_SOURCE_FILTER_HELP": "Cari hanya di dalam berkas sumber yang dipilih. Kosongkan untuk mencari semua.",
+    "SEARCH_SOURCE_FILTER_PLACEHOLDER": "Semua berkas",
     "SEARCH_RESULTS_SUMMARY": "Top {count} hasil, diurutkan menurut kemiripan (tertinggi dulu).",
     "SEARCH_RESULT_HEADER": "#### #{rank} · {source}",
     "SEARCH_RESULT_SIMILARITY": "Kemiripan",
@@ -234,6 +247,11 @@ STRINGS_ID: Strings = {
     ),
     "DIALOG_BTN_KEEP": "Lanjutkan",
     "DIALOG_BTN_STOP": "Hentikan crawl",
+    # Vector-indexing stop dialog (reuses DIALOG_BTN_KEEP for "Keep running").
+    "VEC_DIALOG_STOP_BODY": (
+        "Hentikan pengindeksan sekarang? Ini akan membatalkan dokumen yang masih diproses."
+    ),
+    "VEC_DIALOG_BTN_STOP": "Hentikan pengindeksan",
     # ── Load session dialog ───────────────────────────────────────────────
     # Note: @st.dialog title is fixed at decoration time and cannot be translated.
     "DIALOG_LOAD_SESSION_ID_LABEL": "ID Sesi",
@@ -355,6 +373,14 @@ STRINGS_ID: Strings = {
     ),
     "FILES_DELETE_DIALOG_CONFIRM": "Hapus",
     "FILES_DELETE_DIALOG_CANCEL": "Simpan",
+    "FILES_DELETE_FOLDER_BUTTON": "Hapus folder ini",
+    "FILES_DELETE_FOLDER_HELP": "Hapus permanen folder {folder} dan semua isinya.",
+    "FILES_DELETE_FOLDER_DIALOG_TITLE": "Hapus folder?",
+    "FILES_DELETE_FOLDER_DIALOG_BODY": (
+        "Hapus permanen **{folder}** dan semua berkas di dalamnya? Tindakan ini tidak "
+        "bisa dibatalkan — pastikan Anda sudah mengunduh yang ingin disimpan."
+    ),
+    "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Hapus folder",
     # ── Ready result download ──────────────────────────────────────────
     "READY_RESULT_HEADER": "📦 Hasil crawl siap",
     "READY_RESULT_SINGLE_SUBTITLE": "1 file berhasil siap diunduh",
