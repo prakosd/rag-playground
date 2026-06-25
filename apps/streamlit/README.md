@@ -107,7 +107,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid, query with a top-N input plus a Search-options expander (mode similarity/MMR, min-similarity, MMR diversity/pool, source filter), ranked result cards (right-docked similarity text + Raw/Preview tabs), and Output Files (`rag_engine.retrieve`) |
+| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid, a Search-options expander above the query form (mode similarity/MMR with Diversity + Candidate pool grouped beside it and disabled unless Diverse, min-similarity, source filter), query with a top-N input, ranked result cards (id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs), and Output Files (`rag_engine.retrieve`) |
 | `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
@@ -345,25 +345,24 @@ are ready, the ready-result button may create an app-owned `final/success_conten
 for a single download. For the full file reference (purposes, naming conventions, and cleanup
 behavior), see [Output Structure](../../README.md#output-structure) in the root README.
 
-**Deleting a file.** Each file row carries a red delete button next to its preview/download
-controls. Clicking it opens a small confirmation dialog (deletion is permanent, so it advises
-downloading first) before `generated_files.delete_generated_file(session_root, relative_path)`
-removes the file. That pure helper validates the path with `ensure_within_root` (so the target
-must stay inside the session root), deletes it, then prunes now-empty parent folders up to — but
-not including — the session root. After a delete the shell clears the cached file list and
-download tree (`_cached_list_generated_files.clear()`, `_cached_download_tree.clear()`) because
-the session-root stat token does not change for nested deletes. Deleting an individual file from
-inside a `vector_<id>` Chroma folder can corrupt that index; the permanent-deletion warning in
-the dialog covers it.
+**Downloading a folder as a zip.** Each top-level `crawl_*`/`vector_*` run folder in the download
+tree carries a download-zip button (the `:material/folder_zip:` icon) to the left of its **Delete
+this folder** button. It serves an in-memory archive of the folder's full contents — nested under
+the folder's own name so extracting recreates it — named `<folder>.zip`. The pure
+`generated_files.build_folder_zip_bytes(session_root, relative_path)` builds it (validating with
+`ensure_within_root`, refusing the session root); `folder_zip_cache_token` keys an `@st.cache_data`
+wrapper so the archive is rebuilt only when the folder's contents change. The button respects the
+app download-size guard (`UI_DOWNLOAD_LIMIT_MB`): an oversized folder shows a disabled button with
+a "too large" tooltip, like per-file downloads.
 
 **Deleting a folder.** Each top-level `crawl_*`/`vector_*` run folder in the download tree
-carries a red **Delete this folder** button beneath its files. It opens the same style of
+carries a red **Delete this folder** button beside its download-zip button. It opens a
 confirmation dialog (permanent, advises downloading first) before
 `generated_files.delete_generated_folder(session_root, relative_path)` removes the whole folder —
 the pure helper validates with `ensure_within_root`, refuses the session root itself,
 `shutil.rmtree`s the folder, and prunes emptied parents. All confirmation dialogs (crawl/index
-stop, file delete, folder delete) share one `dialog_ui.render_confirm_dialog` helper (green keep +
-red right-docked confirm) so they look and behave identically.
+stop, folder delete) share one `dialog_ui.render_confirm_dialog` helper (green keep + red
+right-docked confirm) so they look and behave identically.
 
 **Folder layout under `outputs/streamlit_sessions/`:**
 

@@ -125,23 +125,46 @@ STRINGS_EN: Strings = {
     "SEARCH_META_SKIPPED": "Skipped files",
     "SEARCH_META_COLLECTION": "Collection",
     "SEARCH_TOP_N_LABEL": "Top results",
-    "SEARCH_TOP_N_HELP": "How many of the highest-scoring chunks to show, ranked by similarity.",
+    "SEARCH_TOP_N_HELP": (
+        "How many matching chunks to show, best score first. Fewer (3-5) keeps reading "
+        "quick and focused; more (10+) widens coverage but adds more to scan. Start around 5."
+    ),
     "SEARCH_OPTIONS_EXPANDER": "Search options",
     "SEARCH_MODE_LABEL": "Search mode",
     "SEARCH_MODE_SIMILARITY": "Closest",
     "SEARCH_MODE_MMR": "Diverse",
     "SEARCH_MODE_HELP": (
-        "Closest returns the most similar chunks. Diverse (MMR) trades a little "
-        "closeness for less repetitive results."
+        "How matches are picked. **Closest** returns the chunks most similar to your "
+        "query — the safe default when you want the best direct answers. **Diverse** "
+        "casts a wider net, then spreads the picks so you see different angles instead "
+        "of near-duplicates — better for broad or exploratory questions. Choosing "
+        "Diverse turns on the Diversity and Candidate pool controls."
     ),
     "SEARCH_MIN_SCORE_LABEL": "Minimum similarity",
-    "SEARCH_MIN_SCORE_HELP": "Hide matches below this similarity. 0% keeps them all.",
+    "SEARCH_MIN_SCORE_HELP": (
+        "Hides any match scoring below this similarity. **0%** keeps everything; raise it "
+        "to filter out weak, loosely-related chunks. Try **50-70%** if results look noisy "
+        "— but if too few come back, lower it again."
+    ),
     "SEARCH_MMR_LAMBDA_LABEL": "Diversity",
-    "SEARCH_MMR_LAMBDA_HELP": "Diverse mode only: 0 favours variety, 1 favours relevance.",
+    "SEARCH_MMR_LAMBDA_HELP": (
+        "Only used in **Diverse** mode. Balances relevance against variety. **1.0** sticks "
+        "to the most relevant chunks (least variety); **0.0** maximises variety (can drift "
+        "off-topic). Around **0.5** is a balanced start — lower it if results repeat, raise "
+        "it if they wander."
+    ),
     "SEARCH_FETCH_K_LABEL": "Candidate pool",
-    "SEARCH_FETCH_K_HELP": "Diverse mode only: how many top matches to diversify from.",
+    "SEARCH_FETCH_K_HELP": (
+        "Only used in **Diverse** mode. How many top matches to gather before trimming down "
+        "to your Top results. A larger pool gives more variety to choose from but runs a "
+        "little slower; a smaller pool is faster with less variety. A good range is roughly "
+        "5-10x your Top results (e.g. 20-40)."
+    ),
     "SEARCH_SOURCE_FILTER_LABEL": "Limit to files",
-    "SEARCH_SOURCE_FILTER_HELP": "Search only inside the chosen source files. Leave empty to search all.",
+    "SEARCH_SOURCE_FILTER_HELP": (
+        "Limits the search to specific files. Leave empty to search the whole index, or pick "
+        "one or more files to focus only on those — handy when you know where the answer lives."
+    ),
     "SEARCH_SOURCE_FILTER_PLACEHOLDER": "All files",
     "SEARCH_RESULTS_SUMMARY": "Top {count} matches, ranked by similarity (highest first).",
     "SEARCH_RESULT_HEADER": "#### #{rank} · {source}",
@@ -356,15 +379,10 @@ STRINGS_EN: Strings = {
     "FILES_PREVIEW_READ_ERROR": "Unable to read file for preview: {file}",
     "FILES_PREVIEW_EMPTY": "{file} is empty.",
     "FILES_PREVIEW_TRUNCATED": "Preview is capped to the first {limit_kib} KiB.",
-    "FILES_DELETE_BUTTON": ":material/delete:",
-    "FILES_DELETE_HELP": "Delete {file}",
-    "FILES_DELETE_DIALOG_TITLE": "Delete file?",
-    "FILES_DELETE_DIALOG_BODY": (
-        "Permanently delete **{file}**? This can't be undone — make sure you've "
-        "downloaded anything you want to keep first."
-    ),
-    "FILES_DELETE_DIALOG_CONFIRM": "Delete",
     "FILES_DELETE_DIALOG_CANCEL": "Keep",
+    "FILES_DOWNLOAD_ZIP_BUTTON": ":material/folder_zip: Download as Zip",
+    "FILES_DOWNLOAD_ZIP_HELP": "Download the {folder} folder as a zip",
+    "FILES_DOWNLOAD_ZIP_TOO_LARGE": "The {folder} folder is too large to download as a zip.",
     "FILES_DELETE_FOLDER_BUTTON": "Delete this folder",
     "FILES_DELETE_FOLDER_HELP": "Permanently delete the {folder} folder and everything inside.",
     "FILES_DELETE_FOLDER_DIALOG_TITLE": "Delete folder?",

@@ -30,6 +30,7 @@ __all__ = [
     "RagPageContext",
     "format_score_percent",
     "index_metadata_rows",
+    "mmr_controls_enabled",
     "ordered_result_tabs",
     "render_index_metadata",
     "render_messages",
@@ -103,6 +104,15 @@ def sort_results_by_score(chunks: Sequence[RetrievedChunk]) -> list[RetrievedChu
     return sorted(chunks, key=lambda chunk: chunk.score, reverse=True)
 
 
+def mmr_controls_enabled(search_mode: str) -> bool:
+    """Return True when *search_mode* is MMR, so its diversity/pool controls apply.
+
+    Closest (similarity) search ignores the candidate-pool and diversity inputs,
+    so the UI disables them unless MMR (Diverse) is selected.
+    """
+    return search_mode == "mmr"
+
+
 def index_metadata_rows(strings: Strings, manifest: IndexManifest) -> list[tuple[str, str]]:
     """Return ordered (label, value) pairs describing an index for compact display."""
     return [
@@ -159,7 +169,7 @@ def render_index_metadata(strings: Strings, index: IndexRef) -> None:
     )
     grid = (
         '<div style="display:grid;grid-template-columns:auto 1fr auto 1fr;'
-        f'gap:2px 1.5rem;font-size:0.875rem">{cells}</div>'
+        f'gap:2px 1.5rem;font-size:0.875rem;margin-top:-0.5rem;margin-bottom:0.5rem">{cells}</div>'
     )
     with st.container(border=True):
         st.markdown(f":material/database: **{strings['SEARCH_META_HEADER']}**")
@@ -182,9 +192,9 @@ def render_ranked_results(
 ) -> None:
     """Render search hits as ranked cards.
 
-    Each card shows a source + similarity header row, then the chunk text in
-    Raw/Preview tabs (each wrapped in its own card), then the chunk's id and
-    character size. The configured *default_tab* is shown first.
+    Each card shows a source + similarity header row with the chunk's id, size,
+    and language beneath the title, then the chunk text in Raw/Preview tabs (each
+    wrapped in its own card). The configured *default_tab* is shown first.
     """
     ranked = sort_results_by_score(chunks)
     if not ranked:
@@ -206,6 +216,7 @@ def render_ranked_results(
             title_col.markdown(
                 strings["SEARCH_RESULT_HEADER"].format(rank=rank, source=chunk.source or "?")
             )
+            title_col.caption(result_detail_caption(strings, chunk))
             score_col.markdown(
                 f'<h4 style="text-align:right;margin:0">'
                 f"{strings['SEARCH_RESULT_SIMILARITY']} {format_score_percent(chunk.score)}%</h4>",
@@ -218,7 +229,6 @@ def render_ranked_results(
                         st.code(chunk.text, language="markdown", wrap_lines=True)
                     else:
                         st.markdown(chunk.text)
-            st.caption(result_detail_caption(strings, chunk))
 
 
 def render_messages(

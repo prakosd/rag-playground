@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import io
 import json
 import mimetypes
 import os
@@ -41,6 +42,7 @@ _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
 _FINAL_DIR_NAME = "final"
 _MISSING_CACHE_TOKEN = (0.0, 0)
+_EMPTY_FOLDER_ZIP_TOKEN = (0, 0.0, 0)
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
 _RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 _SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
@@ -144,23 +146,6 @@ def generated_files_cache_token(path: Path | str) -> tuple[float, int]:
     return (stat_result.st_mtime, stat_result.st_size)
 
 
-def delete_generated_file(session_root: Path | str, relative_path: str) -> bool:
-    """Delete one generated file within the session, pruning emptied folders.
-
-    Returns ``True`` when a file was removed. After deletion, parent directories
-    that became empty are removed too, stopping at — and never removing — the
-    session root. Raises ``ValueError`` when *relative_path* escapes the session
-    root (path containment is enforced via :func:`ensure_within_root`).
-    """
-    root = Path(session_root).resolve()
-    target = ensure_within_root(root, root / relative_path)
-    if not target.is_file():
-        return False
-    target.unlink()
-    _prune_empty_parents(target.parent, root)
-    return True
-
-
 def is_run_folder(name: str) -> bool:
     """Return ``True`` when *name* is a top-level crawl/vector run folder."""
     return name.startswith(_CRAWL_DIR_PREFIX) or name.startswith(_VECTOR_DIR_PREFIX)
@@ -182,6 +167,56 @@ def delete_generated_folder(session_root: Path | str, relative_path: str) -> boo
     shutil.rmtree(target)
     _prune_empty_parents(target.parent, root)
     return True
+
+
+def build_folder_zip_bytes(session_root: Path | str, relative_path: str) -> bytes:
+    """Return a zip archive of one session folder's full contents.
+
+    Every file under *relative_path* is added recursively, nested under the
+    folder's own name so extracting the archive recreates the named folder.
+    Raises ``ValueError`` when *relative_path* is the session root, is not a
+    folder, or escapes it (containment via :func:`ensure_within_root`).
+    """
+    root = Path(session_root).resolve()
+    target = ensure_within_root(root, root / relative_path)
+    if target == root or not target.is_dir():
+        raise ValueError(f"Not a session folder: {relative_path!r}")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(target.rglob("*")):
+            if path.is_file() and not path.is_symlink():
+                arcname = f"{target.name}/{path.relative_to(target).as_posix()}"
+                archive.write(path, arcname)
+    return buffer.getvalue()
+
+
+def folder_zip_cache_token(session_root: Path | str, relative_path: str) -> tuple[int, float, int]:
+    """Return a cheap change token (file count, newest mtime, total size) for a folder.
+
+    Lets the app cache a folder's zip and rebuild only when its contents change.
+    Returns the empty token for a missing, non-folder, or out-of-root path.
+    """
+    root = Path(session_root).resolve()
+    try:
+        target = ensure_within_root(root, root / relative_path)
+    except ValueError:
+        return _EMPTY_FOLDER_ZIP_TOKEN
+    if not target.is_dir():
+        return _EMPTY_FOLDER_ZIP_TOKEN
+    count = 0
+    newest = 0.0
+    total = 0
+    for path in target.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            stat_result = path.stat()
+        except OSError:
+            continue
+        count += 1
+        total += stat_result.st_size
+        newest = max(newest, stat_result.st_mtime)
+    return (count, newest, total)
 
 
 def _prune_empty_parents(start: Path, root: Path) -> None:

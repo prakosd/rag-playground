@@ -12,6 +12,13 @@ import os
 # set before the module imports below (see E402 ignore).
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+# The offline embedding model (ChromaDB's bundled ONNX MiniLM) tokenizes through
+# HuggingFace ``tokenizers``, whose Rust parallelism is unsafe across the forks
+# Streamlit and Playwright perform — it prints a "process just got forked" warning
+# and risks deadlocks. Default it off before any heavy import loads tokenizers;
+# ``setdefault`` still lets an operator override it explicitly.
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import html
 import importlib
 import mimetypes
@@ -35,11 +42,12 @@ from crawl4md_streamlit.dialog_ui import render_confirm_dialog
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
+    build_folder_zip_bytes,
     collapse_artifact_run_folder,
-    delete_generated_file,
     delete_generated_folder,
     download_folder_icon,
     download_tree_entry_sort_key,
+    folder_zip_cache_token,
     generated_files_cache_token,
     is_run_folder,
 )
@@ -805,7 +813,6 @@ def _init_state() -> None:
     st.session_state.setdefault("activity_log_size", DEFAULT_ACTIVITY_LOG_SIZE)
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("preview_file_relative_path", "")
-    st.session_state.setdefault("delete_file_relative_path", "")
     st.session_state.setdefault("delete_folder_relative_path", "")
     st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
@@ -893,6 +900,16 @@ def _cached_list_generated_files(
 @st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
 def _cached_download_tree(files: tuple[GeneratedFile, ...]) -> dict[str, Any]:
     return build_download_tree(list(files))
+
+
+@st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
+def _cached_folder_zip_bytes(
+    session_root: str,
+    relative_path: str,
+    cache_token: tuple[int, float, int],
+) -> bytes:
+    _ = cache_token  # Keeps token in st.cache_data's argument hash.
+    return build_folder_zip_bytes(session_root, relative_path)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -2271,51 +2288,6 @@ def _file_preview_dialog() -> None:
         st.caption(strings["FILES_PREVIEW_TRUNCATED"].format(limit_kib=_PREVIEW_LIMIT_KIB))
 
 
-def _on_delete_dismiss() -> None:
-    st.session_state.delete_file_relative_path = ""
-
-
-@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_delete_dismiss)
-def _delete_confirmation_dialog() -> None:
-    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    relative_path = str(st.session_state.get("delete_file_relative_path", ""))
-    if not relative_path:
-        return
-    file_name = Path(relative_path).name
-
-    def _cancel() -> None:
-        st.session_state.delete_file_relative_path = ""
-        st.rerun()
-
-    render_confirm_dialog(
-        title=strings["FILES_DELETE_DIALOG_TITLE"],
-        body=strings["FILES_DELETE_DIALOG_BODY"].format(file=file_name),
-        body_as_warning=True,
-        cancel_label=strings["FILES_DELETE_DIALOG_CANCEL"],
-        cancel_key="delete_cancel_button",
-        on_cancel=_cancel,
-        confirm_label=strings["FILES_DELETE_DIALOG_CONFIRM"],
-        confirm_key="delete_confirm_button",
-        confirm_icon=":material/delete:",
-        on_confirm=lambda: _delete_file(relative_path),
-    )
-
-
-def _delete_file(relative_path: str) -> None:
-    session_folder = _session_root()
-    try:
-        deleted = delete_generated_file(session_folder, relative_path)
-    except (OSError, ValueError):
-        deleted = False
-    st.session_state.delete_file_relative_path = ""
-    if deleted:
-        if st.session_state.get("preview_file_relative_path") == relative_path:
-            st.session_state.preview_file_relative_path = ""
-        _cached_list_generated_files.clear()
-        _cached_download_tree.clear()
-    st.rerun()
-
-
 def _on_delete_folder_dismiss() -> None:
     st.session_state.delete_folder_relative_path = ""
 
@@ -2358,9 +2330,6 @@ def _delete_folder(relative_path: str) -> None:
         preview_path = str(st.session_state.get("preview_file_relative_path", ""))
         if preview_path == relative_path or preview_path.startswith(prefix):
             st.session_state.preview_file_relative_path = ""
-        delete_path = str(st.session_state.get("delete_file_relative_path", ""))
-        if delete_path == relative_path or delete_path.startswith(prefix):
-            st.session_state.delete_file_relative_path = ""
         _cached_list_generated_files.clear()
         _cached_download_tree.clear()
     st.rerun()
@@ -2385,16 +2354,33 @@ def _render_file_preview_button(file: GeneratedFile) -> None:
         st.rerun()
 
 
-def _render_file_delete_button(file: GeneratedFile) -> None:
+def _render_folder_zip_button(relative_path: str) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    if st.button(
-        label=strings["FILES_DELETE_BUTTON"],
-        width=_ICON_BUTTON_WIDTH_PX,
-        key=f"delete_file_{st.session_state.session_id}_{file.relative_path}",
-        help=strings["FILES_DELETE_HELP"].format(file=file.name),
-    ):
-        st.session_state.delete_file_relative_path = file.relative_path
-        st.rerun()
+    folder_name = Path(relative_path).name
+    session_folder = _session_root()
+    token = folder_zip_cache_token(session_folder, relative_path)
+    try:
+        zip_bytes = _cached_folder_zip_bytes(str(session_folder.resolve()), relative_path, token)
+    except (OSError, ValueError):
+        return
+    if len(zip_bytes) > _DOWNLOAD_LIMIT_BYTES:
+        st.button(
+            label=strings["FILES_DOWNLOAD_ZIP_BUTTON"],
+            width="content",
+            key=f"download_zip_blocked_{st.session_state.session_id}_{relative_path}",
+            help=strings["FILES_DOWNLOAD_ZIP_TOO_LARGE"].format(folder=folder_name),
+            disabled=True,
+        )
+        return
+    st.download_button(
+        label=strings["FILES_DOWNLOAD_ZIP_BUTTON"],
+        data=zip_bytes,
+        file_name=f"{folder_name}.zip",
+        mime="application/zip",
+        width="content",
+        key=f"download_zip_{st.session_state.session_id}_{relative_path}",
+        help=strings["FILES_DOWNLOAD_ZIP_HELP"].format(folder=folder_name),
+    )
 
 
 def _render_folder_delete_button(relative_path: str) -> None:
@@ -2423,7 +2409,6 @@ def render_generated_file_download(file: GeneratedFile) -> None:
         gap="xxsmall",
     ):
         _render_file_preview_button(file)
-        _render_file_delete_button(file)
         if not file.download_allowed or current_size > _DOWNLOAD_LIMIT_BYTES:
             st.button(
                 label=f"📄 {file.name}",
@@ -2467,7 +2452,14 @@ def render_download_tree(
                     allow_run_folder_collapse=False,
                 )
                 if allow_run_folder_collapse and is_run_folder(name):
-                    _render_folder_delete_button(name)
+                    with st.container(
+                        horizontal=True,
+                        vertical_alignment="center",
+                        width="content",
+                        gap="xxsmall",
+                    ):
+                        _render_folder_zip_button(name)
+                        _render_folder_delete_button(name)
             continue
         render_generated_file_download(entry)
 
@@ -2543,17 +2535,6 @@ def _render_open_preview_dialog(files: list[GeneratedFile]) -> None:
     _file_preview_dialog()
 
 
-def _render_open_delete_dialog(files: list[GeneratedFile]) -> None:
-    delete_relative_path = str(st.session_state.get("delete_file_relative_path", ""))
-    if not delete_relative_path:
-        return
-    file_by_relative_path = {file.relative_path: file for file in files}
-    if delete_relative_path not in file_by_relative_path:
-        st.session_state.delete_file_relative_path = ""
-        return
-    _delete_confirmation_dialog()
-
-
 def _render_open_delete_folder_dialog() -> None:
     delete_folder_path = str(st.session_state.get("delete_folder_relative_path", ""))
     if not delete_folder_path:
@@ -2589,11 +2570,9 @@ def _downloads_body() -> None:
     st.markdown(
         """
         <style>
-        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button,
         div[data-testid="stElementContainer"][class*="st-key-delete_folder_"] button {
             color: #dc3545;
         }
-        div[data-testid="stElementContainer"][class*="st-key-delete_file_"] button:hover,
         div[data-testid="stElementContainer"][class*="st-key-delete_folder_"] button:hover {
             color: #c82333; border-color: #dc3545;
         }
@@ -2623,7 +2602,6 @@ def _downloads_body() -> None:
             render_download_tree(download_tree)
 
     _render_open_preview_dialog(files)
-    _render_open_delete_dialog(files)
     _render_open_delete_folder_dialog()
 
 

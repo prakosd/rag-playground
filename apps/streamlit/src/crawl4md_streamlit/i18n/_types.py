@@ -275,12 +275,10 @@ class Strings(TypedDict):
     FILES_PREVIEW_READ_ERROR: str  # template: {file}
     FILES_PREVIEW_EMPTY: str  # template: {file}
     FILES_PREVIEW_TRUNCATED: str  # template: {limit_kib}
-    FILES_DELETE_BUTTON: str
-    FILES_DELETE_HELP: str  # template: {file}
-    FILES_DELETE_DIALOG_TITLE: str
-    FILES_DELETE_DIALOG_BODY: str  # template: {file}
-    FILES_DELETE_DIALOG_CONFIRM: str
     FILES_DELETE_DIALOG_CANCEL: str
+    FILES_DOWNLOAD_ZIP_BUTTON: str
+    FILES_DOWNLOAD_ZIP_HELP: str  # template: {folder}
+    FILES_DOWNLOAD_ZIP_TOO_LARGE: str  # template: {folder}
     FILES_DELETE_FOLDER_BUTTON: str
     FILES_DELETE_FOLDER_HELP: str  # template: {folder}
     FILES_DELETE_FOLDER_DIALOG_TITLE: str

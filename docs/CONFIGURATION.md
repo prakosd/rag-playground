@@ -52,7 +52,7 @@ crawl/index/RAG config models.
 | `SEMANTIC_SEARCH_FETCH_K` | `20` | Default MMR candidate-pool size |
 | `SEMANTIC_SEARCH_MMR_LAMBDA` | `0.5` | Default MMR diversity (0 = variety, 1 = relevance) |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
-| `UI_DOWNLOAD_LIMIT_MB` | `50` | Largest file served as a download |
+| `UI_DOWNLOAD_LIMIT_MB` | `50` | Largest file or folder-zip served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |
 
 These are *starting defaults* for the forms; users can still override most of them

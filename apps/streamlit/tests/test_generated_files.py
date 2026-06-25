@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import os
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -10,15 +12,16 @@ from crawl4md_streamlit.generated_files import (
     GeneratedFile,
     ReadyDownload,
     build_download_tree,
+    build_folder_zip_bytes,
     build_ready_download,
     collapse_artifact_run_folder,
     collect_success_content_files,
-    delete_generated_file,
     delete_generated_folder,
     download_folder_icon,
     download_tree_entry_sort_key,
     find_latest_crawl_dir,
     find_ready_download_in_session,
+    folder_zip_cache_token,
     format_run_timestamp_label,
     generated_file_sort_key,
     generated_files_cache_token,
@@ -212,49 +215,6 @@ def test_generated_files_cache_token_reflects_path_stat(tmp_path: Path) -> None:
 
     assert second_token[0] > first_token[0]
     assert second_token[1] == first_token[1]
-
-
-# ── delete_generated_file ────────────────────────────────────────────────
-
-
-def test_delete_generated_file_removes_file_and_empty_parents(tmp_path: Path) -> None:
-    run_dir = tmp_path / "crawl_01" / "2026-05-17_10-00-00"
-    run_dir.mkdir(parents=True)
-    target = run_dir / "content_001.md"
-    target.write_text("data", encoding="utf-8")
-
-    deleted = delete_generated_file(tmp_path, "crawl_01/2026-05-17_10-00-00/content_001.md")
-
-    assert deleted is True
-    assert not target.exists()
-    # The now-empty run and crawl folders are pruned, but the session root stays.
-    assert not run_dir.exists()
-    assert not (tmp_path / "crawl_01").exists()
-    assert tmp_path.exists()
-
-
-def test_delete_generated_file_keeps_non_empty_parents(tmp_path: Path) -> None:
-    run_dir = tmp_path / "crawl_01"
-    run_dir.mkdir()
-    (run_dir / "keep.md").write_text("keep", encoding="utf-8")
-    (run_dir / "drop.md").write_text("drop", encoding="utf-8")
-
-    deleted = delete_generated_file(tmp_path, "crawl_01/drop.md")
-
-    assert deleted is True
-    assert run_dir.exists()
-    assert (run_dir / "keep.md").exists()
-
-
-def test_delete_generated_file_returns_false_when_missing(tmp_path: Path) -> None:
-    assert delete_generated_file(tmp_path, "crawl_01/nope.md") is False
-
-
-def test_delete_generated_file_rejects_path_escape(tmp_path: Path) -> None:
-    (tmp_path.parent / "outside.md").write_text("x", encoding="utf-8")
-
-    with pytest.raises(ValueError):
-        delete_generated_file(tmp_path, "../outside.md")
 
 
 # ── delete_generated_folder ────────────────────────────────────────────────
@@ -519,3 +479,74 @@ def test_find_ready_download_in_session_falls_back_to_older_crawl(tmp_path: Path
 
     assert result is not None
     assert result.file.path == old_content
+
+
+# ── build_folder_zip_bytes / folder_zip_cache_token ──────────────────
+
+
+def test_build_folder_zip_bytes_nests_all_files_under_folder_name(tmp_path: Path) -> None:
+    run_dir = tmp_path / "crawl_01" / "2026-05-17_10-00-00"
+    (run_dir / "final").mkdir(parents=True)
+    (run_dir / "final" / "content.md").write_text("body", encoding="utf-8")
+    (tmp_path / "crawl_01" / "notes.txt").write_text("note", encoding="utf-8")
+
+    payload = build_folder_zip_bytes(tmp_path, "crawl_01")
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        assert set(archive.namelist()) == {
+            "crawl_01/2026-05-17_10-00-00/final/content.md",
+            "crawl_01/notes.txt",
+        }
+        assert archive.read("crawl_01/notes.txt") == b"note"
+
+
+def test_build_folder_zip_bytes_rejects_path_escape(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        build_folder_zip_bytes(tmp_path, "../outside")
+
+
+def test_build_folder_zip_bytes_rejects_non_folder(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01").mkdir()
+    (tmp_path / "crawl_01" / "file.md").write_text("x", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        build_folder_zip_bytes(tmp_path, "crawl_01/file.md")
+
+
+def test_build_folder_zip_bytes_rejects_session_root(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        build_folder_zip_bytes(tmp_path, "")
+
+
+def test_build_folder_zip_bytes_skips_symlinks(tmp_path: Path) -> None:
+    run_dir = tmp_path / "crawl_01"
+    run_dir.mkdir()
+    (run_dir / "real.md").write_text("real", encoding="utf-8")
+    secret = tmp_path.parent / "secret.txt"
+    secret.write_text("secret", encoding="utf-8")
+    try:
+        (run_dir / "link.txt").symlink_to(secret)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+
+    payload = build_folder_zip_bytes(tmp_path, "crawl_01")
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        assert archive.namelist() == ["crawl_01/real.md"]
+
+
+def test_folder_zip_cache_token_changes_when_contents_change(tmp_path: Path) -> None:
+    run_dir = tmp_path / "crawl_01"
+    run_dir.mkdir()
+    (run_dir / "a.md").write_text("a", encoding="utf-8")
+
+    before = folder_zip_cache_token(tmp_path, "crawl_01")
+    (run_dir / "b.md").write_text("bb", encoding="utf-8")
+    after = folder_zip_cache_token(tmp_path, "crawl_01")
+
+    assert before != after
+    assert after[0] == 2
+
+
+def test_folder_zip_cache_token_empty_for_missing_folder(tmp_path: Path) -> None:
+    assert folder_zip_cache_token(tmp_path, "nope") == (0, 0.0, 0)

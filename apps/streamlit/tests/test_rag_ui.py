@@ -7,6 +7,7 @@ from crawl4md_streamlit.i18n import STRINGS_EN
 from crawl4md_streamlit.rag_ui import (
     format_score_percent,
     index_metadata_rows,
+    mmr_controls_enabled,
     ordered_result_tabs,
     result_detail_caption,
     sort_results_by_score,
@@ -35,6 +36,13 @@ def test_ordered_result_tabs_defaults_to_raw_first() -> None:
 def test_ordered_result_tabs_preview_first_when_configured() -> None:
     assert ordered_result_tabs("preview") == ("preview", "raw")
     assert ordered_result_tabs(" Preview ") == ("preview", "raw")
+
+
+def test_mmr_controls_enabled_only_for_mmr_mode() -> None:
+    assert mmr_controls_enabled("mmr") is True
+    assert mmr_controls_enabled("similarity") is False
+    assert mmr_controls_enabled("") is False
+    assert mmr_controls_enabled("unknown") is False
 
 
 def test_sort_results_by_score_orders_highest_first() -> None:

@@ -128,23 +128,48 @@ STRINGS_ID: Strings = {
     "SEARCH_META_SKIPPED": "Berkas dilewati",
     "SEARCH_META_COLLECTION": "Koleksi",
     "SEARCH_TOP_N_LABEL": "Hasil teratas",
-    "SEARCH_TOP_N_HELP": "Berapa banyak chunk skor tertinggi yang ditampilkan, diurutkan menurut kemiripan.",
+    "SEARCH_TOP_N_HELP": (
+        "Berapa banyak chunk yang cocok untuk ditampilkan, skor tertinggi dulu. Lebih sedikit "
+        "(3-5) membuat pembacaan cepat dan fokus; lebih banyak (10+) memperluas cakupan tetapi "
+        "menambah yang harus ditinjau. Mulai dari sekitar 5."
+    ),
     "SEARCH_OPTIONS_EXPANDER": "Opsi pencarian",
     "SEARCH_MODE_LABEL": "Mode pencarian",
     "SEARCH_MODE_SIMILARITY": "Terdekat",
     "SEARCH_MODE_MMR": "Beragam",
     "SEARCH_MODE_HELP": (
-        "Terdekat mengembalikan chunk paling mirip. Beragam (MMR) menukar sedikit "
-        "kemiripan demi hasil yang tidak berulang."
+        "Cara hasil dipilih. **Terdekat** mengembalikan chunk yang paling mirip dengan kueri "
+        "Anda — pilihan aman saat Anda ingin jawaban langsung terbaik. **Beragam** menjaring "
+        "lebih luas, lalu menyebar pilihan agar Anda melihat berbagai sudut alih-alih hasil "
+        "yang nyaris sama — lebih baik untuk pertanyaan luas atau eksploratif. Memilih Beragam "
+        "mengaktifkan kontrol Keberagaman dan Kumpulan kandidat."
     ),
     "SEARCH_MIN_SCORE_LABEL": "Kemiripan minimum",
-    "SEARCH_MIN_SCORE_HELP": "Sembunyikan kecocokan di bawah kemiripan ini. 0% menyimpan semua.",
+    "SEARCH_MIN_SCORE_HELP": (
+        "Menyembunyikan kecocokan yang skornya di bawah kemiripan ini. **0%** menyimpan semua; "
+        "naikkan untuk menyaring chunk yang lemah dan kurang relevan. Coba **50-70%** jika hasil "
+        "terlihat berisik — tetapi jika terlalu sedikit yang muncul, turunkan lagi."
+    ),
     "SEARCH_MMR_LAMBDA_LABEL": "Keberagaman",
-    "SEARCH_MMR_LAMBDA_HELP": "Khusus mode Beragam: 0 mengutamakan variasi, 1 mengutamakan relevansi.",
+    "SEARCH_MMR_LAMBDA_HELP": (
+        "Hanya untuk mode **Beragam**. Menyeimbangkan relevansi dengan variasi. **1.0** berpegang "
+        "pada chunk paling relevan (variasi paling sedikit); **0.0** memaksimalkan variasi (bisa "
+        "melenceng dari topik). Sekitar **0.5** awal yang seimbang — turunkan jika hasil berulang, "
+        "naikkan jika melenceng."
+    ),
     "SEARCH_FETCH_K_LABEL": "Kumpulan kandidat",
-    "SEARCH_FETCH_K_HELP": "Khusus mode Beragam: berapa banyak kecocokan teratas untuk diragamkan.",
+    "SEARCH_FETCH_K_HELP": (
+        "Hanya untuk mode **Beragam**. Berapa banyak kecocokan teratas yang dikumpulkan sebelum "
+        "dipangkas menjadi Hasil teratas Anda. Kumpulan lebih besar memberi lebih banyak variasi "
+        "tetapi sedikit lebih lambat; kumpulan lebih kecil lebih cepat dengan variasi lebih "
+        "sedikit. Rentang yang baik kira-kira 5-10x Hasil teratas Anda (mis. 20-40)."
+    ),
     "SEARCH_SOURCE_FILTER_LABEL": "Batasi ke berkas",
-    "SEARCH_SOURCE_FILTER_HELP": "Cari hanya di dalam berkas sumber yang dipilih. Kosongkan untuk mencari semua.",
+    "SEARCH_SOURCE_FILTER_HELP": (
+        "Membatasi pencarian ke berkas tertentu. Kosongkan untuk mencari seluruh indeks, atau "
+        "pilih satu atau beberapa berkas untuk fokus hanya pada itu — berguna saat Anda tahu di "
+        "mana jawabannya berada."
+    ),
     "SEARCH_SOURCE_FILTER_PLACEHOLDER": "Semua berkas",
     "SEARCH_RESULTS_SUMMARY": "Top {count} hasil, diurutkan menurut kemiripan (tertinggi dulu).",
     "SEARCH_RESULT_HEADER": "#### #{rank} · {source}",
@@ -364,15 +389,10 @@ STRINGS_ID: Strings = {
     "FILES_PREVIEW_READ_ERROR": "Tidak dapat membaca file untuk pratinjau: {file}",
     "FILES_PREVIEW_EMPTY": "{file} kosong.",
     "FILES_PREVIEW_TRUNCATED": "Pratinjau dibatasi pada {limit_kib} KiB pertama.",
-    "FILES_DELETE_BUTTON": ":material/delete:",
-    "FILES_DELETE_HELP": "Hapus {file}",
-    "FILES_DELETE_DIALOG_TITLE": "Hapus berkas?",
-    "FILES_DELETE_DIALOG_BODY": (
-        "Hapus permanen **{file}**? Tindakan ini tidak bisa dibatalkan — pastikan "
-        "Anda sudah mengunduh berkas yang ingin disimpan."
-    ),
-    "FILES_DELETE_DIALOG_CONFIRM": "Hapus",
     "FILES_DELETE_DIALOG_CANCEL": "Simpan",
+    "FILES_DOWNLOAD_ZIP_BUTTON": ":material/folder_zip: Unduh sebagai Zip",
+    "FILES_DOWNLOAD_ZIP_HELP": "Unduh folder {folder} sebagai zip",
+    "FILES_DOWNLOAD_ZIP_TOO_LARGE": "Folder {folder} terlalu besar untuk diunduh sebagai zip.",
     "FILES_DELETE_FOLDER_BUTTON": "Hapus folder ini",
     "FILES_DELETE_FOLDER_HELP": "Hapus permanen folder {folder} dan semua isinya.",
     "FILES_DELETE_FOLDER_DIALOG_TITLE": "Hapus folder?",
