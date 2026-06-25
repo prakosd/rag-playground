@@ -26,6 +26,13 @@ from crawl4md_streamlit.index_catalog import IndexRef
 _RESULT_TAB_RAW = "raw"
 _RESULT_TAB_PREVIEW = "preview"
 
+# Trim the default vertical gap above each result card's Raw/Preview tabs so the
+# tabs sit closer to the chunk's caption.
+_RESULT_CARD_CSS = (
+    "<style>div[data-testid='stVerticalBlockBorderWrapper'] "
+    "div[data-testid='stTabs']{margin-top:-0.75rem}</style>"
+)
+
 __all__ = [
     "RagPageContext",
     "format_score_percent",
@@ -169,10 +176,9 @@ def render_index_metadata(strings: Strings, index: IndexRef) -> None:
     )
     grid = (
         '<div style="display:grid;grid-template-columns:auto 1fr auto 1fr;'
-        f'gap:2px 1.5rem;font-size:0.875rem;margin-top:-0.5rem;margin-bottom:0.5rem">{cells}</div>'
+        f'gap:2px 1.5rem;font-size:0.875rem;margin-bottom:1rem">{cells}</div>'
     )
-    with st.container(border=True):
-        st.markdown(f":material/database: **{strings['SEARCH_META_HEADER']}**")
+    with st.expander(strings["SEARCH_META_HEADER"], expanded=False):
         st.markdown(grid, unsafe_allow_html=True)
 
 
@@ -199,6 +205,7 @@ def render_ranked_results(
     ranked = sort_results_by_score(chunks)
     if not ranked:
         return
+    st.markdown(_RESULT_CARD_CSS, unsafe_allow_html=True)
     st.markdown(
         f"**{strings['SEARCH_RESULTS_HEADER']}**  \n"
         f'<span style="opacity:0.6;font-size:0.875rem">'
@@ -214,9 +221,16 @@ def render_ranked_results(
         with st.container(border=True):
             title_col, score_col = st.columns([0.7, 0.3], vertical_alignment="center")
             title_col.markdown(
-                strings["SEARCH_RESULT_HEADER"].format(rank=rank, source=chunk.source or "?")
+                f'<h4 style="margin:0;padding:0">'
+                f"{html.escape(strings['SEARCH_RESULT_HEADER'].format(rank=rank, source=chunk.source or '?'))}"
+                "</h4>",
+                unsafe_allow_html=True,
             )
-            title_col.caption(result_detail_caption(strings, chunk))
+            title_col.markdown(
+                f'<p style="opacity:0.6;font-size:0.875rem;margin:0;margin-bottom:0">'
+                f"{html.escape(result_detail_caption(strings, chunk))}</p>",
+                unsafe_allow_html=True,
+            )
             score_col.markdown(
                 f'<h4 style="text-align:right;margin:0">'
                 f"{strings['SEARCH_RESULT_SIMILARITY']} {format_score_percent(chunk.score)}%</h4>",

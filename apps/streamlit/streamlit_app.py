@@ -2580,6 +2580,14 @@ def _downloads_body() -> None:
         """,
         unsafe_allow_html=True,
     )
+    if _job_is_alive(st.session_state.job):
+        if files:
+            with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
+                render_download_tree(download_tree)
+    elif session_folder.exists():
+        with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
+            render_download_tree(download_tree)
+
     if files:
         rows = [
             {
@@ -2592,14 +2600,6 @@ def _downloads_body() -> None:
         ]
         with st.expander(strings["FILES_HEADER"], expanded=False):
             st.dataframe(rows, hide_index=True, width="stretch")
-
-    if _job_is_alive(st.session_state.job):
-        if files:
-            with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
-                render_download_tree(download_tree)
-    elif session_folder.exists():
-        with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
-            render_download_tree(download_tree)
 
     _render_open_preview_dialog(files)
     _render_open_delete_folder_dialog()

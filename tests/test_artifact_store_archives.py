@@ -3,6 +3,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from artifact_store.archives import (
     extract_text_members,
     is_safe_member_name,
@@ -60,6 +62,19 @@ def test_iter_text_members_skips_unsafe_members(tmp_path: Path) -> None:
     members = dict(iter_text_members(zip_path))
 
     assert set(members) == {"ok.md"}
+
+
+def test_iter_text_members_skips_oversized_members(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("artifact_store.archives._MAX_MEMBER_BYTES", 8)
+    zip_path = tmp_path / "bomb.zip"
+    _make_zip(zip_path, {"small.md": b"hi", "huge.txt": b"x" * 4096})
+
+    members = dict(iter_text_members(zip_path))
+
+    assert set(members) == {"small.md"}
+    assert members["small.md"] == b"hi"
 
 
 def test_extract_text_members_writes_only_supported_files(tmp_path: Path) -> None:

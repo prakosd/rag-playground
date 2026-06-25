@@ -22,6 +22,12 @@ __all__ = [
 
 TEXT_MEMBER_SUFFIXES = frozenset({".md", ".txt"})
 
+# Per-member decompressed-size cap. ``member.read`` is bounded to this many bytes
+# so a decompression bomb (a tiny compressed member that inflates to gigabytes)
+# cannot exhaust memory; members larger than this are skipped like other
+# unsupported members.
+_MAX_MEMBER_BYTES = 50 * 1024 * 1024
+
 
 def is_safe_member_name(name: str) -> bool:
     """Return True when a zip member name is safe to extract.
@@ -46,8 +52,9 @@ def _is_text_member(name: str) -> bool:
 def iter_text_members(zip_path: Path | str) -> Iterator[tuple[str, bytes]]:
     """Yield ``(member_name, data)`` for safe ``.md``/``.txt`` members of a zip.
 
-    Unsafe member names and unsupported file types are skipped silently; the
-    caller decides how to surface skipped counts.
+    Unsafe member names, unsupported file types, and members whose decompressed
+    size exceeds ``_MAX_MEMBER_BYTES`` (decompression-bomb guard) are skipped
+    silently; the caller decides how to surface skipped counts.
     """
     with zipfile.ZipFile(zip_path) as archive:
         for info in archive.infolist():
@@ -57,7 +64,10 @@ def iter_text_members(zip_path: Path | str) -> Iterator[tuple[str, bytes]]:
             if not is_safe_member_name(name) or not _is_text_member(name):
                 continue
             with archive.open(info) as member:
-                yield name, member.read()
+                data = member.read(_MAX_MEMBER_BYTES + 1)
+            if len(data) > _MAX_MEMBER_BYTES:
+                continue
+            yield name, data
 
 
 def extract_text_members(zip_path: Path | str, dest_dir: Path | str) -> list[Path]:
