@@ -31,7 +31,7 @@ def render_page(context: RagPageContext) -> None:
     st.markdown(
         f'<h3 id="semantic-search-header" style="margin-bottom:0;padding-bottom:0;padding-top:0">'
         f"{strings['SEARCH_SECTION_HEADER']}</h3>"
-        f'<p style="opacity:0.6;font-size:0.875rem;margin:0">'
+        f'<p style="opacity:0.6;font-size:0.875rem;margin:0;margin-bottom:1rem">'
         f"{strings['SEARCH_SECTION_CAPTION']}</p>",
         unsafe_allow_html=True,
     )

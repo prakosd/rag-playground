@@ -45,8 +45,8 @@ STRINGS_ID: Strings = {
     ),
     "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Langkah 3 - Semantic Search",
     "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
-        "Ubah kueri pencarian menjadi embedding, ambil chunk yang mirip, dan tinjau "
-        "hasil berperingkat dari vector database."
+        "Pilih vector database dari koleksi terindeks Anda, masukkan kueri pencarian atau "
+        "embedding, dan segera ambil chunk yang paling mirip berdasarkan semantic similarity."
     ),
     "PAGE_RAG_QA_TITLE": ":material/question_answer: Langkah 4 - Tanya Jawab RAG",
     "PAGE_RAG_QA_SUBTITLE": (

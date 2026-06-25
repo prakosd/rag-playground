@@ -44,8 +44,8 @@ STRINGS_EN: Strings = {
     ),
     "PAGE_SEMANTIC_SEARCH_TITLE": ":material/search: Step 3 - Semantic Search",
     "PAGE_SEMANTIC_SEARCH_SUBTITLE": (
-        "Embed a search query, retrieve similar chunks, and inspect ranked matches from the "
-        "vector database."
+        "Select a vector database from your indexed collections, enter a search query or "
+        "embedding, and instantly retrieve the top-ranked similar chunks based on semantic similarity."
     ),
     "PAGE_RAG_QA_TITLE": ":material/question_answer: Step 4 - RAG Q&A",
     "PAGE_RAG_QA_SUBTITLE": (
