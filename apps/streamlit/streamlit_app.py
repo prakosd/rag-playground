@@ -2583,7 +2583,7 @@ def _downloads_body() -> None:
     )
     st.markdown(
         f'<h3 style="padding-bottom:0">{strings["FILES_DOWNLOADS_SUBHEADER"]}</h3>'
-        f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 1rem">{subtitle_text}</p>',
+        f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 0rem">{subtitle_text}</p>',
         unsafe_allow_html=True,
     )
     st.markdown(
