@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     # ── App UI limits ────────────────────────────────────────────────────────
     # Largest file (MB) the app will serve as a download (above this it is
     # shown but view-only).
-    ui_download_limit_mb: int = 50
+    ui_download_limit_mb: int = 500
     # Largest inline text preview (KB) before previews are truncated.
     ui_preview_limit_kb: int = 256
 
