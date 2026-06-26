@@ -40,17 +40,15 @@ _EVENT_CANCEL_REQUESTED = "cancel_requested"
 
 _UPLOAD_DIR_NAME = "uploads"
 
-# Coarse (fraction, i18n label key) per pipeline stage for the progress bar.
-# Embedding maps its per-chunk ratio into a band that ends just below the saving
-# fraction so the bar advances monotonically across stages.
-_VECTOR_STAGE_PROGRESS: dict[str, tuple[float, str]] = {
-    STAGE_RESOLVING_MODEL: (0.05, "VEC_STAGE_RESOLVING_MODEL"),
-    STAGE_LOADING: (0.15, "VEC_STAGE_LOADING"),
-    STAGE_CHUNKING: (0.25, "VEC_STAGE_CHUNKING"),
-    STAGE_EMBEDDING: (0.30, "VEC_STAGE_EMBEDDING"),
-    STAGE_SAVING: (0.97, "VEC_STAGE_SAVING"),
+# Per-stage i18n label keys for the indeterminate "what's happening now" caption
+# shown whenever there is no measurable chunk progress to put on the bar yet.
+_VECTOR_STAGE_LABELS: dict[str, str] = {
+    STAGE_RESOLVING_MODEL: "VEC_STAGE_RESOLVING_MODEL",
+    STAGE_LOADING: "VEC_STAGE_LOADING",
+    STAGE_CHUNKING: "VEC_STAGE_CHUNKING",
+    STAGE_EMBEDDING: "VEC_STAGE_EMBEDDING",
+    STAGE_SAVING: "VEC_STAGE_SAVING",
 }
-_VECTOR_EMBED_SPAN = 0.65
 
 
 @dataclass(frozen=True)
@@ -184,18 +182,38 @@ def vector_progress_fraction(
 ) -> tuple[float, str] | None:
     """Return the progress-bar fraction and label key for an indexing stage.
 
-    Returns ``None`` when *stage* is unknown (no stage reported yet) so the caller
-    can fall back to a generic message. During embedding the per-chunk ratio is
-    mapped into the embedding band and reported with the chunk-count label.
+    The bar is shown only when there is a real fraction to display: during
+    embedding it equals the per-chunk ratio, so the bar matches the "Indexed X of
+    Y chunks" caption exactly; during saving it sits at full. Every other stage —
+    and embedding before any chunk counts arrive — returns ``None`` so the caller
+    shows an indeterminate stage caption instead of a misleading partial bar.
     """
-    base = _VECTOR_STAGE_PROGRESS.get(stage)
-    if base is None:
-        return None
-    fraction, label_key = base
     if stage == STAGE_EMBEDDING and total > 0:
-        ratio = min(processed / total, 1.0)
-        return fraction + _VECTOR_EMBED_SPAN * ratio, "VEC_STATUS_CHUNKS"
-    return fraction, label_key
+        return min(processed / total, 1.0), "VEC_STATUS_CHUNKS"
+    if stage == STAGE_SAVING:
+        return 1.0, "VEC_STAGE_SAVING"
+    return None
+
+
+def vector_stage_label_key(stage: str) -> str:
+    """Return the i18n label key for *stage*'s indeterminate caption.
+
+    Falls back to the generic running label when the stage is unknown (for example
+    before the first stage event arrives).
+    """
+    return _VECTOR_STAGE_LABELS.get(stage, "VEC_STATUS_RUNNING")
+
+
+def vector_eta_seconds(processed: int, total: int, elapsed_seconds: float) -> float | None:
+    """Estimate the remaining indexing seconds from chunk progress and elapsed time.
+
+    Returns ``None`` (no estimate yet) until there is enough signal — at least one
+    processed chunk, more chunks still ahead, and non-zero elapsed time — so the
+    caller can show an "estimating" placeholder.
+    """
+    if processed <= 0 or total <= 0 or processed >= total or elapsed_seconds <= 0:
+        return None
+    return elapsed_seconds * (total - processed) / processed
 
 
 # Embedding error code -> app i18n hint key, ordered most specific first. The

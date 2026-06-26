@@ -26,6 +26,27 @@ class TestCrawlerConfig:
         with pytest.raises(ValueError, match="Invalid URL"):
             CrawlerConfig(urls=["not-a-url"])
 
+    def test_proxies_default_empty_and_undetected_off(self):
+        cfg = CrawlerConfig(urls=["https://example.com"])
+        assert cfg.proxies == []
+        assert cfg.undetected_browser is False
+
+    def test_proxies_from_comma_string(self):
+        cfg = CrawlerConfig(
+            urls=["https://example.com"], proxies="http://p1:8080, http://p2:8080"
+        )
+        assert cfg.proxies == ["http://p1:8080", "http://p2:8080"]
+
+    def test_proxies_excluded_from_repr_and_serialization(self):
+        cfg = CrawlerConfig(urls=["https://example.com"], proxies=["http://user:pass@p:8080"])
+        # Still usable in-process...
+        assert cfg.proxies == ["http://user:pass@p:8080"]
+        # ...but never leaked through repr or serialization (front matter / logs).
+        assert "user:pass" not in repr(cfg)
+        assert "proxies" not in repr(cfg)
+        assert "user:pass" not in str(cfg.model_dump())
+        assert "user:pass" not in cfg.model_dump_json()
+
     def test_defaults(self):
         cfg = CrawlerConfig(urls=["https://example.com"])
         assert cfg.limit == 1

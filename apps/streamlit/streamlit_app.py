@@ -122,7 +122,9 @@ from crawl4md_streamlit.vector_index_jobs import (
     VectorIndexJob,
     embedding_error_hint_key,
     start_vector_index_job,
+    vector_eta_seconds,
     vector_progress_fraction,
+    vector_stage_label_key,
 )
 from crawl4md_streamlit.vector_index_jobs import drain_events as drain_vector_events
 from crawl4md_streamlit.vector_index_jobs import job_state_from_event as vector_job_state_from_event
@@ -1571,6 +1573,24 @@ def _apply_vector_index_event(event: Mapping[str, Any]) -> None:
         }
 
 
+def _render_vector_index_timing(strings: Mapping[str, Any], processed: int, total: int) -> None:
+    """Render elapsed time (docked left) and the finish estimate (docked right)."""
+    started_at = st.session_state.get("vector_index_started_at")
+    if started_at is None:
+        return
+    elapsed = datetime.now(timezone.utc) - started_at
+    elapsed_text = str(elapsed).split(".")[0]
+    eta_text = format_eta_seconds(
+        vector_eta_seconds(processed, total, elapsed.total_seconds()), strings
+    )
+    st.markdown(
+        f'<div style="{_STATUS_ROW_STYLE}">'
+        f"<span>{strings['STATUS_ELAPSED'].format(elapsed=elapsed_text)}</span>"
+        f"<span>{eta_text}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
     state = st.session_state.vector_index_state
     if state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}:
@@ -1585,13 +1605,9 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
                 fraction,
                 text=strings[label_key].format(processed=processed, total=total),
             )
-        elif total > 0:
-            st.progress(
-                min(processed / total, 1.0),
-                text=strings["VEC_STATUS_CHUNKS"].format(processed=processed, total=total),
-            )
+            _render_vector_index_timing(strings, processed, total)
         else:
-            st.info(strings["VEC_STATUS_RUNNING"])
+            st.info(strings[vector_stage_label_key(stage)])
         return
     result = st.session_state.vector_index_result
     if not result:

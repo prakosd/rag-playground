@@ -22,9 +22,11 @@ __all__ = [
     "CODE_OCR_UNAVAILABLE",
     "CODE_REDIRECT_LOOP",
     "CODE_SSL_CERTIFICATE",
+    "CODE_UNDETECTED_UNAVAILABLE",
     "blocked_backoff",
     "classify_crawl_error",
     "ocr_unavailable",
+    "undetected_unavailable",
 ]
 
 # Per-page failure codes (set on CrawlResult.error_code at the point of failure).
@@ -35,6 +37,7 @@ CODE_REDIRECT_LOOP = "crawl.redirect_loop"
 # Crawl-level warning codes (emitted as crawl_warning events).
 CODE_OCR_UNAVAILABLE = "crawl.ocr_unavailable"
 CODE_BLOCKED_BACKOFF = "crawl.blocked_backoff"
+CODE_UNDETECTED_UNAVAILABLE = "crawl.undetected_unavailable"
 
 # Fatal crawl-error codes (from classify_crawl_error).
 CODE_BROWSER_MISSING = "crawl.browser_missing"
@@ -83,6 +86,14 @@ def blocked_backoff(wait_seconds: float) -> LibraryMessage:
         "The website appears to be blocking automated access; "
         f"pausing about {wait_seconds:.0f}s before continuing.",
         wait_seconds=wait_seconds,
+    )
+
+
+def undetected_unavailable() -> LibraryMessage:
+    return _warn(
+        CODE_UNDETECTED_UNAVAILABLE,
+        "Undetected browser mode was requested but is unavailable in this "
+        "crawl4ai install; continuing with the standard stealth browser.",
     )
 
 

@@ -25,7 +25,8 @@ every library is an opt-in extra in the root `pyproject.toml` so installs stay
 lightweight and atomic:
 
 - `crawl` → `crawl4ai`, `trafilatura`, `markdownify`, `beautifulsoup4`, `mdformat`,
-  `mdformat-gfm`, `nest-asyncio`, `httpx`, `pydantic`, `pymupdf4llm` (the crawler).
+  `mdformat-gfm`, `nest-asyncio`, `httpx`, `pydantic`, `pymupdf4llm`, `mammoth` (the
+  crawler; `mammoth` converts `.docx` and is pure Python, so it needs no system package).
 - `vector` → `langchain-chroma`, `langchain-text-splitters`, `langchain-core`, `pydantic`
   (chunking + vector store; pulls `chromadb` transitively; local offline embeddings work
   with just this).

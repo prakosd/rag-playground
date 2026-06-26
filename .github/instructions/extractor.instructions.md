@@ -5,7 +5,7 @@ applyTo: "src/crawl4md/extractor.py, tests/test_extractor.py, tests/test_extract
 
 # ContentExtractor
 
-Converts HTML to Markdown. Modes: trafilatura (default, `extract_main_content=True`) with markdownify fallback; markdownify-only; PDF mode (`is_pdf=True`).
+Converts HTML to Markdown. Modes: trafilatura (default, `extract_main_content=True`) with markdownify fallback; markdownify-only; binary-document mode (`is_pdf=True` / `is_docx=True` → shared `_extract_document_page`, which skips HTML preprocessing since the Markdown was already produced by the matching downloader).
 
 ## Constraints
 

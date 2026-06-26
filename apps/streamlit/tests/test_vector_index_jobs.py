@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
 from vector_indexer import IndexingConfig
 from vector_indexer.indexer import (
     STAGE_CHUNKING,
@@ -27,7 +28,9 @@ from crawl4md_streamlit.vector_index_jobs import (
     job_state_from_event,
     request_cancel,
     start_vector_index_job,
+    vector_eta_seconds,
     vector_progress_fraction,
+    vector_stage_label_key,
 )
 
 
@@ -148,25 +151,32 @@ def test_job_state_from_event_maps_states() -> None:
     assert job_state_from_event("unknown") == "running"
 
 
-def test_vector_progress_fraction_advances_monotonically_across_stages() -> None:
-    fractions = [
-        vector_progress_fraction(stage)[0]
-        for stage in (STAGE_RESOLVING_MODEL, STAGE_LOADING, STAGE_CHUNKING, STAGE_SAVING)
-    ]
+def test_vector_progress_fraction_embedding_equals_chunk_ratio() -> None:
+    # The bar equals the chunk fraction so it matches the "Indexed X of Y" caption.
+    assert vector_progress_fraction(STAGE_EMBEDDING, processed=0, total=10) == (
+        0.0,
+        "VEC_STATUS_CHUNKS",
+    )
+    assert vector_progress_fraction(STAGE_EMBEDDING, processed=5, total=10) == (
+        0.5,
+        "VEC_STATUS_CHUNKS",
+    )
+    assert vector_progress_fraction(STAGE_EMBEDDING, processed=10, total=10) == (
+        1.0,
+        "VEC_STATUS_CHUNKS",
+    )
 
-    assert fractions == sorted(fractions)
-    assert fractions[0] > 0.0
-    assert fractions[-1] <= 1.0
+
+def test_vector_progress_fraction_saving_is_full() -> None:
+    assert vector_progress_fraction(STAGE_SAVING) == (1.0, "VEC_STAGE_SAVING")
 
 
-def test_vector_progress_fraction_maps_embedding_counts_into_band() -> None:
-    start = vector_progress_fraction(STAGE_EMBEDDING, processed=0, total=10)
-    middle = vector_progress_fraction(STAGE_EMBEDDING, processed=5, total=10)
-    end = vector_progress_fraction(STAGE_EMBEDDING, processed=10, total=10)
-    saving = vector_progress_fraction(STAGE_SAVING)
-
-    assert start[1] == "VEC_STATUS_CHUNKS"
-    assert start[0] < middle[0] < end[0] <= saving[0]
+def test_vector_progress_fraction_indeterminate_stages_return_none() -> None:
+    # Pre-embedding stages and embedding-before-counts have no meaningful bar.
+    assert vector_progress_fraction(STAGE_RESOLVING_MODEL) is None
+    assert vector_progress_fraction(STAGE_LOADING) is None
+    assert vector_progress_fraction(STAGE_CHUNKING) is None
+    assert vector_progress_fraction(STAGE_EMBEDDING, processed=0, total=0) is None
 
 
 def test_vector_progress_fraction_unknown_stage_is_none() -> None:
@@ -174,11 +184,23 @@ def test_vector_progress_fraction_unknown_stage_is_none() -> None:
     assert vector_progress_fraction("bogus-stage") is None
 
 
-def test_vector_progress_fraction_embedding_without_counts_uses_stage_label() -> None:
-    fraction, label_key = vector_progress_fraction(STAGE_EMBEDDING, processed=0, total=0)
+def test_vector_stage_label_key_maps_known_stages_and_falls_back() -> None:
+    assert vector_stage_label_key(STAGE_LOADING) == "VEC_STAGE_LOADING"
+    assert vector_stage_label_key(STAGE_EMBEDDING) == "VEC_STAGE_EMBEDDING"
+    assert vector_stage_label_key("") == "VEC_STATUS_RUNNING"
+    assert vector_stage_label_key("bogus") == "VEC_STATUS_RUNNING"
 
-    assert label_key == "VEC_STAGE_EMBEDDING"
-    assert 0.0 < fraction < 1.0
+
+def test_vector_eta_seconds_estimates_remaining_time() -> None:
+    # 2 of 10 chunks took 4s -> 2 chunks/s -> 8 remaining -> ~16s left.
+    assert vector_eta_seconds(2, 10, 4.0) == pytest.approx(16.0)
+
+
+def test_vector_eta_seconds_returns_none_without_enough_signal() -> None:
+    assert vector_eta_seconds(0, 10, 5.0) is None  # nothing processed yet
+    assert vector_eta_seconds(10, 10, 5.0) is None  # already complete
+    assert vector_eta_seconds(3, 0, 5.0) is None  # unknown total
+    assert vector_eta_seconds(3, 10, 0.0) is None  # no elapsed time
 
 
 def test_embedding_error_hint_key_maps_each_cause() -> None:

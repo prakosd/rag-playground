@@ -19,6 +19,12 @@ def test_ocr_unavailable_is_a_warning() -> None:
     assert message.severity == SEVERITY_WARNING
 
 
+def test_undetected_unavailable_is_a_warning() -> None:
+    message = messages.undetected_unavailable()
+    assert message.code == messages.CODE_UNDETECTED_UNAVAILABLE
+    assert message.severity == SEVERITY_WARNING
+
+
 def test_classify_crawl_error_detects_missing_browser() -> None:
     detail = "BrowserType.launch: Executable doesn't exist at /ms-playwright/chromium"
     message = messages.classify_crawl_error(detail)

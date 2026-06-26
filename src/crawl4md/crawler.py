@@ -8,7 +8,7 @@ import random
 import re
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
@@ -60,6 +60,15 @@ from crawl4md._internal.crawler_progress import (
 )
 from crawl4md._internal.crawler_progress import (
     emit_progress as _emit_progress_impl,
+)
+from crawl4md._internal.docx import (
+    download_docx as _download_docx_impl,
+)
+from crawl4md._internal.docx import (
+    is_docx_response as _is_docx_response_impl,
+)
+from crawl4md._internal.docx import (
+    is_docx_url as _is_docx_url_impl,
 )
 from crawl4md._internal.final_output import (
     _CLEANUP_INTERMEDIATE_FILES as _INTERNAL_CLEANUP_INTERMEDIATE_FILES,
@@ -184,8 +193,16 @@ class _LazyModule:
 AsyncWebCrawler: Any | None = None
 BrowserConfig: Any | None = None
 CrawlerRunConfig: Any | None = None
+ProxyConfig: Any | None = None
+UndetectedAdapter: Any | None = None
+AsyncPlaywrightCrawlerStrategy: Any | None = None
 pymupdf: Any = _LazyModule("pymupdf")
 pymupdf4llm: Any = _LazyModule("pymupdf4llm")
+mammoth: Any = _LazyModule("mammoth")
+markdownify: Any = _LazyModule("markdownify")
+# markdownify options for DOCX HTML->Markdown (match the extractor's full-HTML mode).
+_DOCX_HEADING_STYLE = "ATX"
+_DOCX_STRIP_TAGS = ("img",)
 
 
 def _load_crawl4ai_classes() -> tuple[Any, Any, Any]:
@@ -203,6 +220,31 @@ def _load_crawl4ai_classes() -> tuple[Any, Any, Any]:
         if CrawlerRunConfig is None:
             CrawlerRunConfig = crawler_run_config_cls
     return AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+
+
+def _load_proxy_config_cls() -> Any | None:
+    """Return Crawl4AI's ``ProxyConfig`` class, or None when this install lacks it."""
+    global ProxyConfig
+    if ProxyConfig is None:
+        try:
+            ProxyConfig = import_module("crawl4ai").ProxyConfig
+        except (ImportError, AttributeError):
+            return None
+    return ProxyConfig
+
+
+def _load_undetected_classes() -> tuple[Any, Any] | None:
+    """Return ``(AsyncPlaywrightCrawlerStrategy, UndetectedAdapter)`` or None if unavailable."""
+    global UndetectedAdapter, AsyncPlaywrightCrawlerStrategy
+    if UndetectedAdapter is None or AsyncPlaywrightCrawlerStrategy is None:
+        try:
+            UndetectedAdapter = import_module("crawl4ai").UndetectedAdapter
+            AsyncPlaywrightCrawlerStrategy = import_module(
+                "crawl4ai.async_crawler_strategy"
+            ).AsyncPlaywrightCrawlerStrategy
+        except (ImportError, AttributeError):
+            return None
+    return AsyncPlaywrightCrawlerStrategy, UndetectedAdapter
 
 
 # Seconds to pause between retry rounds so the WAF can cool down
@@ -399,6 +441,7 @@ class SiteCrawler:
         activity_log_size: int = 10,
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
+        fallback_fetch_function: Callable[[str], Awaitable[str]] | None = None,
     ) -> None:
         self.config = config
         self.page_config = page_config or PageConfig()
@@ -413,6 +456,7 @@ class SiteCrawler:
         self._activity_log_size = activity_log_size
         self._progress_callback = progress_callback
         self._should_cancel = should_cancel
+        self._fallback_fetch_function = fallback_fetch_function
         self.content_files: list[Path] = []
         # Tracks whether the OCR-unavailable warning has already been emitted
         self._ocr_warned: bool = False
@@ -676,6 +720,11 @@ class SiteCrawler:
             browser_kwargs["headers"] = dict(self.config.headers)
         async_web_crawler_cls, browser_config_cls, crawler_run_config_cls = _load_crawl4ai_classes()
         browser_cfg = browser_config_cls(**browser_kwargs)
+        crawler_kwargs: dict = {"config": browser_cfg}
+        if self.config.undetected_browser:
+            strategy = self._build_undetected_strategy(browser_cfg)
+            if strategy is not None:
+                crawler_kwargs["crawler_strategy"] = strategy
         run_cfg = self._build_run_config(crawler_run_config_cls)
         fallback_run_cfg = self._build_fallback_run_config(crawler_run_config_cls)
         pdf_headers = dict(self.config.headers) if self.config.headers else {}
@@ -686,7 +735,7 @@ class SiteCrawler:
         interrupted = False
         try:
             async with (
-                async_web_crawler_cls(config=browser_cfg) as crawler,
+                async_web_crawler_cls(**crawler_kwargs) as crawler,
                 httpx.AsyncClient(
                     headers=pdf_headers,
                     timeout=_PDF_DOWNLOAD_TIMEOUT,
@@ -1158,7 +1207,7 @@ class SiteCrawler:
                 break
             if not self._url_allowed(candidate_url):
                 break
-            if self._is_pdf_url(candidate_url):
+            if self._is_document_url(candidate_url):
                 break
             frontier.append(candidate_url)
             frontier_normalized_urls.add(normalized_url)
@@ -1349,15 +1398,21 @@ class SiteCrawler:
                     prefetched_results.pop(url, None)
                     continue
 
-                # Fast path: download PDFs directly (bypass the browser).
-                if self._is_pdf_url(url):
+                # Fast path: download binary documents (PDF/DOCX) directly,
+                # bypassing the browser.
+                if self._is_document_url(url):
                     if not is_retry and self.config.max_concurrent > 1:
                         await self._wait_for_fetch_start_slot(
                             next_start_at=next_fetch_start_at,
                             progress=progress,
                         )
                         next_fetch_start_at = self._next_fetch_start_after_delay(is_retry=is_retry)
-                    await self._handle_direct_pdf_url(
+                    handle_document = (
+                        self._handle_direct_pdf_url
+                        if self._is_pdf_url(url)
+                        else self._handle_direct_docx_url
+                    )
+                    await handle_document(
                         url=url,
                         results=results,
                         generated=generated,
@@ -1567,6 +1622,25 @@ class SiteCrawler:
                         progress=progress,
                     )
 
+                # DOCX fallback: same idea for dynamic URLs that serve a Word
+                # document without a .docx extension.
+                if (
+                    crawl_result.success
+                    and not waf_blocked
+                    and not crawl_result.is_pdf
+                    and not crawl_result.is_docx
+                    and len(crawl_result.markdown.strip()) < _PDF_FALLBACK_THRESHOLD
+                    and self._content_length_without_chrome(crawl_result.html)
+                    < _PDF_FALLBACK_THRESHOLD
+                ):
+                    crawl_result, terminal_page = await self._handle_docx_fallback(
+                        url=url,
+                        crawl_result=crawl_result,
+                        results=results,
+                        terminal_page=terminal_page,
+                        progress=progress,
+                    )
+
                 progress.update(crawl_result.url, success=crawl_result.success)
                 next_progress_urls = self._next_progress_urls(queue)
                 self._emit_page_progress(
@@ -1681,6 +1755,46 @@ class SiteCrawler:
         finally:
             progress.close()
 
+    async def _handle_document_fallback(
+        self,
+        *,
+        url: str,
+        detect: Callable[..., Awaitable[bool]],
+        download: Callable[[str], Awaitable[CrawlResult]],
+        redownload_activity: str,
+        saving_activity: str,
+        crawl_result: CrawlResult,
+        results: list[CrawlResult],
+        terminal_page: ExtractedPage | None,
+        progress: ProgressReporter,
+    ) -> tuple[CrawlResult, ExtractedPage | None]:
+        is_document = await detect(
+            url,
+            dict(self.config.headers) if self.config.headers else None,
+            client=self._pdf_client,
+        )
+        if not is_document:
+            return crawl_result, terminal_page
+
+        progress.set_activity(redownload_activity)
+        document_result = await download(url)
+        results[-1] = document_result
+        crawl_result = document_result
+        if document_result.success and self._extractor and self._writer:
+            progress.set_activity(saving_activity)
+            page = self._extractor._extract_page(document_result)
+            if page.markdown.strip():
+                self._writer.add(page)
+                terminal_page = page
+                if self._success_sidecar is not None:
+                    PageSidecar.append(page, self._success_sidecar)
+            else:
+                progress.set_activity(f"No content found on {_shorten_url(document_result.url)}")
+                document_result.success = False
+                document_result.error = _EMPTY_EXTRACTION_ERROR
+                document_result.error_code = messages.CODE_EMPTY_CONTENT
+        return crawl_result, terminal_page
+
     async def _handle_pdf_fallback(
         self,
         *,
@@ -1690,38 +1804,47 @@ class SiteCrawler:
         terminal_page: ExtractedPage | None,
         progress: ProgressReporter,
     ) -> tuple[CrawlResult, ExtractedPage | None]:
-        is_pdf = await self._is_pdf_response(
-            url,
-            dict(self.config.headers) if self.config.headers else None,
-            client=self._pdf_client,
+        ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+        return await self._handle_document_fallback(
+            url=url,
+            detect=self._is_pdf_response,
+            download=self._download_pdf,
+            redownload_activity=f"Re-downloading as PDF {_shorten_url(url)}",
+            saving_activity=f"Saving PDF content{ocr_tag}",
+            crawl_result=crawl_result,
+            results=results,
+            terminal_page=terminal_page,
+            progress=progress,
         )
-        if not is_pdf:
-            return crawl_result, terminal_page
 
-        progress.set_activity(f"Re-downloading as PDF {_shorten_url(url)}")
-        pdf_result = await self._download_pdf(url)
-        results[-1] = pdf_result
-        crawl_result = pdf_result
-        if pdf_result.success and self._extractor and self._writer:
-            ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-            progress.set_activity(f"Saving PDF content{ocr_tag}")
-            page = self._extractor._extract_page(pdf_result)
-            if page.markdown.strip():
-                self._writer.add(page)
-                terminal_page = page
-                if self._success_sidecar is not None:
-                    PageSidecar.append(page, self._success_sidecar)
-            else:
-                progress.set_activity(f"No content found on {_shorten_url(pdf_result.url)}")
-                pdf_result.success = False
-                pdf_result.error = _EMPTY_EXTRACTION_ERROR
-                pdf_result.error_code = messages.CODE_EMPTY_CONTENT
-        return crawl_result, terminal_page
-
-    async def _handle_direct_pdf_url(
+    async def _handle_docx_fallback(
         self,
         *,
         url: str,
+        crawl_result: CrawlResult,
+        results: list[CrawlResult],
+        terminal_page: ExtractedPage | None,
+        progress: ProgressReporter,
+    ) -> tuple[CrawlResult, ExtractedPage | None]:
+        return await self._handle_document_fallback(
+            url=url,
+            detect=self._is_docx_response,
+            download=self._download_docx,
+            redownload_activity=f"Re-downloading as DOCX {_shorten_url(url)}",
+            saving_activity="Saving DOCX content",
+            crawl_result=crawl_result,
+            results=results,
+            terminal_page=terminal_page,
+            progress=progress,
+        )
+
+    async def _handle_direct_document_url(
+        self,
+        *,
+        url: str,
+        download: Callable[[str], Awaitable[CrawlResult]],
+        downloading_activity: str,
+        saving_activity: str,
         results: list[CrawlResult],
         generated: set[str],
         prior_success: int,
@@ -1733,14 +1856,13 @@ class SiteCrawler:
         round_dir: Path | None,
         is_retry: bool,
     ) -> None:
-        progress.set_activity(f"Downloading PDF {_shorten_url(url)}")
-        crawl_result = await self._download_pdf(url)
+        progress.set_activity(downloading_activity)
+        crawl_result = await download(url)
         results.append(crawl_result)
 
         terminal_page: ExtractedPage | None = None
         if crawl_result.success and self._extractor and self._writer:
-            _ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
-            progress.set_activity(f"Saving PDF content{_ocr_tag}")
+            progress.set_activity(saving_activity)
             page = self._extractor._extract_page(crawl_result)
             if page.markdown.strip():
                 self._writer.add(page)
@@ -1798,6 +1920,71 @@ class SiteCrawler:
             else:
                 progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
             await self._sleep_with_cancel(jitter)
+
+    async def _handle_direct_pdf_url(
+        self,
+        *,
+        url: str,
+        results: list[CrawlResult],
+        generated: set[str],
+        prior_success: int,
+        prior_fail: int,
+        queue: list[tuple[str, int]],
+        progress: ProgressReporter,
+        round_num: int,
+        crawl_depth: int,
+        round_dir: Path | None,
+        is_retry: bool,
+    ) -> None:
+        ocr_tag = " (OCR)" if self.page_config.ocr_languages else ""
+        await self._handle_direct_document_url(
+            url=url,
+            download=self._download_pdf,
+            downloading_activity=f"Downloading PDF {_shorten_url(url)}",
+            saving_activity=f"Saving PDF content{ocr_tag}",
+            results=results,
+            generated=generated,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
+            queue=queue,
+            progress=progress,
+            round_num=round_num,
+            crawl_depth=crawl_depth,
+            round_dir=round_dir,
+            is_retry=is_retry,
+        )
+
+    async def _handle_direct_docx_url(
+        self,
+        *,
+        url: str,
+        results: list[CrawlResult],
+        generated: set[str],
+        prior_success: int,
+        prior_fail: int,
+        queue: list[tuple[str, int]],
+        progress: ProgressReporter,
+        round_num: int,
+        crawl_depth: int,
+        round_dir: Path | None,
+        is_retry: bool,
+    ) -> None:
+        await self._handle_direct_document_url(
+            url=url,
+            download=self._download_docx,
+            downloading_activity=f"Downloading DOCX {_shorten_url(url)}",
+            saving_activity="Saving DOCX content",
+            results=results,
+            generated=generated,
+            prior_success=prior_success,
+            prior_fail=prior_fail,
+            queue=queue,
+            progress=progress,
+            round_num=round_num,
+            crawl_depth=crawl_depth,
+            round_dir=round_dir,
+            is_retry=is_retry,
+        )
 
     def _flush_skipped_redirects(
         self,
@@ -2004,6 +2191,11 @@ class SiteCrawler:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _is_document_url(url: str) -> bool:
+        """Return True for binary documents fetched via direct download (PDF or DOCX)."""
+        return _is_pdf_url_impl(url) or _is_docx_url_impl(url)
+
+    @staticmethod
     def _is_pdf_url(url: str) -> bool:
         """Return True if the URL path ends with ``.pdf`` (case-insensitive)."""
         return _is_pdf_url_impl(url)
@@ -2038,6 +2230,39 @@ class SiteCrawler:
         )
         self._warn_ocr_unavailable_once(was_warned=was_warned)
         return result
+
+    @staticmethod
+    def _is_docx_url(url: str) -> bool:
+        """Return True if the URL path ends with ``.docx`` (case-insensitive)."""
+        return _is_docx_url_impl(url)
+
+    @staticmethod
+    async def _is_docx_response(
+        url: str,
+        headers: dict[str, str] | None = None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> bool:
+        """Issue a HEAD request and return True if Content-Type is DOCX."""
+        return await _is_docx_response_impl(
+            url,
+            headers,
+            client=client,
+            http_client_cls=httpx.AsyncClient,
+        )
+
+    async def _download_docx(self, url: str) -> CrawlResult:
+        """Download a DOCX file and convert it to Markdown via mammoth + markdownify."""
+        return await _download_docx_impl(
+            url,
+            headers=dict(self.config.headers) if self.config.headers else {},
+            convert_to_html=lambda fileobj: mammoth.convert_to_html(fileobj).value,
+            to_markdown=lambda html: markdownify.markdownify(
+                html, heading_style=_DOCX_HEADING_STYLE, strip=list(_DOCX_STRIP_TAGS)
+            ),
+            client=getattr(self, "_pdf_client", None),
+            http_client_cls=httpx.AsyncClient,
+        )
 
     def _pdf_to_markdown(self, doc: Any) -> str:
         """Convert a PyMuPDF document to Markdown, with optional OCR."""
@@ -2223,6 +2448,8 @@ class SiteCrawler:
             kwargs["override_navigator"] = True
             kwargs["magic"] = True
 
+        self._apply_anti_bot_run_options(kwargs)
+
         return run_config_cls(**kwargs)
 
     def _build_fallback_run_config(self, run_config_cls: type) -> object:
@@ -2256,7 +2483,47 @@ class SiteCrawler:
 
         # scan_full_page and stealth run-flags intentionally omitted
 
+        self._apply_anti_bot_run_options(kwargs)
+
         return run_config_cls(**kwargs)
+
+    def _apply_anti_bot_run_options(self, kwargs: dict) -> None:
+        """Add proxy escalation and the fallback fetch hook to a run-config kwargs dict."""
+        proxy_config = self._build_proxy_config()
+        if proxy_config is not None:
+            kwargs["proxy_config"] = proxy_config
+        if self._fallback_fetch_function is not None:
+            kwargs["fallback_fetch_function"] = self._fallback_fetch_function
+
+    def _build_proxy_config(self) -> list[Any] | None:
+        """Build a direct-first proxy escalation list for Crawl4AI, or None.
+
+        Returns ``[ProxyConfig.DIRECT, *proxies]`` so each request is tried without
+        a proxy first, then through the configured proxies in order. Returns
+        ``None`` when no proxies are set or the installed Crawl4AI lacks
+        ``ProxyConfig`` (graceful no-op).
+        """
+        if not self.config.proxies:
+            return None
+        proxy_config_cls = _load_proxy_config_cls()
+        if proxy_config_cls is None:
+            return None
+        proxies = [proxy_config_cls.from_string(proxy) for proxy in self.config.proxies]
+        return [proxy_config_cls.DIRECT, *proxies]
+
+    def _build_undetected_strategy(self, browser_cfg: object) -> object | None:
+        """Build an undetected-browser crawler strategy, or None if unavailable.
+
+        Emits a structured warning and returns ``None`` when the installed Crawl4AI
+        does not provide the undetected adapter, so the crawl falls back to the
+        standard stealth browser instead of failing.
+        """
+        loaded = _load_undetected_classes()
+        if loaded is None:
+            self._emit_crawl_warning(messages.undetected_unavailable())
+            return None
+        strategy_cls, adapter_cls = loaded
+        return strategy_cls(browser_config=browser_cfg, browser_adapter=adapter_cls())
 
     def _url_in_allowed_domain(self, url: str) -> bool:
         """Check whether a URL belongs to the configured crawl domain(s)."""

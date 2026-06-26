@@ -22,6 +22,10 @@ update the value and restart. Values load in increasing precedence from:
 3. the process environment — used by Streamlit Community Cloud, which exposes
    root-level `secrets.toml` keys as environment variables.
 
+`settings` declares each key with **no in-code fallback**, so `.env.defaults`
+must define every value — it is the one place defaults live, and a missing key
+fails fast at startup.
+
 The libraries stay pure: only the app reads these and feeds them into the
 crawl/index/RAG config models.
 
@@ -39,6 +43,7 @@ crawl/index/RAG config models.
 | `CRAWL_TIMEOUT` | `60.0` | Per-page load timeout (s) |
 | `CRAWL_MAX_FILE_SIZE_MB` | `10.0` | Max size per output file (MB) |
 | `CRAWL_ACTIVITY_LOG_SIZE` | `10` | Live activity-log lines retained |
+| `CRAWL_UNDETECTED_BROWSER` | `false` | Use Crawl4AI's undetected browser for tougher anti-bot defenses (slower) |
 | `VECTOR_CHUNK_SIZE` | `600` | Tokens per chunk |
 | `VECTOR_CHUNK_OVERLAP` | `100` | Overlap between chunks |
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
@@ -52,7 +57,7 @@ crawl/index/RAG config models.
 | `SEMANTIC_SEARCH_FETCH_K` | `20` | Default MMR candidate-pool size |
 | `SEMANTIC_SEARCH_MMR_LAMBDA` | `0.5` | Default MMR diversity (0 = variety, 1 = relevance) |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
-| `UI_DOWNLOAD_LIMIT_MB` | `50` | Largest file or folder-zip served as a download |
+| `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |
 
 These are *starting defaults* for the forms; users can still override most of them
@@ -67,9 +72,32 @@ environment variables read by their SDKs:
 |---|---|
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | Amazon Bedrock (Titan embeddings + Claude/Nova chat) |
 | `OPENAI_API_KEY` | OpenAI embeddings + chat |
+| `CRAWL_PROXIES` | Optional comma-separated proxy URLs (direct-first escalation) for Step 1 crawling |
+| `CRAWL_FALLBACK_API_URL` / `CRAWL_FALLBACK_API_TOKEN` | Optional last-resort scraping API, fetched with the page URL when every browser + proxy attempt is still blocked |
 
 Locally, copy `.env.example` to `.env` (git-ignored) and fill them in. Leave them
 blank to run fully offline (local embeddings + echo chat model).
+
+### Anti-bot escalation (Step 1 crawling)
+
+For sites that block the crawler, three opt-in escalations layer on top of the
+default stealth browser + retry rounds (all off by default):
+
+- **Proxies** — set the `CRAWL_PROXIES` secret (comma-separated URLs). They are
+  tried direct-first, then in order, on every blocked request. Residential
+  proxies are usually required for hard `403`s (e.g. Akamai); data-center proxies
+  are often blocked too.
+- **Undetected browser** — set `CRAWL_UNDETECTED_BROWSER=true` to swap in
+  Crawl4AI's undetected adapter (slower; falls back to the standard stealth
+  browser if unavailable).
+- **Scraping-API fallback** — set `CRAWL_FALLBACK_API_URL` (and optional
+  `CRAWL_FALLBACK_API_TOKEN`) to fetch the page from an external scraping service
+  as a last resort, after every browser + proxy attempt is still blocked.
+
+Proxies and the fallback API are **secrets** (env / Cloud Secrets only — never in
+`.env.defaults` or logs). They are honest mitigations, not guarantees: a hard
+Akamai/DataDome block may still fail. Always respect each site's robots.txt and
+terms of service.
 
 ### Streamlit Community Cloud
 
@@ -96,6 +124,8 @@ git-ignored.
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages (minimum 2) |
 | `flush_interval` | `int` | `10` | Write generated files to disk every N pages |
+| `proxies` | `list[str]` | `[]` | Proxy URLs tried in order (direct first) when blocked; feeds Crawl4AI's `proxy_config`. Set via the `CRAWL_PROXIES` secret in the app — never logged (`repr=False`). |
+| `undetected_browser` | `bool` | `False` | Use Crawl4AI's undetected browser adapter for tougher anti-bot defenses (slower). App setting: `CRAWL_UNDETECTED_BROWSER`. |
 
 ## PageConfig
 

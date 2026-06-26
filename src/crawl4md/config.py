@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 # Accepted URL schemes for seed URLs.
 _VALID_URL_SCHEMES = ("http://", "https://")
@@ -37,6 +37,20 @@ class CrawlerConfig(BaseModel):
     strip_www: bool = _DEFAULT_STRIP_WWW
     headers: dict[str, str] = {}
     max_retries: int = 2
+    # Optional proxy URLs tried in order (direct first) when the site blocks the
+    # crawler. exclude=True (+ repr=False) keeps any embedded credentials out of
+    # serialized output (the run-metadata front matter), logs, and tracebacks.
+    proxies: list[str] = Field(default_factory=list, repr=False, exclude=True)
+    # Use Crawl4AI's undetected browser adapter for tougher anti-bot defenses.
+    undetected_browser: bool = False
+
+    @field_validator("proxies", mode="before")
+    @classmethod
+    def parse_proxies(cls, v: Any) -> list[str]:
+        """Accept a comma-separated string or a list of proxy URLs."""
+        if isinstance(v, str):
+            v = [p.strip() for p in v.split(",") if p.strip()]
+        return v
 
     @field_validator("urls", mode="before")
     @classmethod
@@ -207,6 +221,7 @@ class CrawlResult(BaseModel):
     error_code: str | None = None
     redirected_url: str | None = None
     is_pdf: bool = False
+    is_docx: bool = False
 
 
 class ExtractedPage(BaseModel):

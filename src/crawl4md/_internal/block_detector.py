@@ -18,6 +18,13 @@ _BLOCK_SIGNATURES = (
     "please turn javascript on and reload the page",
     "checking your browser before accessing",
     "javascript is required",
+    # Vendor infrastructure tokens for Akamai / PerimeterX / DataDome challenge
+    # pages. The crawler acts on a match only when the response is also thin
+    # (< 500 visible chars), so normal pages served through these CDNs are safe.
+    "errors.edgesuite.net",
+    "perimeterx",
+    "datadome",
+    "captcha-delivery.com",
 )
 _BLOCK_SIGNATURES_RE = re.compile(
     "|".join(re.escape(signature) for signature in _BLOCK_SIGNATURES),

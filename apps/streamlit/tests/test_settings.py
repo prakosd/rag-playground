@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from crawl4md_streamlit.settings import Settings, get_settings
 
 
-def test_settings_use_code_defaults_without_env_files() -> None:
-    settings = Settings(_env_file=None)
+def test_settings_load_values_from_env_defaults() -> None:
+    # .env.defaults is the single source of truth: Settings() reads every value
+    # from it, since the model declares no in-code fallbacks.
+    settings = Settings()
 
     assert settings.rag_top_k == 4
     assert settings.semantic_search_top_n == 5
@@ -21,8 +24,9 @@ def test_settings_use_code_defaults_without_env_files() -> None:
     assert "all-MiniLM-L6-v2" in settings.vector_embedding_models
     assert settings.crawl_timeout == 60.0
     assert settings.crawl_max_file_size_mb == 10.0
-    assert settings.ui_download_limit_mb == 50
+    assert settings.ui_download_limit_mb == 500
     assert settings.session_retention_days == 7
+    assert settings.crawl_undetected_browser is False
 
 
 def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,7 +36,8 @@ def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("SESSION_RETENTION_DAYS", "30")
     monkeypatch.setenv("SEMANTIC_SEARCH_DEFAULT_TAB", "preview")
 
-    settings = Settings(_env_file=None)
+    # The process environment takes precedence over the .env.defaults file.
+    settings = Settings()
 
     assert settings.rag_top_k == 9
     assert settings.vector_chunk_size == 900
@@ -46,9 +51,20 @@ def test_settings_ignore_unrelated_secret_env_vars(monkeypatch: pytest.MonkeyPat
     # ignore them rather than fail on unknown keys.
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "should-be-ignored")
 
-    settings = Settings(_env_file=None)
+    settings = Settings()
 
     assert not hasattr(settings, "aws_secret_access_key")
+
+
+def test_settings_require_env_defaults_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With no env file and the relevant variables unset, the required fields are
+    # missing — .env.defaults is mandatory because the model carries no in-code
+    # fallbacks, so construction fails fast.
+    for key in ("RAG_TOP_K", "VECTOR_CHUNK_SIZE", "CRAWL_LIMIT", "UI_DOWNLOAD_LIMIT_MB"):
+        monkeypatch.delenv(key, raising=False)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
 
 
 def test_get_settings_is_cached_singleton() -> None:

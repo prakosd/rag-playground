@@ -41,7 +41,7 @@ mirrored in `vector_indexer.page_source` with a "keep in sync" note (no cross-li
 | `writer.py` | `FileWriter` — size-limited content files + URL lists || `naming.py` | Crawl folder/timestamp names (re-exports `artifact_store.naming`) |
 | `progress.py` | `ProgressReporter` — Jupyter/terminal progress |
 | `messages.py` | Stable result codes + `classify_crawl_error` (built on `artifact_store.LibraryMessage`) |
-| `_internal/` | Implementation details (final output, PDF, URL filter, …) |
+| `_internal/` | Implementation details (final output, PDF, DOCX, URL filter, …) |
 
 ## Structured messages
 
