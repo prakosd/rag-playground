@@ -27,6 +27,7 @@ _settings = get_settings()
 
 VEC_DEFAULT_CHUNK_SIZE = _settings.vector_chunk_size
 VEC_DEFAULT_CHUNK_OVERLAP = _settings.vector_chunk_overlap
+VEC_DEFAULT_INDEX_WORKERS = _settings.vector_index_workers
 VEC_DEFAULT_EMBEDDING_DIMENSION = _settings.vector_embedding_dimension
 VEC_EMBEDDING_MODEL_ORDER = tuple(
     model.strip() for model in _settings.vector_embedding_models.split(",") if model.strip()
@@ -34,7 +35,9 @@ VEC_EMBEDDING_MODEL_ORDER = tuple(
 VEC_DEFAULT_EMBEDDING_MODEL = _settings.vector_default_embedding_model
 _UPLOAD_TYPES = ["md", "txt", "zip"]
 _EMBEDDING_CONTROL_COLUMN_WIDTHS = (7, 3)
-_FORM_SETTING_COLUMN_WIDTHS = (3, 3, 4)
+_FORM_SETTING_COLUMN_WIDTHS = (3, 3, 2, 4)
+# Keep in sync with vector_indexer.config._MAX_INDEX_WORKERS (library enforces it).
+_MAX_INDEX_WORKERS = 8
 
 # Open-range fallback used only if a selected model is ever absent from the
 # library catalog; the catalog covers every id in EMBEDDING_MODEL_OPTIONS.
@@ -225,8 +228,17 @@ def render_vector_index_form(
                     help=strings["VEC_CHUNK_OVERLAP_HELP"],
                     disabled=fields_disabled,
                 )
-            language_options = list(LUCENE_LANGUAGES)
             with setting_cols[2]:
+                index_workers = st.number_input(
+                    strings["VEC_WORKERS_LABEL"],
+                    min_value=1,
+                    max_value=_MAX_INDEX_WORKERS,
+                    value=VEC_DEFAULT_INDEX_WORKERS,
+                    help=strings["VEC_WORKERS_HELP"],
+                    disabled=fields_disabled,
+                )
+            language_options = list(LUCENE_LANGUAGES)
+            with setting_cols[3]:
                 language = st.selectbox(
                     strings["VEC_LANGUAGE_LABEL"],
                     options=language_options,
@@ -261,6 +273,7 @@ def render_vector_index_form(
         "uploaded_files": uploaded_files,
         "chunk_size": int(chunk_size),
         "chunk_overlap": int(chunk_overlap),
+        "index_workers": int(index_workers),
         "embedding_model": embedding_model,
         "embedding_dimension": int(embedding_dimension),
         "language": language,

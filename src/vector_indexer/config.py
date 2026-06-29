@@ -14,6 +14,8 @@ __all__ = ["IndexingConfig"]
 _DEFAULT_CHUNK_SIZE = 600
 _DEFAULT_CHUNK_OVERLAP = 100
 _DEFAULT_EMBEDDING_DIMENSION = 512
+_DEFAULT_INDEX_WORKERS = 4
+_MAX_INDEX_WORKERS = 8
 
 
 class IndexingConfig(BaseModel):
@@ -24,12 +26,20 @@ class IndexingConfig(BaseModel):
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_dimension: int = _DEFAULT_EMBEDDING_DIMENSION
     language: str = DEFAULT_LANGUAGE
+    index_workers: int = _DEFAULT_INDEX_WORKERS
 
     @field_validator("chunk_size", "embedding_dimension")
     @classmethod
     def _require_positive(cls, value: int) -> int:
         if value < 1:
             raise ValueError("Value must be at least 1.")
+        return value
+
+    @field_validator("index_workers")
+    @classmethod
+    def _require_worker_range(cls, value: int) -> int:
+        if not 1 <= value <= _MAX_INDEX_WORKERS:
+            raise ValueError(f"index_workers must be between 1 and {_MAX_INDEX_WORKERS}.")
         return value
 
     @field_validator("chunk_overlap")

@@ -45,6 +45,7 @@ crawl/index/RAG config models.
 | `CRAWL_ACTIVITY_LOG_SIZE` | `10` | Live activity-log lines retained |
 | `VECTOR_CHUNK_SIZE` | `600` | Tokens per chunk |
 | `VECTOR_CHUNK_OVERLAP` | `100` | Overlap between chunks |
+| `VECTOR_INDEX_WORKERS` | `4` | Parallel embedding workers (1-8); cloud models only — local ONNX forced to 1 |
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
 | `VECTOR_EMBEDDING_MODELS` | `all-MiniLM-L6-v2,amazon.titan-embed-text-v2:0,text-embedding-3-small` | Embedding models offered in the dropdown, in display order |
 | `VECTOR_DEFAULT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model pre-selected in the dropdown |
@@ -58,6 +59,8 @@ crawl/index/RAG config models.
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |
+| `UI_LIVE_REFRESH_SEC` | `3` | Seconds between live crawl/index progress refreshes |
+| `UI_DOWNLOADS_REFRESH_SEC` | `7` | Seconds between Output Files panel refreshes |
 | `ZIP_SIGNING_SECRET` | `crawl4md-dev-zip-key` | Shared key that signs downloaded zips so a folder can be re-uploaded to an instance using the same key; override per deployment |
 
 These are *starting defaults* for the forms; users can still override most of them
@@ -84,12 +87,14 @@ For sites that block the crawler, three opt-in escalations layer on top of the
 default stealth browser + retry rounds (all off by default):
 
 - **Proxies** — set the `CRAWL_PROXIES` secret (comma-separated URLs). They are
-  tried direct-first, then in order, on every blocked request. Residential
-  proxies are usually required for hard `403`s (e.g. Akamai); data-center proxies
-  are often blocked too.
+  tried direct-first, then in order, on blocked requests. Used **only on retry
+  rounds** (not the initial crawl) to save cost, since proxies are a paid service.
+  Residential proxies are usually required for hard `403`s (e.g. Akamai); data-center
+  proxies are often blocked too.
 - **Undetected browser** — retry rounds automatically escalate to Crawl4AI's
-  undetected adapter (round 1 uses the standard stealth browser; it falls back to
-  stealth if the adapter is unavailable). No setting to toggle.
+  undetected adapter; the **initial** crawl uses the standard stealth browser to
+  focus on discovering pages, and it falls back to stealth if the adapter is
+  unavailable. No setting to toggle.
 - **Scraping-API fallback** — set `CRAWL_FALLBACK_API_URL` (and optional
   `CRAWL_FALLBACK_API_TOKEN`) to fetch the page from an external scraping service
   as a last resort, after every browser + proxy attempt is still blocked.

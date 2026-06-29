@@ -47,6 +47,7 @@ class IndexManifest:
     skipped_file_count: int
     created_at: str | None = None
     indexed_sources: tuple[str, ...] = ()
+    index_workers: int | None = None
 
 
 def write_manifest(run_dir: Path | str, payload: dict[str, Any]) -> None:
@@ -82,4 +83,5 @@ def load_manifest(run_dir: Path | str) -> IndexManifest:
         skipped_file_count=int(data.get("skipped_file_count", 0)),
         created_at=data.get("created_at"),
         indexed_sources=tuple(data.get("indexed_sources") or ()),
+        index_workers=data.get("index_workers"),
     )

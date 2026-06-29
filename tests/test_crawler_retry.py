@@ -52,11 +52,11 @@ class TestRetryRounds:
         results = crawler.crawl()
 
         assert crawler.output_dir is not None
-        # Round 1 files
+        # Initial crawl files
+        assert (crawler.output_dir / "initial" / "success_urls.txt").exists()
+        assert (crawler.output_dir / "initial" / "fail_urls.txt").exists()
+        # First retry files
         assert (crawler.output_dir / "round_1" / "success_urls.txt").exists()
-        assert (crawler.output_dir / "round_1" / "fail_urls.txt").exists()
-        # Round 2 files
-        assert (crawler.output_dir / "round_2" / "success_urls.txt").exists()
         # Final files
         assert (crawler.output_dir / "final" / "success_urls.txt").exists()
         # All pages should succeed after retry
@@ -83,11 +83,11 @@ class TestRetryRounds:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        # Round 1 exists
-        assert (crawler.output_dir / "round_1" / "success_urls.txt").exists()
-        # Round 2 should NOT exist (early exit)
-        assert not (crawler.output_dir / "round_2" / "success_urls.txt").exists()
-        assert not (crawler.output_dir / "round_2" / "fail_urls.txt").exists()
+        # Initial crawl exists
+        assert (crawler.output_dir / "initial" / "success_urls.txt").exists()
+        # First retry should NOT exist (early exit)
+        assert not (crawler.output_dir / "round_1" / "success_urls.txt").exists()
+        assert not (crawler.output_dir / "round_1" / "fail_urls.txt").exists()
         # Final success
         assert (crawler.output_dir / "final" / "success_urls.txt").exists()
         assert not (crawler.output_dir / "final" / "fail_urls.txt").exists()

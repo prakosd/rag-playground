@@ -77,7 +77,26 @@ def test_apply_anti_bot_run_options_adds_proxy_and_fallback(
     assert kwargs["fallback_fetch_function"] is fallback
 
 
-def test_build_run_config_includes_anti_bot_options(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_anti_bot_run_options_skips_proxy_but_keeps_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("crawl4md.crawler._load_proxy_config_cls", lambda: _FakeProxyConfig)
+
+    async def fallback(url: str) -> str:
+        return "<html></html>"
+
+    crawler = SiteCrawler(
+        CrawlerConfig(urls=["https://example.com"], proxies=["http://p:8080"]),
+        fallback_fetch_function=fallback,
+    )
+    kwargs: dict = {}
+    crawler._apply_anti_bot_run_options(kwargs, apply_proxies=False)
+
+    assert "proxy_config" not in kwargs
+    assert kwargs["fallback_fetch_function"] is fallback
+
+
+def test_build_run_config_skips_proxies_on_initial_crawl(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("crawl4md.crawler._load_proxy_config_cls", lambda: _FakeProxyConfig)
     crawler = _crawler(proxies=["http://p:8080"])
     captured: dict = {}
@@ -86,7 +105,11 @@ def test_build_run_config_includes_anti_bot_options(monkeypatch: pytest.MonkeyPa
         captured.update(kwargs)
         return object()
 
+    # Initial crawl must NOT use paid proxies; retries do.
     crawler._build_run_config(fake_run_config_cls)
+    assert "proxy_config" not in captured
+    captured.clear()
+    crawler._build_fallback_run_config(fake_run_config_cls)
     assert "proxy_config" in captured
 
 

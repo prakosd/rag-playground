@@ -75,6 +75,8 @@ from crawl4md._internal.final_output import (
 )
 from crawl4md._internal.final_output import (
     FinalOutputWriter,
+    round_dir_name,
+    round_num_from_dir,
 )
 from crawl4md._internal.pdf import (
     _OCR_UNAVAILABLE_WARNING as _PDF_OCR_UNAVAILABLE_WARNING,
@@ -287,10 +289,6 @@ _USER_AGENT_BROWSERS = ["Chrome", "Edge"]
 
 # Subdirectory name for final merged output files
 _FINAL_DIR_NAME = "final"
-
-# Prefix for per-round subdirectory names (e.g. "round_1")
-_ROUND_DIR_PREFIX = "round_"
-_ROUND_DIR_RE = re.compile(r"round_(\d+)$")
 
 # Suffix for successful-page file names (e.g. "success_content_001.txt")
 _SUCCESS_SUFFIX = "success_"
@@ -583,18 +581,18 @@ class SiteCrawler:
         # --- Per-round files ---
         round_nums = sorted(
             {
-                int(m.group(1))
+                rn
                 for d in self.output_dir.iterdir()
-                if d.is_dir() and (m := _ROUND_DIR_RE.match(d.name))
+                if d.is_dir() and (rn := round_num_from_dir(d.name)) is not None
             }
         )
         for rn in round_nums:
-            rd = self.output_dir / f"{_ROUND_DIR_PREFIX}{rn}"
+            rd = self.output_dir / round_dir_name(rn)
             round_files = sorted(rd.iterdir())
             content = [f for f in round_files if f.name.startswith(f"{_SUCCESS_SUFFIX}content_")]
             fail_content = [f for f in round_files if f.name.startswith(f"{_FAIL_SUFFIX}content_")]
             url_files = [f for f in round_files if "urls" in f.name and f.suffix == ".txt"]
-            print(f"--- Round {rn} ---")
+            print(f"--- {round_dir_name(rn)} ---")
             _print_files("Success content", content)
             _print_files("Fail content", fail_content)
             _print_files("URL lists", url_files)
@@ -611,7 +609,7 @@ class SiteCrawler:
                 if f.name.startswith("sorted_") and "urls" in f.name and f.suffix == ".txt"
             ]
             if sorted_content or sorted_fail_content:
-                print(f"--- Round {rn} (sorted) ---")
+                print(f"--- {round_dir_name(rn)} (sorted) ---")
                 _print_files("Success content", sorted_content)
                 _print_files("Fail content", sorted_fail_content)
                 _print_files("URL lists", sorted_url_files)
@@ -654,7 +652,7 @@ class SiteCrawler:
     def _round_dir(self, round_num: int) -> Path:
         """Return the round subdirectory for *round_num*, creating it if needed."""
         assert self.output_dir is not None
-        d = self.output_dir / f"{_ROUND_DIR_PREFIX}{round_num}"
+        d = self.output_dir / round_dir_name(round_num)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -2456,7 +2454,7 @@ class SiteCrawler:
             kwargs["override_navigator"] = True
             kwargs["magic"] = True
 
-        self._apply_anti_bot_run_options(kwargs)
+        self._apply_anti_bot_run_options(kwargs, apply_proxies=False)
 
         return run_config_cls(**kwargs)
 
@@ -2495,11 +2493,17 @@ class SiteCrawler:
 
         return run_config_cls(**kwargs)
 
-    def _apply_anti_bot_run_options(self, kwargs: dict) -> None:
-        """Add proxy escalation and the fallback fetch hook to a run-config kwargs dict."""
-        proxy_config = self._build_proxy_config()
-        if proxy_config is not None:
-            kwargs["proxy_config"] = proxy_config
+    def _apply_anti_bot_run_options(self, kwargs: dict, *, apply_proxies: bool = True) -> None:
+        """Add proxy escalation and the fallback fetch hook to a run-config kwargs dict.
+
+        Proxies are a paid resource, so they are skipped on the initial crawl
+        (``apply_proxies=False``) and used only on retry rounds, where the goal
+        is unblocking the few URLs that failed.
+        """
+        if apply_proxies:
+            proxy_config = self._build_proxy_config()
+            if proxy_config is not None:
+                kwargs["proxy_config"] = proxy_config
         if self._fallback_fetch_function is not None:
             kwargs["fallback_fetch_function"] = self._fallback_fetch_function
 

@@ -178,7 +178,7 @@ def test_write_sorted_round_files_produced_when_cleanup_disabled(tmp_path: Path)
     writer = _output_writer(tmp_path)
 
     with patch.object(_fo_mod, "_ENABLE_SORTED_ROUND_FILES", True):
-        writer.write_sorted_round_files(1, round_dir)
+        writer.write_sorted_round_files(2, round_dir)
 
     assert list(round_dir.glob("sorted_success_content_*"))
     assert (round_dir / "sorted_success_urls.txt").exists()

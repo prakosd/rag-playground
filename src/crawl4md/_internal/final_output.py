@@ -11,7 +11,32 @@ from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar, rename_file
 __all__ = ["FinalOutputWriter"]
 
 _FINAL_DIR_NAME = "final"
+_INITIAL_DIR_NAME = "initial"
 _ROUND_DIR_PREFIX = "round_"
+
+
+def round_dir_name(round_num: int) -> str:
+    """Map a 1-based round number to its on-disk folder name.
+
+    Round 1 is the initial crawl ("initial"); each later round is a retry,
+    labelled from the user's perspective as round_1.. (so ``max_retries`` retries
+    yield ``initial`` + ``round_1``..``round_N`` + ``final``).
+    """
+    return _INITIAL_DIR_NAME if round_num <= 1 else f"{_ROUND_DIR_PREFIX}{round_num - 1}"
+
+
+def round_num_from_dir(name: str) -> int | None:
+    """Reverse of :func:`round_dir_name`; return None for non-round folders."""
+    if name == _INITIAL_DIR_NAME:
+        return 1
+    if name.startswith(_ROUND_DIR_PREFIX):
+        try:
+            return int(name[len(_ROUND_DIR_PREFIX) :]) + 1
+        except ValueError:
+            return None
+    return None
+
+
 _SUCCESS_SUFFIX = "success_"
 _FAIL_SUFFIX = "fail_"
 _SUCCESS_URLS_FILE = "success_urls.txt"
@@ -172,8 +197,17 @@ class FinalOutputWriter:
     def delete_sidecars(self) -> None:
         """Delete per-round JSONL sidecar files after final output is written."""
         for pattern in (_SUCCESS_SIDECAR_SUFFIX, _FAIL_SIDECAR_SUFFIX):
-            for sidecar in self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{pattern}"):
+            for sidecar in self._round_sidecars(pattern):
                 sidecar.unlink(missing_ok=True)
+
+    def _round_sidecars(self, suffix: str) -> list[Path]:
+        """Return all round sidecars (initial + retries) sorted by round order."""
+        sidecars = [
+            d / suffix
+            for d in self.output_dir.iterdir()
+            if d.is_dir() and round_num_from_dir(d.name) is not None and (d / suffix).exists()
+        ]
+        return sorted(sidecars, key=lambda p: round_num_from_dir(p.parent.name) or 0)
 
     def write_sorted_files(self) -> None:
         final_dir = self.output_dir / _FINAL_DIR_NAME
@@ -212,18 +246,13 @@ class FinalOutputWriter:
         return sorted(final_dir.glob(pattern)) if final_dir.exists() else []
 
     def index_success(self, up_to_round: int | None = None) -> list[PageIndexEntry]:
-        sidecar_files = sorted(
-            self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}")
-        )
+        sidecar_files = self._round_sidecars(_SUCCESS_SIDECAR_SUFFIX)
         seen: set[str] = set()
         entries: list[PageIndexEntry] = []
         for sidecar_file in sidecar_files:
             if up_to_round is not None:
-                try:
-                    round_num = int(sidecar_file.parent.name.split("_")[1])
-                except (IndexError, ValueError):
-                    continue
-                if round_num > up_to_round:
+                round_num = round_num_from_dir(sidecar_file.parent.name)
+                if round_num is None or round_num > up_to_round:
                     continue
             for entry in PageSidecar.iter_index(sidecar_file):
                 if entry.url not in seen:
@@ -233,20 +262,17 @@ class FinalOutputWriter:
 
     def index_fail(self, up_to_round: int | None = None) -> list[PageIndexEntry]:
         success_urls: set[str] = set()
-        for sidecar_file in self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_SUCCESS_SIDECAR_SUFFIX}"):
+        for sidecar_file in self._round_sidecars(_SUCCESS_SIDECAR_SUFFIX):
             for entry in PageSidecar.iter_index(sidecar_file):
                 success_urls.add(entry.url)
 
-        sidecar_files = sorted(self.output_dir.glob(f"{_ROUND_DIR_PREFIX}*/{_FAIL_SIDECAR_SUFFIX}"))
+        sidecar_files = self._round_sidecars(_FAIL_SIDECAR_SUFFIX)
         seen: set[str] = set()
         entries: list[PageIndexEntry] = []
         for sidecar_file in sidecar_files:
             if up_to_round is not None:
-                try:
-                    round_num = int(sidecar_file.parent.name.split("_")[1])
-                except (IndexError, ValueError):
-                    continue
-                if round_num > up_to_round:
+                round_num = round_num_from_dir(sidecar_file.parent.name)
+                if round_num is None or round_num > up_to_round:
                     continue
             for entry in PageSidecar.iter_index(sidecar_file):
                 if entry.url not in seen and entry.url not in success_urls:

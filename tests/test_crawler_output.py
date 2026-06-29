@@ -167,7 +167,7 @@ class TestFailContentFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        fail_files = list(crawler.output_dir.glob("round_1/fail_content_*.txt"))
+        fail_files = list(crawler.output_dir.glob("initial/fail_content_*.txt"))
         assert len(fail_files) >= 1
         content = fail_files[0].read_text(encoding="utf-8")
         assert "https://example.com/blocked" in content
@@ -201,7 +201,7 @@ class TestFailContentFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        fail_files = list(crawler.output_dir.glob("round_1/fail_content_*.txt"))
+        fail_files = list(crawler.output_dir.glob("initial/fail_content_*.txt"))
         assert len(fail_files) >= 1
         content = fail_files[0].read_text(encoding="utf-8")
         assert "**Error:** Blocked by WAF" in content
@@ -351,7 +351,7 @@ class TestOutputFrontMatter:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        content_files = sorted(crawler.output_dir.glob("round_1/success_content_*.txt"))
+        content_files = sorted(crawler.output_dir.glob("initial/success_content_*.txt"))
         assert content_files
 
         content = content_files[0].read_text(encoding="utf-8")
@@ -389,7 +389,7 @@ class TestOutputFrontMatter:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        content_files = sorted(crawler.output_dir.glob("round_1/success_content_*.txt"))
+        content_files = sorted(crawler.output_dir.glob("initial/success_content_*.txt"))
         assert content_files
 
         content = content_files[0].read_text(encoding="utf-8")
@@ -726,7 +726,7 @@ class TestPrintSummary:
         results = [CrawlResult(url="https://example.com/a", success=True)]
         crawler.print_summary(results)
         out = capsys.readouterr().out
-        assert "--- Round 1 ---" in out
+        assert "--- round_1 ---" in out
         assert "success_content_001.md" in out
 
     def test_prints_sorted_files(self, tmp_path: Path, capsys):
@@ -816,8 +816,8 @@ class TestPrintSummary:
 
         assert crawler.output_dir is not None
         # Per-round fail content files from both rounds
-        round1_fail = list(crawler.output_dir.glob("round_1/fail_content_*.txt"))
-        round2_fail = list(crawler.output_dir.glob("round_2/fail_content_*.txt"))
+        round1_fail = list(crawler.output_dir.glob("initial/fail_content_*.txt"))
+        round2_fail = list(crawler.output_dir.glob("round_1/fail_content_*.txt"))
         assert len(round1_fail) >= 1
         assert len(round2_fail) >= 1
 
@@ -1114,17 +1114,17 @@ class TestRoundSuccessSnapshots:
 
         assert crawler.output_dir is not None
 
-        round_1_success_urls = (crawler.output_dir / "round_1" / "success_urls.txt").read_text(
+        round_1_success_urls = (crawler.output_dir / "initial" / "success_urls.txt").read_text(
             encoding="utf-8"
         )
         assert round_1_success_urls == url_a
 
-        round_2_success_urls = (crawler.output_dir / "round_2" / "success_urls.txt").read_text(
+        round_2_success_urls = (crawler.output_dir / "round_1" / "success_urls.txt").read_text(
             encoding="utf-8"
         )
         assert round_2_success_urls.splitlines() == [url_a, url_b]
 
-        round_2_files = list(crawler.output_dir.glob("round_2/success_content_*.txt"))
+        round_2_files = list(crawler.output_dir.glob("round_1/success_content_*.txt"))
         assert len(round_2_files) >= 1
         round_2_content = round_2_files[0].read_text(encoding="utf-8")
         assert round_2_content.count(f"*Source: {url_a}*") == 1
@@ -1165,12 +1165,12 @@ class TestSortedRoundFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        sorted_files = list(crawler.output_dir.glob("round_1/sorted_success_content_*.txt"))
+        sorted_files = list(crawler.output_dir.glob("initial/sorted_success_content_*.txt"))
         assert len(sorted_files) >= 1
         content = sorted_files[0].read_text(encoding="utf-8")
         assert "https://example.com/page" in content
 
-        sorted_urls = crawler.output_dir / "round_1" / "sorted_success_urls.txt"
+        sorted_urls = crawler.output_dir / "initial" / "sorted_success_urls.txt"
         assert sorted_urls.exists()
         assert "https://example.com/page" in sorted_urls.read_text(encoding="utf-8")
 
@@ -1201,13 +1201,13 @@ class TestSortedRoundFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        sorted_fail_files = list(crawler.output_dir.glob("round_1/sorted_fail_content_*.txt"))
+        sorted_fail_files = list(crawler.output_dir.glob("initial/sorted_fail_content_*.txt"))
         assert len(sorted_fail_files) >= 1
         content = sorted_fail_files[0].read_text(encoding="utf-8")
         assert "https://example.com/blocked" in content
         assert "Blocked by WAF" in content
 
-        sorted_fail_urls = crawler.output_dir / "round_1" / "sorted_fail_urls.txt"
+        sorted_fail_urls = crawler.output_dir / "initial" / "sorted_fail_urls.txt"
         assert sorted_fail_urls.exists()
         assert "https://example.com/blocked" in sorted_fail_urls.read_text(encoding="utf-8")
 
@@ -1264,13 +1264,13 @@ class TestSortedRoundFiles:
         assert crawler.output_dir is not None
 
         # Round 2 sorted success URLs should contain both A and B
-        sorted_r2_urls = crawler.output_dir / "round_2" / "sorted_success_urls.txt"
+        sorted_r2_urls = crawler.output_dir / "round_1" / "sorted_success_urls.txt"
         assert sorted_r2_urls.exists()
         urls = sorted_r2_urls.read_text(encoding="utf-8").strip().split("\n")
         assert set(urls) == {url_a, url_b}
 
         # Sorted content should contain both
-        sorted_r2_files = list(crawler.output_dir.glob("round_2/sorted_success_content_*.txt"))
+        sorted_r2_files = list(crawler.output_dir.glob("round_1/sorted_success_content_*.txt"))
         assert len(sorted_r2_files) >= 1
         content = sorted_r2_files[0].read_text(encoding="utf-8")
         assert url_a in content
@@ -1298,7 +1298,7 @@ class TestPrintSummarySortedRound:
         results = [CrawlResult(url="https://example.com/a", success=True)]
         crawler.print_summary(results)
         out = capsys.readouterr().out
-        assert "Round 1 (sorted)" in out
+        assert "round_1 (sorted)" in out
         assert "sorted_success_content_001.md" in out
 
 
@@ -1538,14 +1538,14 @@ class TestSidecarFiles:
 
         assert crawler.output_dir is not None
         # Success sidecar exists with at least 1 page
-        success_sidecars = list(crawler.output_dir.glob("round_*/success_pages.jsonl"))
+        success_sidecars = list(crawler.output_dir.glob("initial/success_pages.jsonl"))
         assert len(success_sidecars) >= 1
         success_pages = list(PageSidecar.read_pages(success_sidecars[0]))
         assert len(success_pages) >= 1
         assert any(p.url == "https://example.com/ok" for p in success_pages)
 
         # Fail sidecar exists
-        fail_sidecars = list(crawler.output_dir.glob("round_*/fail_pages.jsonl"))
+        fail_sidecars = list(crawler.output_dir.glob("initial/fail_pages.jsonl"))
         assert len(fail_sidecars) >= 1
         fail_pages = list(PageSidecar.read_pages(fail_sidecars[0]))
         assert len(fail_pages) >= 1

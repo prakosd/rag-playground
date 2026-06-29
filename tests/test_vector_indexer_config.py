@@ -14,6 +14,7 @@ def test_defaults_match_spec() -> None:
     assert config.embedding_dimension == 512
     assert config.language == "english"
     assert config.embedding_model == "amazon.titan-embed-text-v2:0"
+    assert config.index_workers == 4
 
 
 def test_overlap_must_be_smaller_than_chunk_size() -> None:
@@ -33,6 +34,13 @@ def test_sizes_must_be_positive() -> None:
 def test_overlap_must_not_be_negative() -> None:
     with pytest.raises(ValidationError):
         IndexingConfig(chunk_overlap=-1)
+
+
+def test_index_workers_must_be_within_range() -> None:
+    with pytest.raises(ValidationError):
+        IndexingConfig(index_workers=0)
+    with pytest.raises(ValidationError):
+        IndexingConfig(index_workers=9)
 
 
 def test_language_is_normalized() -> None:

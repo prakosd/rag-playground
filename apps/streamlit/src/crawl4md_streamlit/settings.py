@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     # Default embedding vector size. Must be supported by the chosen model;
     # smaller = cheaper/faster search, larger = potentially higher quality.
     vector_embedding_dimension: int
+    # Default number of parallel embedding workers. Cloud models (Titan/OpenAI)
+    # index faster with more; the local ONNX model is forced to 1 worker.
+    vector_index_workers: int
     # Embedding models offered in the Vector Index dropdown, in display order
     # (comma-separated). Unknown ids are ignored; supported models not listed
     # here are still appended so none disappear.
@@ -120,6 +123,10 @@ class Settings(BaseSettings):
     ui_download_limit_mb: int
     # Largest inline text preview (KB) before previews are truncated.
     ui_preview_limit_kb: int
+    # Seconds between auto-refreshes of the live crawl/index progress panels.
+    ui_live_refresh_sec: int
+    # Seconds between auto-refreshes of the Output Files download panel.
+    ui_downloads_refresh_sec: int
     # Shared key that signs downloadable zips so an exported folder can be
     # re-uploaded to an instance using the same key. Overridable per deployment.
     zip_signing_secret: str

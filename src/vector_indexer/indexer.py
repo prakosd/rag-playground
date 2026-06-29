@@ -9,7 +9,9 @@ injectable so the flow can be tested without langchain-chroma or network access.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from itertools import count
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,6 +23,7 @@ from vector_indexer.chunking import chunk_documents
 from vector_indexer.config import IndexingConfig
 from vector_indexer.document_loader import load_documents
 from vector_indexer.embeddings import (
+    DEFAULT_LOCAL_MODEL,
     EmbeddingProviderUnavailable,
     ResolvedEmbedding,
     resolve_embedding,
@@ -109,6 +112,7 @@ class VectorIndexer:
             result,
             progress_callback,
             should_cancel,
+            workers=_worker_count(config.index_workers, resolved.model_id),
         )
         return self._finalize(
             run_dir, config, result, model_id=resolved.model_id, collection_name=collection_name
@@ -170,25 +174,50 @@ class VectorIndexer:
         result: IndexingResult,
         progress_callback: ProgressCallback | None,
         should_cancel: CancelCheck | None,
+        *,
+        workers: int,
     ) -> None:
         store = self._store_factory(run_dir / CHROMA_SUBDIR, collection_name, resolved.embeddings)
-        ids = count()
         indexed_sources: set[str] = set()
         total = len(chunks)
+        batches = list(_batched(chunks, _EMBED_BATCH_SIZE))
+        # Pre-assign ids per batch so concurrent workers never share a counter.
+        ids = count()
+        id_lists = [[str(next(ids)) for _ in batch] for batch in batches]
+        lock = threading.Lock()
+        cancelled = False
         _report_stage(progress_callback, STAGE_EMBEDDING)
-        try:
-            for batch in _batched(chunks, _EMBED_BATCH_SIZE):
-                if _cancelled(should_cancel):
-                    result.warnings.append(messages.cancelled_partial())
-                    break
-                store.add_texts(
-                    texts=[chunk.text for chunk in batch],
-                    metadatas=[chunk.metadata for chunk in batch],
-                    ids=[str(next(ids)) for _ in batch],
-                )
+
+        def _store_batch(batch: list[Chunk], batch_ids: list[str]) -> None:
+            store.add_texts(
+                texts=[chunk.text for chunk in batch],
+                metadatas=[chunk.metadata for chunk in batch],
+                ids=batch_ids,
+            )
+            with lock:
                 result.indexed_chunk_count += len(batch)
                 indexed_sources.update(chunk.document_source for chunk in batch)
                 _report_progress(progress_callback, result.indexed_chunk_count, total)
+
+        try:
+            if workers > 1:
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = []
+                    for batch, batch_ids in zip(batches, id_lists, strict=True):
+                        if _cancelled(should_cancel):
+                            cancelled = True
+                            break
+                        futures.append(pool.submit(_store_batch, batch, batch_ids))
+                    for future in futures:
+                        future.result()  # propagate any worker exception
+            else:
+                for batch, batch_ids in zip(batches, id_lists, strict=True):
+                    if _cancelled(should_cancel):
+                        cancelled = True
+                        break
+                    _store_batch(batch, batch_ids)
+            if cancelled:
+                result.warnings.append(messages.cancelled_partial())
             _report_stage(progress_callback, STAGE_SAVING)
             store.persist()
         except Exception as exc:  # noqa: BLE001 - boundary around the embedding backend
@@ -213,6 +242,13 @@ class VectorIndexer:
 
 def _cancelled(should_cancel: CancelCheck | None) -> bool:
     return bool(should_cancel and should_cancel())
+
+
+def _worker_count(requested: int, model_id: str) -> int:
+    """Resolve effective worker count: the local ONNX model stays sequential."""
+    if model_id == DEFAULT_LOCAL_MODEL:
+        return 1
+    return max(1, requested)
 
 
 def _report_progress(
@@ -257,6 +293,7 @@ def _write_manifest(
             "chunk_size": config.chunk_size,
             "chunk_overlap": config.chunk_overlap,
             "language": config.language,
+            "index_workers": config.index_workers,
             "success": result.success,
             "indexed_file_count": result.indexed_file_count,
             "indexed_chunk_count": result.indexed_chunk_count,

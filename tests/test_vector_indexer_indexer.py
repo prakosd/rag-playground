@@ -205,3 +205,58 @@ def test_run_emits_pipeline_stages_in_order(tmp_path: Path) -> None:
         STAGE_EMBEDDING,
         STAGE_SAVING,
     ]
+
+
+def test_partial_index_is_finalized_when_stopped_mid_run(tmp_path: Path) -> None:
+    # Stop after the first embedded batch: the already-indexed chunks must
+    # persist with a usable manifest (success) so semantic search still works.
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 4000, encoding="utf-8")
+    indexer, _ = _indexer_with_capture()
+    calls = {"n": 0}
+
+    def should_cancel() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 2  # pass the pre-chunk check + first batch, then stop
+
+    result = indexer.run(
+        IndexingConfig(chunk_size=120, chunk_overlap=20),
+        [source],
+        tmp_path / "vector_01_demo",
+        should_cancel=should_cancel,
+    )
+
+    assert result.indexed_chunk_count > 0
+    assert result.success  # partial index stays usable
+    assert any(w.code == messages.CODE_CANCELLED_PARTIAL for w in result.warnings)
+    manifest = load_manifest(result.output_dir)
+    assert manifest.success
+    assert manifest.indexed_chunk_count == result.indexed_chunk_count
+
+
+def test_parallel_workers_index_all_chunks(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 4000, encoding="utf-8")
+    indexer, created = _indexer_with_capture()
+
+    result = indexer.run(
+        IndexingConfig(chunk_size=120, chunk_overlap=20, index_workers=4),
+        [source],
+        tmp_path / "vector_01_demo",
+    )
+
+    assert result.success
+    store = created["store"]
+    assert isinstance(store, _FakeStore)
+    assert len(store.ids) == result.indexed_chunk_count
+    assert len(store.ids) == len(set(store.ids))  # no id collisions across workers
+    manifest = load_manifest(result.output_dir)
+    assert manifest.index_workers == 4
+
+
+def test_local_model_runs_sequentially() -> None:
+    from vector_indexer.embeddings import DEFAULT_LOCAL_MODEL
+    from vector_indexer.indexer import _worker_count
+
+    assert _worker_count(8, DEFAULT_LOCAL_MODEL) == 1
+    assert _worker_count(4, "fake") == 4

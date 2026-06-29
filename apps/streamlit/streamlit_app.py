@@ -148,7 +148,7 @@ except ImportError:
     pass
 
 _DOWNLOAD_LIMIT_BYTES = get_settings().ui_download_limit_mb * 1024 * 1024
-_DOWNLOADS_REFRESH_INTERVAL = "7s"
+_DOWNLOADS_REFRESH_INTERVAL = f"{get_settings().ui_downloads_refresh_sec}s"
 _GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
 _DIALOG_PLACEHOLDER_TITLE = " "
 _VECTOR_INDEX_PAGE_ID = "vector_index"
@@ -156,7 +156,7 @@ _RAG_PAGE_IDS = ("semantic_search", "rag_qa", "conversational_rag")
 _DIALOG_LOAD_SESSION_TITLE = "Load Session"
 _HOURS_PER_DAY = 24
 _ICON_BUTTON_WIDTH_PX = 44
-_LIVE_AREA_REFRESH_INTERVAL = "3s"
+_LIVE_AREA_REFRESH_INTERVAL = f"{get_settings().ui_live_refresh_sec}s"
 _PROGRESS_CHART_HEIGHT = 220
 _CHART_CUMULATIVE_TITLE_KEYS = {
     PROGRESS_CHART_TIME_UNIT_SECOND: "CHART_CUMULATIVE_TITLE_SECOND",
@@ -206,6 +206,34 @@ _GITHUB_ICON_DATA_URI = (
     "NzAuNyA5OCA0OS4xIDk4IDIyIDc2IDAgNDguOSAweicgY2xpcC1ydWxlPSdldmVub2RkJy8+"
     "PC9zdmc+"
 )
+# White-fill variant for dark themes, where the black mark is nearly invisible.
+_GITHUB_ICON_DARK_DATA_URI = (
+    "data:image/svg+xml;base64,"
+    "PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA5OCA5"
+    "Nic+PHBhdGggZmlsbD0nd2hpdGUnIGZpbGwtcnVsZT0nZXZlbm9kZCcgZD0nTTQ4LjkgMEMyMS45"
+    "IDAgMCAyMiAwIDQ5LjFjMCAyMS43IDE0IDQwLjEgMzMuNSA0Ni42IDIuNS41IDMuMy0xLjEgMy4z"
+    "LTIuNCAwLTEuMi0uMS01LjItLjEtOS40LTEzLjYgMy0xNi41LTUuOS0xNi41LTUuOS0yLjIt"
+    "NS43LTUuNC03LjItNS40LTcuMi00LjQtMyAuMy0zIC4zLTMgNC45LjMgNy41IDUuMSA3LjUgNS4x"
+    "IDQuMyA3LjUgMTEuNCA1LjMgMTQuMiA0LjEuNC0zLjIgMS43LTUuMyAzLjEtNi41LTEwLjktMS4y"
+    "LTIyLjMtNS41LTIyLjMtMjQuNCAwLTUuNCAxLjktOS44IDUtMTMuMi0uNS0xLjItMi4yLTYuMy41"
+    "LTEzIDAgMCA0LjEtMS4zIDEzLjQgNSAzLjktMS4xIDgtMS42IDEyLjItMS42czguMy42IDEyLjIg"
+    "MS42YzkuMy02LjMgMTMuNC01IDEzLjQtNSAyLjcgNi43IDEgMTEuOC41IDEzIDMuMSAzLjQgNSA3"
+    "LjggNSAxMy4yIDAgMTguOS0xMS41IDIzLjEtMjIuNCAyNC40IDEuOCAxLjYgMy4zIDQuNiAzLjMg"
+    "OS4zIDAgNi43LS4xIDEyLjEtLjEgMTMuOCAwIDEuMy45IDIuOSAzLjQgMi40Qzg0IDg5LjEgOTgg"
+    "NzAuNyA5OCA0OS4xIDk4IDIyIDc2IDAgNDguOSAweicgY2xpcC1ydWxlPSdldmVub2RkJy8+"
+    "PC9zdmc+"
+)
+
+
+def _github_icon_data_uri() -> str:
+    """Return the GitHub mark matching the active theme (white on dark, black on light)."""
+    try:
+        is_dark = st.context.theme.type == "dark"
+    except Exception:  # noqa: BLE001 - theme is best-effort; default to the light-mode mark
+        is_dark = False
+    return _GITHUB_ICON_DARK_DATA_URI if is_dark else _GITHUB_ICON_DATA_URI
+
+
 _AUTHOR_PHOTO_URL = "https://media.licdn.com/dms/image/v2/D5603AQEraqyhOd5bOg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1731589103775?e=2147483647&v=beta&t=RTXvNnlM_jS1bPSRiBSC1hBfeIAAwhYVxXKv3ON9MUs"
 _PREVIEW_DIALOG_WIDTH = "large"
 # Adjust this percentage to resize the preview modal relative to the viewport.
@@ -1493,6 +1521,7 @@ def _start_vector_index_job(values: dict[str, Any]) -> None:
             embedding_model=values["embedding_model"],
             embedding_dimension=values["embedding_dimension"],
             language=values["language"],
+            index_workers=values["index_workers"],
         )
     except (ValidationError, ValueError) as exc:
         st.error(str(exc))
@@ -1607,11 +1636,15 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
         fraction_label = vector_progress_fraction(stage, processed, total)
         if fraction_label is not None:
             fraction, label_key = fraction_label
-            st.progress(
-                fraction,
-                text=strings[label_key].format(processed=processed, total=total),
-            )
-            _render_vector_index_timing(strings, processed, total)
+            label = strings[label_key].format(processed=processed, total=total)
+            with st.container(gap=None):
+                st.markdown(
+                    f'<div style="{_STATUS_ROW_STYLE}">'
+                    f"<span>{label}</span><span>{fraction * 100:.0f}%</span></div>",
+                    unsafe_allow_html=True,
+                )
+                st.progress(fraction)
+                _render_vector_index_timing(strings, processed, total)
         else:
             st.info(strings[vector_stage_label_key(stage)])
         return
@@ -2569,7 +2602,20 @@ def _render_open_delete_folder_dialog() -> None:
 
 
 def _open_upload_dialog() -> None:
+    st.session_state.pop("upload_zip_file", None)  # drop any prior pending file
     st.session_state.upload_dialog_open = True
+
+
+def _render_import_button() -> None:
+    """Render the Import button (mirrors the Export button style) at the top of the tree."""
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    st.button(
+        label=strings["FILES_UPLOAD_BUTTON"],
+        width="content",
+        key="open_upload_dialog",
+        help=strings["FILES_UPLOAD_BUTTON_HELP"],
+        on_click=_open_upload_dialog,
+    )
 
 
 def _on_upload_dismiss() -> None:
@@ -2641,13 +2687,6 @@ def _downloads_body() -> None:
         f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 0rem">{subtitle_text}</p>',
         unsafe_allow_html=True,
     )
-    if not _job_is_alive(st.session_state.job):
-        st.button(
-            strings["FILES_UPLOAD_LINK"],
-            key="open_upload_dialog",
-            type="tertiary",
-            on_click=_open_upload_dialog,
-        )
     if st.session_state.get("upload_dialog_open"):
         _upload_folder_dialog()
     st.markdown(
@@ -2663,12 +2702,14 @@ def _downloads_body() -> None:
         """,
         unsafe_allow_html=True,
     )
-    if _job_is_alive(st.session_state.job):
+    job_alive = _job_is_alive(st.session_state.job)
+    if job_alive:
         if files:
             with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
                 render_download_tree(download_tree)
     elif session_folder.exists():
         with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
+            _render_import_button()
             render_download_tree(download_tree)
 
     if files:
@@ -2734,7 +2775,7 @@ def _render_footer() -> None:
     linkedin_url = html.escape(_AUTHOR_LINKEDIN_URL, quote=True)
     github_url = html.escape(_PROJECT_GITHUB_URL, quote=True)
     linkedin_icon = html.escape(_LINKEDIN_ICON_DATA_URI, quote=True)
-    github_icon = html.escape(_GITHUB_ICON_DATA_URI, quote=True)
+    github_icon = html.escape(_github_icon_data_uri(), quote=True)
     readme_label = html.escape(strings["FOOTER_LINK_README"])
     streamlit_readme_label = html.escape(strings["FOOTER_LINK_STREAMLIT_README"])
     readme_url = html.escape(_README_URL, quote=True)
@@ -2828,7 +2869,7 @@ def _render_portfolio_modal() -> None:
             "linkedinUrl": _AUTHOR_LINKEDIN_URL,
             "githubUrl": _PROJECT_GITHUB_URL,
             "linkedinIconUrl": _LINKEDIN_ICON_DATA_URI,
-            "githubIconUrl": _GITHUB_ICON_DATA_URI,
+            "githubIconUrl": _github_icon_data_uri(),
             "readmeUrl": _README_URL,
             "streamlitReadmeUrl": _STREAMLIT_README_URL,
             "readmeLabel": strings["PORTFOLIO_MODAL_LINK_README"],
