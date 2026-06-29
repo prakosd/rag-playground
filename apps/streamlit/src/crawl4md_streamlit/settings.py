@@ -75,8 +75,6 @@ class Settings(BaseSettings):
     crawl_max_file_size_mb: float
     # Lines of activity log retained for the live crawl view.
     crawl_activity_log_size: int
-    # Use Crawl4AI's undetected browser for tougher anti-bot defenses (slower).
-    crawl_undetected_browser: bool
 
     # ── Step 2 · Vector index (vector_indexer) ───────────────────────────────
     # Tokens per chunk. Larger keeps more context together but retrieves coarser
@@ -122,6 +120,9 @@ class Settings(BaseSettings):
     ui_download_limit_mb: int
     # Largest inline text preview (KB) before previews are truncated.
     ui_preview_limit_kb: int
+    # Shared key that signs downloadable zips so an exported folder can be
+    # re-uploaded to an instance using the same key. Overridable per deployment.
+    zip_signing_secret: str
 
 
 @lru_cache(maxsize=1)

@@ -43,7 +43,6 @@ crawl/index/RAG config models.
 | `CRAWL_TIMEOUT` | `60.0` | Per-page load timeout (s) |
 | `CRAWL_MAX_FILE_SIZE_MB` | `10.0` | Max size per output file (MB) |
 | `CRAWL_ACTIVITY_LOG_SIZE` | `10` | Live activity-log lines retained |
-| `CRAWL_UNDETECTED_BROWSER` | `false` | Use Crawl4AI's undetected browser for tougher anti-bot defenses (slower) |
 | `VECTOR_CHUNK_SIZE` | `600` | Tokens per chunk |
 | `VECTOR_CHUNK_OVERLAP` | `100` | Overlap between chunks |
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
@@ -59,6 +58,7 @@ crawl/index/RAG config models.
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |
+| `ZIP_SIGNING_SECRET` | `crawl4md-dev-zip-key` | Shared key that signs downloaded zips so a folder can be re-uploaded to an instance using the same key; override per deployment |
 
 These are *starting defaults* for the forms; users can still override most of them
 per crawl/index in the UI. See `.env.defaults` for the inline documentation.
@@ -87,9 +87,9 @@ default stealth browser + retry rounds (all off by default):
   tried direct-first, then in order, on every blocked request. Residential
   proxies are usually required for hard `403`s (e.g. Akamai); data-center proxies
   are often blocked too.
-- **Undetected browser** — set `CRAWL_UNDETECTED_BROWSER=true` to swap in
-  Crawl4AI's undetected adapter (slower; falls back to the standard stealth
-  browser if unavailable).
+- **Undetected browser** — retry rounds automatically escalate to Crawl4AI's
+  undetected adapter (round 1 uses the standard stealth browser; it falls back to
+  stealth if the adapter is unavailable). No setting to toggle.
 - **Scraping-API fallback** — set `CRAWL_FALLBACK_API_URL` (and optional
   `CRAWL_FALLBACK_API_TOKEN`) to fetch the page from an external scraping service
   as a last resort, after every browser + proxy attempt is still blocked.
@@ -125,7 +125,6 @@ git-ignored.
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages (minimum 2) |
 | `flush_interval` | `int` | `10` | Write generated files to disk every N pages |
 | `proxies` | `list[str]` | `[]` | Proxy URLs tried in order (direct first) when blocked; feeds Crawl4AI's `proxy_config`. Set via the `CRAWL_PROXIES` secret in the app — never logged (`repr=False`). |
-| `undetected_browser` | `bool` | `False` | Use Crawl4AI's undetected browser adapter for tougher anti-bot defenses (slower). App setting: `CRAWL_UNDETECTED_BROWSER`. |
 
 ## PageConfig
 

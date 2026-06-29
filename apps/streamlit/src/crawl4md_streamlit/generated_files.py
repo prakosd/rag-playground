@@ -9,14 +9,23 @@ import mimetypes
 import os
 import re
 import shutil
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from artifact_store.archives import (
+    extract_all_members,
+    is_safe_member_name,
+    sign_zip_bytes,
+    verify_zip_bytes,
+)
 from artifact_store.naming import (
     VECTOR_FOLDER_PREFIX,
+    folder_name,
+    format_sequence_id,
     parse_folder_sequence,
     sequence_sort_key,
 )
@@ -169,13 +178,17 @@ def delete_generated_folder(session_root: Path | str, relative_path: str) -> boo
     return True
 
 
-def build_folder_zip_bytes(session_root: Path | str, relative_path: str) -> bytes:
+def build_folder_zip_bytes(
+    session_root: Path | str, relative_path: str, *, signing_secret: str | None = None
+) -> bytes:
     """Return a zip archive of one session folder's full contents.
 
     Every file under *relative_path* is added recursively, nested under the
-    folder's own name so extracting the archive recreates the named folder.
-    Raises ``ValueError`` when *relative_path* is the session root, is not a
-    folder, or escapes it (containment via :func:`ensure_within_root`).
+    folder's own name so extracting the archive recreates the named folder. When
+    *signing_secret* is given, an HMAC ``.crawl4md.sig`` sidecar is added so the
+    zip can later be verified on upload. Raises ``ValueError`` when *relative_path*
+    is the session root, is not a folder, or escapes it (containment via
+    :func:`ensure_within_root`).
     """
     root = Path(session_root).resolve()
     target = ensure_within_root(root, root / relative_path)
@@ -187,7 +200,79 @@ def build_folder_zip_bytes(session_root: Path | str, relative_path: str) -> byte
             if path.is_file() and not path.is_symlink():
                 arcname = f"{target.name}/{path.relative_to(target).as_posix()}"
                 archive.write(path, arcname)
-    return buffer.getvalue()
+    raw = buffer.getvalue()
+    return sign_zip_bytes(raw, signing_secret) if signing_secret else raw
+
+
+_IMPORT_DIR_PREFIX = "import_"
+
+
+def zip_top_folder(zip_bytes: bytes) -> str | None:
+    """Return the single top-level folder name inside a zip, or None if not unique."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
+            tops = {
+                n.split("/", 1)[0]
+                for n in archive.namelist()
+                if is_safe_member_name(n) and "/" in n
+            }
+    except zipfile.BadZipFile:
+        return None
+    return next(iter(tops)) if len(tops) == 1 else None
+
+
+def _next_sequence(session_root: Path, prefix: str) -> int:
+    sequences = [
+        seq
+        for path in session_root.iterdir()
+        if path.is_dir()
+        for seq in [parse_folder_sequence(path.name, prefix=prefix)]
+        if seq is not None
+    ]
+    return max(sequences) + 1 if sequences else 1
+
+
+def import_target_name(session_root: Path | str, top_folder: str) -> str:
+    """Return a conflict-free folder name for re-importing *top_folder*.
+
+    Crawl and vector exports keep their kind and trailing word but get the next
+    free sequence number; anything else lands under a numbered ``import_`` folder.
+    """
+    root = Path(session_root).resolve()
+    for prefix in (_CRAWL_DIR_PREFIX, _VECTOR_DIR_PREFIX):
+        if top_folder.startswith(prefix) and parse_folder_sequence(top_folder, prefix=prefix):
+            suffix = top_folder[len(prefix) :].split("_", 1)
+            word = suffix[1] if len(suffix) > 1 else "import"
+            return folder_name(prefix, format_sequence_id(_next_sequence(root, prefix), word))
+    return folder_name(
+        _IMPORT_DIR_PREFIX, format_sequence_id(_next_sequence(root, _IMPORT_DIR_PREFIX), "upload")
+    )
+
+
+def import_signed_zip(session_root: Path | str, zip_bytes: bytes, secret: str) -> str | None:
+    """Verify and extract an uploaded zip into a new conflict-free session folder.
+
+    Returns the created folder name, or None when the signature is invalid. The
+    contents are renamed to avoid clashing with existing folders; extraction is
+    zip-slip-safe (:func:`extract_all_members`).
+    """
+    if not verify_zip_bytes(zip_bytes, secret):
+        return None
+    root = Path(session_root).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    top = zip_top_folder(zip_bytes) or _IMPORT_DIR_PREFIX
+    new_name = import_target_name(root, top)
+    upload = io.BytesIO(zip_bytes)
+    staging = Path(tempfile.mkdtemp(dir=root))
+    try:
+        extract_all_members(upload, staging)
+        children = [p for p in staging.iterdir() if p.is_dir()]
+        source = children[0] if len(children) == 1 else staging
+        destination = ensure_within_root(root, root / new_name)
+        shutil.move(str(source), str(destination))
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return new_name
 
 
 def folder_zip_cache_token(session_root: Path | str, relative_path: str) -> tuple[int, float, int]:

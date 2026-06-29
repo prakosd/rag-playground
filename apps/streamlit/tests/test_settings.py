@@ -26,7 +26,6 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.crawl_max_file_size_mb == 10.0
     assert settings.ui_download_limit_mb == 500
     assert settings.session_retention_days == 7
-    assert settings.crawl_undetected_browser is False
 
 
 def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:

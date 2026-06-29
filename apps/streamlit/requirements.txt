@@ -1,8 +1,12 @@
 # Streamlit Community Cloud installs dependencies from this file (pip), not from
 # pyproject.toml (Poetry). The rag-playground packages are not published to PyPI,
 # so install them from the repo checkout: the root package first, then the app.
-.[crawl,vector,bedrock,openai,rag]
-./apps/streamlit
+# Install editable (-e) so the packages stay in the cloned checkout instead of
+# being copied to site-packages: crawl4md_streamlit.settings resolves .env.defaults
+# via a __file__-relative repo-root path, which only exists while the package lives
+# in the checkout. A non-editable copy severs that path and fails settings load.
+-e .[crawl,vector,bedrock,openai,rag]
+-e ./apps/streamlit
 
 # Bracket the protobuf runtime to the range the chromadb/opentelemetry generated
 # *_pb2 code supports. A fresh Cloud build can otherwise pair a newer protobuf with

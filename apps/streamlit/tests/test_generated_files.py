@@ -25,6 +25,8 @@ from crawl4md_streamlit.generated_files import (
     format_run_timestamp_label,
     generated_file_sort_key,
     generated_files_cache_token,
+    import_signed_zip,
+    import_target_name,
     is_run_folder,
 )
 
@@ -215,6 +217,38 @@ def test_generated_files_cache_token_reflects_path_stat(tmp_path: Path) -> None:
 
     assert second_token[0] > first_token[0]
     assert second_token[1] == first_token[1]
+
+
+def test_import_target_name_advances_sequence_keeping_kind_and_word(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_river").mkdir()
+    (tmp_path / "crawl_02_lake").mkdir()
+    (tmp_path / "vector_01_alpha").mkdir()
+
+    assert import_target_name(tmp_path, "crawl_02_lake") == "crawl_03_lake"
+    assert import_target_name(tmp_path, "vector_01_alpha") == "vector_02_alpha"
+    assert import_target_name(tmp_path, "random_export") == "import_01_upload"
+
+
+def test_import_signed_zip_roundtrip_extracts_to_new_folder(tmp_path: Path) -> None:
+    session = tmp_path / "session"
+    run = session / "crawl_01_river" / "final"
+    run.mkdir(parents=True)
+    (run / "page.md").write_text("hello", encoding="utf-8")
+    signed = build_folder_zip_bytes(session, "crawl_01_river", signing_secret="k")
+
+    new_name = import_signed_zip(session, signed, "k")
+
+    assert new_name == "crawl_02_river"
+    assert (session / "crawl_02_river" / "final" / "page.md").read_text(encoding="utf-8") == "hello"
+
+
+def test_import_signed_zip_rejects_wrong_secret(tmp_path: Path) -> None:
+    session = tmp_path / "session"
+    (session / "crawl_01_river").mkdir(parents=True)
+    (session / "crawl_01_river" / "a.md").write_text("x", encoding="utf-8")
+    signed = build_folder_zip_bytes(session, "crawl_01_river", signing_secret="k")
+
+    assert import_signed_zip(session, signed, "other") is None
 
 
 # ── delete_generated_folder ────────────────────────────────────────────────

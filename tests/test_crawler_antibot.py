@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import AsyncMock
+
 import pytest
 
 from crawl4md import messages
 from crawl4md.config import CrawlerConfig
 from crawl4md.crawler import SiteCrawler
+from tests.conftest import _make_mock_result
 
 
 class _FakeProxyConfig:
@@ -110,7 +114,7 @@ def test_build_undetected_strategy_builds_when_available(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         "crawl4md.crawler._load_undetected_classes", lambda: (_FakeStrategy, _FakeAdapter)
     )
-    crawler = _crawler(undetected_browser=True)
+    crawler = _crawler()
     browser_cfg = object()
 
     strategy = crawler._build_undetected_strategy(browser_cfg)
@@ -122,7 +126,7 @@ def test_build_undetected_strategy_builds_when_available(monkeypatch: pytest.Mon
 
 def test_build_undetected_strategy_warns_when_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("crawl4md.crawler._load_undetected_classes", lambda: None)
-    crawler = _crawler(undetected_browser=True)
+    crawler = _crawler()
     emitted: list = []
     crawler._emit_crawl_warning = lambda message: emitted.append(message)
 
@@ -130,3 +134,41 @@ def test_build_undetected_strategy_warns_when_unavailable(monkeypatch: pytest.Mo
 
     assert result is None
     assert emitted[0].code == messages.CODE_UNDETECTED_UNAVAILABLE
+
+
+def test_round_one_standard_then_retries_use_undetected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Round 1 opens a standard browser; retry rounds escalate to undetected."""
+    blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 1</body></html>"
+    blocked = _make_mock_result("https://example.com/p", blocked_html, "blocked")
+    fixed = _make_mock_result("https://example.com/p", "<p>ok</p>", "ok")
+    calls = {"n": 0}
+
+    async def mock_arun(url, config):
+        calls["n"] += 1
+        return blocked if calls["n"] == 1 else fixed
+
+    mock_instance = AsyncMock()
+    mock_instance.arun = mock_arun
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=False)
+    crawler_kwargs: list[dict] = []
+
+    def factory(**kwargs):
+        crawler_kwargs.append(kwargs)
+        return mock_instance
+
+    sentinel = object()
+    monkeypatch.setattr("crawl4md.crawler.AsyncWebCrawler", factory)
+    monkeypatch.setattr(SiteCrawler, "_build_undetected_strategy", lambda self, cfg: sentinel)
+
+    crawler = SiteCrawler(
+        CrawlerConfig(urls=["https://example.com/p"], limit=10, max_retries=1),
+        output_base=tmp_path,
+    )
+    crawler.crawl()
+
+    assert len(crawler_kwargs) == 2
+    assert "crawler_strategy" not in crawler_kwargs[0]
+    assert crawler_kwargs[1]["crawler_strategy"] is sentinel

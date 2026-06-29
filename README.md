@@ -24,7 +24,7 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 - **PDF support** — detects and extracts PDF URLs via pymupdf4llm; scanned PDFs via OCR (requires [Tesseract](https://github.com/tesseract-ocr/tesseract))
 - **Word (.docx) support** — detects and extracts `.docx` URLs via mammoth, converting them to Markdown alongside crawled pages (legacy `.doc` is not supported)
 - **Smart content extraction** — trafilatura with markdownify fallback, plus supplementary recovery for FAQs, accordions, and product metadata
-- **WAF / bot-detection handling** — two-stage detection with automatic retry rounds and cooldown, plus opt-in escalation: direct-first proxy rotation, Crawl4AI's undetected browser, and a last-resort scraping-API fallback (see [Configuration](docs/CONFIGURATION.md))
+- **WAF / bot-detection handling** — two-stage detection with automatic retry rounds and cooldown (round 1 uses the standard stealth browser; retries escalate to Crawl4AI's undetected browser), plus opt-in escalation: direct-first proxy rotation and a last-resort scraping-API fallback (see [Configuration](docs/CONFIGURATION.md))
 - **Size-limited, sorted output** — pages are never split across files; final files are sorted by URL path
 - **Real-time progress** — browser charts in Streamlit, spider widget in Jupyter, plain-text ETA in terminal
 - **Stop-safe output** — stopping a crawl still writes final output for completed pages

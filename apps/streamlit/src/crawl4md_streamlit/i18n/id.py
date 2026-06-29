@@ -401,7 +401,20 @@ STRINGS_ID: Strings = {
         "bisa dibatalkan — pastikan Anda sudah mengunduh yang ingin disimpan."
     ),
     "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Hapus folder",
-    # ── Ready result download ──────────────────────────────────────────
+    "FILES_UPLOAD_LINK": "Klik di sini untuk mengunggah.",
+    "FILES_UPLOAD_DIALOG_TITLE": "Unggah zip folder",
+    "FILES_UPLOAD_PROMPT": "Pilih zip yang Anda unduh dari Berkas Keluaran aplikasi ini.",
+    "FILES_UPLOAD_INVALID": (
+        "Zip ini tidak bisa diunggah. Gunakan zip yang diunduh dari instance aplikasi dengan "
+        "kunci yang sama, tanpa perubahan — unduh ulang lalu coba lagi."
+    ),
+    "FILES_UPLOAD_CONFIRM_BODY": (
+        "Terverifikasi. Agar tidak bentrok dengan folder yang ada, akan ditambahkan sebagai "
+        "**{folder}**. Lanjutkan?"
+    ),
+    "FILES_UPLOAD_CONFIRM": "Unggah",
+    "FILES_UPLOAD_CANCEL": "Batal",
+    "FILES_UPLOAD_SUCCESS": "Unggahan selesai — menambahkan {folder}.",  # ── Ready result download ──────────────────────────────────────────
     "READY_RESULT_HEADER": "📦 Hasil crawl siap",
     "READY_RESULT_SINGLE_SUBTITLE": "1 file berhasil siap diunduh",
     "READY_RESULT_ZIP_SUBTITLE": "{count} file berhasil — dikemas dalam satu zip",

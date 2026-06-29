@@ -284,6 +284,14 @@ class Strings(TypedDict):
     FILES_DELETE_FOLDER_DIALOG_TITLE: str
     FILES_DELETE_FOLDER_DIALOG_BODY: str  # template: {folder}
     FILES_DELETE_FOLDER_DIALOG_CONFIRM: str
+    FILES_UPLOAD_LINK: str
+    FILES_UPLOAD_DIALOG_TITLE: str
+    FILES_UPLOAD_PROMPT: str
+    FILES_UPLOAD_INVALID: str
+    FILES_UPLOAD_CONFIRM_BODY: str  # template: {folder}
+    FILES_UPLOAD_CONFIRM: str
+    FILES_UPLOAD_CANCEL: str
+    FILES_UPLOAD_SUCCESS: str  # template: {folder}
     # ── Ready result download ─────────────────────────────────────────────
     READY_RESULT_HEADER: str
     READY_RESULT_SINGLE_SUBTITLE: str

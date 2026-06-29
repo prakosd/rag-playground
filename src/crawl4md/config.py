@@ -41,8 +41,6 @@ class CrawlerConfig(BaseModel):
     # crawler. exclude=True (+ repr=False) keeps any embedded credentials out of
     # serialized output (the run-metadata front matter), logs, and tracebacks.
     proxies: list[str] = Field(default_factory=list, repr=False, exclude=True)
-    # Use Crawl4AI's undetected browser adapter for tougher anti-bot defenses.
-    undetected_browser: bool = False
 
     @field_validator("proxies", mode="before")
     @classmethod

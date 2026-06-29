@@ -18,7 +18,7 @@ consistent and no module re-implements (or diverges on) naming or path safety.
 |---|---|
 | `naming.py` | Single source of truth for the UTC timestamp slug, the `crawl_` / `vector_` folder prefixes, and generic sequence helpers (`format_sequence_id`, `folder_name`, `parse_folder_sequence`, `sequence_sort_key`). `crawl4md.naming` re-exports these. |
 | `paths.py` | `ensure_within_root(root, path)` — the directory-traversal guard used before any file read or write. |
-| `archives.py` | Zip-slip-safe extraction of `.md` / `.txt` members only, capped per member to guard against decompression bombs (`iter_text_members`, `extract_text_members`, `is_safe_member_name`). |
+| `archives.py` | Zip-slip-safe extraction of `.md` / `.txt` members only, capped per member to guard against decompression bombs (`iter_text_members`, `extract_text_members`, `is_safe_member_name`). Plus `extract_all_members` (any file type, for full-folder re-import) and `sign_zip_bytes` / `verify_zip_bytes` (HMAC `.crawl4md.sig` sidecar). |
 | `crawl_results.py` | `list_crawl_result_files(session_root)` — discover a crawl's success content, preferring the final sorted output and falling back to `round_N/` snapshots for stopped crawls. |
 | `messages.py` | `LibraryMessage` — the shared structured-message primitive (`code`, `default_text`, `params`, `severity`) every library uses to report warnings/errors/progress to any UI. |
 

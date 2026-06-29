@@ -29,7 +29,6 @@ from crawl4md_streamlit.session_manager import (
     SESSION_PREFIX,
     prepare_crawl_output_base,
 )
-from crawl4md_streamlit.settings import get_settings
 
 _EVENT_CANCEL_REQUESTED = "cancel_requested"
 _EVENT_CANCELLED = "cancelled"
@@ -163,7 +162,6 @@ def build_configs(values: Mapping[str, Any]) -> tuple[CrawlerConfig, PageConfig,
         delay=float(values.get("delay", 0)),
         max_retries=int(values.get("max_retries", 2)),
         proxies=os.environ.get(_PROXIES_ENV, ""),
-        undetected_browser=get_settings().crawl_undetected_browser,
     )
     page_config = PageConfig(
         exclude_tags=values.get("exclude_tags", ""),

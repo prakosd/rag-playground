@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 
@@ -26,18 +25,6 @@ def test_build_configs_defaults_to_no_anti_bot(monkeypatch: pytest.MonkeyPatch) 
     crawler_config, _, _ = build_configs(_VALUES)
 
     assert crawler_config.proxies == []
-    assert crawler_config.undetected_browser is False
-
-
-def test_build_configs_enables_undetected_from_setting(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "crawl4md_streamlit.crawl_jobs.get_settings",
-        lambda: SimpleNamespace(crawl_undetected_browser=True),
-    )
-
-    crawler_config, _, _ = build_configs(_VALUES)
-
-    assert crawler_config.undetected_browser is True
 
 
 def test_fallback_fetch_function_is_none_without_api(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,7 +54,9 @@ def test_fallback_fetch_function_calls_scraping_api(monkeypatch: pytest.MonkeyPa
         async def __aexit__(self, *args: object) -> bool:
             return False
 
-        async def get(self, url: str, params: object = None, headers: object = None) -> _FakeResponse:
+        async def get(
+            self, url: str, params: object = None, headers: object = None
+        ) -> _FakeResponse:
             captured.update(url=url, params=params, headers=headers)
             return _FakeResponse()
 

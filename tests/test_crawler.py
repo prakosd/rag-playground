@@ -1143,8 +1143,8 @@ class TestSiteCrawler:
         assert browser_cfg.headers.get("Accept-Language") == "en"
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
-    def test_single_crawler_instance_across_rounds(self, mock_crawler_cls, tmp_path: Path):
-        """Only one AsyncWebCrawler instance is created even with retries."""
+    def test_one_browser_per_phase_round_one_and_retries(self, mock_crawler_cls, tmp_path: Path):
+        """Round 1 and the retry phase each use one browser (two total, not per-round)."""
         blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
         blocked_result = _make_mock_result("https://example.com/a", blocked_html, "blocked")
 
@@ -1158,8 +1158,8 @@ class TestSiteCrawler:
         crawler = SiteCrawler(config, output_base=tmp_path)
         crawler.crawl()
 
-        # AsyncWebCrawler should be instantiated exactly once
-        assert mock_crawler_cls.call_count == 1
+        # One browser for round 1, one shared across all retry rounds.
+        assert mock_crawler_cls.call_count == 2
 
     def test_js_code_passed_to_run_config(self):
         """js_code from PageConfig is forwarded to CrawlerRunConfig."""

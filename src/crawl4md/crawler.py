@@ -720,74 +720,25 @@ class SiteCrawler:
             browser_kwargs["headers"] = dict(self.config.headers)
         async_web_crawler_cls, browser_config_cls, crawler_run_config_cls = _load_crawl4ai_classes()
         browser_cfg = browser_config_cls(**browser_kwargs)
-        crawler_kwargs: dict = {"config": browser_cfg}
-        if self.config.undetected_browser:
-            strategy = self._build_undetected_strategy(browser_cfg)
-            if strategy is not None:
-                crawler_kwargs["crawler_strategy"] = strategy
         run_cfg = self._build_run_config(crawler_run_config_cls)
         fallback_run_cfg = self._build_fallback_run_config(crawler_run_config_cls)
         pdf_headers = dict(self.config.headers) if self.config.headers else {}
 
-        # --- Round 1: full crawl with link discovery ---
-        # Use a single browser instance across all rounds so that
-        # cookies (including WAF challenge tokens) persist through retries.
+        # Round 1 uses the standard stealth browser; retry rounds always escalate to
+        # the undetected browser. The rounds run in separate browser instances, so
+        # WAF challenge cookies from round 1 do not carry into the retries — an
+        # intentional trade for the stronger anti-bot retry posture.
         interrupted = False
         try:
-            async with (
-                async_web_crawler_cls(**crawler_kwargs) as crawler,
-                httpx.AsyncClient(
-                    headers=pdf_headers,
-                    timeout=_PDF_DOWNLOAD_TIMEOUT,
-                    follow_redirects=True,
-                ) as pdf_client,
-            ):
+            async with httpx.AsyncClient(
+                headers=pdf_headers,
+                timeout=_PDF_DOWNLOAD_TIMEOUT,
+                follow_redirects=True,
+            ) as pdf_client:
                 self._pdf_client = pdf_client
-                round_dir = self._round_dir(1)
-                if self._writer is not None:
-                    self._writer._output_dir = round_dir
-                    self._writer.reset(_SUCCESS_SUFFIX)
-                if self._fail_writer is not None:
-                    self._fail_writer._output_dir = round_dir
-                    self._fail_writer.reset(_FAIL_SUFFIX)
-                self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
-                self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
-                if self._progress_history is not None:
-                    self._progress_history.set_round(1)
-                self._report_status(
-                    f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---"
-                )
-                round_results = await self._crawl_urls_async(
-                    urls=self.config.urls,
-                    crawler=crawler,
-                    run_cfg=run_cfg,
-                    discover_links=self.config.max_depth > 1,
-                    round_dir=round_dir,
-                    prior_success=0,
-                    prior_fail=0,
-                    round_label="First pass" if total_rounds > 1 else "",
-                    all_generated=all_generated,
-                    url_depths=url_depths,
-                    round_num=1,
-                )
-                success, fail = self._split_results(round_results)
-                await self._flush_writer_buffers_async()
-                all_success.extend(success)
-                succeeded_urls.update(r.url for r in success)
-                all_fail.extend(fail)
-                await asyncio.to_thread(self._save_url_lists, all_success, fail, round_dir)
-                await asyncio.to_thread(self._write_round_success_files, 1, round_dir)
-                await asyncio.to_thread(self._write_sorted_round_files, 1, round_dir)
-
-                failed_urls = [r.url for r in all_fail]
-
-                for round_num in range(2, total_rounds + 1):
-                    self._raise_if_cancelled()
-                    if not failed_urls:
-                        self._report_status("\nAll pages succeeded — skipping remaining retries.")
-                        break
-
-                    round_dir = self._round_dir(round_num)
+                # --- Round 1: full crawl with link discovery (standard browser) ---
+                async with async_web_crawler_cls(config=browser_cfg) as crawler:
+                    round_dir = self._round_dir(1)
                     if self._writer is not None:
                         self._writer._output_dir = round_dir
                         self._writer.reset(_SUCCESS_SUFFIX)
@@ -797,48 +748,105 @@ class SiteCrawler:
                     self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
                     self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
                     if self._progress_history is not None:
-                        self._progress_history.set_round(round_num)
-
-                    cooldown = _ROUND_COOLDOWN * random.uniform(
-                        _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
-                    )
+                        self._progress_history.set_round(1)
                     self._report_status(
-                        f"\n--- Round {round_num}/{total_rounds}: Retrying "
-                        f"{len(failed_urls)} failed URL(s) "
-                        f"(waiting {cooldown:.0f}s cooldown) ---"
+                        f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---"
                     )
-                    await self._sleep_with_cancel(cooldown)
-
                     round_results = await self._crawl_urls_async(
-                        urls=failed_urls,
+                        urls=self.config.urls,
                         crawler=crawler,
-                        run_cfg=fallback_run_cfg,
+                        run_cfg=run_cfg,
                         discover_links=self.config.max_depth > 1,
-                        is_retry=True,
                         round_dir=round_dir,
-                        prior_success=len(all_success),
-                        prior_fail=len(all_fail),
-                        skip_urls=frozenset(succeeded_urls),
-                        round_label=f"Retry {round_num - 1} of {total_rounds - 1}",
+                        prior_success=0,
+                        prior_fail=0,
+                        round_label="First pass" if total_rounds > 1 else "",
                         all_generated=all_generated,
                         url_depths=url_depths,
-                        round_num=round_num,
+                        round_num=1,
                     )
                     success, fail = self._split_results(round_results)
                     await self._flush_writer_buffers_async()
-                    # Deduplicate: only add genuinely new successes
-                    new_success = [r for r in success if r.url not in succeeded_urls]
-                    all_success.extend(new_success)
-                    succeeded_urls.update(r.url for r in new_success)
-                    # Remove newly-succeeded URLs from all_fail; add new failures (skip dupes)
-                    new_success_urls = {r.url for r in new_success}
-                    all_fail = [r for r in all_fail if r.url not in new_success_urls]
-                    existing_fail_urls = {r.url for r in all_fail}
-                    all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
-                    failed_urls = [r.url for r in fail]
+                    all_success.extend(success)
+                    succeeded_urls.update(r.url for r in success)
+                    all_fail.extend(fail)
                     await asyncio.to_thread(self._save_url_lists, all_success, fail, round_dir)
-                    await asyncio.to_thread(self._write_round_success_files, round_num, round_dir)
-                    await asyncio.to_thread(self._write_sorted_round_files, round_num, round_dir)
+                    await asyncio.to_thread(self._write_round_success_files, 1, round_dir)
+                    await asyncio.to_thread(self._write_sorted_round_files, 1, round_dir)
+
+                    failed_urls = [r.url for r in all_fail]
+
+                # --- Retry rounds: escalate to the undetected browser ---
+                retry_kwargs: dict = {"config": browser_cfg}
+                if total_rounds > 1 and failed_urls:
+                    strategy = self._build_undetected_strategy(browser_cfg)
+                    if strategy is not None:
+                        retry_kwargs["crawler_strategy"] = strategy
+                async with async_web_crawler_cls(**retry_kwargs) as crawler:
+                    for round_num in range(2, total_rounds + 1):
+                        self._raise_if_cancelled()
+                        if not failed_urls:
+                            self._report_status(
+                                "\nAll pages succeeded — skipping remaining retries."
+                            )
+                            break
+
+                        round_dir = self._round_dir(round_num)
+                        if self._writer is not None:
+                            self._writer._output_dir = round_dir
+                            self._writer.reset(_SUCCESS_SUFFIX)
+                        if self._fail_writer is not None:
+                            self._fail_writer._output_dir = round_dir
+                            self._fail_writer.reset(_FAIL_SUFFIX)
+                        self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
+                        self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
+                        if self._progress_history is not None:
+                            self._progress_history.set_round(round_num)
+
+                        cooldown = _ROUND_COOLDOWN * random.uniform(
+                            _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
+                        )
+                        self._report_status(
+                            f"\n--- Round {round_num}/{total_rounds}: Retrying "
+                            f"{len(failed_urls)} failed URL(s) "
+                            f"(waiting {cooldown:.0f}s cooldown) ---"
+                        )
+                        await self._sleep_with_cancel(cooldown)
+
+                        round_results = await self._crawl_urls_async(
+                            urls=failed_urls,
+                            crawler=crawler,
+                            run_cfg=fallback_run_cfg,
+                            discover_links=self.config.max_depth > 1,
+                            is_retry=True,
+                            round_dir=round_dir,
+                            prior_success=len(all_success),
+                            prior_fail=len(all_fail),
+                            skip_urls=frozenset(succeeded_urls),
+                            round_label=f"Retry {round_num - 1} of {total_rounds - 1}",
+                            all_generated=all_generated,
+                            url_depths=url_depths,
+                            round_num=round_num,
+                        )
+                        success, fail = self._split_results(round_results)
+                        await self._flush_writer_buffers_async()
+                        # Deduplicate: only add genuinely new successes
+                        new_success = [r for r in success if r.url not in succeeded_urls]
+                        all_success.extend(new_success)
+                        succeeded_urls.update(r.url for r in new_success)
+                        # Remove newly-succeeded URLs from all_fail; add new failures (skip dupes)
+                        new_success_urls = {r.url for r in new_success}
+                        all_fail = [r for r in all_fail if r.url not in new_success_urls]
+                        existing_fail_urls = {r.url for r in all_fail}
+                        all_fail.extend(r for r in fail if r.url not in existing_fail_urls)
+                        failed_urls = [r.url for r in fail]
+                        await asyncio.to_thread(self._save_url_lists, all_success, fail, round_dir)
+                        await asyncio.to_thread(
+                            self._write_round_success_files, round_num, round_dir
+                        )
+                        await asyncio.to_thread(
+                            self._write_sorted_round_files, round_num, round_dir
+                        )
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True

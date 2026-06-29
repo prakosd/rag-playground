@@ -32,6 +32,7 @@ from typing import Any
 
 import altair as alt
 import streamlit as st
+from artifact_store.archives import verify_zip_bytes
 from artifact_store.crawl_results import list_crawl_result_files
 from crawl4md.naming import crawl_folder_name
 from pydantic import ValidationError
@@ -49,7 +50,10 @@ from crawl4md_streamlit.generated_files import (
     download_tree_entry_sort_key,
     folder_zip_cache_token,
     generated_files_cache_token,
+    import_signed_zip,
+    import_target_name,
     is_run_folder,
+    zip_top_folder,
 )
 from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings, localize_message
 from crawl4md_streamlit.index_catalog import list_session_indexes
@@ -911,7 +915,9 @@ def _cached_folder_zip_bytes(
     cache_token: tuple[int, float, int],
 ) -> bytes:
     _ = cache_token  # Keeps token in st.cache_data's argument hash.
-    return build_folder_zip_bytes(session_root, relative_path)
+    return build_folder_zip_bytes(
+        session_root, relative_path, signing_secret=get_settings().zip_signing_secret
+    )
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -2562,6 +2568,58 @@ def _render_open_delete_folder_dialog() -> None:
     _delete_folder_confirmation_dialog()
 
 
+def _open_upload_dialog() -> None:
+    st.session_state.upload_dialog_open = True
+
+
+def _on_upload_dismiss() -> None:
+    st.session_state.upload_dialog_open = False
+
+
+def _import_uploaded_zip(zip_bytes: bytes) -> None:
+    secret = get_settings().zip_signing_secret
+    try:
+        added = import_signed_zip(_session_root(), zip_bytes, secret)
+    except (OSError, ValueError):
+        added = None
+    st.session_state.upload_dialog_open = False
+    if added:
+        st.session_state.upload_done_folder = added
+        _cached_list_generated_files.clear()
+        _cached_download_tree.clear()
+    st.rerun()
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_upload_dismiss)
+def _upload_folder_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    st.subheader(strings["FILES_UPLOAD_DIALOG_TITLE"])
+    uploaded = st.file_uploader(strings["FILES_UPLOAD_PROMPT"], type=["zip"], key="upload_zip_file")
+    if uploaded is None:
+        return
+    zip_bytes = uploaded.getvalue()
+    # Fast-fail check; import_signed_zip re-verifies to avoid a TOCTOU gap.
+    if not verify_zip_bytes(zip_bytes, get_settings().zip_signing_secret):
+        st.error(strings["FILES_UPLOAD_INVALID"])
+        return
+    target = import_target_name(_session_root(), zip_top_folder(zip_bytes) or "")
+
+    def _cancel() -> None:
+        st.session_state.upload_dialog_open = False
+        st.rerun()
+
+    render_confirm_dialog(
+        body=strings["FILES_UPLOAD_CONFIRM_BODY"].format(folder=target),
+        cancel_label=strings["FILES_UPLOAD_CANCEL"],
+        cancel_key="upload_cancel_button",
+        on_cancel=_cancel,
+        confirm_label=strings["FILES_UPLOAD_CONFIRM"],
+        confirm_key="upload_confirm_button",
+        confirm_icon=":material/upload:",
+        on_confirm=lambda: _import_uploaded_zip(zip_bytes),
+    )
+
+
 def _downloads_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
@@ -2583,6 +2641,15 @@ def _downloads_body() -> None:
         f'<p style="opacity:0.6;font-size:0.875rem;margin:0 0 0rem">{subtitle_text}</p>',
         unsafe_allow_html=True,
     )
+    if not _job_is_alive(st.session_state.job):
+        st.button(
+            strings["FILES_UPLOAD_LINK"],
+            key="open_upload_dialog",
+            type="tertiary",
+            on_click=_open_upload_dialog,
+        )
+    if st.session_state.get("upload_dialog_open"):
+        _upload_folder_dialog()
     st.markdown(
         """
         <style>
@@ -3052,6 +3119,12 @@ if (
     st.toast(
         active_strings["DIALOG_LOAD_SESSION_ALREADY_LOADED"].format(id=_switch_toast_id),
         icon=":material/folder_open:",
+    )
+if st.session_state.get("upload_done_folder"):
+    _upload_folder = st.session_state.pop("upload_done_folder")
+    st.toast(
+        active_strings["FILES_UPLOAD_SUCCESS"].format(folder=_upload_folder),
+        icon=_TOAST_PAGE_SUCCESS_ICON,
     )
 
 # Register the page router on *every* run before any st.stop() so a deep-linked

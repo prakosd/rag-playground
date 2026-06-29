@@ -22,13 +22,14 @@ def test_packages_file_has_no_comments_and_installs_chromium() -> None:
 
 
 # Risk: the rag-playground packages are unpublished, so Streamlit Cloud must install them
-# from the checkout (root package first, then the app). Type: unit.
+# from the checkout (root package first, then the app). They must be editable (-e) so the
+# package stays in the checkout and settings can resolve the repo-root .env.defaults. Type: unit.
 def test_requirements_install_local_root_and_app() -> None:
     lines = _nonblank_lines(_REQUIREMENTS_FILE)
     active = [line for line in lines if not line.startswith("#")]
 
-    assert any(line.startswith(".[") for line in active)
-    assert "./apps/streamlit" in active
+    assert any(line.startswith("-e .[") for line in active)
+    assert "-e ./apps/streamlit" in active
 
 
 # Risk: a fresh Streamlit Cloud build can resolve a protobuf runtime newer than the

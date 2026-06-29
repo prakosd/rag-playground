@@ -353,7 +353,14 @@ the folder's own name so extracting recreates it — named `<folder>.zip`. The p
 `ensure_within_root`, refusing the session root); `folder_zip_cache_token` keys an `@st.cache_data`
 wrapper so the archive is rebuilt only when the folder's contents change. The button respects the
 app download-size guard (`UI_DOWNLOAD_LIMIT_MB`): an oversized folder shows a disabled button with
-a "too large" tooltip, like per-file downloads.
+a "too large" tooltip, like per-file downloads. Each download is signed with an HMAC `.crawl4md.sig`
+sidecar (`ZIP_SIGNING_SECRET`) so it can later be re-uploaded.
+
+**Uploading a folder zip.** The Output Files subtitle links to an upload dialog (`Click here to
+upload`). A chosen zip is verified with `verify_zip_bytes`; an altered file or a zip signed with a
+different key is rejected in-dialog. A valid zip prompts a confirm dialog naming the conflict-free
+folder it will become, then `generated_files.import_signed_zip` re-imports it under the next free
+`crawl_*`/`vector_*` sequence and a success toast fires. Extraction is zip-slip-safe.
 
 **Deleting a folder.** Each top-level `crawl_*`/`vector_*` run folder in the download tree
 carries a red **Delete this folder** button beside its download-zip button. It opens a

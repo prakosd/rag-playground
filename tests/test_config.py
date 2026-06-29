@@ -26,15 +26,12 @@ class TestCrawlerConfig:
         with pytest.raises(ValueError, match="Invalid URL"):
             CrawlerConfig(urls=["not-a-url"])
 
-    def test_proxies_default_empty_and_undetected_off(self):
+    def test_proxies_default_empty(self):
         cfg = CrawlerConfig(urls=["https://example.com"])
         assert cfg.proxies == []
-        assert cfg.undetected_browser is False
 
     def test_proxies_from_comma_string(self):
-        cfg = CrawlerConfig(
-            urls=["https://example.com"], proxies="http://p1:8080, http://p2:8080"
-        )
+        cfg = CrawlerConfig(urls=["https://example.com"], proxies="http://p1:8080, http://p2:8080")
         assert cfg.proxies == ["http://p1:8080", "http://p2:8080"]
 
     def test_proxies_excluded_from_repr_and_serialization(self):

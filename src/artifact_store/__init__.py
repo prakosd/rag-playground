@@ -9,10 +9,14 @@ discovery. It must not depend on any UI framework or crawler engine.
 from __future__ import annotations
 
 from artifact_store.archives import (
+    SIGNATURE_MEMBER,
     TEXT_MEMBER_SUFFIXES,
+    extract_all_members,
     extract_text_members,
     is_safe_member_name,
     iter_text_members,
+    sign_zip_bytes,
+    verify_zip_bytes,
 )
 from artifact_store.crawl_results import (
     SUPPORTED_INPUT_SUFFIXES,
@@ -45,6 +49,7 @@ __all__ = [
     "SEVERITY_ERROR",
     "SEVERITY_INFO",
     "SEVERITY_WARNING",
+    "SIGNATURE_MEMBER",
     "SUPPORTED_INPUT_SUFFIXES",
     "TEXT_MEMBER_SUFFIXES",
     "UTC_TIMESTAMP_SLUG_FORMAT",
@@ -52,6 +57,7 @@ __all__ = [
     "CrawlResultFile",
     "LibraryMessage",
     "ensure_within_root",
+    "extract_all_members",
     "extract_text_members",
     "folder_name",
     "format_sequence_id",
@@ -62,4 +68,6 @@ __all__ = [
     "parse_folder_sequence",
     "parse_utc_timestamp_slug",
     "sequence_sort_key",
+    "sign_zip_bytes",
+    "verify_zip_bytes",
 ]

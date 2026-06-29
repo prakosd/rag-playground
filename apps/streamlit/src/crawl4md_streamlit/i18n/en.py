@@ -391,6 +391,20 @@ STRINGS_EN: Strings = {
         "make sure you've downloaded anything you want to keep first."
     ),
     "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Delete folder",
+    "FILES_UPLOAD_LINK": "Click here to upload.",
+    "FILES_UPLOAD_DIALOG_TITLE": "Upload a folder zip",
+    "FILES_UPLOAD_PROMPT": "Choose a zip you downloaded from this app's Output Files.",
+    "FILES_UPLOAD_INVALID": (
+        "This zip can't be uploaded. Use a zip downloaded from an app instance with the "
+        "same key, with no changes — re-download and try again."
+    ),
+    "FILES_UPLOAD_CONFIRM_BODY": (
+        "Verified. To avoid clashing with existing folders, it will be added as **{folder}**. "
+        "Continue?"
+    ),
+    "FILES_UPLOAD_CONFIRM": "Upload",
+    "FILES_UPLOAD_CANCEL": "Cancel",
+    "FILES_UPLOAD_SUCCESS": "Upload complete — added {folder}.",
     # ── Ready result download ──────────────────────────────────────────
     "READY_RESULT_HEADER": "📦 Crawl results ready",
     "READY_RESULT_SINGLE_SUBTITLE": "1 success file ready to download",

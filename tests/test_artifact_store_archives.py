@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import io
 import zipfile
 from pathlib import Path
 
 import pytest
 
 from artifact_store.archives import (
+    SIGNATURE_MEMBER,
+    extract_all_members,
     extract_text_members,
     is_safe_member_name,
     iter_text_members,
+    sign_zip_bytes,
+    verify_zip_bytes,
 )
 
 
@@ -16,6 +21,14 @@ def _make_zip(path: Path, members: dict[str, bytes]) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         for name, data in members.items():
             archive.writestr(name, data)
+
+
+def _zip_bytes(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
 
 
 def test_is_safe_member_name_accepts_normal_paths() -> None:
@@ -107,3 +120,46 @@ def test_extract_text_members_does_not_escape_destination(tmp_path: Path) -> Non
 
     assert [p.name for p in written] == ["ok.md"]
     assert not (tmp_path / "escape.txt").exists()
+
+
+_SECRET = "shared-key"
+
+
+def test_sign_then_verify_roundtrip() -> None:
+    signed = sign_zip_bytes(_zip_bytes({"a.md": b"a", "data/b.bin": b"\x00\x01"}), _SECRET)
+    assert SIGNATURE_MEMBER in zipfile.ZipFile(io.BytesIO(signed)).namelist()
+    assert verify_zip_bytes(signed, _SECRET) is True
+
+
+def test_verify_fails_with_wrong_secret() -> None:
+    signed = sign_zip_bytes(_zip_bytes({"a.md": b"a"}), _SECRET)
+    assert verify_zip_bytes(signed, "other-key") is False
+
+
+def test_verify_fails_when_member_tampered() -> None:
+    signed = sign_zip_bytes(_zip_bytes({"a.md": b"a"}), _SECRET)
+    with zipfile.ZipFile(io.BytesIO(signed)) as src:
+        sig = src.read(SIGNATURE_MEMBER)
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as new:
+        new.writestr("a.md", b"tampered")
+        new.writestr(SIGNATURE_MEMBER, sig)
+    assert verify_zip_bytes(out.getvalue(), _SECRET) is False
+
+
+def test_verify_fails_without_signature_and_on_bad_zip() -> None:
+    assert verify_zip_bytes(_zip_bytes({"a.md": b"a"}), _SECRET) is False
+    assert verify_zip_bytes(b"not a zip", _SECRET) is False
+
+
+def test_extract_all_members_keeps_binary_and_skips_sidecar(tmp_path: Path) -> None:
+    signed = sign_zip_bytes(_zip_bytes({"a.md": b"a", "db/index.bin": b"\x00\xff"}), _SECRET)
+    zip_path = tmp_path / "signed.zip"
+    zip_path.write_bytes(signed)
+    dest = tmp_path / "out"
+
+    written = extract_all_members(zip_path, dest)
+
+    assert sorted(p.name for p in written) == ["a.md", "index.bin"]
+    assert (dest / "db" / "index.bin").read_bytes() == b"\x00\xff"
+    assert not (dest / SIGNATURE_MEMBER).exists()
