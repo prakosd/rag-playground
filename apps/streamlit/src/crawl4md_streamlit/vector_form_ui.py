@@ -35,7 +35,7 @@ VEC_EMBEDDING_MODEL_ORDER = tuple(
 VEC_DEFAULT_EMBEDDING_MODEL = _settings.vector_default_embedding_model
 _UPLOAD_TYPES = ["md", "txt", "zip"]
 _EMBEDDING_CONTROL_COLUMN_WIDTHS = (7, 3)
-_FORM_SETTING_COLUMN_WIDTHS = (3, 3, 2, 4)
+_FORM_SETTING_COLUMN_WIDTHS = (1, 1, 1, 1)
 # Keep in sync with vector_indexer.config._MAX_INDEX_WORKERS (library enforces it).
 _MAX_INDEX_WORKERS = 8
 

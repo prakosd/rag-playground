@@ -278,6 +278,7 @@ _PORTFOLIO_MODAL_REPEAT_HOURS = _HOURS_PER_DAY * _PORTFOLIO_MODAL_REPEAT_DAYS
 _PORTFOLIO_MODAL_LAST_SHOWN_FIELD = "portfolio_modal_last_shown_at"
 _PORTFOLIO_MODAL_LAST_DISMISSED_FIELD = "portfolio_modal_last_dismissed_at"
 _STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:1"
+_STATUS_SUB_NEXT_ROW_STYLE = f"{_STATUS_ROW_STYLE};padding-bottom:0.5rem"
 _STATUS_NEXT_ROW_STYLE = f"{_STATUS_ROW_STYLE};padding-bottom:1rem"
 _SESSION_STORAGE_COMPONENT_KEY = "browser_session_storage"
 _SESSION_RECORDS_CACHE_STATE = "normalized_session_records_cache"
@@ -1639,12 +1640,16 @@ def _render_vector_index_status(strings: Mapping[str, Any]) -> None:
             label = strings[label_key].format(processed=processed, total=total)
             with st.container(gap=None):
                 st.markdown(
-                    f'<div style="{_STATUS_ROW_STYLE}">'
+                    f'<div style="{_STATUS_SUB_NEXT_ROW_STYLE}">'
                     f"<span>{label}</span><span>{fraction * 100:.0f}%</span></div>",
                     unsafe_allow_html=True,
                 )
                 st.progress(fraction)
                 _render_vector_index_timing(strings, processed, total)
+                st.markdown(
+                    f'<div style="{_STATUS_SUB_NEXT_ROW_STYLE}"><span>&nbsp;</span></div>',
+                    unsafe_allow_html=True,
+                )
         else:
             st.info(strings[vector_stage_label_key(stage)])
         return
@@ -1753,7 +1758,7 @@ def render_progress_and_files(
 
     with st.container():
         st.markdown(
-            f'<div style="{_STATUS_ROW_STYLE}">'
+            f'<div style="{_STATUS_NEXT_ROW_STYLE}">'
             f"<span>📄 {attempts_label} / {denominator_label}</span>"
             f"<span>⏳ {progress_status}</span>"
             f"</div>",
