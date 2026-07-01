@@ -14,6 +14,7 @@ from crawl4md.writer import FileWriter, PageSidecar
 from tests.conftest import _make_mock_result
 
 _SITE_GRAPH_FILE = "site_graph.jsonl"
+_LOGS_DIR = "logs"
 
 
 def _read_pages_registry(output_dir: Path) -> list[dict[str, object]]:
@@ -24,7 +25,7 @@ def _read_pages_registry(output_dir: Path) -> list[dict[str, object]]:
 
 
 def _records_by_url(output_dir: Path) -> dict[str, dict[str, object]]:
-    return {str(record["url"]): record for record in _read_pages_registry(output_dir)}
+    return {str(record["url"]): record for record in _read_pages_registry(output_dir / _LOGS_DIR)}
 
 
 class TestFailContentFiles:
@@ -406,6 +407,7 @@ class TestPagesRegistry:
             "limit": 10,
             "max_depth": 2,
             "flush_interval": 1,
+            "delay": 0,
         }
         values.update(overrides)
         return CrawlerConfig(**values)
@@ -687,7 +689,7 @@ class TestPagesRegistry:
 
         assert crawler.output_dir is not None
         assert results == []
-        assert _read_pages_registry(crawler.output_dir) == []
+        assert _read_pages_registry(crawler.output_dir / _LOGS_DIR) == []
 
 
 class TestPrintSummary:

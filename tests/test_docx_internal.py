@@ -21,9 +21,7 @@ def test_is_docx_url_uses_path_extension() -> None:
 async def test_is_docx_response_uses_provided_client() -> None:
     response = MagicMock()
     response.headers = {
-        "content-type": (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        "content-type": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     }
     client = AsyncMock()
     client.head = AsyncMock(return_value=response)

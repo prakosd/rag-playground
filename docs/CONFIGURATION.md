@@ -33,12 +33,12 @@ crawl/index/RAG config models.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `CRAWL_LIMIT` | `10` | Default pages-to-crawl in the form |
+| `CRAWL_LIMIT` | `100` | Default pages-to-crawl in the form |
 | `CRAWL_MAX_DEPTH` | `5` | Default link depth |
 | `CRAWL_MAX_CONCURRENT` | `5` | Default parallel page fetches |
 | `CRAWL_FLUSH_INTERVAL` | `5` | Pages buffered before each disk flush |
-| `CRAWL_DELAY` | `3.0` | Default polite delay (s) between fetches |
-| `CRAWL_MAX_RETRIES` | `5` | Default retry rounds (minimum 2) |
+| `CRAWL_DELAY` | `1.0` | Default polite delay (s) between fetches |
+| `CRAWL_MAX_RETRIES` | `2` | Default retry rounds (minimum 2) |
 | `CRAWL_WAIT_FOR` | `3.0` | Extra wait (s) for late content |
 | `CRAWL_TIMEOUT` | `60.0` | Per-page load timeout (s) |
 | `CRAWL_MAX_FILE_SIZE_MB` | `10.0` | Max size per output file (MB) |
@@ -75,8 +75,8 @@ environment variables read by their SDKs:
 |---|---|
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | Amazon Bedrock (Titan embeddings + Claude/Nova chat) |
 | `OPENAI_API_KEY` | OpenAI embeddings + chat |
-| `CRAWL_PROXIES` | Optional comma-separated proxy URLs (direct-first escalation) for Step 1 crawling |
-| `CRAWL_FALLBACK_API_URL` / `CRAWL_FALLBACK_API_TOKEN` | Optional last-resort scraping API, fetched with the page URL when every browser + proxy attempt is still blocked |
+| `CRAWL_PROXIES` | Optional comma-separated proxy URLs (direct-first escalation) for Step 1 crawling; used on the first retry round only |
+| `CRAWL_FALLBACK_API_URL` / `CRAWL_FALLBACK_API_TOKEN` | Optional last-resort scraping API, fetched with the page URL; used on one retry round only (the second when proxies are also set) |
 
 Locally, copy `.env.example` to `.env` (git-ignored) and fill them in. Leave them
 blank to run fully offline (local embeddings + echo chat model).
@@ -87,10 +87,14 @@ For sites that block the crawler, three opt-in escalations layer on top of the
 default stealth browser + retry rounds (all off by default):
 
 - **Proxies** — set the `CRAWL_PROXIES` secret (comma-separated URLs). They are
-  tried direct-first, then in order, on blocked requests. Used **only on retry
-  rounds** (not the initial crawl) to save cost, since proxies are a paid service.
-  Residential proxies are usually required for hard `403`s (e.g. Akamai); data-center
-  proxies are often blocked too.
+  tried direct-first, then in order, on blocked requests. To cap cost, proxies and
+  the fallback API are each used at most **once per crawl**: the first retry round
+  uses the proxy, the second uses the fallback API, and later retries use neither
+  (the initial crawl uses neither). When only one is configured, the first retry
+  uses it. Every URL attempted in those rounds is logged to `logs/network_usage.csv`
+  (URL, method, round, status, size) so you can track spend — proxy credentials are
+  never written. Residential proxies are usually required for hard `403`s (e.g.
+  Akamai); data-center proxies are often blocked too.
 - **Undetected browser** — retry rounds automatically escalate to Crawl4AI's
   undetected adapter; the **initial** crawl uses the standard stealth browser to
   focus on discovering pages, and it falls back to stealth if the adapter is
@@ -129,7 +133,7 @@ git-ignored.
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser |
 | `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages (minimum 2) |
 | `flush_interval` | `int` | `10` | Write generated files to disk every N pages |
-| `proxies` | `list[str]` | `[]` | Proxy URLs tried in order (direct first) when blocked; feeds Crawl4AI's `proxy_config`. Set via the `CRAWL_PROXIES` secret in the app — never logged (`repr=False`). |
+| `proxies` | `list[str]` | `[]` | Proxy URLs tried in order (direct first) when blocked; feeds Crawl4AI's `proxy_config` on the first retry round only. Set via the `CRAWL_PROXIES` secret in the app — never logged (`repr=False`). |
 
 ## PageConfig
 
@@ -176,7 +180,7 @@ intermediate snapshots; the `final/` folder holds the primary output.
 ```mermaid
 flowchart TD
   Root["2026-03-08_17-39-59/<br/>UTC timestamped crawl root"]
-  Root --> RootFiles["root files<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl"]
+  Root --> Logs["logs/<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl<br/>network_usage.csv"]
   Root --> Rounds["round_N/<br/>intermediate snapshots<br/>success/fail content + URL lists"]
   Root --> Final["final/<br/>primary output"]
   Final --> SortedContent["sorted content files<br/>001_of_NNN chunks"]
@@ -221,9 +225,10 @@ exceed `max_file_size_mb`, content splits into `001_of_003`, `002_of_003`, … f
 | Succeeded URLs | `final/sorted_success_urls.txt` |
 | Pages that never succeeded | `final/sorted_fail_content_*.md` |
 | Failed URLs | `final/sorted_fail_urls.txt` |
-| Full site map (status + depth) | `site_graph.jsonl` |
-| Timestamped crawl diary | `activity_log.txt` / `activity_log.csv` |
-| Chart-ready progress timeline | `progress_history.jsonl` |
+| Full site map (status + depth) | `logs/site_graph.jsonl` |
+| Timestamped crawl diary | `logs/activity_log.txt` / `logs/activity_log.csv` |
+| Chart-ready progress timeline | `logs/progress_history.jsonl` |
+| Proxy / fallback-API usage (cost) | `logs/network_usage.csv` (only when a proxy or fallback API runs) |
 
 **Why `round_N/` folders?** crawl4md retries failed pages in separate rounds
 (controlled by `max_retries`). Each round folder is an intermediate snapshot. The

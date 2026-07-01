@@ -12,7 +12,7 @@ VectorIndexer.run(config, inputs, output_base)
   ├─ load_documents()         → .md / .txt files and .zip members (via artifact_store)
   ├─ split_into_pages()       → drop crawl run metadata, recover per-page title/url (page_source)
   ├─ chunk_documents()        → overlapping chunks, each stamped with a Source line (langchain-text-splitters)
-  └─ ChromaVectorStore.add_texts / persist   (embeds each batch with the resolved model)
+  └─ embed batches (parallel for cloud models) → ChromaVectorStore.add_embeddings / persist
         → vector_<id>/<timestamp>/chroma  +  manifest.json
 ```
 

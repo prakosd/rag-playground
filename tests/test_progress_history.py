@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 from crawl4md._internal.progress_history import ProgressHistoryRecorder
 from crawl4md.config import CrawlerConfig, PageConfig
-from crawl4md.crawler import _PROGRESS_HISTORY_FILE, SiteCrawler
+from crawl4md.crawler import _LOGS_DIR_NAME, _PROGRESS_HISTORY_FILE, SiteCrawler
 from tests.conftest import _make_mock_result
 
 
@@ -37,7 +37,7 @@ def test_progress_history_records_started_page_and_completed(
     crawler.crawl()
 
     assert crawler.output_dir is not None
-    history_path = crawler.output_dir / _PROGRESS_HISTORY_FILE
+    history_path = crawler.output_dir / _LOGS_DIR_NAME / _PROGRESS_HISTORY_FILE
     assert history_path.exists()
 
     rows = _read_history(history_path)
@@ -128,7 +128,7 @@ def test_progress_history_rows_include_retry_round_values(mock_crawler_cls, tmp_
     crawler.crawl()
 
     assert crawler.output_dir is not None
-    rows = _read_history(crawler.output_dir / _PROGRESS_HISTORY_FILE)
+    rows = _read_history(crawler.output_dir / _LOGS_DIR_NAME / _PROGRESS_HISTORY_FILE)
     assert any(int(row["round"]) == 2 for row in rows)
 
 
@@ -164,5 +164,5 @@ def test_progress_history_records_interrupt_event(mock_crawler_cls, tmp_path: Pa
     crawler.crawl()
 
     assert crawler.output_dir is not None
-    rows = _read_history(crawler.output_dir / _PROGRESS_HISTORY_FILE)
+    rows = _read_history(crawler.output_dir / _LOGS_DIR_NAME / _PROGRESS_HISTORY_FILE)
     assert any(str(row["event"]) == "crawl_interrupted" for row in rows)

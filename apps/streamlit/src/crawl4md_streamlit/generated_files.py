@@ -23,6 +23,7 @@ from artifact_store.archives import (
     verify_zip_bytes,
 )
 from artifact_store.naming import (
+    SEARCH_FOLDER_PREFIX,
     VECTOR_FOLDER_PREFIX,
     folder_name,
     format_sequence_id,
@@ -41,15 +42,18 @@ from crawl4md_streamlit.session_manager import ensure_within_root
 _ACTIVITY_LOG_FILE = "activity_log.txt"
 _CRAWL_DIR_PREFIX = CRAWL_FOLDER_PREFIX
 _VECTOR_DIR_PREFIX = VECTOR_FOLDER_PREFIX
+_SEARCH_DIR_PREFIX = SEARCH_FOLDER_PREFIX
 # Material icons for download-tree folders, picked by artifact type so a crawl
 # run reads as exploration and a vector index as a database at a glance.
 _FOLDER_ICON_DEFAULT = ":material/folder_open:"
 _FOLDER_ICON_CRAWL = ":material/travel_explore:"
 _FOLDER_ICON_VECTOR = ":material/database:"
+_FOLDER_ICON_SEARCH = ":material/search:"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _HIDDEN_FILE_PREFIX = "."
 _FINAL_DIR_NAME = "final"
+_LOGS_DIR_NAME = "logs"
 _MISSING_CACHE_TOKEN = (0.0, 0)
 _EMPTY_FOLDER_ZIP_TOKEN = (0, 0.0, 0)
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
@@ -449,8 +453,13 @@ def activity_log_path(crawl_dir: Path | str | None) -> Path | None:
     """Return the activity log path for a crawl output directory when present."""
     if crawl_dir is None:
         return None
-    path = Path(crawl_dir) / _ACTIVITY_LOG_FILE
-    return path if path.exists() else None
+    base = Path(crawl_dir)
+    log_path = base / _LOGS_DIR_NAME / _ACTIVITY_LOG_FILE
+    if log_path.exists():
+        return log_path
+    # Fall back to the legacy location (crawls written before the logs/ subdir).
+    legacy_path = base / _ACTIVITY_LOG_FILE
+    return legacy_path if legacy_path.exists() else None
 
 
 def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
@@ -512,13 +521,16 @@ def collapse_artifact_run_folder(
 def download_folder_icon(folder_name: str) -> str:
     """Return the Material icon for a download-tree folder by its artifact type.
 
-    Crawl runs (``crawl_*``) and vector indexes (``vector_*``) get distinct icons
-    so the tree is scannable; every other folder keeps the neutral folder icon.
+    Crawl runs (``crawl_*``), vector indexes (``vector_*``), and search history
+    (``search_*``) get distinct icons so the tree is scannable; every other folder
+    keeps the neutral folder icon.
     """
     if folder_name.startswith(_CRAWL_DIR_PREFIX):
         return _FOLDER_ICON_CRAWL
     if folder_name.startswith(_VECTOR_DIR_PREFIX):
         return _FOLDER_ICON_VECTOR
+    if folder_name.startswith(_SEARCH_DIR_PREFIX):
+        return _FOLDER_ICON_SEARCH
     return _FOLDER_ICON_DEFAULT
 
 
@@ -535,6 +547,15 @@ def format_run_timestamp_label(
     if timestamp is None:
         return folder_name
     return f"{folder_name} ({_format_local_timestamp(timestamp, local_timezone=local_timezone)})"
+
+
+def format_local_datetime(value: datetime, *, local_timezone: tzinfo | None = None) -> str:
+    """Format a UTC datetime as a local-time label (e.g. '1 July 2026 15:39 AEST').
+
+    Reuses the same server-local formatting the download tree applies to run
+    folders, so history timestamps read consistently across the app.
+    """
+    return _format_local_timestamp(value, local_timezone=local_timezone)
 
 
 def _format_local_timestamp(value: datetime, *, local_timezone: tzinfo | None = None) -> str:

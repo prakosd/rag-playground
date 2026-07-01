@@ -185,15 +185,22 @@ class VectorIndexer:
         ids = count()
         id_lists = [[str(next(ids)) for _ in batch] for batch in batches]
         lock = threading.Lock()
+        # Embeddings run in parallel (the slow, network-bound step for cloud
+        # models), but writes are serialized: the ChromaDB/SQLite backend is not
+        # safe for concurrent writes from multiple worker threads.
+        store_lock = threading.Lock()
         cancelled = False
         _report_stage(progress_callback, STAGE_EMBEDDING)
 
         def _store_batch(batch: list[Chunk], batch_ids: list[str]) -> None:
-            store.add_texts(
-                texts=[chunk.text for chunk in batch],
-                metadatas=[chunk.metadata for chunk in batch],
-                ids=batch_ids,
-            )
+            vectors = resolved.embeddings.embed_documents([chunk.text for chunk in batch])
+            with store_lock:
+                store.add_embeddings(
+                    texts=[chunk.text for chunk in batch],
+                    embeddings=vectors,
+                    metadatas=[chunk.metadata for chunk in batch],
+                    ids=batch_ids,
+                )
             with lock:
                 result.indexed_chunk_count += len(batch)
                 indexed_sources.update(chunk.document_source for chunk in batch)

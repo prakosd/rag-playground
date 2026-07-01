@@ -78,6 +78,7 @@ from crawl4md._internal.final_output import (
     round_dir_name,
     round_num_from_dir,
 )
+from crawl4md._internal.network_usage import NetworkUsageRecorder
 from crawl4md._internal.pdf import (
     _OCR_UNAVAILABLE_WARNING as _PDF_OCR_UNAVAILABLE_WARNING,
 )
@@ -290,6 +291,10 @@ _USER_AGENT_BROWSERS = ["Chrome", "Edge"]
 # Subdirectory name for final merged output files
 _FINAL_DIR_NAME = "final"
 
+# Subdirectory name for crawl log/diagnostic files (activity log, progress
+# history, site graph, network usage).
+_LOGS_DIR_NAME = "logs"
+
 # Suffix for successful-page file names (e.g. "success_content_001.txt")
 _SUCCESS_SUFFIX = "success_"
 # Suffix for failed-page file names (e.g. "fail_content_001.txt")
@@ -472,7 +477,9 @@ class SiteCrawler:
         self._run_metadata: dict[str, object] = {}
         self._run_started_at_utc: datetime | None = None
         self._progress_history: ProgressHistoryRecorder | None = None
+        self._logs_dir: Path | None = None
         self._site_graph = SiteGraphRecorder()
+        self._network_usage = NetworkUsageRecorder()
         self._pdf_client: httpx.AsyncClient | None = None
 
     @property
@@ -520,13 +527,17 @@ class SiteCrawler:
         ``html`` and ``markdown`` are empty strings.
         """
         self.output_dir = self._create_output_dir()
+        logs_dir = self.output_dir / _LOGS_DIR_NAME
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        self._logs_dir = logs_dir
         self._run_metadata = self._build_run_metadata()
         self._progress_history = ProgressHistoryRecorder(
-            output_dir=self.output_dir,
+            output_dir=logs_dir,
             session_id=str(self._run_metadata.get("session_id", self.output_dir.name)),
         )
         self._progress_history.set_round(1)
-        self._site_graph.reset(self.output_dir)
+        self._site_graph.reset(logs_dir)
+        self._network_usage.reset(logs_dir)
         self._emit_progress(
             {
                 "event": _PROGRESS_EVENT_STARTED,
@@ -719,7 +730,6 @@ class SiteCrawler:
         async_web_crawler_cls, browser_config_cls, crawler_run_config_cls = _load_crawl4ai_classes()
         browser_cfg = browser_config_cls(**browser_kwargs)
         run_cfg = self._build_run_config(crawler_run_config_cls)
-        fallback_run_cfg = self._build_fallback_run_config(crawler_run_config_cls)
         pdf_headers = dict(self.config.headers) if self.config.headers else {}
 
         # Round 1 uses the standard stealth browser; retry rounds always escalate to
@@ -811,10 +821,13 @@ class SiteCrawler:
                         )
                         await self._sleep_with_cancel(cooldown)
 
+                        round_run_cfg = self._build_fallback_run_config(
+                            crawler_run_config_cls, round_num
+                        )
                         round_results = await self._crawl_urls_async(
                             urls=failed_urls,
                             crawler=crawler,
-                            run_cfg=fallback_run_cfg,
+                            run_cfg=round_run_cfg,
                             discover_links=self.config.max_depth > 1,
                             is_retry=True,
                             round_dir=round_dir,
@@ -1067,6 +1080,36 @@ class SiteCrawler:
             round_num=round_num,
             crawl_depth=crawl_depth,
             strip_www=self.config.strip_www,
+        )
+        self._record_network_usage(crawl_result=crawl_result, page=page, round_num=round_num)
+
+    def _record_network_usage(
+        self,
+        *,
+        crawl_result: CrawlResult,
+        page: ExtractedPage | None,
+        round_num: int,
+    ) -> None:
+        """Log proxy/API usage for this URL when the round enabled a paid resource."""
+        proxy_round, api_round = self._paid_resource_rounds()
+        if round_num == proxy_round:
+            method = "proxy"
+        elif round_num == api_round:
+            method = "api"
+        else:
+            return
+        markdown = page.markdown if page is not None else crawl_result.markdown
+        size_kb = (
+            round(len(markdown.encode("utf-8")) / 1024, 2)
+            if crawl_result.success and markdown.strip()
+            else None
+        )
+        self._network_usage.record(
+            method=method,
+            round_num=round_num,
+            url=crawl_result.url,
+            status="success" if crawl_result.success else "fail",
+            size_kb=size_kb,
         )
 
     def _record_failed_page_content(
@@ -1323,7 +1366,7 @@ class SiteCrawler:
             prior_fail=prior_fail,
             round_label=round_label,
             max_log_entries=self._activity_log_size,
-            log_dir=self.output_dir,
+            log_dir=self._logs_dir,
         )
         try:
             discovery_limit_reached = len(generated) >= self.config.limit
@@ -2454,12 +2497,12 @@ class SiteCrawler:
             kwargs["override_navigator"] = True
             kwargs["magic"] = True
 
-        self._apply_anti_bot_run_options(kwargs, apply_proxies=False)
-
+        # The initial crawl uses neither proxies nor the fallback API; those paid
+        # resources are reserved for specific retry rounds (see _paid_resource_rounds).
         return run_config_cls(**kwargs)
 
-    def _build_fallback_run_config(self, run_config_cls: type) -> object:
-        """Build a reduced CrawlerRunConfig for retry rounds.
+    def _build_fallback_run_config(self, run_config_cls: type, round_num: int) -> object:
+        """Build a reduced CrawlerRunConfig for retry round *round_num*.
 
         Disables ``scan_full_page`` and stealth run-flags (``magic``,
         ``simulate_user``, ``override_navigator``) to avoid browser
@@ -2467,6 +2510,9 @@ class SiteCrawler:
         page evaluation.  Also downgrades ``wait_until`` to
         ``domcontentloaded`` to avoid repeated timeouts on
         analytics-heavy sites where ``networkidle`` never resolves.
+
+        Proxies and the fallback API are paid resources, so each is applied to at
+        most one retry round (see ``_paid_resource_rounds``) to cap per-crawl cost.
         """
         kwargs: dict = {}
 
@@ -2489,22 +2535,49 @@ class SiteCrawler:
 
         # scan_full_page and stealth run-flags intentionally omitted
 
-        self._apply_anti_bot_run_options(kwargs)
+        proxy_round, api_round = self._paid_resource_rounds()
+        self._apply_anti_bot_run_options(
+            kwargs,
+            use_proxy=round_num == proxy_round,
+            use_fallback_api=round_num == api_round,
+        )
 
         return run_config_cls(**kwargs)
 
-    def _apply_anti_bot_run_options(self, kwargs: dict, *, apply_proxies: bool = True) -> None:
-        """Add proxy escalation and the fallback fetch hook to a run-config kwargs dict.
+    def _paid_resource_rounds(self) -> tuple[int | None, int | None]:
+        """Return the retry rounds that use the proxy and the fallback API.
 
-        Proxies are a paid resource, so they are skipped on the initial crawl
-        (``apply_proxies=False``) and used only on retry rounds, where the goal
-        is unblocking the few URLs that failed.
+        Both are paid resources, so each is used at most once per crawl to cap
+        cost. Round 1 is the initial crawl (never uses either); retries start at
+        round 2. When both are configured, the first retry uses the proxy and the
+        second uses the API; later retries use neither. When only one is set, the
+        first retry uses it and later retries use neither. Returns
+        ``(proxy_round, api_round)`` where either element may be ``None``.
         """
-        if apply_proxies:
+        has_proxy = bool(self.config.proxies)
+        has_api = self._fallback_fetch_function is not None
+        if has_proxy and has_api:
+            return 2, 3
+        if has_proxy:
+            return 2, None
+        if has_api:
+            return None, 2
+        return None, None
+
+    def _apply_anti_bot_run_options(
+        self, kwargs: dict, *, use_proxy: bool = False, use_fallback_api: bool = False
+    ) -> None:
+        """Add proxy escalation and/or the fallback fetch hook to a run-config dict.
+
+        Proxies and the fallback scraping API are paid resources applied per
+        ``_paid_resource_rounds``: never on the initial crawl, then at most one
+        retry round each.
+        """
+        if use_proxy:
             proxy_config = self._build_proxy_config()
             if proxy_config is not None:
                 kwargs["proxy_config"] = proxy_config
-        if self._fallback_fetch_function is not None:
+        if use_fallback_api and self._fallback_fetch_function is not None:
             kwargs["fallback_fetch_function"] = self._fallback_fetch_function
 
     def _build_proxy_config(self) -> list[Any] | None:

@@ -524,7 +524,7 @@ class TestSiteCrawler:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        log_text = (crawler.output_dir / "activity_log.txt").read_text(encoding="utf-8")
+        log_text = (crawler.output_dir / "logs" / "activity_log.txt").read_text(encoding="utf-8")
         assert "Reading page batch (3 concurrent)" in log_text
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
@@ -1211,7 +1211,7 @@ class TestSiteCrawler:
         config = CrawlerConfig(urls=["https://example.com"])
         crawler = SiteCrawler(config)
 
-        run_cfg = crawler._build_fallback_run_config(CrawlerRunConfig)
+        run_cfg = crawler._build_fallback_run_config(CrawlerRunConfig, 2)
         assert run_cfg.flatten_shadow_dom is True
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
@@ -1548,7 +1548,7 @@ class TestIsBlocked:
         page_config = PageConfig(scan_full_page=True, timeout=20, js_code="alert(1)")
         crawler = SiteCrawler(config, page_config)
 
-        fallback = crawler._build_fallback_run_config(CrawlerRunConfig)
+        fallback = crawler._build_fallback_run_config(CrawlerRunConfig, 2)
         assert fallback.scan_full_page is False
         assert fallback.magic is False
         assert fallback.simulate_user is False
@@ -1565,7 +1565,7 @@ class TestIsBlocked:
         page_config = PageConfig(wait_until="networkidle")
         crawler = SiteCrawler(config, page_config)
 
-        fallback = crawler._build_fallback_run_config(CrawlerRunConfig)
+        fallback = crawler._build_fallback_run_config(CrawlerRunConfig, 2)
         assert fallback.wait_until == "domcontentloaded"
 
     def test_run_config_passes_wait_until(self):
@@ -1604,7 +1604,7 @@ class TestIsBlocked:
         crawler = SiteCrawler(config, page_config)
 
         primary = crawler._build_run_config(CrawlerRunConfig)
-        fallback = crawler._build_fallback_run_config(CrawlerRunConfig)
+        fallback = crawler._build_fallback_run_config(CrawlerRunConfig, 2)
 
         assert fallback.excluded_tags == primary.excluded_tags
         assert fallback.page_timeout == primary.page_timeout
@@ -1657,7 +1657,7 @@ class TestIsBlocked:
         page_config = PageConfig(wait_until="domcontentloaded")
         crawler = SiteCrawler(config, page_config)
 
-        fallback = crawler._build_fallback_run_config(CrawlerRunConfig)
+        fallback = crawler._build_fallback_run_config(CrawlerRunConfig, 2)
         assert fallback.wait_until == "domcontentloaded"
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
@@ -1893,7 +1893,7 @@ class TestRedirectDedup:
         assert results[0].url == "https://example.com/a"
 
         # Activity log should contain a "Skipped" entry for the redirect
-        log_txt = crawler.output_dir / "activity_log.txt"
+        log_txt = crawler.output_dir / "logs" / "activity_log.txt"
         if log_txt.exists():
             log_content = log_txt.read_text(encoding="utf-8")
             assert "Skipped" in log_content or "skip" in log_content.lower()

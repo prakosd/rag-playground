@@ -110,6 +110,21 @@ class Strings(TypedDict):
     SEARCH_RESULT_ID: str  # template: {id}
     SEARCH_RESULT_SIZE: str  # template: {size}
     SEARCH_RESULT_LANGUAGE: str  # template: {language}
+    SEARCH_HISTORY_EXPANDER: str
+    SEARCH_HISTORY_EMPTY: str
+    SEARCH_HISTORY_COL_TIME: str
+    SEARCH_HISTORY_COL_INDEX: str
+    SEARCH_HISTORY_COL_QUERY: str
+    SEARCH_HISTORY_COL_OPTIONS: str
+    SEARCH_HISTORY_COL_RESULTS: str
+    SEARCH_HISTORY_COL_ACTION: str
+    SEARCH_HISTORY_REPLAY_HELP: str
+    SEARCH_HISTORY_INDEX_GONE: str
+    SEARCH_HISTORY_OPT_TOP: str  # template: {n}
+    SEARCH_HISTORY_OPT_MIN: str  # template: {n}
+    SEARCH_HISTORY_OPT_DIVERSITY: str  # template: {value}
+    SEARCH_HISTORY_OPT_POOL: str  # template: {n}
+    SEARCH_HISTORY_OPT_SOURCES: str  # template: {n}
     QA_SECTION_HEADER: str
     QA_SECTION_CAPTION: str
     QA_QUESTION_LABEL: str
@@ -285,6 +300,8 @@ class Strings(TypedDict):
     FILES_DELETE_FOLDER_DIALOG_BODY: str  # template: {folder}
     FILES_DELETE_FOLDER_DIALOG_CONFIRM: str
     FILES_UPLOAD_LINK: str
+    FILES_UPLOAD_BUTTON: str
+    FILES_UPLOAD_BUTTON_HELP: str
     FILES_UPLOAD_DIALOG_TITLE: str
     FILES_UPLOAD_PROMPT: str
     FILES_UPLOAD_INVALID: str
@@ -327,6 +344,8 @@ class Strings(TypedDict):
     VEC_CHUNK_SIZE_HELP: str
     VEC_CHUNK_OVERLAP_LABEL: str
     VEC_CHUNK_OVERLAP_HELP: str
+    VEC_WORKERS_LABEL: str
+    VEC_WORKERS_HELP: str
     VEC_EMBEDDING_MODEL_LABEL: str
     VEC_EMBEDDING_MODEL_HELP: str
     VEC_MODEL_TAG_LOCAL: str

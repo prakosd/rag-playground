@@ -107,7 +107,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid, a Search-options expander above the query form (mode similarity/MMR with Diversity + Candidate pool grouped beside it and disabled unless Diverse, min-similarity, source filter), query with a top-N input, ranked result cards (id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs), and Output Files (`rag_engine.retrieve`) |
+| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid, a Search-options expander above the query form (mode similarity/MMR with Diversity + Candidate pool grouped beside it and disabled unless Diverse, min-similarity, source filter), query with a top-N input, ranked result cards (id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs), a **Search history** expander (per-session log with per-row replay), and Output Files (`rag_engine.retrieve`) |
 | `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
@@ -227,8 +227,9 @@ Live charts are native Streamlit charts rendered right before the Activity log p
 - Processing pace over time: seconds per processed page attempt, excluding discovered-only URL
   events
 
-For reload-safe chart history, the app prefers `progress_history.jsonl` written by the core crawler
-and falls back to in-memory samples captured from live events when that file is not available yet.
+For reload-safe chart history, the app prefers `progress_history.jsonl` (written by the core crawler
+in each crawl's `logs/` subdirectory) and falls back to in-memory samples captured from live events
+when that file is not available yet.
 
 ---
 
@@ -376,8 +377,9 @@ right-docked confirm) so they look and behave identically.
 ```mermaid
 flowchart TD
   Session["session_{id}/<br/>browser session"] --> Crawl["crawl_01_{word}/<br/>one folder per Start click"]
+  Session --> Search["search_history/<br/>semantic search log (JSONL + CSV)"]
   Crawl --> Timestamp["YYYY-MM-DD_HH-MM-SS/<br/>UTC SiteCrawler crawl root"]
-  Timestamp --> RootFiles["root files<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl"]
+  Timestamp --> Logs["logs/<br/>activity_log.*<br/>site_graph.jsonl<br/>progress_history.jsonl<br/>network_usage.csv"]
   Timestamp --> Rounds["round_N/<br/>intermediate snapshots"]
   Timestamp --> Final["final/<br/>primary output after merge and sort"]
 ```
@@ -388,13 +390,13 @@ UTC timestamped directory inside it. Previous crawls keep their files and remain
 from the same session. Existing legacy folders such as `crawl_1_word` remain readable.
 
 The download tree shows the UTC timestamp folder with a local-time companion label when the
-timestamp can be parsed from the run folder or `progress_history.jsonl`.
+timestamp can be parsed from the run folder or `logs/progress_history.jsonl`.
 
 **Which files to open first:**
 
 - `final/sorted_success_content_001_of_001.md` — the extracted content, sorted by URL path
 - `final/sorted_success_urls.txt` — all URLs that succeeded
-- `activity_log.csv` — timestamped crawl diary in spreadsheet format
+- `logs/activity_log.csv` — timestamped crawl diary in spreadsheet format
 
 The `round_N/` folders are intermediate per-round snapshots. They are useful when a crawl was
 stopped early or when you need to inspect a specific retry round; for a completed crawl, use

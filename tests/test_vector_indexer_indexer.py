@@ -33,9 +33,10 @@ class _FakeStore(VectorStore):
         self.texts: list[str] = []
         self.persisted = False
 
-    def add_texts(
+    def add_embeddings(
         self,
         texts: Sequence[str],
+        embeddings: Sequence[Sequence[float]],
         metadatas: Sequence[dict[str, str]],
         ids: Sequence[str],
     ) -> None:

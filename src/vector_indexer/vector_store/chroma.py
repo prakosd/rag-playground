@@ -3,8 +3,9 @@
 langchain-chroma (and chromadb) are imported lazily so importing
 :mod:`vector_indexer` stays light. The same ``langchain_chroma.Chroma`` class is
 used by the retrieval layer to reopen the persisted collection, which guarantees
-the on-disk format matches. Embeddings are supplied at construction, so each
-``add_texts`` batch is embedded by the configured model (never ChromaDB's own).
+the on-disk format matches. Embeddings are supplied at construction so the
+collection can be reopened for querying; write batches arrive already embedded
+via ``add_embeddings`` (the indexer embeds them, in parallel for cloud models).
 """
 
 from __future__ import annotations
@@ -35,16 +36,25 @@ class ChromaVectorStore(VectorStore):
         self._embeddings = embeddings
         self._store: Any = None
 
-    def add_texts(
+    def add_embeddings(
         self,
         texts: Sequence[str],
+        embeddings: Sequence[Sequence[float]],
         metadatas: Sequence[dict[str, str]],
         ids: Sequence[str],
     ) -> None:
         if not texts:
             return
         store = self._ensure_store()
-        store.add_texts(texts=list(texts), metadatas=list(metadatas), ids=list(ids))
+        # Write the pre-computed vectors straight to the underlying collection so
+        # the model is never re-invoked here; the indexer already embedded this
+        # batch (in parallel for cloud models) and serializes these writes.
+        store._collection.upsert(
+            ids=list(ids),
+            embeddings=[list(vector) for vector in embeddings],
+            documents=list(texts),
+            metadatas=list(metadatas),
+        )
 
     def persist(self) -> None:
         # langchain-chroma uses a PersistentClient that writes eagerly.

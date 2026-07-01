@@ -121,6 +121,7 @@ def test_collapse_artifact_run_folder_merges_vector_timestamp_child() -> None:
 def test_download_folder_icon_maps_artifact_type_to_material_icon() -> None:
     assert download_folder_icon("crawl_1_parlor") == ":material/travel_explore:"
     assert download_folder_icon("vector_01_pentagram") == ":material/database:"
+    assert download_folder_icon("search_history") == ":material/search:"
     assert download_folder_icon("final") == ":material/folder_open:"
     assert download_folder_icon("2026-05-19_18-17-52") == ":material/folder_open:"
 

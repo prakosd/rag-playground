@@ -32,6 +32,7 @@ from artifact_store.messages import (
 )
 from artifact_store.naming import (
     CRAWL_FOLDER_PREFIX,
+    SEARCH_FOLDER_PREFIX,
     UTC_TIMESTAMP_SLUG_FORMAT,
     VECTOR_FOLDER_PREFIX,
     folder_name,
@@ -46,6 +47,7 @@ from artifact_store.paths import ensure_within_root
 __all__ = [
     "CRAWL_FOLDER_PREFIX",
     "MESSAGE_SEVERITIES",
+    "SEARCH_FOLDER_PREFIX",
     "SEVERITY_ERROR",
     "SEVERITY_INFO",
     "SEVERITY_WARNING",

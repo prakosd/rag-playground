@@ -240,7 +240,7 @@ class TestRetryRounds:
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_round1_no_delay_when_delay_is_zero(self, mock_crawler_cls, tmp_path: Path):
-        """Round 1 does not apply per-page delay when delay=0 (default)."""
+        """Round 1 does not apply per-page delay when delay=0."""
         ok_result = _make_mock_result("https://example.com", "<p>ok</p>", "ok")
 
         mock_instance = AsyncMock()

@@ -28,11 +28,11 @@ class CrawlerConfig(BaseModel):
     urls: list[str]
     exclude_paths: list[str] = []
     include_only_paths: list[str] = []
-    limit: int = 1
+    limit: int = 100
     max_depth: int = 1
     max_concurrent: int = 5
     flush_interval: int = 10
-    delay: float = 0
+    delay: float = 1.0
     stealth: bool = True
     strip_www: bool = _DEFAULT_STRIP_WWW
     headers: dict[str, str] = {}

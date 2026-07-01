@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
+_LOGS_DIR_NAME = "logs"
 PROGRESS_CHART_TIME_UNIT_SECOND = "second"
 PROGRESS_CHART_TIME_UNIT_MINUTE = "minute"
 PROGRESS_CHART_TIME_UNIT_HOUR = "hour"
@@ -118,8 +119,11 @@ def load_persisted_progress_history(crawl_root: Path | None) -> list[dict[str, o
     """Load progress_history.jsonl rows when present, skipping malformed lines."""
     if crawl_root is None:
         return []
-    history_path = crawl_root / _PROGRESS_HISTORY_FILE
-    if not history_path.exists() or not history_path.is_file():
+    history_path = crawl_root / _LOGS_DIR_NAME / _PROGRESS_HISTORY_FILE
+    if not history_path.is_file():
+        # Fall back to the legacy location (crawls written before the logs/ subdir).
+        history_path = crawl_root / _PROGRESS_HISTORY_FILE
+    if not history_path.is_file():
         return []
 
     rows: list[dict[str, object]] = []

@@ -46,7 +46,8 @@ class TestCrawlerConfig:
 
     def test_defaults(self):
         cfg = CrawlerConfig(urls=["https://example.com"])
-        assert cfg.limit == 1
+        assert cfg.limit == 100
+        assert cfg.delay == 1.0
         assert cfg.max_depth == 1
         assert cfg.exclude_paths == []
         assert cfg.include_only_paths == []

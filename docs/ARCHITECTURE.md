@@ -143,5 +143,5 @@ indexing.
 
 The crawl adapter passes optional integration hooks into `SiteCrawler`
 (`output_base`, `session_id`, `progress_callback`, `should_cancel`) and reads
-`progress_history.jsonl` from each crawl root to restore chart history after page
-reloads.
+`progress_history.jsonl` from each crawl root's `logs/` subdirectory to restore
+chart history after page reloads.

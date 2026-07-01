@@ -157,6 +157,26 @@ def test_load_persisted_progress_history_skips_partial_last_line(tmp_path: Path)
     assert rows[1]["event"] == "page_processed"
 
 
+def test_load_persisted_progress_history_prefers_logs_subdir(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / progress_history_file_name()).write_text(
+        '{"event":"crawl_started","elapsed_seconds":0,"page_limit":5,'
+        '"discovered_pages":0,"successful_pages":0,"failed_pages":0,"processed_pages":0}',
+        encoding="utf-8",
+    )
+    # A stale legacy file at the crawl root must be ignored in favor of logs/.
+    (tmp_path / progress_history_file_name()).write_text(
+        '{"event":"crawl_completed","elapsed_seconds":9,"page_limit":5,'
+        '"discovered_pages":0,"successful_pages":0,"failed_pages":0,"processed_pages":0}',
+        encoding="utf-8",
+    )
+
+    rows = load_persisted_progress_history(tmp_path)
+
+    assert [row["event"] for row in rows] == ["crawl_started"]
+
+
 def test_select_progress_chart_time_unit_uses_seconds_for_short_crawls() -> None:
     history = [{"elapsed_seconds": 60.0, "processed_pages": 2}]
 

@@ -71,7 +71,7 @@ def test_apply_anti_bot_run_options_adds_proxy_and_fallback(
         fallback_fetch_function=fallback,
     )
     kwargs: dict = {}
-    crawler._apply_anti_bot_run_options(kwargs)
+    crawler._apply_anti_bot_run_options(kwargs, use_proxy=True, use_fallback_api=True)
 
     assert kwargs["proxy_config"][0] is _FakeProxyConfig.DIRECT
     assert kwargs["fallback_fetch_function"] is fallback
@@ -90,7 +90,7 @@ def test_apply_anti_bot_run_options_skips_proxy_but_keeps_fallback(
         fallback_fetch_function=fallback,
     )
     kwargs: dict = {}
-    crawler._apply_anti_bot_run_options(kwargs, apply_proxies=False)
+    crawler._apply_anti_bot_run_options(kwargs, use_proxy=False, use_fallback_api=True)
 
     assert "proxy_config" not in kwargs
     assert kwargs["fallback_fetch_function"] is fallback
@@ -109,8 +109,91 @@ def test_build_run_config_skips_proxies_on_initial_crawl(monkeypatch: pytest.Mon
     crawler._build_run_config(fake_run_config_cls)
     assert "proxy_config" not in captured
     captured.clear()
-    crawler._build_fallback_run_config(fake_run_config_cls)
+    crawler._build_fallback_run_config(fake_run_config_cls, 2)
     assert "proxy_config" in captured
+
+
+def _paid_resource_crawler(
+    monkeypatch: pytest.MonkeyPatch, *, proxies: list[str] | None = None, api: bool = False
+) -> SiteCrawler:
+    monkeypatch.setattr("crawl4md.crawler._load_proxy_config_cls", lambda: _FakeProxyConfig)
+
+    async def fallback(url: str) -> str:
+        return "<html></html>"
+
+    return SiteCrawler(
+        CrawlerConfig(urls=["https://example.com"], proxies=proxies or []),
+        fallback_fetch_function=fallback if api else None,
+    )
+
+
+def _captured_fallback_run_config(crawler: SiteCrawler, round_num: int) -> dict:
+    captured: dict = {}
+
+    def fake_run_config_cls(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    crawler._build_fallback_run_config(fake_run_config_cls, round_num)
+    return captured
+
+
+def test_paid_resource_rounds_none_when_unset() -> None:
+    assert _crawler()._paid_resource_rounds() == (None, None)
+
+
+def test_paid_resource_rounds_proxy_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"])
+    assert crawler._paid_resource_rounds() == (2, None)
+
+
+def test_paid_resource_rounds_api_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _paid_resource_crawler(monkeypatch, api=True)
+    assert crawler._paid_resource_rounds() == (None, 2)
+
+
+def test_paid_resource_rounds_both(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], api=True)
+    assert crawler._paid_resource_rounds() == (2, 3)
+
+
+def test_retry_rounds_use_proxy_then_api_when_both_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], api=True)
+
+    round2 = _captured_fallback_run_config(crawler, 2)
+    assert "proxy_config" in round2
+    assert "fallback_fetch_function" not in round2
+
+    round3 = _captured_fallback_run_config(crawler, 3)
+    assert "proxy_config" not in round3
+    assert "fallback_fetch_function" in round3
+
+    round4 = _captured_fallback_run_config(crawler, 4)
+    assert "proxy_config" not in round4
+    assert "fallback_fetch_function" not in round4
+
+
+def test_retry_uses_api_on_first_retry_when_only_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _paid_resource_crawler(monkeypatch, api=True)
+
+    round2 = _captured_fallback_run_config(crawler, 2)
+    assert "fallback_fetch_function" in round2
+    assert "proxy_config" not in round2
+
+    assert "fallback_fetch_function" not in _captured_fallback_run_config(crawler, 3)
+
+
+def test_initial_crawl_uses_no_fallback_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], api=True)
+    captured: dict = {}
+
+    def fake_run_config_cls(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    crawler._build_run_config(fake_run_config_cls)
+    assert "proxy_config" not in captured
+    assert "fallback_fetch_function" not in captured
 
 
 def test_fallback_fetch_function_is_stored() -> None:

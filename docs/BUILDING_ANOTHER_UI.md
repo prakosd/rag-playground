@@ -15,10 +15,10 @@ with the same optional integration hooks the Streamlit adapter uses: `output_bas
 from the emitted events and serve the generated files afterward, but it should not
 reimplement the crawl pipeline or output writer if you want the same result structure.
 
-`SiteCrawler` also writes `progress_history.jsonl` in each crawl root as a
-chart-ready cumulative timeline (page limit, discovered pages, successful pages,
-failed pages, processed pages, elapsed seconds). UIs can read this file to restore
-chart history after page reloads.
+`SiteCrawler` also writes `progress_history.jsonl` in each crawl root's `logs/`
+subdirectory as a chart-ready cumulative timeline (page limit, discovered pages,
+successful pages, failed pages, processed pages, elapsed seconds). UIs can read this
+file to restore chart history after page reloads.
 
 ## Example adapter setup
 

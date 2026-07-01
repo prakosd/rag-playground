@@ -2,8 +2,9 @@
 
 The indexer depends only on this interface, never on a specific database, so the
 backend (currently ChromaDB via langchain-chroma) can be replaced without
-touching the orchestration. Embeddings are supplied to the concrete store at
-construction; ``add_texts`` embeds and writes each batch.
+touching the orchestration. The indexer embeds each batch and passes the vectors
+to ``add_embeddings``; the concrete store still receives an embeddings client at
+construction so the persisted collection can be reopened for querying.
 """
 
 from __future__ import annotations
@@ -18,13 +19,14 @@ class VectorStore(ABC):
     """Stores embedded text chunks and persists them for later retrieval."""
 
     @abstractmethod
-    def add_texts(
+    def add_embeddings(
         self,
         texts: Sequence[str],
+        embeddings: Sequence[Sequence[float]],
         metadatas: Sequence[dict[str, str]],
         ids: Sequence[str],
     ) -> None:
-        """Embed and add a batch of chunks to the active collection."""
+        """Write a batch of pre-embedded chunks to the active collection."""
 
     @abstractmethod
     def persist(self) -> None:

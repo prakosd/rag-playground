@@ -38,3 +38,4 @@ def test_artifact_store_public_api_is_importable() -> None:
     assert "ensure_within_root" in artifact_store.__all__
     assert "list_crawl_result_files" in artifact_store.__all__
     assert "VECTOR_FOLDER_PREFIX" in artifact_store.__all__
+    assert "SEARCH_FOLDER_PREFIX" in artifact_store.__all__

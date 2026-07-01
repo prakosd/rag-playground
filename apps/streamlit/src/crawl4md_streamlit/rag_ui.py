@@ -12,6 +12,7 @@ import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 import streamlit as st
 from artifact_store import LibraryMessage
@@ -37,6 +38,7 @@ __all__ = [
     "RagPageContext",
     "format_score_percent",
     "index_metadata_rows",
+    "index_option_label",
     "mmr_controls_enabled",
     "ordered_result_tabs",
     "render_index_metadata",
@@ -58,6 +60,17 @@ class RagPageContext:
     default_language: str
     list_indexes: Callable[[], Sequence[IndexRef]]
     render_downloads: Callable[[], None]
+    session_root: Callable[[], Path]
+
+
+def index_option_label(strings: Strings, ref: IndexRef) -> str:
+    """Return the picker label describing one index option."""
+    return strings["RAG_INDEX_OPTION"].format(
+        folder=ref.vector_folder,
+        run=ref.run_name,
+        model=ref.manifest.embedding_model_used or "?",
+        chunks=ref.manifest.indexed_chunk_count,
+    )
 
 
 def select_index(strings: Strings, indexes: Sequence[IndexRef], *, key: str) -> IndexRef | None:
@@ -65,15 +78,7 @@ def select_index(strings: Strings, indexes: Sequence[IndexRef], *, key: str) -> 
     if not indexes:
         st.info(strings["RAG_NO_INDEX_HINT"])
         return None
-    labels: dict[str, IndexRef] = {}
-    for ref in indexes:
-        label = strings["RAG_INDEX_OPTION"].format(
-            folder=ref.vector_folder,
-            run=ref.run_name,
-            model=ref.manifest.embedding_model_used or "?",
-            chunks=ref.manifest.indexed_chunk_count,
-        )
-        labels[label] = ref
+    labels: dict[str, IndexRef] = {index_option_label(strings, ref): ref for ref in indexes}
     chosen = st.selectbox(
         strings["RAG_INDEX_LABEL"],
         options=list(labels),

@@ -661,6 +661,12 @@ function appendLink(parent, href, label, iconUrl, iconClass) {
     parent.appendChild(link)
 }
 
+function updateIconSrc(overlay, iconClass, iconUrl) {
+    if (typeof iconUrl !== "string" || !iconUrl) return
+    const icon = overlay.querySelector(`.portfolio-modal-icon-image.${iconClass}`)
+    if (icon && icon.getAttribute("src") !== iconUrl) icon.src = iconUrl
+}
+
 const instances = new WeakMap()
 
 export default function (component) {
@@ -687,6 +693,10 @@ export default function (component) {
 
     if (instance.overlay) {
         if (!root.contains(instance.overlay)) root.appendChild(instance.overlay)
+        // Theme toggles re-run this component with new icon URLs; refresh the
+        // existing overlay so the mark recolors on every toggle, not just once.
+        updateIconSrc(instance.overlay, "github", data.githubIconUrl)
+        updateIconSrc(instance.overlay, "linkedin", data.linkedinIconUrl)
         return
     }
 
@@ -3092,6 +3102,7 @@ def _rag_page_context() -> RagPageContext:
         default_language=_DEFAULT_LANGUAGE,
         list_indexes=_list_session_indexes,
         render_downloads=_render_downloads,
+        session_root=_session_root,
     )
 
 

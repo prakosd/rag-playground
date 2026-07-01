@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+
 import streamlit as st
 from rag_engine import RagConfig, retrieve
 
-from crawl4md_streamlit.i18n import get_strings
+from crawl4md_streamlit.generated_files import format_local_datetime
+from crawl4md_streamlit.i18n import Strings, get_strings
+from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.rag_ui import (
     RagPageContext,
+    index_option_label,
     mmr_controls_enabled,
     render_index_metadata,
     render_messages,
     render_ranked_results,
     select_index,
+)
+from crawl4md_streamlit.search_history import (
+    SearchRecord,
+    append_search_record,
+    load_search_history,
 )
 from crawl4md_streamlit.settings import get_settings
 
@@ -25,6 +38,29 @@ _DEFAULT_FETCH_K = _settings.semantic_search_fetch_k
 _DEFAULT_MMR_LAMBDA = _settings.semantic_search_mmr_lambda
 _SEARCH_MODES = ("similarity", "mmr")
 _DEFAULT_SEARCH_MODE = _SEARCH_MODES[0]
+_INITIAL_MODE = _DEFAULT_MODE if _DEFAULT_MODE in _SEARCH_MODES else _DEFAULT_SEARCH_MODE
+
+# Widget keys let a history replay pre-fill the form; the replay keys carry a
+# pending re-run request across the st.rerun() boundary.
+_QUERY_KEY = "semantic_search_query"
+_TOP_N_KEY = "semantic_search_top_n"
+_MODE_KEY = "semantic_search_mode"
+_MMR_LAMBDA_KEY = "semantic_search_mmr_lambda"
+_FETCH_K_KEY = "semantic_search_fetch_k"
+_MIN_SCORE_KEY = "semantic_search_min_score"
+_SOURCES_KEY = "semantic_search_sources"
+_INDEX_KEY = "semantic_search_index"
+_REPLAY_KEY = "semantic_search_replay"
+_REPLAY_EXECUTE_KEY = "semantic_search_replay_execute"
+_HISTORY_COLUMN_WEIGHTS = (0.18, 0.2, 0.22, 0.24, 0.08, 0.08)
+_HISTORY_COLUMN_KEYS = (
+    "SEARCH_HISTORY_COL_TIME",
+    "SEARCH_HISTORY_COL_INDEX",
+    "SEARCH_HISTORY_COL_QUERY",
+    "SEARCH_HISTORY_COL_OPTIONS",
+    "SEARCH_HISTORY_COL_RESULTS",
+    "SEARCH_HISTORY_COL_ACTION",
+)
 
 # Pin the Search-mode segmented control to its natural width so the row's three
 # controls stay evenly spaced (Diversity / Candidate pool absorb the slack)
@@ -32,10 +68,10 @@ _DEFAULT_SEARCH_MODE = _SEARCH_MODES[0]
 _SEARCH_MODE_COLUMN_CSS = (
     "<style>"
     "/* Pin the Search-mode column to its natural width */"
-    "div[data-testid=\"stColumn\"]:has(.st-key-semantic_search_mode){flex:0 0 auto!important;width:auto!important;max-width:none!important;padding-right:0!important;margin-right:0!important;}"
+    'div[data-testid="stColumn"]:has(.st-key-semantic_search_mode){flex:0 0 auto!important;width:auto!important;max-width:none!important;padding-right:0!important;margin-right:0!important;}'
     "/* Remove any right-side padding/margin from the element container and its immediate children */"
-    "div.st-key-semantic_search_mode[data-testid=\"stElementContainer\"],"
-    "div.st-key-semantic_search_mode[data-testid=\"stElementContainer\"] > *{padding-right:0!important;margin-right:0!important;}"
+    'div.st-key-semantic_search_mode[data-testid="stElementContainer"],'
+    'div.st-key-semantic_search_mode[data-testid="stElementContainer"] > *{padding-right:0!important;margin-right:0!important;}'
     "/* Ensure the inner button-group doesn't add extra right spacing */"
     "div.st-key-semantic_search_mode .stButtonGroup,"
     "div.st-key-semantic_search_mode .stButtonGroup > *{padding-right:0!important;margin-right:0!important;}"
@@ -46,6 +82,9 @@ _SEARCH_MODE_COLUMN_CSS = (
 def render_page(context: RagPageContext) -> None:
     """Render the semantic search page content area."""
     strings = get_strings(st.session_state.get("language", context.default_language))
+    session_root = context.session_root()
+    indexes = list(context.list_indexes())
+
     st.markdown(
         f'<h3 id="semantic-search-header" style="margin-bottom:0;padding-bottom:0;padding-top:0">'
         f"{strings['SEARCH_SECTION_HEADER']}</h3>"
@@ -54,13 +93,27 @@ def render_page(context: RagPageContext) -> None:
         unsafe_allow_html=True,
     )
 
+    # Apply a pending history replay before the widgets render so the form shows
+    # the replayed query and options; the search itself runs from the form below.
+    replay = st.session_state.pop(_REPLAY_KEY, None)
+    if replay is not None:
+        _apply_replay_widget_state(strings, indexes, replay)
+        st.session_state[_REPLAY_EXECUTE_KEY] = replay
+
+    # Seed first-run widget values in session state so a replay can overwrite them
+    # without Streamlit warning about a default value also set via Session State.
+    st.session_state.setdefault(_QUERY_KEY, "")
+    st.session_state.setdefault(_TOP_N_KEY, _DEFAULT_TOP_N)
+    st.session_state.setdefault(_MODE_KEY, _INITIAL_MODE)
+    st.session_state.setdefault(_MMR_LAMBDA_KEY, _DEFAULT_MMR_LAMBDA)
+    st.session_state.setdefault(_FETCH_K_KEY, _DEFAULT_FETCH_K)
+    st.session_state.setdefault(_MIN_SCORE_KEY, _DEFAULT_MIN_SCORE_PERCENT)
+    st.session_state.setdefault(_SOURCES_KEY, [])
+
     with st.container(border=True):
-        index = select_index(strings, list(context.list_indexes()), key="semantic_search_index")
+        index = select_index(strings, indexes, key=_INDEX_KEY)
         if index is not None:
             render_index_metadata(strings, index)
-
-    # Move the search options into the form so they're rendered just above
-    # the submit button and included in the form state on submit.
 
     with st.form("semantic_search_form", enter_to_submit=True, border=True):
         query_col, top_n_col = st.columns([0.8, 0.2])
@@ -69,16 +122,17 @@ def render_page(context: RagPageContext) -> None:
                 strings["SEARCH_QUERY_LABEL"],
                 placeholder=strings["SEARCH_QUERY_PLACEHOLDER"],
                 disabled=index is None,
+                key=_QUERY_KEY,
             )
         with top_n_col:
             top_n = st.number_input(
                 strings["SEARCH_TOP_N_LABEL"],
                 min_value=1,
                 max_value=20,
-                value=_DEFAULT_TOP_N,
                 step=1,
                 help=strings["SEARCH_TOP_N_HELP"],
                 disabled=index is None,
+                key=_TOP_N_KEY,
             )
 
         # Place the collapsible search options inside the form so they
@@ -91,7 +145,6 @@ def render_page(context: RagPageContext) -> None:
                 search_mode = st.segmented_control(
                     strings["SEARCH_MODE_LABEL"],
                     options=_SEARCH_MODES,
-                    default=_DEFAULT_MODE if _DEFAULT_MODE in _SEARCH_MODES else _DEFAULT_SEARCH_MODE,
                     format_func=lambda mode: (
                         strings["SEARCH_MODE_MMR"]
                         if mode == "mmr"
@@ -99,7 +152,7 @@ def render_page(context: RagPageContext) -> None:
                     ),
                     help=strings["SEARCH_MODE_HELP"],
                     disabled=index is None,
-                    key="semantic_search_mode",
+                    key=_MODE_KEY,
                 )
             mmr_enabled = mmr_controls_enabled(search_mode or _DEFAULT_SEARCH_MODE)
             with diversity_col:
@@ -107,38 +160,40 @@ def render_page(context: RagPageContext) -> None:
                     strings["SEARCH_MMR_LAMBDA_LABEL"],
                     min_value=0.0,
                     max_value=1.0,
-                    value=_DEFAULT_MMR_LAMBDA,
                     step=0.05,
                     help=strings["SEARCH_MMR_LAMBDA_HELP"],
                     disabled=index is None or not mmr_enabled,
+                    key=_MMR_LAMBDA_KEY,
                 )
             with pool_col:
                 fetch_k = st.number_input(
                     strings["SEARCH_FETCH_K_LABEL"],
                     min_value=1,
                     max_value=200,
-                    value=_DEFAULT_FETCH_K,
                     step=5,
                     help=strings["SEARCH_FETCH_K_HELP"],
                     disabled=index is None or not mmr_enabled,
+                    key=_FETCH_K_KEY,
                 )
             min_score_percent = st.slider(
                 strings["SEARCH_MIN_SCORE_LABEL"],
                 min_value=0,
                 max_value=100,
-                value=_DEFAULT_MIN_SCORE_PERCENT,
                 step=5,
                 format="%d%%",
                 help=strings["SEARCH_MIN_SCORE_HELP"],
                 disabled=index is None,
+                key=_MIN_SCORE_KEY,
             )
             source_options = list(index.manifest.indexed_sources) if index is not None else []
+            _prune_stale_sources(source_options)
             selected_sources = st.multiselect(
                 strings["SEARCH_SOURCE_FILTER_LABEL"],
                 options=source_options,
                 help=strings["SEARCH_SOURCE_FILTER_HELP"],
                 placeholder=strings["SEARCH_SOURCE_FILTER_PLACEHOLDER"],
                 disabled=index is None or not source_options,
+                key=_SOURCES_KEY,
             )
 
         submitted = st.form_submit_button(
@@ -148,21 +203,171 @@ def render_page(context: RagPageContext) -> None:
             disabled=index is None,
         )
 
-    if submitted and index is not None and query.strip():
-        config = RagConfig(
-            top_k=int(top_n),
-            score_threshold=min_score_percent / 100,
-            search_type=search_mode or _DEFAULT_SEARCH_MODE,
-            fetch_k=int(fetch_k),
-            lambda_mult=float(mmr_lambda),
-            source_filter=tuple(selected_sources),
+    # Resolve the search to run: a history replay takes precedence over a submit.
+    request: tuple[IndexRef, str, RagConfig] | None = None
+    replay_execute = st.session_state.pop(_REPLAY_EXECUTE_KEY, None)
+    if replay_execute is not None:
+        ref = _find_index(
+            indexes,
+            str(replay_execute.get("index_folder", "")),
+            str(replay_execute.get("index_run", "")),
         )
+        if ref is None:
+            st.warning(strings["SEARCH_HISTORY_INDEX_GONE"])
+        else:
+            request = (
+                ref,
+                str(replay_execute.get("query", "")),
+                _config_from_record(replay_execute),
+            )
+    elif submitted and index is not None and query.strip():
+        request = (
+            index,
+            query.strip(),
+            RagConfig(
+                top_k=int(top_n),
+                score_threshold=min_score_percent / 100,
+                search_type=search_mode or _DEFAULT_SEARCH_MODE,
+                fetch_k=int(fetch_k),
+                lambda_mult=float(mmr_lambda),
+                source_filter=tuple(selected_sources),
+            ),
+        )
+
+    if request is not None:
+        ref, query_text, config = request
         with st.spinner(strings["SEARCH_SEARCHING"]):
-            result = retrieve(index.run_dir, query.strip(), config)
+            result = retrieve(ref.run_dir, query_text, config)
         render_messages(strings, result.warnings, result.errors)
+        scores = [chunk.score for chunk in result.chunks]
+        append_search_record(
+            session_root,
+            SearchRecord(
+                timestamp_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                index_folder=ref.vector_folder,
+                index_run=ref.run_name,
+                embedding_model=ref.manifest.embedding_model_used or "",
+                query=query_text,
+                search_type=config.search_type,
+                top_k=config.top_k,
+                fetch_k=config.fetch_k,
+                mmr_lambda=config.lambda_mult,
+                score_threshold=config.score_threshold,
+                source_filter=tuple(config.source_filter),
+                result_count=len(result.chunks),
+                top_score=max(scores) if scores else None,
+            ),
+        )
         if result.chunks:
             render_ranked_results(strings, result.chunks, default_tab=_DEFAULT_RESULT_TAB)
         elif not result.errors:
             st.info(strings["SEARCH_NO_RESULTS"])
 
+    _render_search_history(strings, session_root)
+
     context.render_downloads()
+
+
+def _apply_replay_widget_state(strings: Strings, indexes: Sequence[IndexRef], replay: dict) -> None:
+    """Pre-fill the search widgets from a stored history record before they render."""
+    st.session_state[_QUERY_KEY] = str(replay.get("query", ""))
+    st.session_state[_TOP_N_KEY] = int(replay.get("top_k", _DEFAULT_TOP_N))
+    st.session_state[_MODE_KEY] = str(replay.get("search_type", _DEFAULT_SEARCH_MODE))
+    st.session_state[_MMR_LAMBDA_KEY] = float(replay.get("mmr_lambda", _DEFAULT_MMR_LAMBDA))
+    st.session_state[_FETCH_K_KEY] = int(replay.get("fetch_k", _DEFAULT_FETCH_K))
+    st.session_state[_MIN_SCORE_KEY] = round(float(replay.get("score_threshold", 0.0)) * 100)
+    ref = _find_index(
+        indexes, str(replay.get("index_folder", "")), str(replay.get("index_run", ""))
+    )
+    if ref is not None:
+        st.session_state[_INDEX_KEY] = index_option_label(strings, ref)
+        st.session_state[_SOURCES_KEY] = [
+            str(source) for source in replay.get("source_filter", []) or []
+        ]
+
+
+def _prune_stale_sources(source_options: list[str]) -> None:
+    """Drop any selected source no longer offered by the current index.
+
+    The multiselect is keyed so a replay can pre-fill it; without this guard,
+    switching to an index with different sources would raise on a stale value.
+    """
+    selected = st.session_state.get(_SOURCES_KEY)
+    if selected:
+        st.session_state[_SOURCES_KEY] = [source for source in selected if source in source_options]
+
+
+def _find_index(indexes: Sequence[IndexRef], folder: str, run: str) -> IndexRef | None:
+    return next(
+        (ref for ref in indexes if ref.vector_folder == folder and ref.run_name == run), None
+    )
+
+
+def _config_from_record(record: dict) -> RagConfig:
+    return RagConfig(
+        top_k=int(record.get("top_k", _DEFAULT_TOP_N)),
+        score_threshold=float(record.get("score_threshold", 0.0)),
+        search_type=str(record.get("search_type", _DEFAULT_SEARCH_MODE)),
+        fetch_k=int(record.get("fetch_k", _DEFAULT_FETCH_K)),
+        lambda_mult=float(record.get("mmr_lambda", _DEFAULT_MMR_LAMBDA)),
+        source_filter=tuple(str(source) for source in record.get("source_filter", []) or []),
+    )
+
+
+def _options_summary(strings: Strings, record: SearchRecord) -> str:
+    """Build a compact one-line summary of a record's search options."""
+    mode_label = (
+        strings["SEARCH_MODE_MMR"]
+        if record.search_type == "mmr"
+        else strings["SEARCH_MODE_SIMILARITY"]
+    )
+    parts = [
+        mode_label,
+        strings["SEARCH_HISTORY_OPT_TOP"].format(n=record.top_k),
+        strings["SEARCH_HISTORY_OPT_MIN"].format(n=round(record.score_threshold * 100)),
+    ]
+    if record.search_type == "mmr":
+        parts.append(
+            strings["SEARCH_HISTORY_OPT_DIVERSITY"].format(value=f"{record.mmr_lambda:.2f}")
+        )
+        parts.append(strings["SEARCH_HISTORY_OPT_POOL"].format(n=record.fetch_k))
+    if record.source_filter:
+        parts.append(strings["SEARCH_HISTORY_OPT_SOURCES"].format(n=len(record.source_filter)))
+    return " · ".join(parts)
+
+
+def _local_time_label(timestamp_utc: str) -> str:
+    """Convert a stored UTC timestamp to the app's local-time display label."""
+    try:
+        parsed = datetime.fromisoformat(timestamp_utc)
+    except ValueError:
+        return timestamp_utc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return format_local_datetime(parsed)
+
+
+def _render_search_history(strings: Strings, session_root: Path) -> None:
+    """Render the collapsible search-history table with a per-row replay button."""
+    records = load_search_history(session_root)
+    with st.expander(strings["SEARCH_HISTORY_EXPANDER"], expanded=False):
+        if not records:
+            st.caption(strings["SEARCH_HISTORY_EMPTY"])
+            return
+        header = st.columns(_HISTORY_COLUMN_WEIGHTS, vertical_alignment="center")
+        for col, key in zip(header, _HISTORY_COLUMN_KEYS, strict=True):
+            col.markdown(f"**{strings[key]}**")
+        for position, record in enumerate(records):
+            row = st.columns(_HISTORY_COLUMN_WEIGHTS, vertical_alignment="center")
+            row[0].caption(_local_time_label(record.timestamp_utc))
+            row[1].caption(f"{record.index_folder} / {record.index_run}")
+            row[2].write(record.query)
+            row[3].caption(_options_summary(strings, record))
+            row[4].write(str(record.result_count))
+            if row[5].button(
+                ":material/search:",
+                key=f"search_history_replay_{position}",
+                help=strings["SEARCH_HISTORY_REPLAY_HELP"],
+            ):
+                st.session_state[_REPLAY_KEY] = asdict(record)
+                st.rerun()

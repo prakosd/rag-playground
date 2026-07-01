@@ -4,6 +4,7 @@ from crawl4md_streamlit.i18n import (
     CATALOG,
     STRINGS_EN,
     STRINGS_ID,
+    Strings,
     get_strings,
     localize_message,
 )
@@ -29,6 +30,12 @@ def test_get_strings_unknown_falls_back_to_english() -> None:
 
 def test_catalogs_have_identical_keys() -> None:
     assert STRINGS_EN.keys() == STRINGS_ID.keys()
+
+
+def test_catalog_keys_match_strings_type() -> None:
+    expected = set(Strings.__annotations__)
+    assert set(STRINGS_EN) == expected
+    assert set(STRINGS_ID) == expected
 
 
 def test_no_empty_values() -> None:
