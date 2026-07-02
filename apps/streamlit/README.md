@@ -36,8 +36,9 @@ flowchart TD
 | `vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl_jobs.py`) |
 | `index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
 | `llm_form_ui.py` | Steps 4-5 chat-model selector + pure option/label helpers |
-| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, index metadata, ranked result cards, sources, messages) |
-| `generated_files.py` | Output listing, previews, downloads, and per-file deletion |
+| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, index metadata, collapsible ranked-results panel, sources, messages) |
+| `focus.py` | One-shot client-side focus helper (`focus_widget`) that focuses a keyed input after a rerun |
+| `generated_files.py` | Output listing, previews, downloads (labels include human-readable file sizes), and per-file deletion |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
 | `support.py` | Compatibility exports for the split helper modules |
@@ -107,7 +108,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid, a Search-options expander above the query form (mode similarity/MMR with Diversity + Candidate pool grouped beside it and disabled unless Diverse, min-similarity, source filter), query with a top-N input, ranked result cards (id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs), a **Search history** expander (per-session log with per-row replay), and Output Files (`rag_engine.retrieve`) |
+| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid (Created shown in local time), a Search-options expander above the query form (mode similarity/MMR with Diversity + Candidate pool grouped beside it and disabled unless Diverse, min-similarity, source filter), query with a top-N input, a collapsible **Search results** panel (id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs; persists across reruns, opens on a new search), a **Search history** card list (per-session log; per-card replay restores query + options + Vector DB and focuses the query), and Output Files (`rag_engine.retrieve`) |
 | `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
@@ -441,9 +442,10 @@ flowchart TD
 | --- | --- |
 | `tests/test_controls.py` | Every `job_state` value → correct buttons (label, disabled, type) |
 | `tests/test_form_defaults.py` | Default crawl form payload and independent dict creation |
-| `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads, plus file and folder deletion with empty-parent pruning and path containment |
+| `tests/test_generated_files.py` | Pure generated-file tree building for nested downloads, human-readable file-size formatting, plus file and folder deletion with empty-parent pruning and path containment |
 | `tests/test_dialog_ui.py` | Pure confirm-dialog CSS builder (scoped keys, green keep / red right-docked confirm) shared by every confirmation dialog |
 | `tests/test_rag_ui.py` | Pure Steps 3-5 render helpers: ranked-result detail caption (chunk id / size / language), index-metadata rows (including `created_at` formatting), and Raw/Preview tab ordering |
+| `tests/test_focus.py` | Client-side focus helper builds the correct `st-key-<key>` selector at zero height |
 | `tests/test_progress_chart.py` | Pure chart helper behavior: live sample append, persisted JSONL parsing, cumulative/pace row derivation |
 | `tests/test_pages.py` | Pure page-registry behavior for workflow ordering, placeholders, translated navigation labels, and importable page modules |
 | `tests/test_support.py` | ID safety, browser session records, path helpers, file listing, session cleanup, progress, job start/stop with a fake `SiteCrawler` |

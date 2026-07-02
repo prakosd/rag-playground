@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from rag_engine import RetrievedChunk
 from vector_indexer import IndexManifest
 
+from crawl4md_streamlit.generated_files import format_local_datetime
 from crawl4md_streamlit.i18n import STRINGS_EN
 from crawl4md_streamlit.rag_ui import (
     format_score_percent,
@@ -88,4 +91,5 @@ def test_index_metadata_rows_include_key_manifest_fields() -> None:
     assert rows[STRINGS_EN["SEARCH_META_LANGUAGE"]] == "english"
     assert rows[STRINGS_EN["SEARCH_META_OVERLAP"]] == "100"
     assert rows[STRINGS_EN["SEARCH_META_COLLECTION"]] == "crawl4md_documents"
-    assert "2026-06-22 10:30 UTC" in rows[STRINGS_EN["SEARCH_META_CREATED"]]
+    expected_created = format_local_datetime(datetime(2026, 6, 22, 10, 30, tzinfo=timezone.utc))
+    assert rows[STRINGS_EN["SEARCH_META_CREATED"]] == expected_created

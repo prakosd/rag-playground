@@ -73,7 +73,7 @@ class Strings(TypedDict):
     SEARCH_QUERY_PLACEHOLDER: str
     SEARCH_BUTTON: str
     SEARCH_SEARCHING: str
-    SEARCH_RESULTS_HEADER: str
+    SEARCH_RESULTS_EXPANDER: str  # template: {count}
     SEARCH_NO_RESULTS: str
     SEARCH_META_HEADER: str
     SEARCH_META_CREATED: str
@@ -102,7 +102,6 @@ class Strings(TypedDict):
     SEARCH_SOURCE_FILTER_LABEL: str
     SEARCH_SOURCE_FILTER_HELP: str
     SEARCH_SOURCE_FILTER_PLACEHOLDER: str
-    SEARCH_RESULTS_SUMMARY: str  # template: {count}
     SEARCH_RESULT_HEADER: str  # template: {rank}, {source}
     SEARCH_RESULT_SIMILARITY: str
     SEARCH_RESULT_TAB_PREVIEW: str
@@ -112,12 +111,10 @@ class Strings(TypedDict):
     SEARCH_RESULT_LANGUAGE: str  # template: {language}
     SEARCH_HISTORY_EXPANDER: str
     SEARCH_HISTORY_EMPTY: str
-    SEARCH_HISTORY_COL_TIME: str
-    SEARCH_HISTORY_COL_INDEX: str
-    SEARCH_HISTORY_COL_QUERY: str
-    SEARCH_HISTORY_COL_OPTIONS: str
-    SEARCH_HISTORY_COL_RESULTS: str
-    SEARCH_HISTORY_COL_ACTION: str
+    SEARCH_HISTORY_RESULT_COUNT: str  # template: {n}
+    SEARCH_HISTORY_DETAIL_CHUNKS: str  # template: {n}
+    SEARCH_HISTORY_DETAIL_DIM: str  # template: {n}
+    SEARCH_HISTORY_DETAIL_CHUNKING: str  # template: {size}, {overlap}
     SEARCH_HISTORY_REPLAY_HELP: str
     SEARCH_HISTORY_INDEX_GONE: str
     SEARCH_HISTORY_OPT_TOP: str  # template: {n}

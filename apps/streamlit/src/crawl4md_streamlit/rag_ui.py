@@ -19,6 +19,7 @@ from artifact_store import LibraryMessage
 from rag_engine import ChatTurn, RetrievedChunk
 from vector_indexer import IndexManifest
 
+from crawl4md_streamlit.generated_files import format_local_datetime
 from crawl4md_streamlit.i18n import Strings, localize_message
 from crawl4md_streamlit.index_catalog import IndexRef
 
@@ -149,14 +150,20 @@ def _value_or_dash(value: object) -> str:
 
 
 def _format_created_at(created_at: str | None) -> str:
-    """Format an ISO-8601 manifest timestamp as a compact ``YYYY-MM-DD HH:MM UTC``."""
+    """Format an ISO-8601 manifest timestamp as a local-time label.
+
+    Reuses ``generated_files.format_local_datetime`` so the index's Created value
+    reads in the same local time as the Search history and Output Files sections.
+    """
     if not created_at:
         return "—"
     try:
         parsed = datetime.fromisoformat(created_at)
     except ValueError:
         return created_at
-    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return format_local_datetime(parsed)
 
 
 def result_detail_caption(strings: Strings, chunk: RetrievedChunk) -> str:
@@ -199,55 +206,57 @@ def ordered_result_tabs(default_tab: str) -> tuple[str, str]:
 
 
 def render_ranked_results(
-    strings: Strings, chunks: Sequence[RetrievedChunk], *, default_tab: str = _RESULT_TAB_RAW
+    strings: Strings,
+    chunks: Sequence[RetrievedChunk],
+    *,
+    default_tab: str = _RESULT_TAB_RAW,
+    expanded: bool = False,
 ) -> None:
-    """Render search hits as ranked cards.
+    """Render search hits as ranked cards inside a collapsible panel.
 
-    Each card shows a source + similarity header row with the chunk's id, size,
-    and language beneath the title, then the chunk text in Raw/Preview tabs (each
+    The panel is titled with the match count and starts collapsed; callers pass
+    ``expanded=True`` right after a search so fresh results open at once. Each
+    card shows a source + similarity header row with the chunk's id, size, and
+    language beneath the title, then the chunk text in Raw/Preview tabs (each
     wrapped in its own card). The configured *default_tab* is shown first.
     """
     ranked = sort_results_by_score(chunks)
     if not ranked:
         return
     st.markdown(_RESULT_CARD_CSS, unsafe_allow_html=True)
-    st.markdown(
-        f"**{strings['SEARCH_RESULTS_HEADER']}**  \n"
-        f'<span style="opacity:0.6;font-size:0.875rem">'
-        f"{strings['SEARCH_RESULTS_SUMMARY'].format(count=len(ranked))}</span>",
-        unsafe_allow_html=True,
-    )
     tab_order = ordered_result_tabs(default_tab)
     tab_labels = {
         _RESULT_TAB_RAW: strings["SEARCH_RESULT_TAB_RAW"],
         _RESULT_TAB_PREVIEW: strings["SEARCH_RESULT_TAB_PREVIEW"],
     }
-    for rank, chunk in enumerate(ranked, start=1):
-        with st.container(border=True):
-            title_col, score_col = st.columns([0.7, 0.3], vertical_alignment="center")
-            title_col.markdown(
-                f'<h4 style="margin:0;padding:0">'
-                f"{html.escape(strings['SEARCH_RESULT_HEADER'].format(rank=rank, source=chunk.source or '?'))}"
-                "</h4>",
-                unsafe_allow_html=True,
-            )
-            title_col.markdown(
-                f'<p style="opacity:0.6;font-size:0.875rem;margin:0;margin-bottom:0">'
-                f"{html.escape(result_detail_caption(strings, chunk))}</p>",
-                unsafe_allow_html=True,
-            )
-            score_col.markdown(
-                f'<h4 style="text-align:right;margin:0">'
-                f"{strings['SEARCH_RESULT_SIMILARITY']} {format_score_percent(chunk.score)}%</h4>",
-                unsafe_allow_html=True,
-            )
-            tabs = st.tabs([tab_labels[key] for key in tab_order])
-            for key, tab in zip(tab_order, tabs, strict=True):
-                with tab, st.container(border=True):
-                    if key == _RESULT_TAB_RAW:
-                        st.code(chunk.text, language="markdown", wrap_lines=True)
-                    else:
-                        st.markdown(chunk.text)
+    label = strings["SEARCH_RESULTS_EXPANDER"].format(count=len(ranked))
+    with st.expander(label, expanded=expanded):
+        for rank, chunk in enumerate(ranked, start=1):
+            with st.container(border=True):
+                title_col, score_col = st.columns([0.7, 0.3], vertical_alignment="center")
+                title_col.markdown(
+                    f'<h4 style="margin:0;padding:0">'
+                    f"{html.escape(strings['SEARCH_RESULT_HEADER'].format(rank=rank, source=chunk.source or '?'))}"
+                    "</h4>",
+                    unsafe_allow_html=True,
+                )
+                title_col.markdown(
+                    f'<p style="opacity:0.6;font-size:0.875rem;margin:0;margin-bottom:0">'
+                    f"{html.escape(result_detail_caption(strings, chunk))}</p>",
+                    unsafe_allow_html=True,
+                )
+                score_col.markdown(
+                    f'<h4 style="text-align:right;margin:0">'
+                    f"{strings['SEARCH_RESULT_SIMILARITY']} {format_score_percent(chunk.score)}%</h4>",
+                    unsafe_allow_html=True,
+                )
+                tabs = st.tabs([tab_labels[key] for key in tab_order])
+                for key, tab in zip(tab_order, tabs, strict=True):
+                    with tab, st.container(border=True):
+                        if key == _RESULT_TAB_RAW:
+                            st.code(chunk.text, language="markdown", wrap_lines=True)
+                        else:
+                            st.markdown(chunk.text)
 
 
 def render_messages(

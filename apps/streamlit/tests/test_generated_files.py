@@ -22,6 +22,7 @@ from crawl4md_streamlit.generated_files import (
     find_latest_crawl_dir,
     find_ready_download_in_session,
     folder_zip_cache_token,
+    format_file_size,
     format_run_timestamp_label,
     generated_file_sort_key,
     generated_files_cache_token,
@@ -205,6 +206,20 @@ def test_format_run_timestamp_label_prefers_progress_history_timestamp(tmp_path:
 
 def test_generated_files_cache_token_handles_missing_path(tmp_path: Path) -> None:
     assert generated_files_cache_token(tmp_path / "missing") == (0.0, 0)
+
+
+@pytest.mark.parametrize(
+    ("size_bytes", "expected"),
+    [
+        (410, "0.4 KB"),
+        (0, "0.0 KB"),
+        (1024, "1.0 KB"),
+        (int(5.9 * 1024 * 1024), "5.9 MB"),
+        (2 * 1024 * 1024 * 1024, "2.0 GB"),
+    ],
+)
+def test_format_file_size_picks_readable_unit(size_bytes: int, expected: str) -> None:
+    assert format_file_size(size_bytes) == expected
 
 
 def test_generated_files_cache_token_reflects_path_stat(tmp_path: Path) -> None:

@@ -10,6 +10,7 @@ from pathlib import Path
 import streamlit as st
 from rag_engine import RagConfig, retrieve
 
+from crawl4md_streamlit.focus import focus_widget
 from crawl4md_streamlit.generated_files import format_local_datetime
 from crawl4md_streamlit.i18n import Strings, get_strings
 from crawl4md_streamlit.index_catalog import IndexRef
@@ -52,15 +53,12 @@ _SOURCES_KEY = "semantic_search_sources"
 _INDEX_KEY = "semantic_search_index"
 _REPLAY_KEY = "semantic_search_replay"
 _REPLAY_EXECUTE_KEY = "semantic_search_replay_execute"
-_HISTORY_COLUMN_WEIGHTS = (0.18, 0.2, 0.22, 0.24, 0.08, 0.08)
-_HISTORY_COLUMN_KEYS = (
-    "SEARCH_HISTORY_COL_TIME",
-    "SEARCH_HISTORY_COL_INDEX",
-    "SEARCH_HISTORY_COL_QUERY",
-    "SEARCH_HISTORY_COL_OPTIONS",
-    "SEARCH_HISTORY_COL_RESULTS",
-    "SEARCH_HISTORY_COL_ACTION",
-)
+# The last search's hits persist here so the results panel survives reruns; the
+# expand flag is a one-shot that opens the panel only right after a fresh search.
+_RESULTS_KEY = "semantic_search_results"
+_RESULTS_EXPAND_KEY = "semantic_search_results_expanded"
+# One-shot flag: a history replay sets it so focus moves to the query field.
+_FOCUS_QUERY_KEY = "semantic_search_focus_query"
 
 # Pin the Search-mode segmented control to its natural width so the row's three
 # controls stay evenly spaced (Diversity / Candidate pool absorb the slack)
@@ -203,6 +201,11 @@ def render_page(context: RagPageContext) -> None:
             disabled=index is None,
         )
 
+    # A history replay pre-fills the query across the rerun; move focus there so
+    # the user can edit and re-run it straight away.
+    if st.session_state.pop(_FOCUS_QUERY_KEY, False):
+        focus_widget(_QUERY_KEY)
+
     # Resolve the search to run: a history replay takes precedence over a submit.
     request: tuple[IndexRef, str, RagConfig] | None = None
     replay_execute = st.session_state.pop(_REPLAY_EXECUTE_KEY, None)
@@ -258,12 +261,23 @@ def render_page(context: RagPageContext) -> None:
                 top_score=max(scores) if scores else None,
             ),
         )
-        if result.chunks:
-            render_ranked_results(strings, result.chunks, default_tab=_DEFAULT_RESULT_TAB)
-        elif not result.errors:
+        # Persist the hits so the results panel survives later reruns; only a
+        # fresh search opens it — it stays collapsed on reload and other reruns.
+        st.session_state[_RESULTS_KEY] = list(result.chunks)
+        st.session_state[_RESULTS_EXPAND_KEY] = True
+        if not result.chunks and not result.errors:
             st.info(strings["SEARCH_NO_RESULTS"])
 
-    _render_search_history(strings, session_root)
+    stored_chunks = st.session_state.get(_RESULTS_KEY)
+    if stored_chunks:
+        render_ranked_results(
+            strings,
+            stored_chunks,
+            default_tab=_DEFAULT_RESULT_TAB,
+            expanded=st.session_state.pop(_RESULTS_EXPAND_KEY, False),
+        )
+
+    _render_search_history(strings, session_root, indexes)
 
     context.render_downloads()
 
@@ -347,27 +361,62 @@ def _local_time_label(timestamp_utc: str) -> str:
     return format_local_datetime(parsed)
 
 
-def _render_search_history(strings: Strings, session_root: Path) -> None:
-    """Render the collapsible search-history table with a per-row replay button."""
+def _index_details_caption(strings: Strings, record: SearchRecord, ref: IndexRef | None) -> str:
+    """One-line index details, enriched from the live manifest when it still exists.
+
+    Falls back to the model name stored on the record when the index is gone.
+    """
+    if ref is None:
+        return record.embedding_model or "—"
+    manifest = ref.manifest
+    parts = [manifest.embedding_model_used or record.embedding_model or "—"]
+    parts.append(strings["SEARCH_HISTORY_DETAIL_CHUNKS"].format(n=manifest.indexed_chunk_count))
+    if manifest.embedding_dimension is not None:
+        parts.append(strings["SEARCH_HISTORY_DETAIL_DIM"].format(n=manifest.embedding_dimension))
+    if manifest.language:
+        parts.append(manifest.language)
+    parts.append(
+        strings["SEARCH_HISTORY_DETAIL_CHUNKING"].format(
+            size=manifest.chunk_size, overlap=manifest.chunk_overlap
+        )
+    )
+    return " · ".join(parts)
+
+
+def _render_search_history(
+    strings: Strings, session_root: Path, indexes: Sequence[IndexRef]
+) -> None:
+    """Render the collapsible search history as a tidy card list.
+
+    Each card leads with the query, then muted lines for the time + result count,
+    the source index + search options, and the index details (enriched from the
+    live manifest when the index still exists). A replay button re-runs it.
+    """
     records = load_search_history(session_root)
     with st.expander(strings["SEARCH_HISTORY_EXPANDER"], expanded=False):
         if not records:
             st.caption(strings["SEARCH_HISTORY_EMPTY"])
             return
-        header = st.columns(_HISTORY_COLUMN_WEIGHTS, vertical_alignment="center")
-        for col, key in zip(header, _HISTORY_COLUMN_KEYS, strict=True):
-            col.markdown(f"**{strings[key]}**")
         for position, record in enumerate(records):
-            row = st.columns(_HISTORY_COLUMN_WEIGHTS, vertical_alignment="center")
-            row[0].caption(_local_time_label(record.timestamp_utc))
-            row[1].caption(f"{record.index_folder} / {record.index_run}")
-            row[2].write(record.query)
-            row[3].caption(_options_summary(strings, record))
-            row[4].write(str(record.result_count))
-            if row[5].button(
-                ":material/search:",
-                key=f"search_history_replay_{position}",
-                help=strings["SEARCH_HISTORY_REPLAY_HELP"],
-            ):
-                st.session_state[_REPLAY_KEY] = asdict(record)
-                st.rerun()
+            ref = _find_index(indexes, record.index_folder, record.index_run)
+            with st.container(border=True):
+                head, action = st.columns([0.85, 0.15], vertical_alignment="center")
+                head.markdown(f"**{record.query}**")
+                with action, st.container(horizontal_alignment="right"):
+                    if st.button(
+                        ":material/replay:",
+                        key=f"search_history_replay_{position}",
+                        help=strings["SEARCH_HISTORY_REPLAY_HELP"],
+                    ):
+                        st.session_state[_REPLAY_KEY] = asdict(record)
+                        st.session_state[_FOCUS_QUERY_KEY] = True
+                        st.rerun()
+                st.caption(
+                    f"{_local_time_label(record.timestamp_utc)} · "
+                    f"{strings['SEARCH_HISTORY_RESULT_COUNT'].format(n=record.result_count)}"
+                )
+                st.caption(
+                    f"{record.index_folder} / {record.index_run} · "
+                    f"{_options_summary(strings, record)}"
+                )
+                st.caption(_index_details_caption(strings, record, ref))

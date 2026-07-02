@@ -768,7 +768,7 @@ class SiteCrawler:
                         round_dir=round_dir,
                         prior_success=0,
                         prior_fail=0,
-                        round_label="First pass" if total_rounds > 1 else "",
+                        round_label="Initial crawl" if total_rounds > 1 else "",
                         all_generated=all_generated,
                         url_depths=url_depths,
                         round_num=1,

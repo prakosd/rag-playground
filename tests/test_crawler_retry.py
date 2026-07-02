@@ -62,6 +62,11 @@ class TestRetryRounds:
         # All pages should succeed after retry
         success = [r for r in results if r.success]
         assert len(success) == 2
+        # The initial crawl round is labelled in plain words in the activity log.
+        activity_log = (crawler.output_dir / "logs" / "activity_log.txt").read_text(
+            encoding="utf-8"
+        )
+        assert "[Initial crawl]" in activity_log
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_skips_retries_when_all_succeed(self, mock_crawler_cls, tmp_path: Path):

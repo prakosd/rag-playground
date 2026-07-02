@@ -51,6 +51,9 @@ _FOLDER_ICON_VECTOR = ":material/database:"
 _FOLDER_ICON_SEARCH = ":material/search:"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
+_BYTES_PER_KB = 1024
+_BYTES_PER_MB = 1024 * 1024
+_BYTES_PER_GB = 1024 * 1024 * 1024
 _HIDDEN_FILE_PREFIX = "."
 _FINAL_DIR_NAME = "final"
 _LOGS_DIR_NAME = "logs"
@@ -547,6 +550,19 @@ def format_run_timestamp_label(
     if timestamp is None:
         return folder_name
     return f"{folder_name} ({_format_local_timestamp(timestamp, local_timezone=local_timezone)})"
+
+
+def format_file_size(size_bytes: int) -> str:
+    """Return a compact human-readable file size like '5.9 MB' or '0.4 KB'.
+
+    Sub-megabyte files read in KB and larger ones in MB/GB (one decimal) so the
+    download tree stays scannable; sizes never fall back to raw bytes.
+    """
+    if size_bytes >= _BYTES_PER_GB:
+        return f"{size_bytes / _BYTES_PER_GB:.1f} GB"
+    if size_bytes >= _BYTES_PER_MB:
+        return f"{size_bytes / _BYTES_PER_MB:.1f} MB"
+    return f"{size_bytes / _BYTES_PER_KB:.1f} KB"
 
 
 def format_local_datetime(value: datetime, *, local_timezone: tzinfo | None = None) -> str:

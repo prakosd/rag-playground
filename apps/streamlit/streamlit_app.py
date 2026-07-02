@@ -40,6 +40,7 @@ from streamlit.components.v2 import component as component_v2
 from vector_indexer import IndexingConfig
 
 from crawl4md_streamlit.dialog_ui import render_confirm_dialog
+from crawl4md_streamlit.focus import focus_widget
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
@@ -49,6 +50,7 @@ from crawl4md_streamlit.generated_files import (
     download_folder_icon,
     download_tree_entry_sort_key,
     folder_zip_cache_token,
+    format_file_size,
     generated_files_cache_token,
     import_signed_zip,
     import_target_name,
@@ -1212,6 +1214,8 @@ def _load_session_dialog() -> None:
         key="load_session_id_input",
         on_change=_on_input_commit,
     )
+    if st.session_state.pop("_focus_session_id", False):
+        focus_widget("load_session_id_input")
     error_slot = st.empty()
     cancel_col, _, load_col = st.columns([2, 5, 3])
     with cancel_col:
@@ -2479,9 +2483,10 @@ def render_generated_file_download(file: GeneratedFile) -> None:
         gap="xxsmall",
     ):
         _render_file_preview_button(file)
+        size_label = format_file_size(current_size)
         if not file.download_allowed or current_size > _DOWNLOAD_LIMIT_BYTES:
             st.button(
-                label=f"📄 {file.name}",
+                label=f"📄 {file.name} • {size_label}",
                 disabled=True,
                 help=strings["FILES_DOWNLOAD_TOO_LARGE"].format(file=file.name),
                 key=f"download_blocked_{st.session_state.session_id}_{file.relative_path}",
@@ -2491,7 +2496,7 @@ def render_generated_file_download(file: GeneratedFile) -> None:
             with file.path.open("rb") as file_obj:
                 file_bytes = file_obj.read()
             st.download_button(
-                label=f"📄 {file.name}",
+                label=f"📄 {file.name} • {size_label}",
                 data=file_bytes,
                 file_name=file.name,
                 mime=mime_type,
@@ -2999,6 +3004,7 @@ def _render_session_controls(
                     disabled=fields_disabled,
                 ):
                     st.session_state.session_load_dialog_open = True
+                    st.session_state["_focus_session_id"] = True
                     st.rerun()
                 if st.button(
                     "",

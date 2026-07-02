@@ -161,6 +161,30 @@ For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWrit
 | RAG engine | [src/rag_engine/README.md](src/rag_engine/README.md) |
 | Streamlit app | [apps/streamlit/README.md](apps/streamlit/README.md) |
 
+## Acknowledgements
+
+[![Powered by Crawl4AI](https://img.shields.io/badge/Powered%20by-Crawl4AI-blue?style=flat-square)](https://github.com/unclecode/crawl4ai)
+
+Step 1 crawling is powered by [Crawl4AI](https://github.com/unclecode/crawl4ai), an
+open-source LLM-friendly web crawler and scraper by UncleCode, licensed under the
+[Apache License 2.0](https://github.com/unclecode/crawl4ai/blob/main/LICENSE).
+
+If you use this project in research, please also cite Crawl4AI:
+
+```bibtex
+@software{crawl4ai2024,
+  author = {UncleCode},
+  title = {Crawl4AI: Open-source LLM Friendly Web Crawler & Scraper},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub Repository},
+  howpublished = {\url{https://github.com/unclecode/crawl4ai}}
+}
+```
+
+> UncleCode. (2024). *Crawl4AI: Open-source LLM Friendly Web Crawler & Scraper*
+> [Computer software]. GitHub. https://github.com/unclecode/crawl4ai
+
 ## License
 
 MIT
