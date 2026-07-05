@@ -1,9 +1,10 @@
 # artifact_store
 
 Shared, UI-agnostic foundation for managing persisted project artifacts. It is the
-lowest layer in the repository: the `crawl4md` core library, the `vector_indexer`
-and `rag_engine` libraries, and the Streamlit app all build on it. It depends on the
-Python standard library only — no crawler, no UI, no third-party packages.
+shared foundation the `crawl4md` core library, the `vector_indexer` and `rag_engine`
+libraries, and the Streamlit app all build on. It depends on the Python standard
+library plus `log4py` (the zero-dependency logging base layer) only — no crawler,
+no UI, no third-party packages.
 
 ## Why it exists
 

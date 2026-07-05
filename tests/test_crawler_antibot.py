@@ -166,9 +166,7 @@ def test_paid_resource_rounds_both(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_paid_resource_rounds_proxy_on_initial(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(
-        monkeypatch, proxies=["http://p:8080"], proxy_on_initial=True
-    )
+    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], proxy_on_initial=True)
     # Proxy on the initial crawl (round 1) and the first retry (round 2).
     assert crawler._paid_resource_rounds() == (frozenset({1, 2}), None)
 

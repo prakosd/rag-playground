@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from artifact_store import get_logger
+from log4py import get_logger
 from rag_engine.models import RetrievedChunk
 
 __all__ = [

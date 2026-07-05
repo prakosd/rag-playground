@@ -16,8 +16,9 @@ from itertools import count
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from artifact_store import LibraryMessage, get_logger
+from artifact_store import LibraryMessage
 from artifact_store.naming import format_utc_timestamp_slug, parse_utc_timestamp_slug
+from log4py import get_logger
 from vector_indexer import messages
 from vector_indexer.chunking import chunk_documents
 from vector_indexer.config import IndexingConfig

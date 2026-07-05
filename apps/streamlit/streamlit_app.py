@@ -32,16 +32,16 @@ from typing import Any
 
 import altair as alt
 import streamlit as st
-from artifact_store import configure_logging, get_logger
 from artifact_store.archives import verify_zip_bytes
 from artifact_store.crawl_results import list_crawl_result_files
 from crawl4md.naming import crawl_folder_name
+from log4py import configure_logging, get_logger
 from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
 from vector_indexer import IndexingConfig
 
 from crawl4md_streamlit.dialog_ui import render_confirm_dialog
-from crawl4md_streamlit.focus import focus_widget
+from crawl4md_streamlit.focus import click_widget, focus_widget
 from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
 from crawl4md_streamlit.generated_files import (
     build_download_tree,
@@ -50,8 +50,6 @@ from crawl4md_streamlit.generated_files import (
     delete_generated_folder,
     download_folder_icon,
     download_tree_entry_sort_key,
-    folder_zip_cache_token,
-    folder_zip_needs_preparation,
     format_file_size,
     generated_files_cache_token,
     import_signed_zip,
@@ -61,6 +59,7 @@ from crawl4md_streamlit.generated_files import (
 )
 from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings, localize_message
 from crawl4md_streamlit.index_catalog import list_session_indexes
+from crawl4md_streamlit.log_context import get_log_session_id, set_log_session_id
 from crawl4md_streamlit.pages import (
     APP_PAGE_SPECS,
     DEFAULT_PAGE_ID,
@@ -128,7 +127,9 @@ from crawl4md_streamlit.support import (
 )
 from crawl4md_streamlit.vector_index_jobs import (
     VectorIndexJob,
+    active_vector_registry_session_ids,
     embedding_error_hint_key,
+    get_active_vector_job_snapshot,
     start_vector_index_job,
     vector_eta_seconds,
     vector_progress_fraction,
@@ -153,15 +154,41 @@ except ImportError:
 
 
 # Configure project-wide logging once per process, before any runtime work emits
-# records. Anchored to the app directory so the log file lands beside outputs/
-# regardless of the working directory.
+# records. Only the project's own top-level loggers are configured, keeping
+# third-party (chromadb, urllib3, playwright) noise out. The file destination is
+# routed per record to the active session's log (see _session_log_path), so each
+# session gets its own log under its folder; stderr stays global.
+_PROJECT_LOGGER_NAMES = (
+    "artifact_store",
+    "crawl4md",
+    "crawl4md_streamlit",
+    "rag_engine",
+    "vector_indexer",
+)
+
+
+def _session_log_path() -> Path | None:
+    """Route a log record to the active session's log file, or None before one.
+
+    Reads the session id from the per-thread log context (set by the main script
+    each run and by each background job in its own thread), so records route to
+    the right session's file even from crawl/index worker threads. Returns None
+    when no session is active yet, so startup logs go to stderr only.
+    """
+    session_id = get_log_session_id()
+    if not session_id:
+        return None
+    return session_dir(_SESSIONS_ROOT, session_id) / get_settings().log_file
+
+
 @st.cache_resource(show_spinner=False)
 def _configure_app_logging() -> bool:
     settings = get_settings()
-    log_file = Path(settings.log_file)
-    if not log_file.is_absolute():
-        log_file = _APP_DIR / log_file
-    configure_logging(level=settings.log_level, log_file=log_file)
+    configure_logging(
+        level=settings.log_level,
+        logger_names=_PROJECT_LOGGER_NAMES,
+        log_file_router=_session_log_path,
+    )
     return True
 
 
@@ -880,6 +907,7 @@ def _init_state() -> None:
     st.session_state.setdefault("activity_log_latest_line", None)
     st.session_state.setdefault("preview_file_relative_path", "")
     st.session_state.setdefault("delete_folder_relative_path", "")
+    st.session_state.setdefault("export_folder_relative_path", "")
     st.session_state.setdefault("form_defaults", default_form_values())
     st.session_state.setdefault("stop_confirmation_open", False)
     st.session_state.setdefault("vector_index_job", None)
@@ -966,18 +994,6 @@ def _cached_list_generated_files(
 @st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
 def _cached_download_tree(files: tuple[GeneratedFile, ...]) -> dict[str, Any]:
     return build_download_tree(list(files))
-
-
-@st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
-def _cached_folder_zip_bytes(
-    session_root: str,
-    relative_path: str,
-    cache_token: tuple[int, float, int],
-) -> bytes:
-    _ = cache_token  # Keeps token in st.cache_data's argument hash.
-    return build_folder_zip_bytes(
-        session_root, relative_path, signing_secret=get_settings().zip_signing_secret
-    )
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -1159,6 +1175,15 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
         st.session_state.prev_successful_pages = 0
         st.session_state.prev_failed_pages = 0
         st.session_state.prev_discovered_pages = 0
+        # Detach any vector-index job too, so the newly selected session reattaches
+        # its own active indexing run (if any) instead of showing a stale one.
+        st.session_state.vector_index_job = None
+        st.session_state.vector_index_id = ""
+        st.session_state.vector_index_state = _STATE_IDLE
+        st.session_state.vector_index_progress = {}
+        st.session_state.vector_index_stage = ""
+        st.session_state.vector_index_result = {}
+        st.session_state.vector_index_started_at = None
         # Persist the newly selected session id back to browser storage only on change.
         st.session_state.pending_selected_session_id = session_id
     st.session_state.session_id = session_id
@@ -1447,6 +1472,34 @@ def _reattach_selected_session_job() -> None:
         )
 
 
+def _reattach_selected_session_vector_job() -> None:
+    """Restore a running indexing job from the process-local registry after refresh.
+
+    Mirrors `_reattach_selected_session_job` for Step 2 so a second browser tab (or
+    a reloaded page) shows the in-progress indexing and keeps the form locked while
+    it runs. Does nothing if a vector job is already attached to this session.
+    """
+    if st.session_state.vector_index_job is not None:
+        return
+    session_id = st.session_state.session_id
+    if not session_id:
+        return
+    snapshot = get_active_vector_job_snapshot(session_id)
+    if snapshot is None:
+        return
+    st.session_state.vector_index_job = snapshot.job
+    st.session_state.vector_index_id = snapshot.vector_id
+    st.session_state.vector_index_state = snapshot.job_state
+    st.session_state.vector_index_started_at = snapshot.started_at
+    st.session_state.vector_index_progress = {}
+    st.session_state.vector_index_stage = ""
+    st.session_state.vector_index_result = {}
+    # Replay the latest event so the reattached page shows the current stage,
+    # chunk progress, or terminal result without waiting for the next emit.
+    if snapshot.latest_event:
+        _apply_vector_index_event(snapshot.latest_event)
+
+
 def _session_root(session_id: str | None = None) -> Path:
     current_session_id = session_id or st.session_state.session_id
     if not current_session_id:
@@ -1548,6 +1601,11 @@ def _list_session_indexes() -> list[Any]:
 
 
 def _start_vector_index_job(values: dict[str, Any]) -> None:
+    # Guard: if the registry already has an alive indexing job for this session
+    # (e.g. a second tab started one), reattach instead of launching a duplicate.
+    if get_active_vector_job_snapshot(st.session_state.session_id) is not None:
+        _reattach_selected_session_vector_job()
+        return st.rerun()
     try:
         config = IndexingConfig(
             chunk_size=values["chunk_size"],
@@ -2450,47 +2508,88 @@ def _render_file_preview_button(file: GeneratedFile) -> None:
 def _render_folder_zip_button(relative_path: str) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     folder_name = Path(relative_path).name
-    session_folder = _session_root()
-    token = folder_zip_cache_token(session_folder, relative_path)
-    # Building a folder zip reads and compresses every file in it, and
-    # st.download_button needs the bytes at render time. That is cheap for text
-    # crawl output but heavy for vector-index folders (hundreds of MB of Chroma
-    # data) — which would otherwise build and cache in memory on every tree
-    # render. Defer large folders behind an explicit "prepare" click so the tree
-    # stays fast and low-memory; small folders still export in one click.
-    zip_ready_key = f"zip_ready_{relative_path}"
-    if folder_zip_needs_preparation(token[2]) and not st.session_state.get(zip_ready_key):
-        if st.button(
-            strings["FILES_PREPARE_ZIP_BUTTON"],
-            width="content",
-            key=f"prepare_zip_{st.session_state.session_id}_{relative_path}",
-            help=strings["FILES_PREPARE_ZIP_HELP"].format(folder=folder_name),
-        ):
-            st.session_state[zip_ready_key] = True
-            st.rerun()
+    # Nothing is built on render: a folder zip reads and compresses every file
+    # (heavy for vector indexes), and st.download_button needs the bytes upfront.
+    # Clicking opens a modal that builds it on demand and auto-starts the
+    # download, so the file tree stays fast and low-memory even with big indexes.
+    if st.button(
+        strings["FILES_DOWNLOAD_ZIP_BUTTON"],
+        width="content",
+        key=f"export_zip_{st.session_state.session_id}_{relative_path}",
+        help=strings["FILES_DOWNLOAD_ZIP_HELP"].format(folder=folder_name),
+    ):
+        st.session_state.export_folder_relative_path = relative_path
+        st.session_state.pop("export_zip_payload", None)
+        st.session_state.export_autoclicked = False
+        st.rerun()
+
+
+def _on_export_dismiss() -> None:
+    st.session_state.export_folder_relative_path = ""
+    st.session_state.pop("export_zip_payload", None)
+    st.session_state.pop("export_autoclicked", None)
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_export_dismiss)
+def _export_folder_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    relative_path = str(st.session_state.get("export_folder_relative_path", ""))
+    if not relative_path:
         return
-    try:
-        zip_bytes = _cached_folder_zip_bytes(str(session_folder.resolve()), relative_path, token)
-    except (OSError, ValueError):
-        return
+    folder_name = Path(relative_path).name
+
+    # Build once and reuse across the dialog's reruns (bounded: cleared on
+    # dismiss), so the auto-click rerun never rebuilds the zip. The spinner shows
+    # inside the modal, which blocks the rest of the UI while preparing.
+    payload = st.session_state.get("export_zip_payload")
+    if not isinstance(payload, dict) or payload.get("relative_path") != relative_path:
+        session_folder = _session_root()
+        with st.spinner(strings["FILES_EXPORT_PREPARING"].format(folder=folder_name)):
+            try:
+                zip_bytes = build_folder_zip_bytes(
+                    session_folder,
+                    relative_path,
+                    signing_secret=get_settings().zip_signing_secret,
+                )
+            except (OSError, ValueError):
+                st.error(strings["FILES_DOWNLOAD_ZIP_TOO_LARGE"].format(folder=folder_name))
+                return
+        payload = {"relative_path": relative_path, "bytes": zip_bytes}
+        st.session_state.export_zip_payload = payload
+        st.session_state.export_autoclicked = False
+
+    zip_bytes = payload["bytes"]
     if len(zip_bytes) > _DOWNLOAD_LIMIT_BYTES:
-        st.button(
-            label=strings["FILES_DOWNLOAD_ZIP_BUTTON"],
-            width="content",
-            key=f"download_zip_blocked_{st.session_state.session_id}_{relative_path}",
-            help=strings["FILES_DOWNLOAD_ZIP_TOO_LARGE"].format(folder=folder_name),
-            disabled=True,
-        )
+        st.warning(strings["FILES_DOWNLOAD_ZIP_TOO_LARGE"].format(folder=folder_name))
         return
+
+    download_key = f"export_download_{relative_path}"
     st.download_button(
         label=strings["FILES_DOWNLOAD_ZIP_BUTTON"],
         data=zip_bytes,
         file_name=f"{folder_name}.zip",
         mime="application/zip",
-        width="content",
-        key=f"download_zip_{st.session_state.session_id}_{relative_path}",
+        width="stretch",
+        key=download_key,
         help=strings["FILES_DOWNLOAD_ZIP_HELP"].format(folder=folder_name),
     )
+    st.caption(strings["FILES_EXPORT_DOWNLOAD_STARTED"])
+    # Auto-start the download once. The click triggers a rerun, so re-injecting
+    # the click script would loop — guard it behind a one-shot flag. The visible
+    # button above remains as a manual fallback if the browser blocks the click.
+    if not st.session_state.get("export_autoclicked"):
+        st.session_state.export_autoclicked = True
+        click_widget(download_key)
+
+
+def _render_open_export_dialog() -> None:
+    export_path = str(st.session_state.get("export_folder_relative_path", ""))
+    if not export_path:
+        return
+    if not (_session_root() / export_path).is_dir():
+        _on_export_dismiss()
+        return
+    _export_folder_dialog()
 
 
 def _render_folder_delete_button(relative_path: str) -> None:
@@ -2722,6 +2821,31 @@ def _upload_folder_dialog() -> None:
     )
 
 
+def _session_log_generated_file() -> GeneratedFile | None:
+    """Return a GeneratedFile for the current session's log, or None if absent.
+
+    Built from a fresh ``stat`` (not the cached file listing), so the row always
+    reflects the live log size even as it grows during a crawl.
+    """
+    relative_path = get_settings().log_file
+    log_path = _session_root() / relative_path
+    if not log_path.is_file():
+        return None
+    try:
+        stat_result = log_path.stat()
+    except OSError:
+        return None
+    return GeneratedFile(
+        path=log_path,
+        relative_path=relative_path,
+        name=log_path.name,
+        size_bytes=stat_result.st_size,
+        modified_at=datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc),
+        file_type="log",
+        download_allowed=stat_result.st_size <= _DOWNLOAD_LIMIT_BYTES,
+    )
+
+
 def _downloads_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
@@ -2732,6 +2856,12 @@ def _downloads_body() -> None:
         _DOWNLOAD_LIMIT_BYTES,
         generated_files_cache_token(session_folder),
     )
+    # Merge in the (live) session log, replacing any stale cached entry, so the
+    # tree, dataframe, and preview all reflect its current state.
+    session_log = _session_log_generated_file()
+    if session_log is not None:
+        files = [file for file in files if file.relative_path != session_log.relative_path]
+        files.append(session_log)
     download_tree = _cached_download_tree(tuple(files))
     subtitle_text = (
         strings["FILES_DOWNLOADS_IN_PROGRESS"]
@@ -2762,10 +2892,14 @@ def _downloads_body() -> None:
     if job_alive:
         if files:
             with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
+                if session_log is not None:
+                    render_generated_file_download(session_log)
                 render_download_tree(download_tree)
     elif session_folder.exists():
         with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
             _render_import_button()
+            if session_log is not None:
+                render_generated_file_download(session_log)
             render_download_tree(download_tree)
 
     if files:
@@ -2783,6 +2917,7 @@ def _downloads_body() -> None:
 
     _render_open_preview_dialog(files)
     _render_open_delete_folder_dialog()
+    _render_open_export_dialog()
 
 
 def _render_downloads() -> None:
@@ -2796,7 +2931,12 @@ def _render_downloads() -> None:
 
 def _live_area_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    live_expanded = st.session_state.job_state in _ACTIVE_JOB_STATES
+    # Keep the panel open while a job runs and afterwards whenever there are stats,
+    # so a finished/stopped crawl's final counts stay visible instead of collapsing
+    # (latest_event holds the final event; it resets only on session switch / new crawl).
+    live_expanded = st.session_state.job_state in _ACTIVE_JOB_STATES or bool(
+        st.session_state.latest_event
+    )
     with st.expander(_live_statistics_label(strings), expanded=live_expanded):
         _render_status_boxes()
         _render_progress_charts()
@@ -3262,7 +3402,19 @@ if bootstrap_state != "ready":
     st.stop()
 
 _reattach_selected_session_job()
-_run_startup_cleanup(tuple(sorted(set(_session_options()) | active_registry_session_ids())))
+_reattach_selected_session_vector_job()
+_run_startup_cleanup(
+    tuple(
+        sorted(
+            set(_session_options())
+            | active_registry_session_ids()
+            | active_vector_registry_session_ids()
+        )
+    )
+)
+
+# Route this run's log records to the selected session's log file.
+set_log_session_id(st.session_state.get("session_id", ""))
 
 active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 _render_crawl_event_loop()

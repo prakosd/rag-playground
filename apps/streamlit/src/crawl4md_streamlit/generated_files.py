@@ -53,10 +53,6 @@ _FOLDER_ICON_VECTOR = ":material/database:"
 _FOLDER_ICON_SEARCH = ":material/search:"
 _FOLDER_ICON_RAG_QA = ":material/question_answer:"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
-# Folders larger than this defer their zip build until the user asks (see
-# folder_zip_needs_preparation), so the download tree never eagerly compresses a
-# large vector index on render.
-_DEFAULT_EAGER_ZIP_MAX_BYTES = 25 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _BYTES_PER_KB = 1024
 _BYTES_PER_MB = 1024 * 1024
@@ -316,20 +312,6 @@ def folder_zip_cache_token(session_root: Path | str, relative_path: str) -> tupl
         total += stat_result.st_size
         newest = max(newest, stat_result.st_mtime)
     return (count, newest, total)
-
-
-def folder_zip_needs_preparation(
-    total_bytes: int, *, eager_limit_bytes: int = _DEFAULT_EAGER_ZIP_MAX_BYTES
-) -> bool:
-    """Return True when a folder's zip should be built lazily on user request.
-
-    Building a folder zip reads and compresses every file in it. Small folders
-    (text crawl output) export in one click, but large folders — chiefly vector
-    indexes with hundreds of MB of Chroma data — are deferred behind an explicit
-    request so rendering the download tree never eagerly reads and compresses that
-    payload (slow and memory-heavy on constrained hosts).
-    """
-    return total_bytes > eager_limit_bytes
 
 
 def _prune_empty_parents(start: Path, root: Path) -> None:

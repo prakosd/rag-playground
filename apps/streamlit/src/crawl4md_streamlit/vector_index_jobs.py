@@ -10,10 +10,11 @@ from __future__ import annotations
 import queue
 import threading
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
-from artifact_store import get_logger
+from log4py import get_logger
 from vector_indexer import IndexingConfig, VectorIndexer, messages
 from vector_indexer.indexer import (
     STAGE_CHUNKING,
@@ -30,6 +31,7 @@ from vector_indexer.messages import (
     CODE_SSL_CERTIFICATE,
 )
 
+from crawl4md_streamlit.log_context import set_log_session_id
 from crawl4md_streamlit.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
 
 _EVENT_STARTED = "started"
@@ -64,6 +66,74 @@ class VectorIndexJob:
     events: queue.Queue[dict[str, object]]
     cancel_event: threading.Event
     thread: threading.Thread
+
+
+@dataclass
+class VectorJobSnapshot:
+    """Process-local snapshot of a running indexing job, shared across sessions.
+
+    Mirrors ``crawl_jobs.JobSnapshot``: the background thread updates ``latest_event``
+    on every emit so any browser session (even a different one that reopened the
+    same crawl session) can read the current indexing progress without consuming
+    the single-consumer event queue.
+    """
+
+    job: VectorIndexJob
+    vector_id: str
+    started_at: datetime
+    job_state: str
+    latest_event: dict[str, object] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Process-local active indexing job registry
+# ---------------------------------------------------------------------------
+# Maps session_id → VectorJobSnapshot for indexing jobs that are still alive (or
+# recently finished). Protected by _REGISTRY_LOCK so background threads and
+# Streamlit reruns can both read/write safely. This is what lets a second browser
+# tab see an in-progress index and keep its form locked.
+_REGISTRY_LOCK: threading.Lock = threading.Lock()
+_VECTOR_JOB_REGISTRY: dict[str, VectorJobSnapshot] = {}
+
+
+def _register_job(snapshot: VectorJobSnapshot) -> None:
+    """Register a new indexing snapshot, pruning any stale terminal entries first."""
+    with _REGISTRY_LOCK:
+        stale = [
+            sid for sid, snap in _VECTOR_JOB_REGISTRY.items() if not snap.job.thread.is_alive()
+        ]
+        for sid in stale:
+            del _VECTOR_JOB_REGISTRY[sid]
+        _VECTOR_JOB_REGISTRY[snapshot.job.session_id] = snapshot
+
+
+def _update_snapshot(session_id: str, event: dict[str, object], state: str) -> None:
+    """Update the registry snapshot's latest_event and job_state from a worker emit."""
+    with _REGISTRY_LOCK:
+        snap = _VECTOR_JOB_REGISTRY.get(session_id)
+        if snap is None:
+            return
+        snap.latest_event = dict(event)
+        snap.job_state = state
+
+
+def get_active_vector_job_snapshot(session_id: str) -> VectorJobSnapshot | None:
+    """Return the active indexing snapshot for a session if its thread is alive."""
+    with _REGISTRY_LOCK:
+        snap = _VECTOR_JOB_REGISTRY.get(session_id)
+    if snap is None:
+        return None
+    if not snap.job.thread.is_alive():
+        return None
+    return snap
+
+
+def active_vector_registry_session_ids() -> frozenset[str]:
+    """Return session IDs whose indexing job threads are still alive."""
+    with _REGISTRY_LOCK:
+        return frozenset(
+            sid for sid, snap in _VECTOR_JOB_REGISTRY.items() if snap.job.thread.is_alive()
+        )
 
 
 def _safe_upload_name(index: int, name: str) -> str:
@@ -106,8 +176,10 @@ def start_vector_index_job(
         raw.setdefault("session_id", session_id)
         raw.setdefault("vector_id", vector_id)
         event_queue.put(raw)
+        _update_snapshot(session_id, raw, job_state_from_event(str(raw.get("event", ""))))
 
     def run() -> None:
+        set_log_session_id(session_id)  # route this worker thread's logs to the session
         emit({"event": _EVENT_STARTED})
         try:
             result = runner.run(
@@ -138,6 +210,7 @@ def start_vector_index_job(
             failure = messages.classify_embedding_failure(f"{type(exc).__name__}: {exc}")
             emit({"event": _EVENT_FAILED, "errors": [failure.as_dict()]})
 
+    started_at = datetime.now(timezone.utc)
     thread = threading.Thread(target=run, name=f"vector-index-{vector_id}", daemon=True)
     job = VectorIndexJob(
         session_id=session_id,
@@ -146,6 +219,14 @@ def start_vector_index_job(
         events=event_queue,
         cancel_event=cancel_event,
         thread=thread,
+    )
+    _register_job(
+        VectorJobSnapshot(
+            job=job,
+            vector_id=vector_id,
+            started_at=started_at,
+            job_state=job_state_from_event(_EVENT_STARTED),
+        )
     )
     thread.start()
     _logger.info("Indexing job started: session=%s vector=%s", session_id, vector_id)
@@ -156,7 +237,14 @@ def request_cancel(job: VectorIndexJob) -> None:
     """Request cooperative cancellation for a running indexing job."""
     job.cancel_event.set()
     _logger.info("Indexing job cancel requested: vector=%s", job.vector_id)
-    job.events.put({"event": _EVENT_CANCEL_REQUESTED, "vector_id": job.vector_id})
+    cancel_event_dict: dict[str, object] = {
+        "event": _EVENT_CANCEL_REQUESTED,
+        "vector_id": job.vector_id,
+    }
+    job.events.put(cancel_event_dict)
+    _update_snapshot(
+        job.session_id, cancel_event_dict, job_state_from_event(_EVENT_CANCEL_REQUESTED)
+    )
 
 
 def drain_events(job: VectorIndexJob) -> list[dict[str, object]]:

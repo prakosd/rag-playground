@@ -43,6 +43,12 @@ crawl/index/RAG config models.
 | `CRAWL_TIMEOUT` | `60.0` | Per-page load timeout (s) |
 | `CRAWL_MAX_FILE_SIZE_MB` | `10.0` | Max size per output file (MB) |
 | `CRAWL_ACTIVITY_LOG_SIZE` | `10` | Live activity-log lines retained |
+| `CRAWL_DEFAULT_URLS` | `https://www.ato.gov.au/` | Seed URL(s) pre-filled in the crawl form (comma-separated for more than one) |
+| `CRAWL_INCLUDE_ONLY_PATHS` | `ato.gov.au` | Default "only include" URL filter(s), comma-separated (substring or regex) |
+| `CRAWL_EXCLUDE_PATHS` | `ato.gov.au/api/` | Default "skip" URL filter(s), comma-separated (substring or regex) |
+| `CRAWL_EXCLUDE_TAGS` | `nav, script, form, style` | Default HTML tags stripped before extraction, comma-separated |
+| `CRAWL_DEFAULT_OUTPUT_EXTENSION` | `.md` | Default output file extension for extracted pages (`.md` or `.txt`) |
+| `CRAWL_PROXY_ON_INITIAL` | `false` | When true, also route the **initial** crawl through the configured proxies (needs the `CRAWL_PROXIES` secret); otherwise proxies apply only to retry rounds |
 | `VECTOR_CHUNK_SIZE` | `600` | Tokens per chunk |
 | `VECTOR_CHUNK_OVERLAP` | `100` | Overlap between chunks |
 | `VECTOR_INDEX_WORKERS` | `4` | Parallel embedding workers (1-8); cloud models only — local ONNX forced to 1 |
@@ -66,6 +72,8 @@ crawl/index/RAG config models.
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |
 | `UI_LIVE_REFRESH_SEC` | `3` | Seconds between live crawl/index progress refreshes |
 | `UI_DOWNLOADS_REFRESH_SEC` | `7` | Seconds between Output Files panel refreshes |
+| `LOG_LEVEL` | `INFO` | Minimum log level for the terminal + log file (threshold: DEBUG < INFO < WARNING < ERROR; `WARN` accepted) |
+| `LOG_FILE` | `logs/app.log` | Per-session developer log path (relative to each session's folder); surfaced as a preview/download in the Files & folders panel |
 | `ZIP_SIGNING_SECRET` | `crawl4md-dev-zip-key` | Shared key that signs downloaded zips so a folder can be re-uploaded to an instance using the same key; override per deployment |
 
 These are *starting defaults* for the forms; users can still override most of them
@@ -96,7 +104,10 @@ default stealth browser + retry rounds (all off by default):
   the fallback API are each used at most **once per crawl**: the first retry round
   uses the proxy, the second uses the fallback API, and later retries use neither
   (the initial crawl uses neither). When only one is configured, the first retry
-  uses it. Every URL attempted in those rounds is logged to `logs/network_usage.csv`
+  uses it. Set `CRAWL_PROXY_ON_INITIAL=true` to also proxy the **initial** crawl
+  (proxy rounds become the initial crawl + first retry, and the fallback API, if
+  set, moves to the second retry) for sites that block the very first unproxied
+  request. Every URL attempted in those rounds is logged to `logs/network_usage.csv`
   (URL, method, round, status, size) so you can track spend — proxy credentials are
   never written. Residential proxies are usually required for hard `403`s (e.g.
   Akamai); data-center proxies are often blocked too.

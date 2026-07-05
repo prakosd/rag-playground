@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+from queue import Queue
+from threading import Event, Thread
 
 import pytest
 from vector_indexer import IndexingConfig
@@ -23,8 +26,12 @@ from vector_indexer.models import IndexingResult
 
 from crawl4md_streamlit import session_manager
 from crawl4md_streamlit.vector_index_jobs import (
+    VectorIndexJob,
+    VectorJobSnapshot,
+    active_vector_registry_session_ids,
     drain_events,
     embedding_error_hint_key,
+    get_active_vector_job_snapshot,
     job_state_from_event,
     request_cancel,
     start_vector_index_job,
@@ -249,3 +256,152 @@ def test_generate_vector_id_and_output_base(tmp_path: Path) -> None:
     base = session_manager.vector_output_base(tmp_path, session_id, "03_x")
     assert base.name == "vector_03_x"
     assert base.parent.name == "session_abc"
+
+
+# ---------------------------------------------------------------------------
+# Process-local indexing job registry (cross-browser progress + lock)
+# ---------------------------------------------------------------------------
+
+
+def _make_dead_vector_job(session_id: str = "sess_dead") -> VectorIndexJob:
+    """Return a VectorIndexJob whose thread has already finished."""
+    thread = Thread(target=lambda: None)
+    thread.start()
+    thread.join()
+    return VectorIndexJob(
+        session_id=session_id,
+        vector_id="01_dead",
+        output_base=Path("/tmp") / session_id,
+        events=Queue(),
+        cancel_event=Event(),
+        thread=thread,
+    )
+
+
+def _make_alive_vector_job(session_id: str = "sess_alive") -> tuple[VectorIndexJob, Event]:
+    """Return a VectorIndexJob whose thread blocks until the returned event is set."""
+    gate = Event()
+    thread = Thread(target=gate.wait, daemon=True)
+    thread.start()
+    job = VectorIndexJob(
+        session_id=session_id,
+        vector_id="01_alive",
+        output_base=Path("/tmp") / session_id,
+        events=Queue(),
+        cancel_event=Event(),
+        thread=thread,
+    )
+    return job, gate
+
+
+def _alive_vector_snapshot(session_id: str = "sess_alive") -> tuple[VectorJobSnapshot, Event]:
+    job, gate = _make_alive_vector_job(session_id)
+    snap = VectorJobSnapshot(
+        job=job,
+        vector_id=job.vector_id,
+        started_at=datetime.now(timezone.utc),
+        job_state="running",
+    )
+    return snap, gate
+
+
+def test_get_active_vector_job_snapshot_returns_none_when_no_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY", {})
+    assert get_active_vector_job_snapshot("no_such_session") is None
+
+
+def test_get_active_vector_job_snapshot_returns_snapshot_for_alive_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snap, gate = _alive_vector_snapshot()
+    try:
+        monkeypatch.setattr(
+            "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+            {snap.job.session_id: snap},
+        )
+        assert get_active_vector_job_snapshot(snap.job.session_id) is snap
+    finally:
+        gate.set()
+
+
+def test_get_active_vector_job_snapshot_returns_none_for_dead_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dead_job = _make_dead_vector_job()
+    snap = VectorJobSnapshot(
+        job=dead_job,
+        vector_id=dead_job.vector_id,
+        started_at=datetime.now(timezone.utc),
+        job_state="running",
+    )
+    monkeypatch.setattr(
+        "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+        {dead_job.session_id: snap},
+    )
+    assert get_active_vector_job_snapshot(dead_job.session_id) is None
+
+
+def test_active_vector_registry_session_ids_returns_only_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snap_alive, gate = _alive_vector_snapshot("sess_a")
+    snap_dead = VectorJobSnapshot(
+        job=_make_dead_vector_job("sess_d"),
+        vector_id="01_d",
+        started_at=datetime.now(timezone.utc),
+        job_state="running",
+    )
+    try:
+        monkeypatch.setattr(
+            "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+            {"sess_a": snap_alive, "sess_d": snap_dead},
+        )
+        ids = active_vector_registry_session_ids()
+        assert "sess_a" in ids
+        assert "sess_d" not in ids
+    finally:
+        gate.set()
+
+
+def test_request_cancel_updates_registry_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snap, gate = _alive_vector_snapshot("sess_cancel")
+    try:
+        monkeypatch.setattr(
+            "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+            {"sess_cancel": snap},
+        )
+        request_cancel(snap.job)
+        assert snap.job_state == "cancel_requested"
+        assert snap.job.cancel_event.is_set()
+    finally:
+        gate.set()
+
+
+def test_start_vector_index_job_registers_snapshot_and_tracks_progress(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The job must register a snapshot that the registry exposes while alive."""
+    registry: dict[str, VectorJobSnapshot] = {}
+    monkeypatch.setattr("crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY", registry)
+    session_id = _make_session(tmp_path)
+
+    job = start_vector_index_job(
+        session_id=session_id,
+        vector_id="01_word",
+        config=IndexingConfig(),
+        selected_paths=[],
+        uploads=[("a.md", b"x")],
+        sessions_root=tmp_path,
+        indexer=_FakeIndexer(),
+    )
+    job.thread.join(5.0)
+
+    assert session_id in registry
+    snapshot = registry[session_id]
+    assert snapshot.job_state == "completed"
+    # The worker's terminal emit was captured in the shared snapshot.
+    assert snapshot.latest_event.get("event") == "completed"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from rag_engine import messages
@@ -41,19 +43,21 @@ def test_openai_without_key_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> N
         build_chat_model("gpt-4o-mini")
 
 
-def test_resolve_falls_back_to_echo() -> None:
+def test_resolve_falls_back_to_echo(caplog: pytest.LogCaptureFixture) -> None:
     sentinel = object()
 
     def failing_build(model_id: str, *, temperature: float = 0.0, max_tokens: int = 1024):
         raise ChatModelUnavailable("no credentials")
 
-    resolved, warnings = resolve_chat_model(
-        "gpt-4o", build=failing_build, echo_build=lambda: sentinel
-    )
+    with caplog.at_level(logging.WARNING, logger="rag_engine"):
+        resolved, warnings = resolve_chat_model(
+            "gpt-4o", build=failing_build, echo_build=lambda: sentinel
+        )
 
     assert resolved.model_id == ECHO_MODEL
     assert resolved.model is sentinel
     assert any(w.code == messages.CODE_MODEL_FALLBACK_ECHO for w in warnings)
+    assert any("falling back to echo" in record.getMessage() for record in caplog.records)
 
 
 def test_resolve_available_model_has_no_warnings() -> None:

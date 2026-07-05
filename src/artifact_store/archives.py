@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 
 from artifact_store.paths import ensure_within_root
+from log4py import get_logger
 
 __all__ = [
     "SIGNATURE_MEMBER",
@@ -42,6 +43,8 @@ _HMAC_CHUNK_BYTES = 1024 * 1024
 # cannot exhaust memory; members larger than this are skipped like other
 # unsupported members.
 _MAX_MEMBER_BYTES = 50 * 1024 * 1024
+
+_logger = get_logger(__name__)
 
 
 def is_safe_member_name(name: str) -> bool:
@@ -76,11 +79,15 @@ def iter_text_members(zip_path: Path | str) -> Iterator[tuple[str, bytes]]:
             if info.is_dir():
                 continue
             name = info.filename
-            if not is_safe_member_name(name) or not _is_text_member(name):
+            if not is_safe_member_name(name):
+                _logger.warning("Skipping unsafe zip member name: %r", name)
+                continue
+            if not _is_text_member(name):
                 continue
             with archive.open(info) as member:
                 data = member.read(_MAX_MEMBER_BYTES + 1)
             if len(data) > _MAX_MEMBER_BYTES:
+                _logger.warning("Skipping oversized zip member %r (decompression-bomb guard)", name)
                 continue
             yield name, data
 
@@ -122,11 +129,15 @@ def extract_all_members(zip_path: Path | str, dest_dir: Path | str) -> list[Path
     with zipfile.ZipFile(zip_path) as archive:
         for info in archive.infolist():
             name = info.filename
-            if info.is_dir() or name == SIGNATURE_MEMBER or not is_safe_member_name(name):
+            if info.is_dir() or name == SIGNATURE_MEMBER:
+                continue
+            if not is_safe_member_name(name):
+                _logger.warning("Skipping unsafe zip member name: %r", name)
                 continue
             with archive.open(info) as member:
                 data = member.read(_MAX_MEMBER_BYTES + 1)
             if len(data) > _MAX_MEMBER_BYTES:
+                _logger.warning("Skipping oversized zip member %r (decompression-bomb guard)", name)
                 continue
             try:
                 target = ensure_within_root(resolved_dest, destination / name)

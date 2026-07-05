@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from artifact_store import LibraryMessage, get_logger
+from artifact_store import LibraryMessage
+from log4py import get_logger
 from rag_engine import messages
 from rag_engine.config import RagConfig
 from rag_engine.models import RetrievedChunk

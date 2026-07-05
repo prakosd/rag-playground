@@ -327,8 +327,8 @@ class Strings(TypedDict):
     FILES_DOWNLOAD_ZIP_BUTTON: str
     FILES_DOWNLOAD_ZIP_HELP: str  # template: {folder}
     FILES_DOWNLOAD_ZIP_TOO_LARGE: str  # template: {folder}
-    FILES_PREPARE_ZIP_BUTTON: str
-    FILES_PREPARE_ZIP_HELP: str  # template: {folder}
+    FILES_EXPORT_PREPARING: str  # template: {folder}
+    FILES_EXPORT_DOWNLOAD_STARTED: str
     FILES_DELETE_FOLDER_BUTTON: str
     FILES_DELETE_FOLDER_HELP: str  # template: {folder}
     FILES_DELETE_FOLDER_DIALOG_TITLE: str

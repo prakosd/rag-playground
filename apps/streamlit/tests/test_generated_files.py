@@ -22,7 +22,6 @@ from crawl4md_streamlit.generated_files import (
     find_latest_crawl_dir,
     find_ready_download_in_session,
     folder_zip_cache_token,
-    folder_zip_needs_preparation,
     format_file_size,
     format_run_timestamp_label,
     generated_file_sort_key,
@@ -601,15 +600,3 @@ def test_folder_zip_cache_token_changes_when_contents_change(tmp_path: Path) -> 
 
 def test_folder_zip_cache_token_empty_for_missing_folder(tmp_path: Path) -> None:
     assert folder_zip_cache_token(tmp_path, "nope") == (0, 0.0, 0)
-
-
-def test_folder_zip_needs_preparation_defers_only_large_folders() -> None:
-    assert folder_zip_needs_preparation(10, eager_limit_bytes=100) is False
-    assert folder_zip_needs_preparation(100, eager_limit_bytes=100) is False
-    assert folder_zip_needs_preparation(101, eager_limit_bytes=100) is True
-
-
-def test_folder_zip_needs_preparation_default_threshold_separates_text_from_index() -> None:
-    # Small text crawl output exports eagerly; a large vector index defers.
-    assert folder_zip_needs_preparation(64 * 1024) is False
-    assert folder_zip_needs_preparation(400 * 1024 * 1024) is True

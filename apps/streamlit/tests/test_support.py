@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
@@ -839,7 +840,9 @@ def test_read_recent_lines_handles_missing_file_and_non_positive_limit(tmp_path:
     assert read_recent_lines(log_path, max_lines=0) == []
 
 
-def test_cleanup_old_sessions_removes_only_expired_safe_sessions(tmp_path: Path) -> None:
+def test_cleanup_old_sessions_removes_only_expired_safe_sessions(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     now = datetime(2026, 5, 4, tzinfo=timezone.utc)
     old_session = prepare_session_dir(tmp_path, "old123")
     active_session = prepare_session_dir(tmp_path, "active123")
@@ -852,18 +855,27 @@ def test_cleanup_old_sessions_removes_only_expired_safe_sessions(tmp_path: Path)
     os.utime(active_session, (old_time, old_time))
     os.utime(fresh_session, (fresh_time, fresh_time))
 
-    removed = cleanup_old_sessions(
-        tmp_path,
-        active_session_ids=["active123"],
-        retention_days=7,
-        now=now,
-    )
+    # The app configures logging with propagate=False, so attach the capture
+    # handler directly to the target logger rather than relying on root propagation.
+    caplog.set_level(logging.INFO, logger="crawl4md_streamlit")
+    target_logger = logging.getLogger("crawl4md_streamlit")
+    target_logger.addHandler(caplog.handler)
+    try:
+        removed = cleanup_old_sessions(
+            tmp_path,
+            active_session_ids=["active123"],
+            retention_days=7,
+            now=now,
+        )
+    finally:
+        target_logger.removeHandler(caplog.handler)
 
     assert removed == [old_session]
     assert not old_session.exists()
     assert active_session.exists()
     assert fresh_session.exists()
     assert unsafe_session.exists()
+    assert any("Session cleanup removed" in record.getMessage() for record in caplog.records)
 
 
 def test_cleanup_old_sessions_with_lock_skips_existing_lock(tmp_path: Path) -> None:

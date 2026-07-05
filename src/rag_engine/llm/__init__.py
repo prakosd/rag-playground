@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from artifact_store import LibraryMessage
+from log4py import get_logger
 from rag_engine import messages
 from rag_engine.catalog import ECHO_MODEL, ECHO_PROVIDER, get_chat_model_info
 from rag_engine.llm.echo import build_echo_chat_model
@@ -39,6 +40,8 @@ _QWEN_MODEL_MARKER = "qwen"
 # / "thinking" output. Qwen3 on Bedrock thinks unless told not to; the switch is a
 # chat-template flag passed through Converse's additional model request fields.
 _QWEN_DISABLE_THINKING_FIELDS = {"chat_template_kwargs": {"enable_thinking": False}}
+
+_logger = get_logger(__name__)
 
 
 class ChatModelUnavailable(RuntimeError):
@@ -138,6 +141,9 @@ def resolve_chat_model(
     except ChatModelUnavailable as exc:
         if model_id.strip() == ECHO_MODEL:
             raise
+        _logger.warning(
+            "Chat model %r unavailable, falling back to echo: %s", model_id.strip(), exc
+        )
         model = echo_build()
         warnings.append(
             messages.model_fallback_echo(requested_model=model_id.strip(), detail=str(exc))

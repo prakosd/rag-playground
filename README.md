@@ -2,15 +2,16 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/rag-playground)
 
-A practical RAG playground that bundles four independent Python libraries plus a browser-based Streamlit app. **Step 1** crawls websites into clean Markdown (wrapping [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API that also works in Jupyter) and **Step 2** builds a searchable vector index from those outputs. **Steps 3–5** add semantic search, single-turn RAG Q&A, and conversational (history-aware) RAG over those indexes — all runnable offline with a built-in echo model when no cloud credentials are set.
+A practical RAG playground that bundles five independent Python libraries plus a browser-based Streamlit app. **Step 1** crawls websites into clean Markdown (wrapping [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API that also works in Jupyter) and **Step 2** builds a searchable vector index from those outputs. **Steps 3–5** add semantic search, single-turn RAG Q&A, and conversational (history-aware) RAG over those indexes — all runnable offline with a built-in echo model when no cloud credentials are set.
 
-**Naming:** the pip **distribution** is `rag-playground`. The **import packages** are unchanged — `import crawl4md`, `import vector_indexer`, `import rag_engine`, `import artifact_store` (and `crawl4md_streamlit` for the app). Installing `rag-playground` does not create an `import rag_playground`; you import the individual libraries you need.
+**Naming:** the pip **distribution** is `rag-playground`. The **import packages** are unchanged — `import crawl4md`, `import vector_indexer`, `import rag_engine`, `import artifact_store`, `import log4py` (and `crawl4md_streamlit` for the app). Installing `rag-playground` does not create an `import rag_playground`; you import the individual libraries you need.
 
 ## What's inside
 
 | Package | Role |
 |---|---|
 | [`crawl4md`](src/crawl4md/README.md) | Core crawling library — crawl, extract, sort, write Markdown |
+| [`log4py`](src/log4py/README.md) | Logging base layer — zero-dependency `get_logger`/`configure_logging` (pure stdlib) |
 | [`artifact_store`](src/artifact_store/README.md) | Shared foundation — naming, path safety, archives, crawl-result discovery (pure stdlib) |
 | [`vector_indexer`](src/vector_indexer/README.md) | UI-independent chunking + embedding + vector store (LangChain embeddings + langchain-chroma) |
 | [`rag_engine`](src/rag_engine/README.md) | UI-independent retrieval + RAG — semantic search, QA, and conversational answers (LangChain chat models, offline echo fallback) |

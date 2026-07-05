@@ -2,17 +2,18 @@
 
 ## Overview
 
-crawl4md crawls websites and extracts content as Markdown. The core `crawl4md` library wraps Crawl4AI with a synchronous API (for Jupyter); a Streamlit app under `apps/streamlit/` offers a browser form. Three helper libraries support it: `artifact_store` (shared, pure-stdlib naming/paths/archive/discovery helpers), `vector_indexer` (UI-independent chunking + embedding + vector-store creation via LangChain, powering the app's Step 2), and `rag_engine` (UI-independent retrieval + QA + conversational RAG over an index, powering Steps 3-5).
+crawl4md crawls websites and extracts content as Markdown. The core `crawl4md` library wraps Crawl4AI with a synchronous API (for Jupyter); a Streamlit app under `apps/streamlit/` offers a browser form. Four helper libraries support it: `log4py` (zero-dependency, pure-stdlib logging base layer everything may import), `artifact_store` (shared naming/paths/archive/discovery helpers), `vector_indexer` (UI-independent chunking + embedding + vector-store creation via LangChain, powering the app's Step 2), and `rag_engine` (UI-independent retrieval + QA + conversational RAG over an index, powering Steps 3-5).
 
 **Package map** (full structure + diagrams in [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)):
 
+- `src/log4py/` — logging base layer; zero-dependency pure stdlib, no project imports. `get_logger`/`configure_logging`; every package and the app may depend on it.
 - `src/crawl4md/` — crawl → extract → write → sort; owns output, progress events, cancel hooks.
-- `src/artifact_store/` — shared foundation; pure stdlib, no crawler/UI imports.
+- `src/artifact_store/` — shared foundation; stdlib + `log4py` only, no crawler/UI imports.
 - `src/vector_indexer/` — load → chunk → embed (LangChain `Embeddings`) → langchain-chroma vector store; no UI imports.
 - `src/rag_engine/` — retrieve (reopen index via manifest) → resolve chat model → generate (QA + conversational); no UI imports; depends on `vector_indexer`.
 - `apps/streamlit/` — UI adapter only (rendering, session/browser state, background jobs, downloads). Keep the libraries usable without Streamlit; never push UI or path conventions into them. Deployment-tunable, non-secret config lives in `crawl4md_streamlit.settings` (pydantic-settings, loaded `.env.defaults` → `.env` → environment); secrets stay environment-only (`.env` locally, `.streamlit/secrets.toml` on Cloud).
 
-**Packaging:** one pip distribution named `rag-playground` (import packages unchanged: `crawl4md`, `vector_indexer`, `rag_engine`, `artifact_store`). The base install is dependency-free; each library is an opt-in extra — `[crawl]`, `[vector]`, `[bedrock]`, `[openai]`, `[rag]`, `[all]` — so installs stay atomic. `[vector]` uses langchain-chroma; `[bedrock]`/`[openai]` (langchain-aws/langchain-openai) serve both embeddings and chat models; `[rag]` adds the `langchain` umbrella for `init_chat_model`. The Streamlit app installs `rag-playground[crawl,vector,bedrock,openai,rag]`.
+**Packaging:** one pip distribution named `rag-playground` (import packages unchanged: `log4py`, `crawl4md`, `vector_indexer`, `rag_engine`, `artifact_store`). The base install is dependency-free; each library is an opt-in extra — `[crawl]`, `[vector]`, `[bedrock]`, `[openai]`, `[rag]`, `[all]` — so installs stay atomic. `[vector]` uses langchain-chroma; `[bedrock]`/`[openai]` (langchain-aws/langchain-openai) serve both embeddings and chat models; `[rag]` adds the `langchain` umbrella for `init_chat_model`. The Streamlit app installs `rag-playground[crawl,vector,bedrock,openai,rag]`.
 
 ## Data Flow
 
@@ -29,6 +30,7 @@ Per-module constraints auto-attach from `.github/instructions/*.instructions.md`
 - Python 3.10+, type hints on all public APIs. Pydantic v2 (`model_validator`, `field_validator`). Lint via ruff.
 - Tests use mocked HTTP — never real network requests. Keep Streamlit UX plain-language, no jargon.
 - **Structured messages:** libraries report user-facing warnings/errors/progress as `artifact_store.LibraryMessage` (stable `code` + English `default_text` + `params`), never UI strings; codes/builders live in `crawl4md.messages`, `vector_indexer.messages`, and `rag_engine.messages` (codes `rag.*`). `CrawlResult.error_code` and `crawl_warning` events carry crawl codes; `IndexingResult.warnings/errors` and `RagAnswer.warnings/errors` are `LibraryMessage` lists. UIs localize by code (app: `i18n.localize_message`) and fall back to `default_text` — never substring-match library text.
+- **Logging:** obtain a module logger with `log4py.get_logger(__name__)`; libraries only emit (`%`-style deferred args) and the app configures output once via `log4py.configure_logging`. INFO = lifecycle milestones + counts, DEBUG = per-item detail, WARNING = recoverable/fallback, ERROR = caught failure. Never log secrets, PII, prompt/query text. Logs and `LibraryMessage`s are separate concerns. Full rules: [logging.instructions.md](./instructions/logging.instructions.md).
 - **No inline magic values:** thresholds, tag lists, regex patterns, repeated string literals → `_UPPER_SNAKE_CASE` constants grouped after imports; regex `re.compile()`d at module level. **Exempt:** Pydantic field defaults, standard idioms, single-use spec keys, trivial markdown (`"- "`, `"### "`).
 
 ## Planning

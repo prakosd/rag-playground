@@ -164,7 +164,8 @@ class Settings(BaseSettings):
     # WARNING). Lower shows more detail; raise to WARNING/ERROR in production to
     # quiet the per-page developer traces without a redeploy.
     log_level: str
-    # Rotating developer log file, relative to the app's working directory.
+    # Per-session developer log file, written under each browser session's folder
+    # (path relative to that session's directory) and surfaced in the Files panel.
     log_file: str
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import zipfile
 from pathlib import Path
 
@@ -62,7 +63,9 @@ def test_iter_text_members_keeps_only_supported_text_files(tmp_path: Path) -> No
     assert members["keep.md"] == b"# md"
 
 
-def test_iter_text_members_skips_unsafe_members(tmp_path: Path) -> None:
+def test_iter_text_members_skips_unsafe_members(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     zip_path = tmp_path / "evil.zip"
     _make_zip(
         zip_path,
@@ -72,22 +75,26 @@ def test_iter_text_members_skips_unsafe_members(tmp_path: Path) -> None:
         },
     )
 
-    members = dict(iter_text_members(zip_path))
+    with caplog.at_level(logging.WARNING, logger="artifact_store"):
+        members = dict(iter_text_members(zip_path))
 
     assert set(members) == {"ok.md"}
+    assert any("unsafe zip member" in record.getMessage() for record in caplog.records)
 
 
 def test_iter_text_members_skips_oversized_members(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr("artifact_store.archives._MAX_MEMBER_BYTES", 8)
     zip_path = tmp_path / "bomb.zip"
     _make_zip(zip_path, {"small.md": b"hi", "huge.txt": b"x" * 4096})
 
-    members = dict(iter_text_members(zip_path))
+    with caplog.at_level(logging.WARNING, logger="artifact_store"):
+        members = dict(iter_text_members(zip_path))
 
     assert set(members) == {"small.md"}
     assert members["small.md"] == b"hi"
+    assert any("oversized zip member" in record.getMessage() for record in caplog.records)
 
 
 def test_extract_text_members_writes_only_supported_files(tmp_path: Path) -> None:

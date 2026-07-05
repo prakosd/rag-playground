@@ -15,6 +15,8 @@ import sys
 import threading
 from pathlib import Path
 
+from log4py import get_logger
+
 # Streamlit Community Cloud checks the repository out under this path.
 _STREAMLIT_CLOUD_ROOT = Path("/mount/src")
 _INSTALL_COMMAND = (sys.executable, "-m", "playwright", "install", "chromium")
@@ -22,13 +24,17 @@ _INSTALL_COMMAND = (sys.executable, "-m", "playwright", "install", "chromium")
 _browser_ready = False
 _lock = threading.Lock()
 
+_logger = get_logger(__name__)
+
 
 def _on_streamlit_cloud() -> bool:
     return _STREAMLIT_CLOUD_ROOT.exists()
 
 
 def _run_install() -> None:
+    _logger.info("Installing Playwright Chromium (first run on this host)")
     subprocess.run(_INSTALL_COMMAND, check=False)
+    _logger.info("Playwright Chromium install finished")
 
 
 def ensure_playwright_browser() -> None:

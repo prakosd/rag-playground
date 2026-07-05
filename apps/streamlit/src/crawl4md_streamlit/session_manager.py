@@ -26,6 +26,9 @@ from crawl4md.naming import (
     format_crawl_id,
     parse_crawl_folder_sequence,
 )
+from log4py import get_logger
+
+_logger = get_logger(__name__)
 
 _CLEANUP_LOCK_FILE = ".cleanup.lock"
 _CLEANUP_LOG_FILE = "cleanup.log"
@@ -472,6 +475,7 @@ def cleanup_old_sessions(
         lines = [f"{timestamp} removed {path.name}" for path in removed]
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
+        _logger.info("Session cleanup removed %d inactive session(s)", len(removed))
     return removed
 
 
@@ -487,6 +491,7 @@ def cleanup_old_sessions_with_lock(
         return []
     lock_path = root / _CLEANUP_LOCK_FILE
     if _lock_is_stale(lock_path):
+        _logger.warning("Removing stale session-cleanup lock file")
         lock_path.unlink(missing_ok=True)
     try:
         lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

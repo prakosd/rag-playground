@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 import nest_asyncio
 
-from artifact_store import LibraryMessage, get_logger
+from artifact_store import LibraryMessage
 from crawl4md import messages
 from crawl4md._internal.block_detector import (
     _BLOCK_MAX_CONTENT_LENGTH,
@@ -174,6 +174,7 @@ from crawl4md.extractor import ContentExtractor
 from crawl4md.naming import format_utc_timestamp_slug
 from crawl4md.progress import ProgressReporter
 from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar
+from log4py import get_logger
 
 # Applied lazily by SiteCrawler._run_rounds_sync so Streamlit's uvloop is never
 # patched at import time.
@@ -1132,9 +1133,7 @@ class SiteCrawler:
         )
         status = "success" if crawl_result.success else "fail"
         size_text = "unknown size" if size_kb is None else f"{size_kb:.2f} KB"
-        _logger.info(
-            "Fetched via %s [%s]: %s (%s)", method, status, crawl_result.url, size_text
-        )
+        _logger.info("Fetched via %s [%s]: %s (%s)", method, status, crawl_result.url, size_text)
         self._network_usage.record(
             method=method,
             round_num=round_num,

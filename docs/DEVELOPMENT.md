@@ -38,10 +38,17 @@ python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app
 - Python 3.10+, type hints on all public APIs, Pydantic v2.
 - No inline magic values — use `_UPPER_SNAKE_CASE` constants and module-level
   compiled regexes.
-- Keep the libraries UI-independent: `crawl4md`, `artifact_store`,
-  `vector_indexer`, and `rag_engine` must not import Streamlit. Boundary tests enforce this.
+- Keep the libraries UI-independent: `log4py`, `crawl4md`, `artifact_store`,
+  `vector_indexer`, and `rag_engine` must not import Streamlit. `log4py` is the
+  zero-dependency base (no project imports at all). Boundary tests enforce this.
 - All user-facing Streamlit text lives in the `i18n` catalog (English + Indonesian)
   and is referenced via `get_strings()` — never hardcoded in components.
+- Logging goes through `log4py`: modules call `get_logger(__name__)` and only emit
+  (`%`-style deferred args); the Streamlit app calls `configure_logging` once. Set
+  `LOG_LEVEL=DEBUG` in `.env` for verbose local traces — the app writes each browser
+  session's log under its own session folder (`logs/app.log`), viewable in the
+  Files & folders panel. Never log secrets, PII, or prompt/query text. See
+  [logging.instructions.md](../.github/instructions/logging.instructions.md).
 - The Streamlit app's deployment-tunable, non-secret config lives in
   `crawl4md_streamlit.settings` (`pydantic-settings`), loaded from `.env.defaults`
   → `.env` → environment; secrets (`AWS_*`, `OPENAI_API_KEY`) stay environment-only.
@@ -54,6 +61,7 @@ python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app
 
 | Component | Guide |
 |---|---|
+| Logging base | [src/log4py/README.md](../src/log4py/README.md) |
 | Core crawler | [src/crawl4md/README.md](../src/crawl4md/README.md) |
 | Shared foundation | [src/artifact_store/README.md](../src/artifact_store/README.md) |
 | Vector indexer | [src/vector_indexer/README.md](../src/vector_indexer/README.md) |

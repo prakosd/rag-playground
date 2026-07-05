@@ -13,18 +13,19 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from artifact_store import get_logger
 from crawl4md.config import CrawlerConfig, PageConfig
 from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
 from crawl4md.messages import classify_crawl_error
 from crawl4md.writer import FileWriter
+from log4py import get_logger
 
 from crawl4md_streamlit.crawl_runtime import ensure_playwright_browser
 from crawl4md_streamlit.form_defaults import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_MAX_CONCURRENT,
 )
+from crawl4md_streamlit.log_context import set_log_session_id
 from crawl4md_streamlit.session_manager import (
     DEFAULT_SESSIONS_ROOT,
     SESSION_PREFIX,
@@ -377,6 +378,7 @@ def start_crawl_job(
         _update_snapshot(session_id, raw, state)
 
     def run() -> None:
+        set_log_session_id(session_id)  # route this worker thread's logs to the session
         emit(
             {
                 "event": _EVENT_STARTED,

@@ -2,19 +2,26 @@
 
 ← Back to [README](../README.md)
 
-The repository is organized in layers. A shared foundation (`artifact_store`) sits
-under three independent libraries: `crawl4md` (crawling), `vector_indexer`
-(indexing), and `rag_engine` (retrieval + answering, building on `vector_indexer`).
-The Streamlit app is a UI adapter over those libraries and owns only rendering,
-session/browser state, background jobs, and downloads.
+The repository is organized in layers. A zero-dependency logging base (`log4py`)
+sits beneath a shared foundation (`artifact_store`), which in turn sits under three
+independent libraries: `crawl4md` (crawling), `vector_indexer` (indexing), and
+`rag_engine` (retrieval + answering, building on `vector_indexer`). The Streamlit
+app is a UI adapter over those libraries and owns only rendering, session/browser
+state, background jobs, and downloads.
 
 ```mermaid
 flowchart TD
+  Log4py["log4py<br/>logging base · zero-dependency stdlib"]
   ArtifactStore["artifact_store<br/>naming · paths · archives · crawl-result discovery"]
   Crawl4md["crawl4md<br/>crawl → extract → write → sort"]
   VectorIndexer["vector_indexer<br/>load → chunk → embed → vector store"]
   RagEngine["rag_engine<br/>retrieve → generate (QA / chat)"]
   App["apps/streamlit<br/>UI shell, pages, background jobs"]
+  Log4py --> ArtifactStore
+  Log4py --> Crawl4md
+  Log4py --> VectorIndexer
+  Log4py --> RagEngine
+  Log4py --> App
   ArtifactStore --> Crawl4md
   ArtifactStore --> VectorIndexer
   ArtifactStore --> RagEngine
@@ -23,6 +30,10 @@ flowchart TD
   VectorIndexer --> App
   RagEngine --> App
 ```
+
+Every library only *emits* log records via `log4py.get_logger(__name__)`; the app
+turns logging on once with `log4py.configure_logging` and routes each browser
+session's records to its own file. See [src/log4py/README.md](../src/log4py/README.md).
 
 ## Step 1 — how crawling works
 

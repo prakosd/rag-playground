@@ -23,10 +23,6 @@ from artifact_store.crawl_results import (
     CrawlResultFile,
     list_crawl_result_files,
 )
-from artifact_store.logging import (
-    configure_logging,
-    get_logger,
-)
 from artifact_store.messages import (
     MESSAGE_SEVERITIES,
     SEVERITY_ERROR,
@@ -62,14 +58,12 @@ __all__ = [
     "VECTOR_FOLDER_PREFIX",
     "CrawlResultFile",
     "LibraryMessage",
-    "configure_logging",
     "ensure_within_root",
     "extract_all_members",
     "extract_text_members",
     "folder_name",
     "format_sequence_id",
     "format_utc_timestamp_slug",
-    "get_logger",
     "is_safe_member_name",
     "iter_text_members",
     "list_crawl_result_files",
