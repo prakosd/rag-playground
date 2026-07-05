@@ -444,6 +444,8 @@ STRINGS_EN: Strings = {
     "FILES_DOWNLOAD_ZIP_BUTTON": ":material/download: Export",
     "FILES_DOWNLOAD_ZIP_HELP": "Export the {folder} folder as a signed zip you can import on another instance",
     "FILES_DOWNLOAD_ZIP_TOO_LARGE": "The {folder} folder is too large to export as a zip.",
+    "FILES_PREPARE_ZIP_BUTTON": ":material/folder_zip: Prepare export",
+    "FILES_PREPARE_ZIP_HELP": "The {folder} folder is large \u2014 prepare its export first, then download it.",
     "FILES_DELETE_FOLDER_BUTTON": "Delete this folder",
     "FILES_DELETE_FOLDER_HELP": "Permanently delete the {folder} folder and everything inside.",
     "FILES_DELETE_FOLDER_DIALOG_TITLE": "Delete folder?",

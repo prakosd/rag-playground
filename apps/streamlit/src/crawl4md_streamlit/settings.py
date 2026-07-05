@@ -75,6 +75,21 @@ class Settings(BaseSettings):
     crawl_max_file_size_mb: float
     # Lines of activity log retained for the live crawl view.
     crawl_activity_log_size: int
+    # Default seed URL(s) pre-filled in the crawl form (comma-separated for more
+    # than one). Users can still edit these per crawl.
+    crawl_default_urls: str
+    # Default "only include" URL filter(s), comma-separated (substring or regex).
+    crawl_include_only_paths: str
+    # Default "skip" URL filter(s), comma-separated (substring or regex).
+    crawl_exclude_paths: str
+    # Default HTML tags stripped before extraction, comma-separated.
+    crawl_exclude_tags: str
+    # Default output file extension for extracted pages (".md" or ".txt").
+    crawl_default_output_extension: str
+    # When True, the initial crawl also routes through the configured proxies
+    # (the CRAWL_PROXIES secret); when False (default) proxies are used only on
+    # retry rounds. Has no effect unless CRAWL_PROXIES is set.
+    crawl_proxy_on_initial: bool
 
     # ── Step 2 · Vector index (vector_indexer) ───────────────────────────────
     # Tokens per chunk. Larger keeps more context together but retrieves coarser
@@ -142,6 +157,15 @@ class Settings(BaseSettings):
     # Shared key that signs downloadable zips so an exported folder can be
     # re-uploaded to an instance using the same key. Overridable per deployment.
     zip_signing_secret: str
+
+    # ── Logging ──────────────────────────────────────────────────────────
+    # Minimum log level shown in the terminal and the log file (threshold model:
+    # DEBUG < INFO < WARNING < ERROR; the user-facing WARN is accepted for
+    # WARNING). Lower shows more detail; raise to WARNING/ERROR in production to
+    # quiet the per-page developer traces without a redeploy.
+    log_level: str
+    # Rotating developer log file, relative to the app's working directory.
+    log_file: str
 
 
 @lru_cache(maxsize=1)

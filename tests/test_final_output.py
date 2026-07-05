@@ -34,17 +34,39 @@ def test_write_final_files_writes_url_lists_and_content(tmp_path: Path) -> None:
     _append_page(fail_sidecar, "https://example.com/b", "# B failed")
     writer = _output_writer(tmp_path)
 
-    writer.write_final_files(
-        [CrawlResult(url="https://example.com/a", success=True)],
-        [CrawlResult(url="https://example.com/b", success=False)],
-        write_content=True,
-    )
+    # Unsorted content is written only when cleanup is off (debug); with cleanup
+    # on, write_sorted_files supersedes it, so disable cleanup for this check.
+    with patch.object(_fo_mod, "_CLEANUP_INTERMEDIATE_FILES", False):
+        writer.write_final_files(
+            [CrawlResult(url="https://example.com/a", success=True)],
+            [CrawlResult(url="https://example.com/b", success=False)],
+            write_content=True,
+        )
 
     final_dir = tmp_path / "final"
     assert (final_dir / "success_urls.txt").read_text(encoding="utf-8") == "https://example.com/a"
     assert (final_dir / "fail_urls.txt").read_text(encoding="utf-8") == "https://example.com/b"
     assert "# A" in next(final_dir.glob("success_content_*.md")).read_text(encoding="utf-8")
     assert "# B failed" in next(final_dir.glob("fail_content_*.md")).read_text(encoding="utf-8")
+
+
+def test_write_final_files_skips_unsorted_content_when_cleanup_enabled(tmp_path: Path) -> None:
+    round_dir = tmp_path / "round_1"
+    _append_page(round_dir / "success_pages.jsonl", "https://example.com/a", "# A")
+    writer = _output_writer(tmp_path)
+
+    # With cleanup on (default), the redundant unsorted content is skipped, but
+    # the URL lists are still written; write_sorted_files produces the content.
+    with patch.object(_fo_mod, "_CLEANUP_INTERMEDIATE_FILES", True):
+        writer.write_final_files(
+            [CrawlResult(url="https://example.com/a", success=True)],
+            [],
+            write_content=True,
+        )
+
+    final_dir = tmp_path / "final"
+    assert (final_dir / "success_urls.txt").read_text(encoding="utf-8") == "https://example.com/a"
+    assert list(final_dir.glob("success_content_*.md")) == []
 
 
 def test_write_sorted_files_sorts_urls_and_renames_content(tmp_path: Path) -> None:

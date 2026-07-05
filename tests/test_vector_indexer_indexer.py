@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from pathlib import Path
+
+import pytest
 
 from vector_indexer import messages
 from vector_indexer.config import IndexingConfig
@@ -89,6 +92,22 @@ def test_run_indexes_inputs_and_writes_manifest(tmp_path: Path) -> None:
     # Distinct indexed sources are recorded and round-trip through the manifest.
     assert result.indexed_sources
     assert manifest.indexed_sources == tuple(result.indexed_sources)
+
+
+def test_run_emits_lifecycle_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 50, encoding="utf-8")
+    output_base = tmp_path / "vector_01_demo"
+    indexer, _ = _indexer_with_capture()
+
+    with caplog.at_level(logging.INFO, logger="vector_indexer"):
+        result = indexer.run(IndexingConfig(), [source], output_base)
+
+    assert result.success
+    logged = [record.getMessage() for record in caplog.records]
+    assert any("Indexing started" in message for message in logged)
+    assert any("Embedding model resolved: fake" in message for message in logged)
+    assert any("Indexing complete" in message for message in logged)
 
 
 def test_run_reports_error_when_no_inputs(tmp_path: Path) -> None:

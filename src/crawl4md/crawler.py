@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 import nest_asyncio
 
-from artifact_store import LibraryMessage
+from artifact_store import LibraryMessage, get_logger
 from crawl4md import messages
 from crawl4md._internal.block_detector import (
     _BLOCK_MAX_CONTENT_LENGTH,
@@ -295,6 +295,8 @@ _FINAL_DIR_NAME = "final"
 # history, site graph, network usage).
 _LOGS_DIR_NAME = "logs"
 
+_logger = get_logger(__name__)
+
 # Suffix for successful-page file names (e.g. "success_content_001.txt")
 _SUCCESS_SUFFIX = "success_"
 # Suffix for failed-page file names (e.g. "fail_content_001.txt")
@@ -530,6 +532,12 @@ class SiteCrawler:
         logs_dir = self.output_dir / _LOGS_DIR_NAME
         logs_dir.mkdir(parents=True, exist_ok=True)
         self._logs_dir = logs_dir
+        _logger.info(
+            "Crawl started: %d URL(s), limit %d -> %s",
+            len(self.config.urls),
+            self.config.limit,
+            self.output_dir,
+        )
         self._run_metadata = self._build_run_metadata()
         self._progress_history = ProgressHistoryRecorder(
             output_dir=logs_dir,
@@ -760,6 +768,9 @@ class SiteCrawler:
                     self._report_status(
                         f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---"
                     )
+                    _logger.info(
+                        "Crawl round 1/%d: %d seed URL(s)", total_rounds, len(self.config.urls)
+                    )
                     round_results = await self._crawl_urls_async(
                         urls=self.config.urls,
                         crawler=crawler,
@@ -819,6 +830,12 @@ class SiteCrawler:
                             f"{len(failed_urls)} failed URL(s) "
                             f"(waiting {cooldown:.0f}s cooldown) ---"
                         )
+                        _logger.info(
+                            "Crawl round %d/%d: retrying %d failed URL(s)",
+                            round_num,
+                            total_rounds,
+                            len(failed_urls),
+                        )
                         await self._sleep_with_cancel(cooldown)
 
                         round_run_cfg = self._build_fallback_run_config(
@@ -861,6 +878,7 @@ class SiteCrawler:
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True
+            _logger.warning("Crawl interrupted; writing final files from saved pages")
             self._report_status("\n\nCrawl stopped! Writing final files...")
             saved_success, saved_fail = self._saved_results_from_sidecars()
             if saved_success or saved_fail:
@@ -901,6 +919,14 @@ class SiteCrawler:
 
         total_crawled = len(all_success) + len(all_fail)
         label = "Interrupted" if interrupted else "Done"
+        _logger.info(
+            "Crawl %s: %d succeeded, %d failed (%d total) -> %s",
+            label.lower(),
+            len(all_success),
+            len(all_fail),
+            total_crawled,
+            self.output_dir,
+        )
         # Clear any lingering progress widget from the final round so the
         # summary text below isn't shown beneath a stale (partial-percent)
         # bar in Jupyter / Colab.
@@ -1091,8 +1117,8 @@ class SiteCrawler:
         round_num: int,
     ) -> None:
         """Log proxy/API usage for this URL when the round enabled a paid resource."""
-        proxy_round, api_round = self._paid_resource_rounds()
-        if round_num == proxy_round:
+        proxy_rounds, api_round = self._paid_resource_rounds()
+        if round_num in proxy_rounds:
             method = "proxy"
         elif round_num == api_round:
             method = "api"
@@ -1104,11 +1130,16 @@ class SiteCrawler:
             if crawl_result.success and markdown.strip()
             else None
         )
+        status = "success" if crawl_result.success else "fail"
+        size_text = "unknown size" if size_kb is None else f"{size_kb:.2f} KB"
+        _logger.info(
+            "Fetched via %s [%s]: %s (%s)", method, status, crawl_result.url, size_text
+        )
         self._network_usage.record(
             method=method,
             round_num=round_num,
             url=crawl_result.url,
-            status="success" if crawl_result.success else "fail",
+            status=status,
             size_kb=size_kb,
         )
 
@@ -2399,11 +2430,14 @@ class SiteCrawler:
         all_success: list[CrawlResult],
         all_fail: list[CrawlResult],
     ) -> None:
-        """Produce final merged URL lists and unsorted content files.
+        """Produce final merged URL lists (and unsorted content when kept).
 
         URL lists are built from the lightweight ``CrawlResult`` metadata
-        (only ``.url`` is needed).  Content files are read from the JSONL
-        sidecar files written during each round — no re-extraction needed.
+        (only ``.url`` is needed). The unsorted content is written only when
+        intermediate cleanup is disabled; with cleanup on (the default),
+        ``write_final_files`` skips it because ``_write_sorted_files`` immediately
+        supersedes and deletes it — avoiding a redundant full pass over every page
+        at finalization (lower peak CPU/memory and transient disk).
         """
         self._final_output_writer().write_final_files(
             all_success,
@@ -2497,8 +2531,11 @@ class SiteCrawler:
             kwargs["override_navigator"] = True
             kwargs["magic"] = True
 
-        # The initial crawl uses neither proxies nor the fallback API; those paid
-        # resources are reserved for specific retry rounds (see _paid_resource_rounds).
+        # The initial crawl (round 1) routes through the proxy only when
+        # proxy_on_initial is set; the fallback API is never used on the initial
+        # crawl. Both are paid resources reserved per _paid_resource_rounds.
+        proxy_rounds, _ = self._paid_resource_rounds()
+        self._apply_anti_bot_run_options(kwargs, use_proxy=1 in proxy_rounds)
         return run_config_cls(**kwargs)
 
     def _build_fallback_run_config(self, run_config_cls: type, round_num: int) -> object:
@@ -2535,34 +2572,38 @@ class SiteCrawler:
 
         # scan_full_page and stealth run-flags intentionally omitted
 
-        proxy_round, api_round = self._paid_resource_rounds()
+        proxy_rounds, api_round = self._paid_resource_rounds()
         self._apply_anti_bot_run_options(
             kwargs,
-            use_proxy=round_num == proxy_round,
+            use_proxy=round_num in proxy_rounds,
             use_fallback_api=round_num == api_round,
         )
 
         return run_config_cls(**kwargs)
 
-    def _paid_resource_rounds(self) -> tuple[int | None, int | None]:
-        """Return the retry rounds that use the proxy and the fallback API.
+    def _paid_resource_rounds(self) -> tuple[frozenset[int], int | None]:
+        """Return the rounds that use the proxy and the round that uses the API.
 
-        Both are paid resources, so each is used at most once per crawl to cap
-        cost. Round 1 is the initial crawl (never uses either); retries start at
-        round 2. When both are configured, the first retry uses the proxy and the
-        second uses the API; later retries use neither. When only one is set, the
-        first retry uses it and later retries use neither. Returns
-        ``(proxy_round, api_round)`` where either element may be ``None``.
+        Both are paid resources, so each is used sparingly to cap cost. Round 1 is
+        the initial crawl; retries start at round 2. By default the initial crawl
+        uses neither: the first retry uses the proxy and the second uses the API
+        (each at most one round). When ``config.proxy_on_initial`` is set and
+        proxies are configured, the proxy is applied to the initial crawl and the
+        first retry (rounds 1 and 2) and the API (if any) moves to the second
+        retry (round 3). Returns ``(proxy_rounds, api_round)``; ``proxy_rounds``
+        may be empty and ``api_round`` may be ``None``.
         """
         has_proxy = bool(self.config.proxies)
         has_api = self._fallback_fetch_function is not None
+        if has_proxy and self.config.proxy_on_initial:
+            return frozenset({1, 2}), (3 if has_api else None)
         if has_proxy and has_api:
-            return 2, 3
+            return frozenset({2}), 3
         if has_proxy:
-            return 2, None
+            return frozenset({2}), None
         if has_api:
-            return None, 2
-        return None, None
+            return frozenset(), 2
+        return frozenset(), None
 
     def _apply_anti_bot_run_options(
         self, kwargs: dict, *, use_proxy: bool = False, use_fallback_api: bool = False
@@ -2570,8 +2611,9 @@ class SiteCrawler:
         """Add proxy escalation and/or the fallback fetch hook to a run-config dict.
 
         Proxies and the fallback scraping API are paid resources applied per
-        ``_paid_resource_rounds``: never on the initial crawl, then at most one
-        retry round each.
+        ``_paid_resource_rounds``: the proxy runs only on the round(s) it assigns
+        (the initial crawl only when ``proxy_on_initial`` is set) and the fallback
+        API on at most one retry round.
         """
         if use_proxy:
             proxy_config = self._build_proxy_config()

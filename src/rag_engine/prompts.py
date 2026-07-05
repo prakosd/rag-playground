@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from artifact_store import get_logger
 from rag_engine.models import RetrievedChunk
 
 __all__ = [
@@ -19,6 +20,8 @@ __all__ = [
     "format_context",
     "format_knowledge",
 ]
+
+_logger = get_logger(__name__)
 
 QA_SYSTEM_PROMPT = (
     "You are a question-answering assistant for the user's own crawled documents. "
@@ -115,10 +118,17 @@ def build_rag_prompt(question: str, chunks: Sequence[RetrievedChunk], tone: str)
     meant to be shown to the user and sent to the model verbatim. The knowledge is
     inserted between fixed delimiters so it cannot blend into the instructions.
     """
-    return RAG_PROMPT_TEMPLATE.format(
+    prompt = RAG_PROMPT_TEMPLATE.format(
         question=question.strip(),
         start=_KNOWLEDGE_START_DELIMITER,
         knowledge=format_knowledge(chunks),
         end=_KNOWLEDGE_END_DELIMITER,
         tone=(tone.strip() or _DEFAULT_TONE),
     )
+    _logger.info(
+        "Built RAG prompt: %d chunk(s), tone=%s, %d chars",
+        len(chunks),
+        tone.strip() or _DEFAULT_TONE,
+        len(prompt),
+    )
+    return prompt

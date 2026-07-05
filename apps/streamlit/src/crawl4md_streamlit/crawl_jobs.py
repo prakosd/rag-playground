@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
+from artifact_store import get_logger
 from crawl4md.config import CrawlerConfig, PageConfig
 from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
@@ -29,6 +30,7 @@ from crawl4md_streamlit.session_manager import (
     SESSION_PREFIX,
     prepare_crawl_output_base,
 )
+from crawl4md_streamlit.settings import get_settings
 
 _EVENT_CANCEL_REQUESTED = "cancel_requested"
 _EVENT_CANCELLED = "cancelled"
@@ -45,6 +47,11 @@ _TERMINAL_STATES = frozenset({_EVENT_COMPLETED, _EVENT_FAILED, "stopped", "cance
 # message rather than progress counts, so it must not overwrite the progress
 # snapshot used to render the live area.
 _EVENT_CRAWL_WARNING = "crawl_warning"
+
+_logger = get_logger(__name__)
+
+# Visual marker rendered just before each crawl-status URL (current / next up).
+_STATUS_URL_PREFIX = "\u00bb "
 
 _STATUS_URL_ITEM_STYLE = "display:block;overflow-wrap:anywhere;line-height:1.35"
 _STATUS_URL_LABEL_STYLE = "font-weight:600"
@@ -162,6 +169,7 @@ def build_configs(values: Mapping[str, Any]) -> tuple[CrawlerConfig, PageConfig,
         delay=float(values.get("delay", 0)),
         max_retries=int(values.get("max_retries", 2)),
         proxies=os.environ.get(_PROXIES_ENV, ""),
+        proxy_on_initial=get_settings().crawl_proxy_on_initial,
     )
     page_config = PageConfig(
         exclude_tags=values.get("exclude_tags", ""),
@@ -232,7 +240,8 @@ def format_status_row(
     """Return status-row HTML with crawler-provided URL text escaped."""
     escaped_url = html.escape(url, quote=True)
     url_html = (
-        f'<a href="{escaped_url}" target="_blank" rel="noopener noreferrer">{escaped_url}</a>'
+        f'{_STATUS_URL_PREFIX}<a href="{escaped_url}" target="_blank" '
+        f'rel="noopener noreferrer">{escaped_url}</a>'
         if url
         else ""
     )
@@ -272,7 +281,7 @@ def format_status_url_preview(
     escaped_style = html.escape(style, quote=True)
     url_items = "".join(
         f'<span style="{_STATUS_URL_ITEM_STYLE}">'
-        f'<a href="{html.escape(url, quote=True)}" target="_blank" '
+        f'{_STATUS_URL_PREFIX}<a href="{html.escape(url, quote=True)}" target="_blank" '
         f'rel="noopener noreferrer">{html.escape(url)}</a>'
         "</span>"
         for url in urls
@@ -446,12 +455,14 @@ def start_crawl_job(
     )
     _register_job(snapshot)
     thread.start()
+    _logger.info("Crawl job started: session=%s crawl=%s", session_id, crawl_id)
     return job
 
 
 def request_cancel(job: CrawlJob) -> None:
     """Request cooperative cancellation for a running crawl job."""
     job.cancel_event.set()
+    _logger.info("Crawl job cancel requested: crawl=%s", job.crawl_id)
     cancel_event_dict: dict[str, object] = {
         "event": _EVENT_CANCEL_REQUESTED,
         "crawl_id": job.crawl_id,

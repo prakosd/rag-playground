@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from artifact_store import LibraryMessage
+from artifact_store import LibraryMessage, get_logger
 from rag_engine import messages
 from rag_engine.catalog import ECHO_MODEL
 from rag_engine.config import RagConfig
@@ -31,6 +31,8 @@ __all__ = [
     "generate_chat_answer",
     "stream_chat_answer",
 ]
+
+_logger = get_logger(__name__)
 
 
 def _history_messages(history: Sequence[ChatTurn]) -> list[tuple[str, str]]:
@@ -108,6 +110,12 @@ def chat_answer(
     resolved, chat_warnings = chat_resolver(
         config.llm_model, temperature=config.temperature, max_tokens=config.max_tokens
     )
+    _logger.info(
+        "Conversational RAG over %s: model=%s, %d turn(s) of history",
+        Path(run_dir).name,
+        resolved.model_id,
+        len(history),
+    )
     # Echo cannot rewrite a query, so only condense with a real model.
     if history and resolved.model_id != ECHO_MODEL:
         try:
@@ -136,5 +144,6 @@ def chat_answer(
     try:
         answer.answer = generate_chat_answer(resolved.model, question, retrieval.chunks, history)
     except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
+        _logger.warning("Conversational RAG generation failed: %s", exc)
         answer.errors.append(messages.classify_generation_failure(str(exc)))
     return answer

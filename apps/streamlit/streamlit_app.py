@@ -32,6 +32,7 @@ from typing import Any
 
 import altair as alt
 import streamlit as st
+from artifact_store import configure_logging, get_logger
 from artifact_store.archives import verify_zip_bytes
 from artifact_store.crawl_results import list_crawl_result_files
 from crawl4md.naming import crawl_folder_name
@@ -50,6 +51,7 @@ from crawl4md_streamlit.generated_files import (
     download_folder_icon,
     download_tree_entry_sort_key,
     folder_zip_cache_token,
+    folder_zip_needs_preparation,
     format_file_size,
     generated_files_cache_token,
     import_signed_zip,
@@ -148,6 +150,23 @@ try:
     _load_dotenv(_APP_DIR.parents[1] / ".env")
 except ImportError:
     pass
+
+
+# Configure project-wide logging once per process, before any runtime work emits
+# records. Anchored to the app directory so the log file lands beside outputs/
+# regardless of the working directory.
+@st.cache_resource(show_spinner=False)
+def _configure_app_logging() -> bool:
+    settings = get_settings()
+    log_file = Path(settings.log_file)
+    if not log_file.is_absolute():
+        log_file = _APP_DIR / log_file
+    configure_logging(level=settings.log_level, log_file=log_file)
+    return True
+
+
+_configure_app_logging()
+_logger = get_logger("crawl4md_streamlit.app")
 
 _DOWNLOAD_LIMIT_BYTES = get_settings().ui_download_limit_mb * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = f"{get_settings().ui_downloads_refresh_sec}s"
@@ -2433,6 +2452,23 @@ def _render_folder_zip_button(relative_path: str) -> None:
     folder_name = Path(relative_path).name
     session_folder = _session_root()
     token = folder_zip_cache_token(session_folder, relative_path)
+    # Building a folder zip reads and compresses every file in it, and
+    # st.download_button needs the bytes at render time. That is cheap for text
+    # crawl output but heavy for vector-index folders (hundreds of MB of Chroma
+    # data) — which would otherwise build and cache in memory on every tree
+    # render. Defer large folders behind an explicit "prepare" click so the tree
+    # stays fast and low-memory; small folders still export in one click.
+    zip_ready_key = f"zip_ready_{relative_path}"
+    if folder_zip_needs_preparation(token[2]) and not st.session_state.get(zip_ready_key):
+        if st.button(
+            strings["FILES_PREPARE_ZIP_BUTTON"],
+            width="content",
+            key=f"prepare_zip_{st.session_state.session_id}_{relative_path}",
+            help=strings["FILES_PREPARE_ZIP_HELP"].format(folder=folder_name),
+        ):
+            st.session_state[zip_ready_key] = True
+            st.rerun()
+        return
     try:
         zip_bytes = _cached_folder_zip_bytes(str(session_folder.resolve()), relative_path, token)
     except (OSError, ValueError):

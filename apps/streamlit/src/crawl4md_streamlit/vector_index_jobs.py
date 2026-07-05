@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from artifact_store import get_logger
 from vector_indexer import IndexingConfig, VectorIndexer, messages
 from vector_indexer.indexer import (
     STAGE_CHUNKING,
@@ -39,6 +40,8 @@ _EVENT_CANCELLED = "cancelled"
 _EVENT_CANCEL_REQUESTED = "cancel_requested"
 
 _UPLOAD_DIR_NAME = "uploads"
+
+_logger = get_logger(__name__)
 
 # Per-stage i18n label keys for the indeterminate "what's happening now" caption
 # shown whenever there is no measurable chunk progress to put on the bar yet.
@@ -145,12 +148,14 @@ def start_vector_index_job(
         thread=thread,
     )
     thread.start()
+    _logger.info("Indexing job started: session=%s vector=%s", session_id, vector_id)
     return job
 
 
 def request_cancel(job: VectorIndexJob) -> None:
     """Request cooperative cancellation for a running indexing job."""
     job.cancel_event.set()
+    _logger.info("Indexing job cancel requested: vector=%s", job.vector_id)
     job.events.put({"event": _EVENT_CANCEL_REQUESTED, "vector_id": job.vector_id})
 
 

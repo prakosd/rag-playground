@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -81,6 +82,23 @@ def test_retrieve_returns_ranked_chunks() -> None:
     assert result.chunks[0].score == 1.0  # distance 0.0 -> perfect similarity
     assert result.chunks[1].score == 0.5  # distance 1.0 -> 1/(1+1)
     assert not result.errors
+
+
+def test_retrieve_logs_semantic_search(caplog: pytest.LogCaptureFixture) -> None:
+    hits = [SearchHit(text="hello", source="a.md", distance=0.0, metadata={"source": "a.md"})]
+
+    with caplog.at_level(logging.INFO, logger="rag_engine"):
+        retrieve(
+            "/tmp/index",
+            "q",
+            RagConfig(top_k=1),
+            embedding_loader=_loader_ok,
+            searcher_factory=lambda run_dir, embeddings: _FakeSearcher(hits),
+        )
+
+    logged = [record.getMessage() for record in caplog.records]
+    assert any("Semantic search" in message for message in logged)
+    assert any("returned 1 chunk" in message for message in logged)
 
 
 def test_retrieve_empty_warns_no_context() -> None:

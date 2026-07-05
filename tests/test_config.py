@@ -30,6 +30,14 @@ class TestCrawlerConfig:
         cfg = CrawlerConfig(urls=["https://example.com"])
         assert cfg.proxies == []
 
+    def test_proxy_on_initial_defaults_false(self):
+        cfg = CrawlerConfig(urls=["https://example.com"])
+        assert cfg.proxy_on_initial is False
+
+    def test_proxy_on_initial_can_be_enabled(self):
+        cfg = CrawlerConfig(urls=["https://example.com"], proxy_on_initial=True)
+        assert cfg.proxy_on_initial is True
+
     def test_proxies_from_comma_string(self):
         cfg = CrawlerConfig(urls=["https://example.com"], proxies="http://p1:8080, http://p2:8080")
         assert cfg.proxies == ["http://p1:8080", "http://p2:8080"]

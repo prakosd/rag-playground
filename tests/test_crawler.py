@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from crawl4md import messages
 from crawl4md.config import CrawlerConfig, PageConfig
@@ -2471,3 +2474,28 @@ class TestProgressEventFields:
         # so eta_remaining_seconds() returns a float for all page events.
         for event in page_events:
             assert isinstance(event["eta_remaining_seconds"], float)
+
+
+@patch("crawl4md.crawler.AsyncWebCrawler")
+def test_crawl_emits_lifecycle_logs(
+    mock_crawler_cls, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def mock_arun(url, **kwargs):
+        _ = kwargs["config"]
+        return _make_mock_result(url, f"<p>{url}</p>", url)
+
+    mock_instance = AsyncMock()
+    mock_instance.arun = AsyncMock(side_effect=mock_arun)
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=False)
+    mock_crawler_cls.return_value = mock_instance
+
+    config = CrawlerConfig(urls=["https://example.com/a"], limit=1, max_retries=0)
+    crawler = SiteCrawler(config, output_base=tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="crawl4md"):
+        crawler.crawl()
+
+    logged = [record.getMessage() for record in caplog.records]
+    assert any("Crawl started" in message for message in logged)
+    assert any("Crawl done" in message for message in logged)

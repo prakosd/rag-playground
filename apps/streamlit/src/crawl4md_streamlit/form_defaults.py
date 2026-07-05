@@ -10,20 +10,26 @@ _settings = get_settings()
 
 DEFAULT_DELAY = _settings.crawl_delay
 DEFAULT_ACTIVITY_LOG_SIZE = _settings.crawl_activity_log_size
-DEFAULT_EXCLUDE_PATHS = "ato.gov.au/api/"
-DEFAULT_EXCLUDE_TAGS = "nav, script, form, style"
+DEFAULT_EXCLUDE_PATHS = _settings.crawl_exclude_paths
+DEFAULT_EXCLUDE_TAGS = _settings.crawl_exclude_tags
 DEFAULT_FLUSH_INTERVAL = _settings.crawl_flush_interval
-DEFAULT_INCLUDE_ONLY_PATHS = "ato.gov.au"
+DEFAULT_INCLUDE_ONLY_PATHS = _settings.crawl_include_only_paths
 DEFAULT_LIMIT = _settings.crawl_limit
 DEFAULT_MAX_DEPTH = _settings.crawl_max_depth
 DEFAULT_MAX_CONCURRENT = _settings.crawl_max_concurrent
 DEFAULT_MAX_FILE_SIZE_MB = _settings.crawl_max_file_size_mb
 DEFAULT_MAX_RETRIES = _settings.crawl_max_retries
-DEFAULT_OUTPUT_EXTENSION = ".md"
+DEFAULT_OUTPUT_EXTENSION = _settings.crawl_default_output_extension
 DEFAULT_TIMEOUT = _settings.crawl_timeout
-DEFAULT_URLS = "https://www.ato.gov.au/"
+DEFAULT_URLS = _settings.crawl_default_urls
 DEFAULT_WAIT_FOR = _settings.crawl_wait_for
-OUTPUT_EXTENSION_OPTIONS = [DEFAULT_OUTPUT_EXTENSION, ".txt"]
+# The supported extensions, with the configured default first so the form's
+# selector pre-selects it (deduplicated to avoid a repeated option).
+_SUPPORTED_OUTPUT_EXTENSIONS = (".md", ".txt")
+OUTPUT_EXTENSION_OPTIONS = [
+    DEFAULT_OUTPUT_EXTENSION,
+    *(ext for ext in _SUPPORTED_OUTPUT_EXTENSIONS if ext != DEFAULT_OUTPUT_EXTENSION),
+]
 
 
 def default_form_values() -> dict[str, Any]:

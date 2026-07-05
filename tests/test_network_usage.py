@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from crawl4md._internal.network_usage import NETWORK_USAGE_FILE, NetworkUsageRecorder
 from crawl4md.config import CrawlerConfig, PageConfig
@@ -91,7 +94,9 @@ def _run_crawler(tmp_path: Path, config: CrawlerConfig, results: list[object]) -
     return crawler
 
 
-def test_crawl_logs_proxy_usage_on_first_retry(tmp_path: Path) -> None:
+def test_crawl_logs_proxy_usage_on_first_retry(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     fail = _make_mock_result("https://example.com", "<p>x</p>", "")
     fail.success = False
     fail.error = ""
@@ -107,7 +112,8 @@ def test_crawl_logs_proxy_usage_on_first_retry(tmp_path: Path) -> None:
         max_retries=2,
         proxies=["http://user:pass@proxy:8080"],
     )
-    crawler = _run_crawler(tmp_path, config, [fail, ok])
+    with caplog.at_level(logging.INFO, logger="crawl4md"):
+        crawler = _run_crawler(tmp_path, config, [fail, ok])
 
     assert crawler.output_dir is not None
     usage_path = crawler.output_dir / "logs" / NETWORK_USAGE_FILE
@@ -119,6 +125,11 @@ def test_crawl_logs_proxy_usage_on_first_retry(tmp_path: Path) -> None:
     assert rows[0]["status"] == "success"
     # Proxy credentials must never leak into the usage log.
     assert "user:pass" not in usage_path.read_text(encoding="utf-8")
+    # The same usage is surfaced in the terminal log (no credentials).
+    proxy_logs = [r.getMessage() for r in caplog.records if "Fetched via proxy" in r.getMessage()]
+    assert proxy_logs
+    assert "https://example.com" in proxy_logs[0]
+    assert "user:pass" not in proxy_logs[0]
 
 
 def test_crawl_without_paid_resources_writes_no_usage_log(tmp_path: Path) -> None:

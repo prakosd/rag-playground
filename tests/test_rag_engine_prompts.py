@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+import pytest
+
 from rag_engine.models import RetrievedChunk
 from rag_engine.prompts import build_rag_prompt, format_knowledge
 
@@ -59,3 +63,10 @@ def test_build_rag_prompt_defaults_blank_tone_to_neutral() -> None:
     prompt = build_rag_prompt("q", _CHUNKS, "   ")
 
     assert "Neutral" in prompt
+
+
+def test_build_rag_prompt_logs_construction(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO, logger="rag_engine"):
+        build_rag_prompt("What is the capital?", _CHUNKS, "Formal")
+
+    assert any("Built RAG prompt" in record.getMessage() for record in caplog.records)

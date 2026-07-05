@@ -1,10 +1,10 @@
 """Client-side focus helper for Streamlit widgets.
 
-Streamlit has no server-side "focus this widget" API, so this injects a tiny
-zero-height HTML component whose script reaches into the parent document and
-focuses the first ``input``/``textarea`` inside a keyed widget's container.
-Streamlit tags each keyed widget's container with a ``st-key-<key>`` CSS class
-(the app already relies on this class for styling), so that is what we target.
+Streamlit has no server-side "focus this widget" API, so this embeds a tiny
+``st.iframe`` whose script reaches into the parent document and focuses the first
+``input``/``textarea`` inside a keyed widget's container. Streamlit tags each
+keyed widget's container with a ``st-key-<key>`` CSS class (the app already
+relies on this class for styling), so that is what we target.
 
 Call :func:`focus_widget` once — right after the widget renders and only when a
 one-shot session flag says focus is pending — so it never steals focus while the
@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import json
 
-import streamlit.components.v1 as components
+import streamlit as st
 
-# Zero height keeps the injected helper invisible; the script still runs.
-_FOCUS_COMPONENT_HEIGHT = 0
+# 1px keeps the injected helper effectively invisible. st.iframe rejects a
+# non-positive height, and the script still runs regardless of the frame size.
+_FOCUS_COMPONENT_HEIGHT = 1
 # Give the parent DOM a few animation frames to mount the target widget before
 # giving up, so focus survives the render race after an st.rerun().
 _FOCUS_MAX_ATTEMPTS = 20
@@ -27,7 +28,7 @@ _FOCUS_MAX_ATTEMPTS = 20
 def focus_widget(key: str) -> None:
     """Move browser focus to the input/textarea of the widget keyed ``key``."""
     selector = json.dumps(f".st-key-{key} input, .st-key-{key} textarea")
-    components.html(
+    st.iframe(
         f"""
         <script>
         (function() {{

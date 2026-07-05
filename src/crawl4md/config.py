@@ -41,6 +41,10 @@ class CrawlerConfig(BaseModel):
     # crawler. exclude=True (+ repr=False) keeps any embedded credentials out of
     # serialized output (the run-metadata front matter), logs, and tracebacks.
     proxies: list[str] = Field(default_factory=list, repr=False, exclude=True)
+    # When True, the initial crawl (round 1) also routes through the configured
+    # proxies (see SiteCrawler._paid_resource_rounds); when False (default) the
+    # initial crawl runs direct and proxies are reserved for retry rounds.
+    proxy_on_initial: bool = False
 
     @field_validator("proxies", mode="before")
     @classmethod

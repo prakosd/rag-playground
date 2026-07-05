@@ -16,7 +16,7 @@ from itertools import count
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from artifact_store import LibraryMessage
+from artifact_store import LibraryMessage, get_logger
 from artifact_store.naming import format_utc_timestamp_slug, parse_utc_timestamp_slug
 from vector_indexer import messages
 from vector_indexer.chunking import chunk_documents
@@ -41,6 +41,8 @@ if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
 
 __all__ = ["DEFAULT_COLLECTION_NAME", "VectorIndexer"]
+
+_logger = get_logger(__name__)
 
 _EMBED_BATCH_SIZE = 32
 
@@ -90,6 +92,7 @@ class VectorIndexer:
         run_dir = Path(output_base) / format_utc_timestamp_slug()
         run_dir.mkdir(parents=True, exist_ok=True)
         result = IndexingResult(success=False, output_dir=run_dir)
+        _logger.info("Indexing started: %d input(s) -> %s", len(inputs), run_dir)
 
         _report_stage(progress_callback, STAGE_RESOLVING_MODEL)
         resolved = self._resolve_embeddings(config, result)
@@ -126,9 +129,11 @@ class VectorIndexer:
                 config.embedding_model, config.embedding_dimension
             )
         except EmbeddingProviderUnavailable as exc:
+            _logger.error("Embedding model %r unavailable: %s", config.embedding_model, exc)
             result.errors.append(messages.classify_model_unavailable(str(exc)))
             return None
         result.warnings.extend(warnings)
+        _logger.info("Embedding model resolved: %s", resolved.model_id)
         return resolved
 
     def _prepare_chunks(
@@ -146,6 +151,11 @@ class VectorIndexer:
         if not load_result.documents:
             result.errors.append(messages.no_readable_content())
             return None
+        _logger.info(
+            "Loaded %d document(s) (%d skipped)",
+            len(load_result.documents),
+            load_result.skipped_file_count,
+        )
         if _cancelled(should_cancel):
             result.warnings.append(messages.cancelled_before_chunking())
             return None
@@ -163,6 +173,7 @@ class VectorIndexer:
         if not chunks:
             result.errors.append(messages.no_chunks())
             return None
+        _logger.info("Chunked into %d chunk(s)", len(chunks))
         return chunks
 
     def _embed_and_store(
@@ -191,6 +202,12 @@ class VectorIndexer:
         store_lock = threading.Lock()
         cancelled = False
         _report_stage(progress_callback, STAGE_EMBEDDING)
+        _logger.info(
+            "Embedding %d chunk(s) in %d batch(es) with %d worker(s)",
+            total,
+            len(batches),
+            workers,
+        )
 
         def _store_batch(batch: list[Chunk], batch_ids: list[str]) -> None:
             vectors = resolved.embeddings.embed_documents([chunk.text for chunk in batch])
@@ -228,10 +245,16 @@ class VectorIndexer:
             _report_stage(progress_callback, STAGE_SAVING)
             store.persist()
         except Exception as exc:  # noqa: BLE001 - boundary around the embedding backend
+            _logger.error("Embedding/storage failed: %s", exc)
             result.errors.append(messages.classify_embedding_failure(str(exc)))
             return
         result.indexed_file_count = len(indexed_sources)
         result.indexed_sources = sorted(indexed_sources)
+        _logger.info(
+            "Saved index: %d chunk(s) from %d source(s)",
+            result.indexed_chunk_count,
+            result.indexed_file_count,
+        )
 
     def _finalize(
         self,
@@ -244,6 +267,13 @@ class VectorIndexer:
     ) -> IndexingResult:
         result.success = result.indexed_chunk_count > 0 and not result.errors
         _write_manifest(run_dir, config, result, model_id=model_id, collection_name=collection_name)
+        _logger.info(
+            "Indexing complete: success=%s files=%d chunks=%d skipped=%d",
+            result.success,
+            result.indexed_file_count,
+            result.indexed_chunk_count,
+            result.skipped_file_count,
+        )
         return result
 
 

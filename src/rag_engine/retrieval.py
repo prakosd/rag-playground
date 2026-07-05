@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from artifact_store import LibraryMessage
+from artifact_store import LibraryMessage, get_logger
 from rag_engine import messages
 from rag_engine.config import RagConfig
 from rag_engine.models import RetrievedChunk
@@ -26,6 +26,8 @@ from vector_indexer import (
 )
 
 __all__ = ["RetrievalResult", "load_index_embeddings", "retrieve"]
+
+_logger = get_logger(__name__)
 
 
 @dataclass
@@ -61,6 +63,12 @@ def retrieve(
     """Run similarity search for *query* over the index in *run_dir*."""
     result = RetrievalResult()
     run_path = Path(run_dir)
+    _logger.info(
+        "Semantic search: top %d (%s) over index %s",
+        config.top_k,
+        config.search_type,
+        run_path.name,
+    )
     try:
         resolved_emb, emb_warnings = embedding_loader(run_path)
     except FileNotFoundError:
@@ -84,6 +92,7 @@ def retrieve(
             source_filter=config.source_filter,
         )
     except Exception as exc:  # noqa: BLE001 - boundary around the vector store
+        _logger.warning("Semantic search failed over %s: %s", run_path.name, exc)
         result.errors.append(messages.retrieval_failed(str(exc)))
         return result
     chunks = [
@@ -98,6 +107,12 @@ def retrieve(
     result.chunks = [chunk for chunk in chunks if chunk.score >= config.score_threshold]
     if not result.chunks:
         result.warnings.append(messages.no_context())
+    _logger.info(
+        "Semantic search returned %d chunk(s) (%d above score threshold %.2f)",
+        len(chunks),
+        len(result.chunks),
+        config.score_threshold,
+    )
     return result
 
 

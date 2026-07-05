@@ -181,7 +181,11 @@ class FinalOutputWriter:
         unique_fail = list(dict.fromkeys(remaining_fail_urls))
         self.write_url_file(final_dir / _FAIL_URLS_FILE, unique_fail)
 
-        if write_content:
+        # When cleanup is on (the default), write_sorted_files immediately writes
+        # the sorted content and deletes this unsorted copy — so skip writing it
+        # to avoid a redundant full pass over every page at finalization (lower
+        # peak CPU/memory and transient disk). With cleanup off (debug), keep it.
+        if write_content and not _CLEANUP_INTERMEDIATE_FILES:
             success_entries = self.index_success()
             if success_entries:
                 self.stream_entries_to_writer(

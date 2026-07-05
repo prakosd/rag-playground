@@ -456,6 +456,8 @@ STRINGS_ID: Strings = {
     "FILES_DOWNLOAD_ZIP_BUTTON": ":material/download: Ekspor",
     "FILES_DOWNLOAD_ZIP_HELP": "Ekspor folder {folder} sebagai zip bertanda tangan yang bisa diimpor di instance lain",
     "FILES_DOWNLOAD_ZIP_TOO_LARGE": "Folder {folder} terlalu besar untuk diekspor sebagai zip.",
+    "FILES_PREPARE_ZIP_BUTTON": ":material/folder_zip: Siapkan ekspor",
+    "FILES_PREPARE_ZIP_HELP": "Folder {folder} berukuran besar \u2014 siapkan ekspornya dulu, lalu unduh.",
     "FILES_DELETE_FOLDER_BUTTON": "Hapus folder ini",
     "FILES_DELETE_FOLDER_HELP": "Hapus permanen folder {folder} dan semua isinya.",
     "FILES_DELETE_FOLDER_DIALOG_TITLE": "Hapus folder?",

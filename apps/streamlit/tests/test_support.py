@@ -1368,6 +1368,7 @@ def test_format_status_row_builds_link_and_right_text() -> None:
 
     assert 'href="https://example.com/path"' in markup
     assert "Next:" in markup
+    assert "\u00bb" in markup  # visual marker before the URL
     assert "About 2 minute(s) left" in markup
 
 
@@ -1407,6 +1408,7 @@ def test_format_status_url_preview_escapes_links_and_overflow() -> None:
     )
 
     assert 'href="https://example.com/a"' in markup
+    assert "\u00bb" in markup  # visual marker before each URL
     assert 'onclick="alert' not in markup
     assert "&quot; onclick=&quot;alert" in markup
     assert "+2 more" in markup
