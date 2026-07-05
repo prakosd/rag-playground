@@ -36,7 +36,7 @@ STRINGS_ID: Strings = {
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
-    "NAV_RAG_QA": "4. RAG Q&A",
+    "NAV_RAG_QA": "4. RAG Q&A Sederhana",
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/settings: Langkah 2 - Bangun Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
@@ -48,10 +48,10 @@ STRINGS_ID: Strings = {
         "Pilih vector database dari koleksi terindeks Anda, masukkan kueri pencarian atau "
         "embedding, dan segera ambil chunk yang paling mirip berdasarkan semantic similarity."
     ),
-    "PAGE_RAG_QA_TITLE": ":material/question_answer: Langkah 4 - Tanya Jawab RAG",
+    "PAGE_RAG_QA_TITLE": ":material/question_answer: Langkah 4 - RAG Q&A Sederhana",
     "PAGE_RAG_QA_SUBTITLE": (
-        "Ajukan satu pertanyaan, ambil konteks, susun prompt, dan tinjau jawaban LLM "
-        "beserta sumbernya."
+        "Ambil pengetahuan dengan semantic search, susun prompt yang berlandaskan konteks, "
+        "lalu panggil language model untuk menghasilkan jawaban dari pengetahuan tersebut."
     ),
     "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Langkah 5 - Conversational RAG",
     "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
@@ -191,14 +191,65 @@ STRINGS_ID: Strings = {
     "SEARCH_HISTORY_OPT_DIVERSITY": "keberagaman {value}",
     "SEARCH_HISTORY_OPT_POOL": "kumpulan {n}",
     "SEARCH_HISTORY_OPT_SOURCES": "{n} berkas",
-    "QA_SECTION_HEADER": "❓ Ajukan pertanyaan",
+    "SEARCH_HISTORY_LABEL_TIME": "Waktu",
+    "SEARCH_HISTORY_LABEL_RESULTS": "Hasil",
+    "SEARCH_HISTORY_LABEL_INDEX": "Indeks",
+    "SEARCH_HISTORY_LABEL_OPTIONS": "Opsi",
+    "SEARCH_HISTORY_LABEL_DETAILS": "Detail",
+    "QA_SECTION_HEADER": ":material/quiz: Tanya & hasilkan",
     "QA_SECTION_CAPTION": (
-        "Ambil konteks dan biarkan model terpilih menjawab satu pertanyaan beserta sumbernya."
+        "Cari pengetahuan di indeks Anda, susun prompt, dan hasilkan jawaban yang "
+        "berlandaskan konteks."
     ),
+    "QA_LLM_LABEL": "Model bahasa",
+    "QA_LLM_HELP": (
+        "Model bahasa yang membaca prompt dan menulis jawaban. Model cloud memerlukan "
+        "kredensial; tanpa itu aplikasi beralih ke model echo offline."
+    ),
+    "QA_TOP_RESULTS_LABEL": "Hasil teratas",
+    "QA_TOP_RESULTS_HELP": (
+        "Berapa banyak chunk top-N dari semantic search — dengan skor kemiripan tertinggi "
+        "— yang diambil sebagai pengetahuan untuk jawaban."
+    ),
+    "QA_TONE_LABEL": "Nada",
+    "QA_TONE_HELP": "Gaya penulisan yang digunakan model saat menjawab.",
     "QA_QUESTION_LABEL": "Pertanyaan Anda",
     "QA_QUESTION_PLACEHOLDER": "Ajukan pertanyaan tentang dokumen yang terindeks…",
-    "QA_BUTTON": "Tanya",
+    "QA_GENERATE_BUTTON": "Hasilkan prompt",
+    "QA_GENERATE_HELP": (
+        "Jalankan semantic search dan susun prompt RAG dari pertanyaan, pengetahuan yang "
+        "diambil, dan nada."
+    ),
+    "QA_PROMPT_LABEL": "Prompt",
+    "QA_PROMPT_PLACEHOLDER": "Hasilkan prompt untuk melihatnya di sini — lalu sunting bila perlu dan kirim.",
+    "QA_PROMPT_HELP": (
+        "Prompt lengkap yang dikirim ke model. Sunting bebas, lalu Kirim (atau tekan "
+        "Ctrl/Cmd+Enter)."
+    ),
+    "QA_SEND_BUTTON": "Kirim",
+    "QA_SEND_HELP": "Kirim prompt ke model bahasa terpilih dan streaming jawabannya.",
+    "QA_SENDING": "Menunggu model…",
+    "QA_NO_PROMPT_HINT": "Hasilkan prompt terlebih dahulu, lalu kirim.",
     "QA_ANSWER_HEADER": "Jawaban",
+    "QA_ANSWER_STATS": (
+        "Token — input {input} · output {output} · total {total} · dijawab dalam {seconds}s"
+    ),
+    "QA_TOKEN_NA": "n/a",
+    "QA_SUMMARY_INPUT_LABEL": "Token input",
+    "QA_SUMMARY_OUTPUT_LABEL": "Token output",
+    "QA_SUMMARY_TOTAL_LABEL": "Total token",
+    "QA_HISTORY_EXPANDER": ":material/history: Riwayat prompt",
+    "QA_HISTORY_EMPTY": "Belum ada prompt — kirim satu untuk membangun riwayat Anda.",
+    "QA_HISTORY_REPLAY_HELP": "Muat prompt ini kembali ke formulir",
+    "QA_HISTORY_INDEX_GONE": "Vector database itu sudah tidak ada — pilih indeks lain.",
+    "QA_HISTORY_META_INDEX": "Indeks",
+    "QA_HISTORY_META_MODEL": "Model",
+    "QA_HISTORY_META_TONE": "Nada",
+    "QA_HISTORY_META_TOP": "Hasil teratas",
+    "QA_HISTORY_META_TOKENS": "Token",
+    "QA_HISTORY_META_TIME": "Waktu respons",
+    "QA_HISTORY_TOKENS_VALUE": "{input} in · {output} out · {total} total",
+    "QA_HISTORY_SECONDS": "{seconds}s",
     "CHAT_SECTION_HEADER": "💬 Mengobrol dengan dokumen Anda",
     "CHAT_SECTION_CAPTION": (
         "Ajukan pertanyaan lanjutan; aplikasi menulis ulang dengan konteks percakapan dan "

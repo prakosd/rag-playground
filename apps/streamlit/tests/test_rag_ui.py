@@ -1,20 +1,71 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from rag_engine import RetrievedChunk
 from vector_indexer import IndexManifest
 
 from crawl4md_streamlit.generated_files import format_local_datetime
 from crawl4md_streamlit.i18n import STRINGS_EN
+from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.rag_ui import (
+    find_index,
     format_score_percent,
     index_metadata_rows,
+    kv_grid_html,
+    local_time_label,
     mmr_controls_enabled,
     ordered_result_tabs,
     result_detail_caption,
     sort_results_by_score,
 )
+
+
+def _index_ref(folder: str, run: str) -> IndexRef:
+    manifest = IndexManifest(
+        embedding_model_requested="m",
+        embedding_model_used="m",
+        embedding_dimension=512,
+        collection_name="c",
+        chunk_size=600,
+        chunk_overlap=100,
+        language="English",
+        success=True,
+        indexed_file_count=1,
+        indexed_chunk_count=1,
+        skipped_file_count=0,
+    )
+    return IndexRef(run_dir=Path("idx"), vector_folder=folder, run_name=run, manifest=manifest)
+
+
+def test_find_index_matches_folder_and_run() -> None:
+    ref = _index_ref("vector_1", "2026-07-04_09-00-00")
+
+    assert find_index([ref], "vector_1", "2026-07-04_09-00-00") is ref
+    assert find_index([ref], "vector_1", "other") is None
+    assert find_index([], "vector_1", "x") is None
+
+
+def test_local_time_label_passes_through_bad_value() -> None:
+    assert local_time_label("not-a-timestamp") == "not-a-timestamp"
+    assert local_time_label("2026-07-04T10:00:00+00:00")
+
+
+def test_kv_grid_html_escapes_and_right_aligns_values() -> None:
+    grid = kv_grid_html([("Model", "a & b"), ("Tone", "Neutral")])
+
+    assert "grid-template-columns:auto 1fr" in grid
+    assert "a &amp; b" in grid  # value is html-escaped
+    assert "Neutral" in grid
+    assert "margin-bottom" not in grid
+
+
+def test_kv_grid_html_four_column_with_margin() -> None:
+    grid = kv_grid_html([("A", "1")], columns=4, margin_bottom=True)
+
+    assert "grid-template-columns:auto 1fr auto 1fr" in grid
+    assert "margin-bottom:1rem" in grid
 
 
 def _chunk(score: float) -> RetrievedChunk:

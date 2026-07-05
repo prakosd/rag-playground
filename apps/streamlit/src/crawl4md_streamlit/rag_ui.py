@@ -37,9 +37,12 @@ _RESULT_CARD_CSS = (
 
 __all__ = [
     "RagPageContext",
+    "find_index",
     "format_score_percent",
     "index_metadata_rows",
     "index_option_label",
+    "kv_grid_html",
+    "local_time_label",
     "mmr_controls_enabled",
     "ordered_result_tabs",
     "render_index_metadata",
@@ -149,21 +152,55 @@ def _value_or_dash(value: object) -> str:
     return "—" if value is None else str(value)
 
 
-def _format_created_at(created_at: str | None) -> str:
-    """Format an ISO-8601 manifest timestamp as a local-time label.
+def find_index(indexes: Sequence[IndexRef], folder: str, run: str) -> IndexRef | None:
+    """Return the index matching *folder* + *run*, or ``None`` when none does."""
+    return next(
+        (ref for ref in indexes if ref.vector_folder == folder and ref.run_name == run), None
+    )
 
-    Reuses ``generated_files.format_local_datetime`` so the index's Created value
-    reads in the same local time as the Search history and Output Files sections.
+
+def local_time_label(timestamp_utc: str) -> str:
+    """Convert a stored UTC timestamp to the app's local-time display label.
+
+    Invalid values pass through unchanged; naive timestamps are treated as UTC.
     """
-    if not created_at:
-        return "—"
     try:
-        parsed = datetime.fromisoformat(created_at)
+        parsed = datetime.fromisoformat(timestamp_utc)
     except ValueError:
-        return created_at
+        return timestamp_utc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return format_local_datetime(parsed)
+
+
+def kv_grid_html(
+    rows: Sequence[tuple[str, str]], *, columns: int = 2, margin_bottom: bool = False
+) -> str:
+    """Render label/value *rows* as a compact aligned grid (values right-aligned).
+
+    *columns* is 2 (label | value, full width) or 4 (label value label value, denser),
+    so the index Details panel and the Step 3/4 history cards share one tidy look.
+    """
+    cells = "".join(
+        f'<div style="opacity:0.65">{html.escape(label)}</div>'
+        f'<div style="text-align:right">{html.escape(value)}</div>'
+        for label, value in rows
+    )
+    template = "auto 1fr auto 1fr" if columns == 4 else "auto 1fr"
+    margin = ";margin-bottom:1rem" if margin_bottom else ""
+    return (
+        f'<div style="display:grid;grid-template-columns:{template};'
+        f'gap:2px 1.5rem;font-size:0.875rem{margin}">{cells}</div>'
+    )
+
+
+def _format_created_at(created_at: str | None) -> str:
+    """Format an ISO-8601 manifest timestamp as a local-time label (— when absent).
+
+    Reuses ``local_time_label`` so the index's Created value reads in the same local
+    time as the Search history and Output Files sections.
+    """
+    return "—" if not created_at else local_time_label(created_at)
 
 
 def result_detail_caption(strings: Strings, chunk: RetrievedChunk) -> str:
@@ -181,15 +218,7 @@ def result_detail_caption(strings: Strings, chunk: RetrievedChunk) -> str:
 
 def render_index_metadata(strings: Strings, index: IndexRef) -> None:
     """Show the selected index's manifest details as a compact 4-column grid."""
-    cells = "".join(
-        f'<div style="opacity:0.65">{html.escape(label)}</div>'
-        f'<div style="text-align:right">{html.escape(value)}</div>'
-        for label, value in index_metadata_rows(strings, index.manifest)
-    )
-    grid = (
-        '<div style="display:grid;grid-template-columns:auto 1fr auto 1fr;'
-        f'gap:2px 1.5rem;font-size:0.875rem;margin-bottom:1rem">{cells}</div>'
-    )
+    grid = kv_grid_html(index_metadata_rows(strings, index.manifest), columns=4, margin_bottom=True)
     with st.expander(strings["SEARCH_META_HEADER"], expanded=False):
         st.markdown(grid, unsafe_allow_html=True)
 

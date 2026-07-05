@@ -13,6 +13,7 @@ from functools import cache
 
 __all__ = [
     "CRAWL_FOLDER_PREFIX",
+    "RAG_QA_FOLDER_PREFIX",
     "SEARCH_FOLDER_PREFIX",
     "UTC_TIMESTAMP_SLUG_FORMAT",
     "VECTOR_FOLDER_PREFIX",
@@ -27,6 +28,7 @@ __all__ = [
 CRAWL_FOLDER_PREFIX = "crawl_"
 VECTOR_FOLDER_PREFIX = "vector_"
 SEARCH_FOLDER_PREFIX = "search_"
+RAG_QA_FOLDER_PREFIX = "rag_qa_"
 UTC_TIMESTAMP_SLUG_FORMAT = "%Y-%m-%d_%H-%M-%S"
 
 _SEQUENCE_ID_PADDING = 2

@@ -13,10 +13,15 @@ retrieve(run_dir, query, config)            # Step 3
   ├─ resolve_embedding(model, dim)           → LangChain Embeddings (or raises if unavailable)
   └─ VectorSearcher.search(...)               → RetrievedChunk[] (+ similarity scores)
 
-answer_question(run_dir, question, config)  # Step 4
+answer_question(run_dir, question, config)  # Step 4 (one-call convenience)
   ├─ retrieve(...)                           → context chunks
   ├─ resolve_chat_model(llm_model)           → BaseChatModel (init_chat_model, echo fallback)
   └─ prompt | model | StrOutputParser        → RagAnswer(answer, sources, warnings, errors)
+
+build_rag_prompt(question, chunks, tone)    # Step 4 (editable, fully-visible prompt)
+  └─ format_knowledge(chunks)                → source-labelled, delimiter-fenced knowledge
+stream_prompt(chat_model, prompt)           # Step 4 (send the raw prompt, streamed)
+  └─ PromptGeneration                        → streams answer text; exposes TokenUsage after
 
 chat_answer(run_dir, question, history, config)  # Step 5
   ├─ condense_question(model, history, q)    → standalone search query
@@ -85,7 +90,9 @@ can be tested without ChromaDB or network access.
 
 Retrieved context is wrapped in `<context>` delimiters and the model is told to
 treat it as data only and never follow instructions embedded inside it (see
-`prompts.py`).
+`prompts.py`). `build_rag_prompt` (Step 4) assembles a complete, human-readable
+prompt whose retrieved knowledge is fenced between explicit delimiters and marked
+data-only, so a UI can show and edit exactly what the model receives.
 
 ### Structured results
 
@@ -101,14 +108,14 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | Module | Responsibility |
 |---|---|
 | `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter` |
-| `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS`, `DEFAULT_CHAT_MODEL`, `ECHO_MODEL` |
-| `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), lazy echo model |
+| `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock incl. APAC profiles, OpenAI, echo), `DEFAULT_CHAT_MODEL`, `ECHO_MODEL` |
+| `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), `thinking_disabled_model_kwargs` (best-effort per-provider), lazy echo model |
 | `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, and post-filter by score threshold (Step 3) |
 | `search.py` | `VectorSearcher` interface + `ChromaSearcher` + backend-neutral `SearchHit` |
-| `prompts.py` | QA + condense-question prompts, context formatting |
-| `qa.py` | `answer_question` / `generate_answer` / `stream_answer` (Step 4) |
+| `prompts.py` | QA + condense-question prompts, context formatting; `build_rag_prompt` / `format_knowledge` (Step 4 editable prompt) |
+| `qa.py` | `answer_question` / `generate_answer` / `stream_answer`; `stream_prompt` / `generate_from_prompt` (raw editable prompt, Step 4) |
 | `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (Step 5) |
-| `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn` |
+| `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn`, `TokenUsage` |
 | `messages.py` | stable `rag.*` message codes + builders |
 
 ## Constraints

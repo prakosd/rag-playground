@@ -99,6 +99,18 @@ class Settings(BaseSettings):
     # Chunks retrieved as context for QA/conversational answers. More = broader
     # context but more tokens/noise.
     rag_top_k: int
+    # Top matches (highest similarity) retrieved as knowledge on the Simple RAG
+    # Q&A page (Step 4).
+    rag_qa_top_results: int
+    # Tones offered on the Step 4 Tone selector (comma-separated), in order.
+    rag_qa_tones: str
+    # The tone pre-selected on the Step 4 Tone selector.
+    rag_qa_default_tone: str
+    # Language models offered on the RAG pages (comma-separated rag_engine
+    # catalog ids), in display order. Unknown ids are ignored.
+    rag_llm_models: str
+    # The language model pre-selected on the RAG pages.
+    rag_default_llm_model: str
     # Default number of ranked matches shown on the Semantic Search page.
     semantic_search_top_n: int
     # Default open tab for each Semantic Search result card: "raw" or "preview".

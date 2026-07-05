@@ -13,7 +13,7 @@ import importlib.util
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from artifact_store import LibraryMessage
 from rag_engine import messages
@@ -29,10 +29,16 @@ __all__ = [
     "build_chat_model",
     "build_echo_chat_model",
     "resolve_chat_model",
+    "thinking_disabled_model_kwargs",
 ]
 
 _BEDROCK_PROVIDER = "bedrock_converse"
 _OPENAI_PROVIDER = "openai"
+_QWEN_MODEL_MARKER = "qwen"
+# Best-effort per-provider request fields that suppress a model's chain-of-thought
+# / "thinking" output. Qwen3 on Bedrock thinks unless told not to; the switch is a
+# chat-template flag passed through Converse's additional model request fields.
+_QWEN_DISABLE_THINKING_FIELDS = {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 class ChatModelUnavailable(RuntimeError):
@@ -55,6 +61,20 @@ def _has_aws_credentials() -> bool:
     if os.environ.get("AWS_PROFILE"):
         return True
     return bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
+
+
+def thinking_disabled_model_kwargs(model_id: str, provider: str) -> dict[str, Any]:
+    """Return extra ``init_chat_model`` kwargs that disable a model's thinking.
+
+    Reasoning/thinking is off by default for the models shipped here, so this is a
+    no-op for most of them. Qwen3 on Bedrock is the documented exception: it thinks
+    unless a chat-template flag says otherwise. The map is intentionally narrow —
+    passing unknown request fields can make a provider reject the call — so
+    unrecognised models get an empty dict.
+    """
+    if provider == _BEDROCK_PROVIDER and _QWEN_MODEL_MARKER in model_id.lower():
+        return {"additional_model_request_fields": {**_QWEN_DISABLE_THINKING_FIELDS}}
+    return {}
 
 
 def build_chat_model(
@@ -93,6 +113,7 @@ def build_chat_model(
         model_provider=info.provider,
         temperature=temperature,
         max_tokens=max_tokens,
+        **thinking_disabled_model_kwargs(info.model_id, info.provider),
     )
 
 

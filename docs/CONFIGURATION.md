@@ -49,7 +49,12 @@ crawl/index/RAG config models.
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
 | `VECTOR_EMBEDDING_MODELS` | `all-MiniLM-L6-v2,amazon.titan-embed-text-v2:0,text-embedding-3-small` | Embedding models offered in the dropdown, in display order |
 | `VECTOR_DEFAULT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model pre-selected in the dropdown |
-| `RAG_TOP_K` | `4` | Chunks retrieved as context (Steps 4-5) |
+| `RAG_TOP_K` | `4` | Chunks retrieved as context (Step 5 conversational) |
+| `RAG_QA_TOP_RESULTS` | `5` | Top matches retrieved as knowledge on Step 4 (Simple RAG Q&A) |
+| `RAG_QA_TONES` | `Neutral,Formal,Friendly,…` | Tones offered on the Step 4 Tone selector (comma-separated, in order) |
+| `RAG_QA_DEFAULT_TONE` | `Neutral` | Tone pre-selected on the Step 4 selector |
+| `RAG_LLM_MODELS` | `apac.amazon.nova-micro-v1:0,…,gpt-4o-mini,echo` | Language models offered on the RAG pages (comma-separated `rag_engine` catalog ids, in order) |
+| `RAG_DEFAULT_LLM_MODEL` | `apac.amazon.nova-lite-v1:0` | Language model pre-selected on the RAG pages |
 | `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |
 | `SEMANTIC_SEARCH_DEFAULT_TAB` | `raw` | Default open tab on each result card (`raw` or `preview`) |
 | `SEMANTIC_SEARCH_DEFAULT_MODE` | `similarity` | Default search mode (`similarity` or `mmr`) |

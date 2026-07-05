@@ -28,8 +28,16 @@ from rag_engine.llm import (
     ResolvedChatModel,
     resolve_chat_model,
 )
-from rag_engine.models import ChatTurn, RagAnswer, RetrievedChunk
-from rag_engine.qa import answer_question, generate_answer, stream_answer
+from rag_engine.models import ChatTurn, RagAnswer, RetrievedChunk, TokenUsage
+from rag_engine.prompts import build_rag_prompt, format_knowledge
+from rag_engine.qa import (
+    PromptGeneration,
+    answer_question,
+    generate_answer,
+    generate_from_prompt,
+    stream_answer,
+    stream_prompt,
+)
 from rag_engine.retrieval import RetrievalResult, retrieve
 from rag_engine.search import ChromaSearcher, SearchHit, VectorSearcher, open_searcher
 
@@ -41,22 +49,28 @@ __all__ = [
     "ChatModelUnavailable",
     "ChatTurn",
     "ChromaSearcher",
+    "PromptGeneration",
     "RagAnswer",
     "RagConfig",
     "ResolvedChatModel",
     "RetrievalResult",
     "RetrievedChunk",
     "SearchHit",
+    "TokenUsage",
     "VectorSearcher",
     "answer_question",
+    "build_rag_prompt",
     "chat_answer",
     "condense_question",
+    "format_knowledge",
     "generate_answer",
     "generate_chat_answer",
+    "generate_from_prompt",
     "get_chat_model_info",
     "open_searcher",
     "resolve_chat_model",
     "retrieve",
     "stream_answer",
     "stream_chat_answer",
+    "stream_prompt",
 ]

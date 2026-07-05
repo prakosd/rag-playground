@@ -35,7 +35,7 @@ STRINGS_EN: Strings = {
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
-    "NAV_RAG_QA": "4. RAG Q&A",
+    "NAV_RAG_QA": "4. Simple RAG Q&A",
     "NAV_CONVERSATIONAL_RAG": "5. Conversational RAG",
     "PAGE_VECTOR_INDEX_TITLE": ":material/settings: Step 2 - Build Vector Index",
     "PAGE_VECTOR_INDEX_SUBTITLE": (
@@ -47,10 +47,10 @@ STRINGS_EN: Strings = {
         "Select a vector database from your indexed collections, enter a search query or "
         "embedding, and instantly retrieve the top-ranked similar chunks based on semantic similarity."
     ),
-    "PAGE_RAG_QA_TITLE": ":material/question_answer: Step 4 - RAG Q&A",
+    "PAGE_RAG_QA_TITLE": ":material/question_answer: Step 4 - Simple RAG Q&A",
     "PAGE_RAG_QA_SUBTITLE": (
-        "Ask one question, retrieve context, build the prompt, and review the LLM answer "
-        "with sources."
+        "Retrieve knowledge with semantic search, assemble a grounded prompt, then call a "
+        "language model to generate an answer from that knowledge."
     ),
     "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Step 5 - Conversational RAG",
     "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
@@ -186,14 +186,63 @@ STRINGS_EN: Strings = {
     "SEARCH_HISTORY_OPT_DIVERSITY": "diversity {value}",
     "SEARCH_HISTORY_OPT_POOL": "pool {n}",
     "SEARCH_HISTORY_OPT_SOURCES": "{n} file(s)",
-    "QA_SECTION_HEADER": "❓ Ask a question",
+    "SEARCH_HISTORY_LABEL_TIME": "Time",
+    "SEARCH_HISTORY_LABEL_RESULTS": "Results",
+    "SEARCH_HISTORY_LABEL_INDEX": "Index",
+    "SEARCH_HISTORY_LABEL_OPTIONS": "Options",
+    "SEARCH_HISTORY_LABEL_DETAILS": "Details",
+    "QA_SECTION_HEADER": ":material/quiz: Ask & generate",
     "QA_SECTION_CAPTION": (
-        "Retrieve context and let the selected model answer one question with sources."
+        "Search your index for knowledge, assemble the prompt, and generate a grounded answer."
     ),
+    "QA_LLM_LABEL": "Language model",
+    "QA_LLM_HELP": (
+        "The language model that reads the prompt and writes the answer. Cloud models need "
+        "credentials; without them the app falls back to the offline echo model."
+    ),
+    "QA_TOP_RESULTS_LABEL": "Top results",
+    "QA_TOP_RESULTS_HELP": (
+        "How many top-N chunks from semantic search — those with the highest similarity "
+        "score — are retrieved as knowledge for the answer."
+    ),
+    "QA_TONE_LABEL": "Tone",
+    "QA_TONE_HELP": "The writing style the model should use when answering.",
     "QA_QUESTION_LABEL": "Your question",
     "QA_QUESTION_PLACEHOLDER": "Ask a question about your indexed documents…",
-    "QA_BUTTON": "Ask",
+    "QA_GENERATE_BUTTON": "Generate prompt",
+    "QA_GENERATE_HELP": (
+        "Run semantic search and assemble the RAG prompt from your question, retrieved "
+        "knowledge, and tone."
+    ),
+    "QA_PROMPT_LABEL": "Prompt",
+    "QA_PROMPT_PLACEHOLDER": "Generate a prompt to see it here — then edit it if you like and send.",
+    "QA_PROMPT_HELP": (
+        "The full prompt sent to the model. Edit it freely, then Send (or press Ctrl/Cmd+Enter)."
+    ),
+    "QA_SEND_BUTTON": "Send",
+    "QA_SEND_HELP": "Send the prompt to the selected language model and stream the answer.",
+    "QA_SENDING": "Waiting for the model…",
+    "QA_NO_PROMPT_HINT": "Generate a prompt first, then send it.",
     "QA_ANSWER_HEADER": "Answer",
+    "QA_ANSWER_STATS": (
+        "Tokens — input {input} · output {output} · total {total} · answered in {seconds}s"
+    ),
+    "QA_TOKEN_NA": "n/a",
+    "QA_SUMMARY_INPUT_LABEL": "Input tokens",
+    "QA_SUMMARY_OUTPUT_LABEL": "Output tokens",
+    "QA_SUMMARY_TOTAL_LABEL": "Total tokens",
+    "QA_HISTORY_EXPANDER": ":material/history: Prompt history",
+    "QA_HISTORY_EMPTY": "No prompts yet — send one to build your history.",
+    "QA_HISTORY_REPLAY_HELP": "Load this prompt back into the form",
+    "QA_HISTORY_INDEX_GONE": "That vector database no longer exists — pick another index.",
+    "QA_HISTORY_META_INDEX": "Index",
+    "QA_HISTORY_META_MODEL": "Model",
+    "QA_HISTORY_META_TONE": "Tone",
+    "QA_HISTORY_META_TOP": "Top results",
+    "QA_HISTORY_META_TOKENS": "Tokens",
+    "QA_HISTORY_META_TIME": "Response time",
+    "QA_HISTORY_TOKENS_VALUE": "{input} in · {output} out · {total} total",
+    "QA_HISTORY_SECONDS": "{seconds}s",
     "CHAT_SECTION_HEADER": "💬 Chat with your documents",
     "CHAT_SECTION_CAPTION": (
         "Ask follow-up questions; the app rewrites them using the conversation and "

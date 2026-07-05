@@ -11,12 +11,14 @@ import streamlit as st
 from rag_engine import RagConfig, retrieve
 
 from crawl4md_streamlit.focus import focus_widget
-from crawl4md_streamlit.generated_files import format_local_datetime
 from crawl4md_streamlit.i18n import Strings, get_strings
 from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.rag_ui import (
     RagPageContext,
+    find_index,
     index_option_label,
+    kv_grid_html,
+    local_time_label,
     mmr_controls_enabled,
     render_index_metadata,
     render_messages,
@@ -210,7 +212,7 @@ def render_page(context: RagPageContext) -> None:
     request: tuple[IndexRef, str, RagConfig] | None = None
     replay_execute = st.session_state.pop(_REPLAY_EXECUTE_KEY, None)
     if replay_execute is not None:
-        ref = _find_index(
+        ref = find_index(
             indexes,
             str(replay_execute.get("index_folder", "")),
             str(replay_execute.get("index_run", "")),
@@ -290,9 +292,7 @@ def _apply_replay_widget_state(strings: Strings, indexes: Sequence[IndexRef], re
     st.session_state[_MMR_LAMBDA_KEY] = float(replay.get("mmr_lambda", _DEFAULT_MMR_LAMBDA))
     st.session_state[_FETCH_K_KEY] = int(replay.get("fetch_k", _DEFAULT_FETCH_K))
     st.session_state[_MIN_SCORE_KEY] = round(float(replay.get("score_threshold", 0.0)) * 100)
-    ref = _find_index(
-        indexes, str(replay.get("index_folder", "")), str(replay.get("index_run", ""))
-    )
+    ref = find_index(indexes, str(replay.get("index_folder", "")), str(replay.get("index_run", "")))
     if ref is not None:
         st.session_state[_INDEX_KEY] = index_option_label(strings, ref)
         st.session_state[_SOURCES_KEY] = [
@@ -309,12 +309,6 @@ def _prune_stale_sources(source_options: list[str]) -> None:
     selected = st.session_state.get(_SOURCES_KEY)
     if selected:
         st.session_state[_SOURCES_KEY] = [source for source in selected if source in source_options]
-
-
-def _find_index(indexes: Sequence[IndexRef], folder: str, run: str) -> IndexRef | None:
-    return next(
-        (ref for ref in indexes if ref.vector_folder == folder and ref.run_name == run), None
-    )
 
 
 def _config_from_record(record: dict) -> RagConfig:
@@ -350,17 +344,6 @@ def _options_summary(strings: Strings, record: SearchRecord) -> str:
     return " · ".join(parts)
 
 
-def _local_time_label(timestamp_utc: str) -> str:
-    """Convert a stored UTC timestamp to the app's local-time display label."""
-    try:
-        parsed = datetime.fromisoformat(timestamp_utc)
-    except ValueError:
-        return timestamp_utc
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return format_local_datetime(parsed)
-
-
 def _index_details_caption(strings: Strings, record: SearchRecord, ref: IndexRef | None) -> str:
     """One-line index details, enriched from the live manifest when it still exists.
 
@@ -388,9 +371,10 @@ def _render_search_history(
 ) -> None:
     """Render the collapsible search history as a tidy card list.
 
-    Each card leads with the query, then muted lines for the time + result count,
-    the source index + search options, and the index details (enriched from the
-    live manifest when the index still exists). A replay button re-runs it.
+    Each card leads with the query, then an aligned label/value grid (time,
+    result count, source index, search options, and index details — enriched
+    from the live manifest when the index still exists), matching the index
+    Details panel. A replay button re-runs the query.
     """
     records = load_search_history(session_root)
     with st.expander(strings["SEARCH_HISTORY_EXPANDER"], expanded=False):
@@ -398,7 +382,7 @@ def _render_search_history(
             st.caption(strings["SEARCH_HISTORY_EMPTY"])
             return
         for position, record in enumerate(records):
-            ref = _find_index(indexes, record.index_folder, record.index_run)
+            ref = find_index(indexes, record.index_folder, record.index_run)
             with st.container(border=True):
                 head, action = st.columns([0.85, 0.15], vertical_alignment="center")
                 head.markdown(f"**{record.query}**")
@@ -411,12 +395,19 @@ def _render_search_history(
                         st.session_state[_REPLAY_KEY] = asdict(record)
                         st.session_state[_FOCUS_QUERY_KEY] = True
                         st.rerun()
-                st.caption(
-                    f"{_local_time_label(record.timestamp_utc)} · "
-                    f"{strings['SEARCH_HISTORY_RESULT_COUNT'].format(n=record.result_count)}"
-                )
-                st.caption(
-                    f"{record.index_folder} / {record.index_run} · "
-                    f"{_options_summary(strings, record)}"
-                )
-                st.caption(_index_details_caption(strings, record, ref))
+                st.markdown(_search_history_grid(strings, record, ref), unsafe_allow_html=True)
+
+
+def _search_history_grid(strings: Strings, record: SearchRecord, ref: IndexRef | None) -> str:
+    """Build a tidy label/value grid summarising one search-history record."""
+    rows = [
+        (strings["SEARCH_HISTORY_LABEL_TIME"], local_time_label(record.timestamp_utc)),
+        (
+            strings["SEARCH_HISTORY_LABEL_RESULTS"],
+            strings["SEARCH_HISTORY_RESULT_COUNT"].format(n=record.result_count),
+        ),
+        (strings["SEARCH_HISTORY_LABEL_INDEX"], f"{record.index_folder} / {record.index_run}"),
+        (strings["SEARCH_HISTORY_LABEL_OPTIONS"], _options_summary(strings, record)),
+        (strings["SEARCH_HISTORY_LABEL_DETAILS"], _index_details_caption(strings, record, ref)),
+    ]
+    return kv_grid_html(rows)

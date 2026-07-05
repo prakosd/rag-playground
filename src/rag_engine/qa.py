@@ -16,14 +16,21 @@ from artifact_store import LibraryMessage
 from rag_engine import messages
 from rag_engine.config import RagConfig
 from rag_engine.llm import ResolvedChatModel, resolve_chat_model
-from rag_engine.models import RagAnswer, RetrievedChunk
+from rag_engine.models import RagAnswer, RetrievedChunk, TokenUsage
 from rag_engine.prompts import QA_SYSTEM_PROMPT, format_context
 from rag_engine.retrieval import RetrievalResult, retrieve
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
-__all__ = ["answer_question", "generate_answer", "stream_answer"]
+__all__ = [
+    "PromptGeneration",
+    "answer_question",
+    "generate_answer",
+    "generate_from_prompt",
+    "stream_answer",
+    "stream_prompt",
+]
 
 
 def _qa_chain(chat_model: BaseChatModel, chunks: Sequence[RetrievedChunk]) -> tuple[Any, dict]:
@@ -50,6 +57,83 @@ def stream_answer(
     """Yield answer tokens for *question* and *chunks* as they are generated."""
     chain, base = _qa_chain(chat_model, chunks)
     yield from chain.stream({**base, "question": question})
+
+
+def _message_text(message: Any) -> str:
+    """Extract plain text from a chat message or streamed chunk's ``content``."""
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            part if isinstance(part, str) else str(part.get("text", ""))
+            for part in content
+            if isinstance(part, (str, dict))
+        ]
+        return "".join(parts)
+    return str(content)
+
+
+def _token_usage(message: Any) -> TokenUsage | None:
+    """Map a message's ``usage_metadata`` to a ``TokenUsage`` (``None`` if absent)."""
+    usage = getattr(message, "usage_metadata", None)
+    if not usage:
+        return None
+    return TokenUsage(
+        input_tokens=usage.get("input_tokens"),
+        output_tokens=usage.get("output_tokens"),
+        total_tokens=usage.get("total_tokens"),
+    )
+
+
+class PromptGeneration:
+    """Streams a raw prompt's answer and captures the full text plus token usage.
+
+    Iterate it (e.g. via ``st.write_stream``) to receive answer-text chunks as
+    they arrive. When iteration finishes, ``text`` holds the complete answer and
+    ``usage`` the token counts the model reported (``None`` when the provider
+    reports none, e.g. the echo model). The *prompt* is sent verbatim as a single
+    human message, so what the user sees is exactly what the model receives.
+    """
+
+    def __init__(self, chat_model: BaseChatModel, prompt: str) -> None:
+        self._chat_model = chat_model
+        self._prompt = prompt
+        self.text = ""
+        self.usage: TokenUsage | None = None
+
+    def __iter__(self) -> Iterator[str]:
+        from langchain_core.messages import HumanMessage
+
+        aggregate: Any = None
+        parts: list[str] = []
+        for chunk in self._chat_model.stream([HumanMessage(content=self._prompt)]):
+            if aggregate is None:
+                aggregate = chunk
+            else:
+                try:
+                    aggregate = aggregate + chunk
+                except TypeError:  # a chunk type that does not support merging
+                    aggregate = chunk
+            piece = _message_text(chunk)
+            if piece:
+                parts.append(piece)
+                yield piece
+        self.text = "".join(parts)
+        self.usage = _token_usage(aggregate)
+
+
+def stream_prompt(chat_model: BaseChatModel, prompt: str) -> PromptGeneration:
+    """Return a :class:`PromptGeneration` that streams *prompt* to *chat_model*."""
+    return PromptGeneration(chat_model, prompt)
+
+
+def generate_from_prompt(chat_model: BaseChatModel, prompt: str) -> tuple[str, TokenUsage | None]:
+    """Send *prompt* verbatim and return the full answer text and token usage."""
+    from langchain_core.messages import HumanMessage
+
+    message = chat_model.invoke([HumanMessage(content=prompt)])
+    return _message_text(message), _token_usage(message)
 
 
 def answer_question(

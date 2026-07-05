@@ -101,3 +101,45 @@ def test_answer_question_handles_generation_failure(tmp_path: Path) -> None:
 
     assert any(e.code == messages.CODE_GENERATION_FAILED for e in answer.errors)
     assert answer.answer == ""
+
+
+def test_stream_prompt_with_echo_streams_text_without_usage() -> None:
+    from rag_engine.qa import stream_prompt
+
+    generation = stream_prompt(build_echo_chat_model(), "Question:\nHi\n\nAnswer:")
+    streamed = "".join(generation)
+
+    assert "Hi" in streamed
+    assert generation.text == streamed
+    assert generation.usage is None
+
+
+def test_generate_from_prompt_with_echo_returns_text_without_usage() -> None:
+    from rag_engine.qa import generate_from_prompt
+
+    text, usage = generate_from_prompt(build_echo_chat_model(), "Question:\nHello\n\nAnswer:")
+
+    assert "Hello" in text
+    assert usage is None
+
+
+def test_stream_prompt_aggregates_token_usage() -> None:
+    from langchain_core.messages import AIMessageChunk
+
+    from rag_engine.models import TokenUsage
+    from rag_engine.qa import stream_prompt
+
+    class _FakeStreamingModel:
+        def stream(self, messages):
+            yield AIMessageChunk(content="Hello ")
+            yield AIMessageChunk(
+                content="world",
+                usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            )
+
+    generation = stream_prompt(_FakeStreamingModel(), "ignored prompt")
+    streamed = "".join(generation)
+
+    assert streamed == "Hello world"
+    assert generation.text == "Hello world"
+    assert generation.usage == TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)

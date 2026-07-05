@@ -70,6 +70,53 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         kind="cloud",
         requires_api_key=True,
     ),
+    # ── Curated Bedrock models for ap-southeast-2 (APAC cross-Region profiles) ──
+    # These use the `apac.` inference-profile IDs required in that Region. The
+    # exact IDs and per-account model access must be confirmed on each model card
+    # in the AWS console; the app's *offered* subset and default are chosen in
+    # .env.defaults (RAG_LLM_MODELS / RAG_DEFAULT_LLM_MODEL).
+    ChatModelInfo(
+        model_id="apac.amazon.nova-micro-v1:0",
+        provider="bedrock_converse",
+        label="Amazon Nova Micro (Bedrock · APAC)",
+        kind="cloud",
+        requires_api_key=True,
+    ),
+    ChatModelInfo(
+        model_id="apac.amazon.nova-lite-v1:0",
+        provider="bedrock_converse",
+        label="Amazon Nova Lite (Bedrock · APAC)",
+        kind="cloud",
+        requires_api_key=True,
+    ),
+    ChatModelInfo(
+        model_id="apac.amazon.nova-pro-v1:0",
+        provider="bedrock_converse",
+        label="Amazon Nova Pro (Bedrock · APAC)",
+        kind="cloud",
+        requires_api_key=True,
+    ),
+    ChatModelInfo(
+        model_id="apac.anthropic.claude-3-5-haiku-20241022-v1:0",
+        provider="bedrock_converse",
+        label="Claude 3.5 Haiku (Bedrock · APAC)",
+        kind="cloud",
+        requires_api_key=True,
+    ),
+    ChatModelInfo(
+        model_id="apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        provider="bedrock_converse",
+        label="Claude 3.5 Sonnet v2 (Bedrock · APAC)",
+        kind="cloud",
+        requires_api_key=True,
+    ),
+    ChatModelInfo(
+        model_id="apac.meta.llama3-3-70b-instruct-v1:0",
+        provider="bedrock_converse",
+        label="Llama 3.3 70B Instruct (Bedrock · APAC)",
+        kind="cloud",
+        requires_api_key=True,
+    ),
     ChatModelInfo(
         model_id=ECHO_MODEL,
         provider=ECHO_PROVIDER,

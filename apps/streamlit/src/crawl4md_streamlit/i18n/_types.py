@@ -122,12 +122,48 @@ class Strings(TypedDict):
     SEARCH_HISTORY_OPT_DIVERSITY: str  # template: {value}
     SEARCH_HISTORY_OPT_POOL: str  # template: {n}
     SEARCH_HISTORY_OPT_SOURCES: str  # template: {n}
+    SEARCH_HISTORY_LABEL_TIME: str
+    SEARCH_HISTORY_LABEL_RESULTS: str
+    SEARCH_HISTORY_LABEL_INDEX: str
+    SEARCH_HISTORY_LABEL_OPTIONS: str
+    SEARCH_HISTORY_LABEL_DETAILS: str
     QA_SECTION_HEADER: str
     QA_SECTION_CAPTION: str
+    QA_LLM_LABEL: str
+    QA_LLM_HELP: str
+    QA_TOP_RESULTS_LABEL: str
+    QA_TOP_RESULTS_HELP: str
+    QA_TONE_LABEL: str
+    QA_TONE_HELP: str
     QA_QUESTION_LABEL: str
     QA_QUESTION_PLACEHOLDER: str
-    QA_BUTTON: str
+    QA_GENERATE_BUTTON: str
+    QA_GENERATE_HELP: str
+    QA_PROMPT_LABEL: str
+    QA_PROMPT_PLACEHOLDER: str
+    QA_PROMPT_HELP: str
+    QA_SEND_BUTTON: str
+    QA_SEND_HELP: str
+    QA_SENDING: str
+    QA_NO_PROMPT_HINT: str
     QA_ANSWER_HEADER: str
+    QA_ANSWER_STATS: str  # template: {input}, {output}, {total}, {seconds}
+    QA_TOKEN_NA: str
+    QA_SUMMARY_INPUT_LABEL: str
+    QA_SUMMARY_OUTPUT_LABEL: str
+    QA_SUMMARY_TOTAL_LABEL: str
+    QA_HISTORY_EXPANDER: str
+    QA_HISTORY_EMPTY: str
+    QA_HISTORY_REPLAY_HELP: str
+    QA_HISTORY_INDEX_GONE: str
+    QA_HISTORY_META_INDEX: str
+    QA_HISTORY_META_MODEL: str
+    QA_HISTORY_META_TONE: str
+    QA_HISTORY_META_TOP: str
+    QA_HISTORY_META_TOKENS: str
+    QA_HISTORY_META_TIME: str
+    QA_HISTORY_TOKENS_VALUE: str  # template: {input}, {output}, {total}
+    QA_HISTORY_SECONDS: str  # template: {seconds}
     CHAT_SECTION_HEADER: str
     CHAT_SECTION_CAPTION: str
     CHAT_INPUT_PLACEHOLDER: str

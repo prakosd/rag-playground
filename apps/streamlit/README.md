@@ -35,8 +35,10 @@ flowchart TD
 | `vector_form_ui.py` | Step 2 vector-index form renderer + pure option/validation helpers |
 | `vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl_jobs.py`) |
 | `index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
-| `llm_form_ui.py` | Steps 4-5 chat-model selector + pure option/label helpers |
+| `llm_form_ui.py` | Steps 4-5 chat-model selector + pure helpers (`.env`-curated `chat_model_choices` / `resolve_chat_model_choices`, label) |
 | `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, index metadata, collapsible ranked-results panel, sources, messages) |
+| `qa_form_ui.py` | Step 4 pure helpers: `tone_choices` (.env tones + default) and `token_totals` (session token summary) |
+| `qa_history.py` | Step 4 per-session prompt history (`QaRecord`; JSONL + CSV under `rag_qa_history/`) |
 | `focus.py` | One-shot client-side focus helper (`focus_widget`) that focuses a keyed input after a rerun |
 | `generated_files.py` | Output listing, previews, downloads (labels include human-readable file sizes), and per-file deletion |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
@@ -109,7 +111,7 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
 | `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid (Created shown in local time), a Search-options expander above the query form (mode similarity/MMR with Diversity + Candidate pool grouped beside it and disabled unless Diverse, min-similarity, source filter), query with a top-N input, a collapsible **Search results** panel (id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs; persists across reruns, opens on a new search), a **Search history** card list (per-session log; per-card replay restores query + options + Vector DB and focuses the query), and Output Files (`rag_engine.retrieve`) |
-| `rag_qa.py` | Step 4 single-turn RAG Q&A — index + chat-model picker, question, answer + sources (`rag_engine.answer_question`) |
+| `rag_qa.py` | Step 4 Simple RAG Q&A — index/model/tone/top-results panel, question → **Generate prompt** (`retrieve` + `build_rag_prompt`), editable prompt → **Send** (`stream_prompt`, streamed answer + token/latency stats), per-session prompt history with replay, page-top token summary |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
 When a page grows complex, keep page-specific state keys prefixed with the page id and move reusable non-UI logic into `src/crawl4md_streamlit/` or the core `crawl4md` package instead of importing from `streamlit_app.py`.

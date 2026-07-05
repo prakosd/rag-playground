@@ -12,6 +12,11 @@ def test_settings_load_values_from_env_defaults() -> None:
     settings = Settings()
 
     assert settings.rag_top_k == 4
+    assert settings.rag_qa_top_results == 5
+    assert settings.rag_qa_default_tone == "Neutral"
+    assert "Neutral" in settings.rag_qa_tones.split(",")
+    assert "echo" in settings.rag_llm_models.split(",")
+    assert settings.rag_default_llm_model == "apac.amazon.nova-lite-v1:0"
     assert settings.semantic_search_top_n == 5
     assert settings.semantic_search_default_tab == "raw"
     assert settings.semantic_search_default_mode == "similarity"

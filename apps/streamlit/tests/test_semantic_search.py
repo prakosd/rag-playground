@@ -78,14 +78,6 @@ def test_options_summary_includes_mmr_and_sources(monkeypatch: MonkeyPatch) -> N
     assert "2 file(s)" in summary
 
 
-def test_local_time_label_falls_back_on_bad_value(monkeypatch: MonkeyPatch) -> None:
-    page = _page(monkeypatch)
-
-    assert page._local_time_label("not-a-timestamp") == "not-a-timestamp"
-    # A valid UTC timestamp renders a non-empty localized label.
-    assert page._local_time_label("2026-07-01T10:00:00+00:00")
-
-
 def test_index_details_caption_enriches_from_manifest(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
     from vector_indexer import IndexManifest
@@ -119,6 +111,16 @@ def test_index_details_caption_enriches_from_manifest(monkeypatch: MonkeyPatch) 
     assert "512 dim" in caption
     assert "English" in caption
     assert "chunk 600 / overlap 100" in caption
+
+
+def test_search_history_grid_includes_query_facts(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+
+    grid = page._search_history_grid(STRINGS_EN, _record(), None)
+
+    assert STRINGS_EN["SEARCH_HISTORY_LABEL_OPTIONS"] in grid
+    assert "vector_01_weather / 2026-07-01_09-00-00" in grid
+    assert "4 results" in grid
 
 
 def test_index_details_caption_falls_back_when_index_gone(monkeypatch: MonkeyPatch) -> None:

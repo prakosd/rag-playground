@@ -29,7 +29,7 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 - **Real-time progress** — browser charts in Streamlit, spider widget in Jupyter, plain-text ETA in terminal
 - **Stop-safe output** — stopping a crawl still writes final output for completed pages
 - **Vector indexing (Step 2)** — index `.md` / `.txt` / `.zip` outputs into a langchain-chroma (ChromaDB) vector store with configurable chunking and embedding backends (Amazon Titan, OpenAI, or an offline default); crawl run metadata is dropped and every chunk is stamped with its page `Source: [title](url)`
-- **RAG Q&A (Steps 3–4)** — semantic search and single-turn retrieval-augmented answers over a built index, with source citations
+- **RAG Q&A (Steps 3–4)** — semantic search plus a Simple RAG Q&A page that retrieves knowledge, builds an editable, grounded prompt, and streams a language-model answer with token/latency stats
 - **Conversational RAG (Step 5)** — history-aware chat that rewrites each follow-up before retrieving, keeping in-session memory
 - **LangChain backends** — embeddings, vector store, and chat models are wrapped with LangChain; an offline echo model lets RAG run with no cloud credentials
 

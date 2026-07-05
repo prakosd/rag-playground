@@ -15,6 +15,7 @@ __all__ = [
     "ChatTurn",
     "RagAnswer",
     "RetrievedChunk",
+    "TokenUsage",
 ]
 
 
@@ -50,3 +51,16 @@ class RagAnswer:
     model_used: str | None = None
     warnings: list[LibraryMessage] = field(default_factory=list)
     errors: list[LibraryMessage] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    """Token counts a chat model reported for one generation, when available.
+
+    Any field may be ``None`` when the provider reports no usage (e.g. the
+    offline echo model), so a UI can show "n/a" instead of a fabricated count.
+    """
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None

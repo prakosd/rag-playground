@@ -103,7 +103,10 @@ flowchart TD
 
 - **Step 3 (semantic search)** stops at `RetrievedChunk[]` — ranked snippets with
   scores and sources.
-- **Step 4 (QA)** runs `answer_question` for a single-turn answer with citations.
+- **Step 4 (Simple RAG Q&A)** is a two-stage teaching flow: *Generate prompt* runs
+  `retrieve` + `build_rag_prompt` to assemble an editable, injection-fenced prompt from
+  the retrieved knowledge; *Send* streams the answer with `stream_prompt` and reports
+  token usage + latency. `answer_question` remains a one-call convenience for other UIs.
 - **Step 5 (conversational)** runs `chat_answer`, which first rewrites the follow-up
   into a standalone query via `condense_question` (history-aware), then retrieves and
   answers with the recent history in the prompt.
