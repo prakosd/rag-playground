@@ -144,6 +144,9 @@ class Strings(TypedDict):
     QA_PROMPT_HELP: str
     QA_SEND_BUTTON: str
     QA_SEND_HELP: str
+    QA_MAXIMIZE_HELP: str
+    QA_MINIMIZE_HELP: str
+    QA_MAXIMIZE_TITLE: str
     QA_SENDING: str
     QA_NO_PROMPT_HINT: str
     QA_ANSWER_HEADER: str

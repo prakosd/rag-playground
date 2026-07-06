@@ -14,6 +14,7 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.rag_top_k == 4
     assert settings.rag_qa_top_results == 5
     assert settings.rag_qa_default_tone == "Neutral"
+    assert settings.rag_qa_prompt_template_file == "apps/streamlit/config/rag_qa_prompt.txt"
     assert "Neutral" in settings.rag_qa_tones.split(",")
     assert "echo" in settings.rag_llm_models.split(",")
     assert settings.rag_default_llm_model == "apac.amazon.nova-lite-v1:0"

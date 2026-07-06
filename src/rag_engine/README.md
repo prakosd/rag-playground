@@ -18,7 +18,7 @@ answer_question(run_dir, question, config)  # Step 4 (one-call convenience)
   ├─ resolve_chat_model(llm_model)           → BaseChatModel (init_chat_model, echo fallback)
   └─ prompt | model | StrOutputParser        → RagAnswer(answer, sources, warnings, errors)
 
-build_rag_prompt(question, chunks, tone)    # Step 4 (editable, fully-visible prompt)
+build_rag_prompt(question, chunks, tone, *, template=RAG_PROMPT_TEMPLATE)  # Step 4 editable prompt; template overridable
   └─ format_knowledge(chunks)                → source-labelled, delimiter-fenced knowledge
 stream_prompt(chat_model, prompt)           # Step 4 (send the raw prompt, streamed)
   └─ PromptGeneration                        → streams answer text; exposes TokenUsage after
@@ -92,7 +92,11 @@ Retrieved context is wrapped in `<context>` delimiters and the model is told to
 treat it as data only and never follow instructions embedded inside it (see
 `prompts.py`). `build_rag_prompt` (Step 4) assembles a complete, human-readable
 prompt whose retrieved knowledge is fenced between explicit delimiters and marked
-data-only, so a UI can show and edit exactly what the model receives.
+data-only, so a UI can show and edit exactly what the model receives. Its outer
+wording is overridable via the `template` keyword — a template missing a required
+`{question}`/`{start}`/`{knowledge}`/`{end}`/`{tone}` field falls back to the
+built-in default — while the fenced, data-only knowledge block is always the
+library's.
 
 ### Structured results
 

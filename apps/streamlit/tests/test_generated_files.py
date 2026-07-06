@@ -19,6 +19,7 @@ from crawl4md_streamlit.generated_files import (
     delete_generated_folder,
     download_folder_icon,
     download_tree_entry_sort_key,
+    files_excluding,
     find_latest_crawl_dir,
     find_ready_download_in_session,
     folder_zip_cache_token,
@@ -54,6 +55,25 @@ def test_build_download_tree_nests_generated_files_by_relative_path() -> None:
 
     assert tree["summary.md"] == root_file
     assert tree["crawl_run"]["final"]["content.md"] == nested_file
+
+
+def test_files_excluding_drops_only_the_named_path() -> None:
+    log_file = _generated_file("logs/app.log")
+    content_file = _generated_file("crawl_run/final/content.md")
+
+    remaining = files_excluding([content_file, log_file], "logs/app.log")
+
+    assert remaining == [content_file]
+    # The tree built from the remaining files must not contain the excluded log,
+    # so its preview widget key is not created a second time.
+    assert "logs" not in build_download_tree(remaining)
+
+
+def test_files_excluding_keeps_all_when_path_is_none() -> None:
+    content_file = _generated_file("crawl_run/final/content.md")
+    log_file = _generated_file("logs/app.log")
+
+    assert files_excluding([content_file, log_file], None) == [content_file, log_file]
 
 
 def test_collapse_artifact_run_folder_merges_single_timestamp_child() -> None:

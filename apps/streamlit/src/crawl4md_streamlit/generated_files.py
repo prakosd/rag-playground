@@ -480,6 +480,18 @@ def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
     return tree
 
 
+def files_excluding(files: list[GeneratedFile], relative_path: str | None) -> list[GeneratedFile]:
+    """Return *files* without the entry at *relative_path* (``None`` keeps all).
+
+    A file rendered on its own (e.g. the live session log shown above the tree)
+    must be dropped from the tree; otherwise it renders twice in one pass and its
+    per-file widget key collides (``StreamlitDuplicateElementKey``).
+    """
+    if relative_path is None:
+        return list(files)
+    return [file for file in files if file.relative_path != relative_path]
+
+
 def download_tree_entry_sort_key(
     name: str,
     entry: Any,

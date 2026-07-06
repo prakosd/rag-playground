@@ -111,20 +111,40 @@ def format_knowledge(chunks: Sequence[RetrievedChunk]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_rag_prompt(question: str, chunks: Sequence[RetrievedChunk], tone: str) -> str:
+def build_rag_prompt(
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+    tone: str,
+    *,
+    template: str = RAG_PROMPT_TEMPLATE,
+) -> str:
     """Build the full, editable Step 4 prompt from *question*, *chunks*, and *tone*.
 
     Returns a complete prompt string (rules + question + fenced knowledge + tone)
     meant to be shown to the user and sent to the model verbatim. The knowledge is
     inserted between fixed delimiters so it cannot blend into the instructions.
+
+    *template* defaults to the built-in ``RAG_PROMPT_TEMPLATE`` but may be
+    overridden (e.g. from app config) to let an operator reword the prompt without
+    a code change. It must keep the ``{question}``, ``{start}``, ``{knowledge}``,
+    ``{end}``, and ``{tone}`` fields; a template that drops one or has a stray
+    brace falls back to the default so a bad override never breaks generation.
     """
-    prompt = RAG_PROMPT_TEMPLATE.format(
-        question=question.strip(),
-        start=_KNOWLEDGE_START_DELIMITER,
-        knowledge=format_knowledge(chunks),
-        end=_KNOWLEDGE_END_DELIMITER,
-        tone=(tone.strip() or _DEFAULT_TONE),
-    )
+    fields = {
+        "question": question.strip(),
+        "start": _KNOWLEDGE_START_DELIMITER,
+        "knowledge": format_knowledge(chunks),
+        "end": _KNOWLEDGE_END_DELIMITER,
+        "tone": (tone.strip() or _DEFAULT_TONE),
+    }
+    try:
+        prompt = template.format(**fields)
+    except (KeyError, IndexError, ValueError) as error:
+        _logger.warning(
+            "Custom RAG prompt template is invalid (%s); using the built-in default.",
+            error,
+        )
+        prompt = RAG_PROMPT_TEMPLATE.format(**fields)
     _logger.info(
         "Built RAG prompt: %d chunk(s), tone=%s, %d chars",
         len(chunks),

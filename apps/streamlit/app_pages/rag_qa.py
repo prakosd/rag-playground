@@ -3,7 +3,8 @@
 Two stages: **Generate prompt** runs semantic search and assembles an editable,
 fully-visible RAG prompt from the retrieved knowledge; **Send** streams the
 selected language model's answer and records token usage + latency. Per-session
-prompt history (with replay) and a page-top token summary round it out. The heavy
+prompt history (with replay) and a session token summary above the history round
+it out. The heavy
 lifting lives in ``rag_engine`` (prompt builder, streaming) and the app helpers
 (``qa_history`` / ``qa_form_ui``); this module only wires widgets to them.
 """
@@ -15,6 +16,7 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import streamlit as st
 from rag_engine import (
@@ -31,7 +33,12 @@ from crawl4md_streamlit.focus import focus_widget
 from crawl4md_streamlit.i18n import Strings, get_strings
 from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.llm_form_ui import chat_model_choices, chat_model_label
-from crawl4md_streamlit.qa_form_ui import token_totals, tone_choices
+from crawl4md_streamlit.qa_form_ui import (
+    apply_maximized_prompt,
+    resolve_qa_prompt_template,
+    token_totals,
+    tone_choices,
+)
 from crawl4md_streamlit.qa_history import QaRecord, append_qa_record, load_qa_history
 from crawl4md_streamlit.rag_ui import (
     RagPageContext,
@@ -45,10 +52,27 @@ from crawl4md_streamlit.rag_ui import (
 )
 from crawl4md_streamlit.settings import get_settings
 
+if TYPE_CHECKING:
+    from streamlit.delta_generator import DeltaGenerator
+
 _settings = get_settings()
 _DEFAULT_TOP_RESULTS = _settings.rag_qa_top_results
 _MAX_TOP_RESULTS = 20
 _PROMPT_FIELD_HEIGHT = 260
+# The maximized editor is a wide dialog with a tall text area, sized close to the
+# viewport via scoped CSS (mirrors the file-preview dialog's ``:has()`` approach).
+_MAXIMIZE_PROMPT_HEIGHT = 560
+_MAXIMIZE_DIALOG_SCOPE_CLASS = "rag-qa-maximize-scope"
+_MAXIMIZE_DIALOG_VIEWPORT_WIDTH = "90vw"
+_MAXIMIZE_DIALOG_CSS = f"""
+<div class="{_MAXIMIZE_DIALOG_SCOPE_CLASS}" style="display:none"></div>
+<style>
+div[data-testid="stDialog"]:has(.{_MAXIMIZE_DIALOG_SCOPE_CLASS}) [role="dialog"][aria-modal="true"] {{
+    width: {_MAXIMIZE_DIALOG_VIEWPORT_WIDTH} !important;
+    max-width: {_MAXIMIZE_DIALOG_VIEWPORT_WIDTH} !important;
+}}
+</style>
+"""
 _PANEL_INDEX_COLUMN_WIDTHS = (0.68, 0.32)
 
 # Widget keys; a history replay pre-fills these before the widgets render.
@@ -58,6 +82,11 @@ _MODEL_KEY = "rag_qa_llm_model"
 _TONE_KEY = "rag_qa_tone"
 _QUESTION_KEY = "rag_qa_question"
 _PROMPT_KEY = "rag_qa_prompt"
+# The maximized-editor mirror of the prompt, a pending write-back applied before
+# the inline widget renders, and the flag that keeps the dialog open across reruns.
+_PROMPT_MAX_KEY = "rag_qa_prompt_max"
+_PROMPT_PENDING_KEY = "rag_qa_prompt_pending"
+_MAXIMIZE_OPEN_KEY = "rag_qa_maximize_open"
 # The last answer and its stats caption persist so they survive reruns after a send.
 _ANSWER_KEY = "rag_qa_answer"
 _STATS_KEY = "rag_qa_stats"
@@ -74,13 +103,16 @@ def render_page(context: RagPageContext) -> None:
 
     st.subheader(strings["QA_SECTION_HEADER"], anchor="rag-qa-header")
     st.caption(strings["QA_SECTION_CAPTION"])
-    summary_slot = st.container()
 
     # Apply a pending replay before the widgets render, then seed first-run
     # defaults so a replay can overwrite them without a Streamlit warning.
     replay = st.session_state.pop(_REPLAY_KEY, None)
     if replay is not None:
         _apply_replay(strings, indexes, replay)
+    # A maximized-editor edit is written back here, before the prompt widget
+    # renders, so it lands as the field's value without a widget-mutation error.
+    if _PROMPT_PENDING_KEY in st.session_state:
+        st.session_state[_PROMPT_KEY] = st.session_state.pop(_PROMPT_PENDING_KEY)
     model_options, default_model_index = chat_model_choices()
     tones, default_tone_index = tone_choices()
     st.session_state.setdefault(_TOP_RESULTS_KEY, _DEFAULT_TOP_RESULTS)
@@ -94,34 +126,42 @@ def render_page(context: RagPageContext) -> None:
     if generate and index is not None and question.strip():
         _generate_prompt(strings, index, question.strip(), top_results, tone, model)
 
-    prompt_text, send = _render_prompt_form(strings, disabled=index is None)
+    prompt_text, send, maximize, answer_slot = _render_prompt_form(strings, disabled=index is None)
     if st.session_state.pop(_FOCUS_PROMPT_KEY, False):
         focus_widget(_PROMPT_KEY)
+    if maximize:
+        apply_maximized_prompt(st.session_state, source_key=_PROMPT_KEY, target_key=_PROMPT_MAX_KEY)
+        st.session_state[_MAXIMIZE_OPEN_KEY] = True
 
     answered_now = False
     if send and index is not None:
         st.session_state[_ANSWER_KEY] = None
         st.session_state[_STATS_KEY] = None
         if prompt_text.strip():
-            answered_now = _send_prompt(
-                strings,
-                session_root,
-                index=index,
-                model=model,
-                tone=tone,
-                top_results=top_results,
-                question=question,
-                prompt_text=prompt_text,
-            )
+            with answer_slot:
+                answered_now = _send_prompt(
+                    strings,
+                    session_root,
+                    index=index,
+                    model=model,
+                    tone=tone,
+                    top_results=top_results,
+                    question=question,
+                    prompt_text=prompt_text,
+                )
         else:
-            st.info(strings["QA_NO_PROMPT_HINT"])
+            with answer_slot:
+                st.info(strings["QA_NO_PROMPT_HINT"])
     if not answered_now:
-        _render_stored_answer(strings)
+        with answer_slot:
+            _render_stored_answer(strings)
+
+    if st.session_state.get(_MAXIMIZE_OPEN_KEY):
+        _prompt_maximize_dialog(strings)
 
     records = load_qa_history(session_root)
+    _render_token_summary(strings, records)
     _render_qa_history(strings, records)
-    with summary_slot:
-        _render_token_summary(strings, records)
 
     context.render_downloads()
 
@@ -191,8 +231,15 @@ def _render_question_form(strings: Strings, *, disabled: bool) -> tuple[str, boo
     return question, generate
 
 
-def _render_prompt_form(strings: Strings, *, disabled: bool) -> tuple[str, bool]:
-    """Render the editable prompt field + Send button (Ctrl/Cmd+Enter submits)."""
+def _render_prompt_form(
+    strings: Strings, *, disabled: bool
+) -> tuple[str, bool, bool, DeltaGenerator]:
+    """Render the editable prompt field + Send/Maximize buttons.
+
+    Returns the prompt text, the Send state, the Maximize state, and an in-form
+    container placed under the buttons so the streamed answer renders inside this
+    panel. Send is defined first so Ctrl/Cmd+Enter maps to it, not Maximize.
+    """
     with st.form("rag_qa_prompt_form", enter_to_submit=True, border=True):
         prompt_text = st.text_area(
             strings["QA_PROMPT_LABEL"],
@@ -202,14 +249,59 @@ def _render_prompt_form(strings: Strings, *, disabled: bool) -> tuple[str, bool]
             disabled=disabled,
             key=_PROMPT_KEY,
         )
-        send = st.form_submit_button(
-            strings["QA_SEND_BUTTON"],
-            type="primary",
-            icon=":material/send:",
-            help=strings["QA_SEND_HELP"],
-            disabled=disabled,
-        )
-    return prompt_text, send
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            send = st.form_submit_button(
+                strings["QA_SEND_BUTTON"],
+                type="primary",
+                icon=":material/send:",
+                help=strings["QA_SEND_HELP"],
+                disabled=disabled,
+            )
+            maximize = st.form_submit_button(
+                ":material/fullscreen:",
+                help=strings["QA_MAXIMIZE_HELP"],
+                disabled=disabled,
+            )
+        answer_slot = st.container()
+    return prompt_text, send, maximize, answer_slot
+
+
+def _close_maximized_prompt() -> None:
+    """Save the maximized edit back to the inline field and close the dialog."""
+    apply_maximized_prompt(
+        st.session_state, source_key=_PROMPT_MAX_KEY, target_key=_PROMPT_PENDING_KEY
+    )
+    st.session_state[_MAXIMIZE_OPEN_KEY] = False
+    st.rerun()
+
+
+def _on_maximize_dismiss() -> None:
+    """Preserve the maximized edit when the dialog is dismissed (X / click-away)."""
+    apply_maximized_prompt(
+        st.session_state, source_key=_PROMPT_MAX_KEY, target_key=_PROMPT_PENDING_KEY
+    )
+    st.session_state[_MAXIMIZE_OPEN_KEY] = False
+
+
+@st.dialog(" ", width="large", on_dismiss=_on_maximize_dismiss)
+def _prompt_maximize_dialog(strings: Strings) -> None:
+    """Show the prompt in a large, editable dialog kept in sync with the inline field."""
+    st.markdown(_MAXIMIZE_DIALOG_CSS, unsafe_allow_html=True)
+    header, action = st.columns([0.9, 0.1], vertical_alignment="center")
+    header.markdown(f"**{strings['QA_MAXIMIZE_TITLE']}**")
+    with action, st.container(horizontal_alignment="right"):
+        if st.button(
+            ":material/close_fullscreen:",
+            key="rag_qa_minimize_button",
+            help=strings["QA_MINIMIZE_HELP"],
+        ):
+            _close_maximized_prompt()
+    st.text_area(
+        strings["QA_PROMPT_LABEL"],
+        height=_MAXIMIZE_PROMPT_HEIGHT,
+        label_visibility="collapsed",
+        key=_PROMPT_MAX_KEY,
+    )
 
 
 def _generate_prompt(
@@ -220,7 +312,9 @@ def _generate_prompt(
     with st.spinner(strings["SEARCH_SEARCHING"]):
         result = retrieve(index.run_dir, question, config)
     render_messages(strings, result.warnings, result.errors)
-    st.session_state[_PROMPT_KEY] = build_rag_prompt(question, result.chunks, tone)
+    st.session_state[_PROMPT_KEY] = build_rag_prompt(
+        question, result.chunks, tone, template=resolve_qa_prompt_template()
+    )
     st.session_state[_ANSWER_KEY] = None
     st.session_state[_STATS_KEY] = None
     st.session_state[_FOCUS_PROMPT_KEY] = True
@@ -240,17 +334,18 @@ def _send_prompt(
     """Stream the model's answer to *prompt_text* and record it; return success."""
     resolved, warnings = resolve_chat_model(model)
     render_messages(strings, warnings, [])
-    st.markdown(f"**{strings['QA_ANSWER_HEADER']}**")
-    generation = stream_prompt(resolved.model, prompt_text)
-    start = time.perf_counter()
-    try:
-        st.write_stream(generation)
-    except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
-        render_messages(strings, [], [messages.classify_generation_failure(str(exc))])
-        return False
-    elapsed = time.perf_counter() - start
-    caption = _stats_caption(strings, generation.usage, elapsed)
-    st.caption(caption)
+    with st.container(border=True):
+        st.markdown(f"**{strings['QA_ANSWER_HEADER']}**")
+        generation = stream_prompt(resolved.model, prompt_text)
+        start = time.perf_counter()
+        try:
+            st.write_stream(generation)
+        except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
+            render_messages(strings, [], [messages.classify_generation_failure(str(exc))])
+            return False
+        elapsed = time.perf_counter() - start
+        caption = _stats_caption(strings, generation.usage, elapsed)
+        st.caption(caption)
     _record_send(
         session_root,
         index=index,
@@ -304,15 +399,16 @@ def _render_stored_answer(strings: Strings) -> None:
     answer = st.session_state.get(_ANSWER_KEY)
     if not answer:
         return
-    st.markdown(f"**{strings['QA_ANSWER_HEADER']}**")
-    st.write(answer)
-    caption = st.session_state.get(_STATS_KEY)
-    if caption:
-        st.caption(caption)
+    with st.container(border=True):
+        st.markdown(f"**{strings['QA_ANSWER_HEADER']}**")
+        st.write(answer)
+        caption = st.session_state.get(_STATS_KEY)
+        if caption:
+            st.caption(caption)
 
 
 def _render_token_summary(strings: Strings, records: Sequence[QaRecord]) -> None:
-    """Render the page-top input/output/total token metrics for the session."""
+    """Render the session input/output/total token metrics above the history."""
     totals = token_totals(records)
     cols = st.columns(3)
     cols[0].metric(strings["QA_SUMMARY_INPUT_LABEL"], f"{totals.input_tokens:,}")

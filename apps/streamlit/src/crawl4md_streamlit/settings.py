@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     rag_qa_tones: str
     # The tone pre-selected on the Step 4 Tone selector.
     rag_qa_default_tone: str
+    # Path (relative to the repo root) to the Step 4 prompt template file. Edit
+    # that file to reword the generated prompt without a code change; a missing
+    # or empty file falls back to the built-in rag_engine default.
+    rag_qa_prompt_template_file: str
     # Language models offered on the RAG pages (comma-separated rag_engine
     # catalog ids), in display order. Unknown ids are ignored.
     rag_llm_models: str

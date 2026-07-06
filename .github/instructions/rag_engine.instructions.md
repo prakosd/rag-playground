@@ -23,7 +23,7 @@ answer_question / chat_answer
   ├─ resolve_chat_model(...)       → BaseChatModel (init_chat_model, echo fallback)
   └─ prompt | model | StrOutputParser → RagAnswer(answer, sources, warnings, errors)
 
-build_rag_prompt(question, chunks, tone)  # Step 4 editable, injection-fenced prompt
+build_rag_prompt(question, chunks, tone, *, template=RAG_PROMPT_TEMPLATE)  # Step 4 editable, injection-fenced prompt (template overridable; a bad template falls back to the default)
 stream_prompt(model, prompt) -> PromptGeneration  # send raw prompt; streamed text + TokenUsage
 ```
 

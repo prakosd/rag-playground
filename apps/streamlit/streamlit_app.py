@@ -50,6 +50,7 @@ from crawl4md_streamlit.generated_files import (
     delete_generated_folder,
     download_folder_icon,
     download_tree_entry_sort_key,
+    files_excluding,
     format_file_size,
     generated_files_cache_token,
     import_signed_zip,
@@ -2860,9 +2861,12 @@ def _downloads_body() -> None:
     # tree, dataframe, and preview all reflect its current state.
     session_log = _session_log_generated_file()
     if session_log is not None:
-        files = [file for file in files if file.relative_path != session_log.relative_path]
+        files = files_excluding(files, session_log.relative_path)
         files.append(session_log)
-    download_tree = _cached_download_tree(tuple(files))
+    # The session log is rendered on its own above the tree; keep it out of the
+    # tree so its preview widget key is not created twice in the same pass.
+    tree_files = files_excluding(files, session_log.relative_path if session_log else None)
+    download_tree = _cached_download_tree(tuple(tree_files))
     subtitle_text = (
         strings["FILES_DOWNLOADS_IN_PROGRESS"]
         if _job_is_alive(st.session_state.job)
