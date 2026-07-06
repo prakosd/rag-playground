@@ -10,7 +10,7 @@ from pathlib import Path
 import streamlit as st
 from rag_engine import RagConfig, retrieve
 
-from crawl4md_streamlit.focus import focus_widget
+from crawl4md_streamlit.focus import entered_page, focus_widget
 from crawl4md_streamlit.i18n import Strings, get_strings
 from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.rag_ui import (
@@ -85,6 +85,11 @@ def render_page(context: RagPageContext) -> None:
     strings = get_strings(st.session_state.get("language", context.default_language))
     session_root = context.session_root()
     indexes = list(context.list_indexes())
+
+    # Focus the query field once when the user lands on this page (not on later
+    # reruns), so they can start typing straight away.
+    if entered_page("semantic_search"):
+        st.session_state[_FOCUS_QUERY_KEY] = True
 
     st.markdown(
         f'<h3 id="semantic-search-header" style="margin-bottom:0;padding-bottom:0;padding-top:0">'
@@ -345,26 +350,34 @@ def _options_summary(strings: Strings, record: SearchRecord) -> str:
     return " · ".join(parts)
 
 
-def _index_details_caption(strings: Strings, record: SearchRecord, ref: IndexRef | None) -> str:
-    """One-line index details, enriched from the live manifest when it still exists.
+def _index_detail_rows(
+    strings: Strings, record: SearchRecord, ref: IndexRef | None
+) -> list[tuple[str, str]]:
+    """Return the (label, value) index-detail pairs for a search-history card.
 
-    Falls back to the model name stored on the record when the index is gone.
+    Enriched from the live manifest so the card mirrors the index Details panel;
+    only the embedding model survives on the record when the index is gone, so the
+    remaining fields show a dash without a live manifest.
     """
-    if ref is None:
-        return record.embedding_model or "—"
-    manifest = ref.manifest
-    parts = [manifest.embedding_model_used or record.embedding_model or "—"]
-    parts.append(strings["SEARCH_HISTORY_DETAIL_CHUNKS"].format(n=manifest.indexed_chunk_count))
-    if manifest.embedding_dimension is not None:
-        parts.append(strings["SEARCH_HISTORY_DETAIL_DIM"].format(n=manifest.embedding_dimension))
-    if manifest.language:
-        parts.append(manifest.language)
-    parts.append(
-        strings["SEARCH_HISTORY_DETAIL_CHUNKING"].format(
-            size=manifest.chunk_size, overlap=manifest.chunk_overlap
-        )
-    )
-    return " · ".join(parts)
+    manifest = ref.manifest if ref is not None else None
+
+    def _text(value: object) -> str:
+        return "—" if value in (None, "") else str(value)
+
+    model = record.embedding_model
+    if manifest is not None and manifest.embedding_model_used:
+        model = manifest.embedding_model_used
+    return [
+        (strings["SEARCH_META_MODEL"], _text(model)),
+        (strings["SEARCH_META_LANGUAGE"], _text(manifest.language if manifest else None)),
+        (
+            strings["SEARCH_META_DIMENSION"],
+            _text(manifest.embedding_dimension if manifest else None),
+        ),
+        (strings["SEARCH_META_CHUNK_SIZE"], _text(manifest.chunk_size if manifest else None)),
+        (strings["SEARCH_META_CHUNKS"], _text(manifest.indexed_chunk_count if manifest else None)),
+        (strings["SEARCH_META_OVERLAP"], _text(manifest.chunk_overlap if manifest else None)),
+    ]
 
 
 def _render_search_history(
@@ -372,10 +385,11 @@ def _render_search_history(
 ) -> None:
     """Render the collapsible search history as a tidy card list.
 
-    Each card leads with the query, then an aligned label/value grid (time,
-    result count, source index, search options, and index details — enriched
-    from the live manifest when the index still exists), matching the index
-    Details panel. A replay button re-runs the query.
+    Each card leads with the query + a replay button, then a collapsed Details
+    expander holding a 4-column label/value grid (time, result count, source
+    index, search options, and the index fields broken out — embedding model,
+    language, dimension, chunk size, chunks, overlap — enriched from the live
+    manifest when the index still exists), matching the index Details panel.
     """
     records = load_search_history(session_root)
     with st.expander(strings["SEARCH_HISTORY_EXPANDER"], expanded=False):
@@ -399,11 +413,16 @@ def _render_search_history(
                         st.session_state[_REPLAY_KEY] = asdict(record)
                         st.session_state[_FOCUS_QUERY_KEY] = True
                         st.rerun()
-                st.markdown(_search_history_grid(strings, record, ref), unsafe_allow_html=True)
+                with st.expander(strings["SEARCH_HISTORY_LABEL_DETAILS"], expanded=False):
+                    st.markdown(_search_history_grid(strings, record, ref), unsafe_allow_html=True)
 
 
 def _search_history_grid(strings: Strings, record: SearchRecord, ref: IndexRef | None) -> str:
-    """Build a tidy label/value grid summarising one search-history record."""
+    """Build the 4-column label/value grid summarising one search-history record.
+
+    Leads with the query facts (time, results, index, options), then the index
+    details broken out into their own fields — mirroring the index Details panel.
+    """
     rows = [
         (strings["SEARCH_HISTORY_LABEL_TIME"], local_time_label(record.timestamp_utc)),
         (
@@ -412,6 +431,6 @@ def _search_history_grid(strings: Strings, record: SearchRecord, ref: IndexRef |
         ),
         (strings["SEARCH_HISTORY_LABEL_INDEX"], f"{record.index_folder} / {record.index_run}"),
         (strings["SEARCH_HISTORY_LABEL_OPTIONS"], _options_summary(strings, record)),
-        (strings["SEARCH_HISTORY_LABEL_DETAILS"], _index_details_caption(strings, record, ref)),
+        *_index_detail_rows(strings, record, ref),
     ]
-    return kv_grid_html(rows, margin_bottom=True, margin_top=True)
+    return kv_grid_html(rows, columns=4, margin_bottom=True)

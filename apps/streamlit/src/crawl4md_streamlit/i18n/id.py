@@ -88,10 +88,12 @@ STRINGS_ID: Strings = {
     "RAG_INDEX_OPTION": "{folder} / {run} · {model} · {chunks} chunk",
     "RAG_LLM_LABEL": "Model jawaban",
     "RAG_LLM_HELP": (
-        "Model chat yang menulis jawaban. Jika tidak tersedia, aplikasi memakai model echo offline."
+        "Model chat yang menulis jawaban. Model cloud (☁️‣🔑) memerlukan API key di "
+        "file konfigurasi — lihat README untuk cara mengaturnya. Jika tidak tersedia, "
+        "aplikasi memakai model echo offline."
     ),
     "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
-    "RAG_LLM_TAG_CLOUD": "☁️ Cloud (perlu API key)",
+    "RAG_LLM_TAG_CLOUD": "☁️‣🔑",
     "RAG_LLM_INDICATOR_OFFLINE": (
         "Berjalan offline dan mengulang pertanyaan alih-alih membuat jawaban. Gunakan "
         "untuk mencoba alur tanpa kredensial."
@@ -180,9 +182,6 @@ STRINGS_ID: Strings = {
     "SEARCH_HISTORY_EXPANDER": ":material/history: Riwayat pencarian",
     "SEARCH_HISTORY_EMPTY": "Belum ada pencarian — jalankan pencarian untuk membangun riwayat.",
     "SEARCH_HISTORY_RESULT_COUNT": "{n} hasil",
-    "SEARCH_HISTORY_DETAIL_CHUNKS": "{n} chunk",
-    "SEARCH_HISTORY_DETAIL_DIM": "{n} dim",
-    "SEARCH_HISTORY_DETAIL_CHUNKING": "chunk {size} / overlap {overlap}",
     "SEARCH_HISTORY_REPLAY_HELP": "Cari kueri ini lagi",
     "SEARCH_HISTORY_INDEX_GONE": "Vector database tersebut sudah tidak ada — pilih index lain.",
     "SEARCH_HISTORY_OPT_TOP": "top {n}",
@@ -203,8 +202,9 @@ STRINGS_ID: Strings = {
     ),
     "QA_LLM_LABEL": "Model bahasa",
     "QA_LLM_HELP": (
-        "Model bahasa yang membaca prompt dan menulis jawaban. Model cloud memerlukan "
-        "kredensial; tanpa itu aplikasi beralih ke model echo offline."
+        "Model bahasa yang membaca prompt dan menulis jawaban. Model cloud (☁️‣🔑) "
+        "memerlukan API key di file konfigurasi — lihat README untuk cara mengaturnya. "
+        "Tanpa itu aplikasi beralih ke model echo offline."
     ),
     "QA_TOP_RESULTS_LABEL": "Hasil teratas",
     "QA_TOP_RESULTS_HELP": (
@@ -229,12 +229,11 @@ STRINGS_ID: Strings = {
     "QA_SEND_BUTTON": "Kirim",
     "QA_SEND_HELP": "Kirim prompt ke model bahasa terpilih dan streaming jawabannya.",
     "QA_MAXIMIZE_HELP": "Perbesar editor prompt",
-    "QA_SAVE_HELP": "Simpan perubahan",
     "QA_MAXIMIZE_TITLE": "Sunting prompt",
     "QA_NO_PROMPT_HINT": "Hasilkan prompt terlebih dahulu, lalu kirim.",
     "QA_ANSWER_HEADER": "Jawaban",
     "QA_ANSWER_STATS": (
-        "{model} · Token — input {input} · output {output} · "
+        "Model — {model} · Token — input {input} · output {output} · "
         "total {total} · dijawab dalam {seconds}s"
     ),
     "QA_TOKEN_NA": "n/a",
@@ -247,6 +246,10 @@ STRINGS_ID: Strings = {
     "QA_HISTORY_EXPANDER": ":material/history: Riwayat prompt",
     "QA_HISTORY_EMPTY": "Belum ada prompt — kirim satu untuk membangun riwayat Anda.",
     "QA_HISTORY_REPLAY_HELP": "Muat prompt ini kembali ke formulir",
+    "QA_HISTORY_LABEL_QUESTION": "Pertanyaan",
+    "QA_HISTORY_LABEL_TIME": "Waktu",
+    "QA_HISTORY_DETAILS_EXPANDER": "Detail",
+    "QA_HISTORY_PROMPT_EXPANDER": "Prompt",
     "QA_HISTORY_META_INDEX": "Indeks",
     "QA_HISTORY_META_MODEL": "Model",
     "QA_HISTORY_META_TONE": "Nada",
@@ -535,9 +538,9 @@ STRINGS_ID: Strings = {
     "VEC_WORKERS_LABEL": "Pekerja",
     "VEC_WORKERS_HELP": "Pekerja embedding paralel (1-8). Lebih banyak mempercepat model cloud pada crawl besar; model offline lokal selalu berjalan satu utas.",
     "VEC_EMBEDDING_MODEL_LABEL": "Model embedding",
-    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Jika model yang dipilih tidak tersedia (kunci API, kredensial, atau internet tidak ada), pengindeksan berhenti dengan kesalahan dan Anda dapat beralih ke model lokal luring (all-MiniLM-L6-v2) yang tidak memerlukan penyiapan.",
+    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Model cloud (☁️‣🔑) memerlukan API key di file konfigurasi — lihat README untuk cara mengaturnya. Jika model yang dipilih tidak tersedia (kunci API, kredensial, atau internet tidak ada), pengindeksan berhenti dengan kesalahan dan Anda dapat beralih ke model lokal luring (all-MiniLM-L6-v2) yang tidak memerlukan penyiapan.",
     "VEC_MODEL_TAG_LOCAL": "💻 Lokal",
-    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud perlu 🔑",
+    "VEC_MODEL_TAG_CLOUD": "☁️‣🔑",
     "VEC_MODEL_INDICATOR_LOCAL": (
         "Berjalan di mesin ini. Mengunduh model sekali (sekitar 80 MB) saat pertama kali, "
         "lalu bekerja luring."

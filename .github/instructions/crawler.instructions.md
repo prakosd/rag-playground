@@ -1,5 +1,5 @@
 ---
-description: "Use when editing SiteCrawler in src/crawl4md/crawler.py or its tests (crawler, retry, output, pdf). Covers URL filtering, PDF handling, WAF detection, progress/cancel hooks, retry/cooldown, and stop-safe final output."
+description: "Use when editing SiteCrawler in src/crawl4md/crawler.py or its tests (crawler, retry, output, pdf). Covers URL filtering, PDF handling, WAF detection, progress/cancel hooks, retry/cooldown, and stop-/error-safe final output."
 applyTo: "src/crawl4md/crawler.py, tests/test_crawler.py, tests/test_crawler_retry.py, tests/test_crawler_output.py, tests/test_pdf.py, tests/test_docx.py"
 ---
 
@@ -20,4 +20,5 @@ Synchronous wrapper around Crawl4AI's async crawler. Uses `nest_asyncio` for Jup
 - `_sleep_with_cancel()` should use chunked polling only when `should_cancel` is provided; without a cancel hook, keep the existing plain sleep behavior so retry timing tests remain stable.
 - `_ROUND_COOLDOWN` is patched to 0 in tests via autouse fixture in `conftest.py`.
 - Cancellation should preserve sidecar-based final and sorted-final output for completed pages. Do not reintroduce saved-session checkpoint or resume APIs.
+- **Error-safe finalization:** an unexpected mid-crawl `Exception` in `_run_rounds_async` is caught like a stop (both share `_recover_saved_results`, which reloads completed pages from the sidecars and emits the interrupted progress event) so the finalize block still writes the final/sorted output; the error text is recorded on `self.crawl_error` (public, `None` when clean) so the caller — e.g. the Streamlit job — reports a failure while keeping that partial output for download. Do not let a crawl error skip finalization.
 - **Finalization (memory):** when intermediate cleanup is on (`_CLEANUP_INTERMEDIATE_FILES`), `_internal/final_output.write_final_files` skips writing the unsorted `success_content_*` files — `write_sorted_files` writes the sorted output and would delete the unsorted copies anyway, so writing-then-deleting them just doubles finalize CPU/IO and transient disk. URL lists are always written. Keep the skip gated in the same module as the delete so the two stay consistent.

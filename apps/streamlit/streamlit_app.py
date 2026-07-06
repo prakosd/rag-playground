@@ -1859,14 +1859,18 @@ def render_progress_and_files(
     attempts_label = strings["PROGRESS_ATTEMPTS"].format(n=f"{processed:,}")
 
     with st.container():
-        st.markdown(
-            f'<div style="{_STATUS_NEXT_ROW_STYLE}">'
-            f"<span>📄 {attempts_label} / {denominator_label}</span>"
-            f"<span>⏳ {progress_status}</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        st.progress(progress_ratio)
+        # Keep the attempts/percent status row tight against the progress bar
+        # (gap=None + the sub row's smaller bottom padding), mirroring the vector
+        # index "Indexing progress" panel. The metrics below keep the normal gap.
+        with st.container(gap=None):
+            st.markdown(
+                f'<div style="{_STATUS_SUB_NEXT_ROW_STYLE}">'
+                f"<span>📄 {attempts_label} / {denominator_label}</span>"
+                f"<span>⏳ {progress_status}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.progress(progress_ratio)
 
         row1 = st.columns(3)
         row1[0].metric(

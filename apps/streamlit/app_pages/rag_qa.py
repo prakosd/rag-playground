@@ -29,13 +29,16 @@ from rag_engine import (
 )
 from rag_engine.models import TokenUsage
 
-from crawl4md_streamlit.focus import focus_widget
+from crawl4md_streamlit.focus import entered_page, focus_widget
 from crawl4md_streamlit.i18n import Strings, get_strings
 from crawl4md_streamlit.index_catalog import IndexRef
-from crawl4md_streamlit.llm_form_ui import chat_model_choices, chat_model_label
+from crawl4md_streamlit.llm_form_ui import (
+    chat_model_choices,
+    chat_model_info_for,
+    chat_model_label,
+)
 from crawl4md_streamlit.qa_form_ui import (
     apply_maximized_prompt,
-    prompt_has_changes,
     resolve_qa_prompt_template,
     token_totals,
     tone_choices,
@@ -52,6 +55,7 @@ from crawl4md_streamlit.rag_ui import (
     render_messages,
     render_section_header,
     select_index,
+    stacked_label_value_html,
 )
 from crawl4md_streamlit.settings import get_settings
 
@@ -76,10 +80,12 @@ div[data-testid="stDialog"]:has(.{_MAXIMIZE_DIALOG_SCOPE_CLASS}) [role="dialog"]
 }}
 </style>
 """
-_PANEL_INDEX_COLUMN_WIDTHS = (0.68, 0.32)
+_PANEL_COLUMN_WIDTHS = (0.8, 0.2)
 # The Token count panel packs five metrics in one row; shrink the metric value
 # font and keep it on one line so six-figure counts (e.g. 100,000) never wrap or
-# truncate. Scoped to this panel via a hidden marker (mirrors the dialog CSS).
+# truncate. It also tightens the panel title's and metrics' default vertical
+# padding so the panel reads as one compact block, consistent with the other
+# components on the page. Scoped via a hidden marker (mirrors the dialog CSS).
 _TOKEN_PANEL_SCOPE_CLASS = "rag-qa-token-panel"
 _TOKEN_PANEL_CSS = f"""
 <div class="{_TOKEN_PANEL_SCOPE_CLASS}" style="display:none"></div>
@@ -88,6 +94,15 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.{_TOKEN_PANEL_SCOPE_CLASS})
     div[data-testid="stMetricValue"] {{
     font-size: 1.4rem;
     white-space: nowrap;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.{_TOKEN_PANEL_SCOPE_CLASS})
+    div[data-testid="stMarkdownContainer"] p {{
+    margin-top: 0;
+    margin-bottom: 0;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.{_TOKEN_PANEL_SCOPE_CLASS})
+    div[data-testid="stMetric"] {{
+    padding-bottom: 0;
 }}
 </style>
 """
@@ -110,6 +125,8 @@ _STATS_KEY = "rag_qa_stats"
 # A replay stashes a record here; a one-shot flag then moves focus to the prompt.
 _REPLAY_KEY = "rag_qa_replay"
 _FOCUS_PROMPT_KEY = "rag_qa_focus_prompt"
+# One-shot flag: set on page entry so focus lands on the question field.
+_FOCUS_QUESTION_KEY = "rag_qa_focus_question"
 
 
 def render_page(context: RagPageContext) -> None:
@@ -117,6 +134,11 @@ def render_page(context: RagPageContext) -> None:
     strings = get_strings(st.session_state.get("language", context.default_language))
     session_root = context.session_root()
     indexes = list(context.list_indexes())
+
+    # Focus the question field once when the user lands on this page (not on later
+    # reruns), so they can start typing straight away.
+    if entered_page("rag_qa"):
+        st.session_state[_FOCUS_QUESTION_KEY] = True
 
     render_section_header(
         strings["QA_SECTION_HEADER"], strings["QA_SECTION_CAPTION"], anchor="rag-qa-header"
@@ -141,6 +163,8 @@ def render_page(context: RagPageContext) -> None:
 
     index, model, tone, top_results = _render_panel(strings, indexes, model_options, tones)
     question, generate = _render_question_form(strings, disabled=index is None)
+    if st.session_state.pop(_FOCUS_QUESTION_KEY, False):
+        focus_widget(_QUESTION_KEY)
     if generate and index is not None and question.strip():
         _generate_prompt(strings, index, question.strip(), top_results, tone, model)
 
@@ -192,7 +216,7 @@ def _render_panel(
 ) -> tuple[IndexRef | None, str, str, int]:
     """Render the index / top-results / model / tone panel; return the choices."""
     with st.container(border=True):
-        index_col, top_col = st.columns(_PANEL_INDEX_COLUMN_WIDTHS)
+        index_col, top_col = st.columns(_PANEL_COLUMN_WIDTHS, vertical_alignment="center")
         with index_col:
             index = select_index(strings, indexes, key=_INDEX_KEY)
         with top_col:
@@ -207,7 +231,7 @@ def _render_panel(
                     key=_TOP_RESULTS_KEY,
                 )
             )
-        model_col, tone_col = st.columns([0.8, 0.2])
+        model_col, tone_col = st.columns(_PANEL_COLUMN_WIDTHS)
         with model_col:
             model = st.selectbox(
                 strings["QA_LLM_LABEL"],
@@ -288,41 +312,28 @@ def _render_prompt_form(
     return prompt_text, send, maximize, answer_slot
 
 
-def _save_maximized_prompt() -> None:
-    """Apply the maximized edit to the inline prompt and keep the dialog open.
+def _on_maximize_dismiss() -> None:
+    """Autosave the maximized edit back to the inline prompt, then close the dialog.
 
-    Save is the only way to persist a maximized edit — dismissing the dialog
-    (X / click-away) discards it. The text is written back through the pending
-    key so it lands on the inline widget before it renders; the dialog stays open
-    so the Save button simply disables itself once no unsaved changes remain.
+    Dismissing the dialog (X / click-away / Esc) is the save action: the edited
+    text is written through the pending key so it lands on the inline prompt
+    widget before it next renders. There is no separate Save button.
     """
     apply_maximized_prompt(
         st.session_state, source_key=_PROMPT_MAX_KEY, target_key=_PROMPT_PENDING_KEY
     )
-    st.rerun()
-
-
-def _on_maximize_dismiss() -> None:
-    """Discard the maximized edit when the dialog is dismissed (X / click-away)."""
     st.session_state[_MAXIMIZE_OPEN_KEY] = False
 
 
 @st.dialog(" ", width="large", on_dismiss=_on_maximize_dismiss)
 def _prompt_maximize_dialog(strings: Strings) -> None:
-    """Show the prompt in a large, editable dialog kept in sync with the inline field."""
+    """Show the prompt in a large, editable dialog kept in sync with the inline field.
+
+    Edits autosave to the inline prompt when the dialog is dismissed (see
+    ``_on_maximize_dismiss``); there is no explicit Save button.
+    """
     st.markdown(_MAXIMIZE_DIALOG_CSS, unsafe_allow_html=True)
-    header, action = st.columns([0.9, 0.1], vertical_alignment="center")
-    header.markdown(f"**{strings['QA_MAXIMIZE_TITLE']}**")
-    with action, st.container(horizontal_alignment="right"):
-        if st.button(
-            ":material/save:",
-            key="rag_qa_save_button",
-            help=strings["QA_SAVE_HELP"],
-            disabled=not prompt_has_changes(
-                st.session_state.get(_PROMPT_MAX_KEY), st.session_state.get(_PROMPT_KEY)
-            ),
-        ):
-            _save_maximized_prompt()
+    st.markdown(f"**{strings['QA_MAXIMIZE_TITLE']}**")
     st.text_area(
         strings["QA_PROMPT_LABEL"],
         height=_MAXIMIZE_PROMPT_HEIGHT,
@@ -372,7 +383,7 @@ def _send_prompt(
             return False
         elapsed = time.perf_counter() - start
         caption = _stats_caption(
-            strings, generation.usage, elapsed, chat_model_label(resolved.model_id, strings)
+            strings, generation.usage, elapsed, chat_model_info_for(resolved.model_id).label
         )
         st.caption(caption)
     _record_send(
@@ -437,10 +448,10 @@ def _render_stored_answer(strings: Strings) -> None:
 
 
 def _render_token_summary(strings: Strings, records: Sequence[QaRecord]) -> None:
-    """Render the session Token count panel: budget metrics plus token totals.
+    """Render the session Token count panel: token totals plus budget metrics.
 
-    Five equal metrics — Quota and % Usage (session total ÷ quota, floored) on the
-    left, then Input / Output / Total counts. Display-only: the quota never blocks
+    Five equal metrics — Input / Output / Total counts first, then Quota and
+    % Usage (session total ÷ quota, floored). Display-only: the quota never blocks
     a send. Counts are thousands-separated and kept on one line (scoped CSS) so a
     six-figure value never wraps.
     """
@@ -450,12 +461,12 @@ def _render_token_summary(strings: Strings, records: Sequence[QaRecord]) -> None
     with st.container(border=True):
         st.markdown(_TOKEN_PANEL_CSS, unsafe_allow_html=True)
         st.markdown(f"**{strings['QA_TOKEN_PANEL_TITLE']}**")
-        quota_col, usage_col, input_col, output_col, total_col = st.columns(5)
-        quota_col.metric(strings["QA_SUMMARY_QUOTA_LABEL"], f"{quota:,}")
-        usage_col.metric(strings["QA_SUMMARY_USAGE_LABEL"], f"{percent}%")
+        input_col, output_col, total_col, quota_col, usage_col = st.columns(5)
         input_col.metric(strings["QA_SUMMARY_INPUT_LABEL"], f"{totals.input_tokens:,}")
         output_col.metric(strings["QA_SUMMARY_OUTPUT_LABEL"], f"{totals.output_tokens:,}")
         total_col.metric(strings["QA_SUMMARY_TOTAL_LABEL"], f"{totals.total_tokens:,}")
+        quota_col.metric(strings["QA_SUMMARY_QUOTA_LABEL"], f"{quota:,}")
+        usage_col.metric(strings["QA_SUMMARY_USAGE_LABEL"], f"{percent}%")
 
 
 def _stats_caption(
@@ -503,8 +514,9 @@ def _tokens_value(strings: Strings, record: QaRecord) -> str:
 
 
 def _history_grid(strings: Strings, record: QaRecord) -> str:
-    """Build a tidy label/value grid summarising one history record."""
+    """Build the 4-column label/value grid summarising one history record."""
     rows = [
+        (strings["QA_HISTORY_LABEL_TIME"], local_time_label(record.timestamp_utc)),
         (strings["QA_HISTORY_META_INDEX"], f"{record.index_folder} / {record.index_run}"),
         (strings["QA_HISTORY_META_MODEL"], record.llm_model or "—"),
         (strings["QA_HISTORY_META_TONE"], record.tone or "—"),
@@ -515,11 +527,17 @@ def _history_grid(strings: Strings, record: QaRecord) -> str:
             strings["QA_HISTORY_SECONDS"].format(seconds=f"{record.latency_seconds:.1f}"),
         ),
     ]
-    return kv_grid_html(rows)
+    return kv_grid_html(rows, columns=4, margin_bottom=True)
 
 
 def _render_qa_history(strings: Strings, records: Sequence[QaRecord]) -> None:
-    """Render the collapsible prompt history as tidy cards with a replay button."""
+    """Render the collapsible prompt history as tidy cards with replay + details.
+
+    Each card leads with the question + a replay button (mirroring the Search
+    history layout), then a collapsed Details expander (4-column grid) and a
+    collapsed Prompt expander showing the exact prompt that was sent. Replaying a
+    card reloads its question, prompt, and options back into the form.
+    """
     with st.expander(strings["QA_HISTORY_EXPANDER"], expanded=False):
         if not records:
             st.caption(strings["QA_HISTORY_EMPTY"])
@@ -527,7 +545,12 @@ def _render_qa_history(strings: Strings, records: Sequence[QaRecord]) -> None:
         for position, record in enumerate(records):
             with st.container(border=True):
                 head, action = st.columns([0.85, 0.15], vertical_alignment="center")
-                head.markdown(f"**{record.question or '—'}**")
+                head.markdown(
+                    stacked_label_value_html(
+                        strings["QA_HISTORY_LABEL_QUESTION"], record.question or "—"
+                    ),
+                    unsafe_allow_html=True,
+                )
                 with action, st.container(horizontal_alignment="right"):
                     if st.button(
                         ":material/replay:",
@@ -536,5 +559,7 @@ def _render_qa_history(strings: Strings, records: Sequence[QaRecord]) -> None:
                     ):
                         st.session_state[_REPLAY_KEY] = asdict(record)
                         st.rerun()
-                st.caption(local_time_label(record.timestamp_utc))
-                st.markdown(_history_grid(strings, record), unsafe_allow_html=True)
+                with st.expander(strings["QA_HISTORY_DETAILS_EXPANDER"], expanded=False):
+                    st.markdown(_history_grid(strings, record), unsafe_allow_html=True)
+                with st.expander(strings["QA_HISTORY_PROMPT_EXPANDER"], expanded=False):
+                    st.code(record.prompt or "—", language="markdown", wrap_lines=True)

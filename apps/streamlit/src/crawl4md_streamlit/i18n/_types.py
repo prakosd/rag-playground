@@ -111,9 +111,6 @@ class Strings(TypedDict):
     SEARCH_HISTORY_EXPANDER: str
     SEARCH_HISTORY_EMPTY: str
     SEARCH_HISTORY_RESULT_COUNT: str  # template: {n}
-    SEARCH_HISTORY_DETAIL_CHUNKS: str  # template: {n}
-    SEARCH_HISTORY_DETAIL_DIM: str  # template: {n}
-    SEARCH_HISTORY_DETAIL_CHUNKING: str  # template: {size}, {overlap}
     SEARCH_HISTORY_REPLAY_HELP: str
     SEARCH_HISTORY_INDEX_GONE: str
     SEARCH_HISTORY_OPT_TOP: str  # template: {n}
@@ -145,7 +142,6 @@ class Strings(TypedDict):
     QA_SEND_BUTTON: str
     QA_SEND_HELP: str
     QA_MAXIMIZE_HELP: str
-    QA_SAVE_HELP: str
     QA_MAXIMIZE_TITLE: str
     QA_NO_PROMPT_HINT: str
     QA_ANSWER_HEADER: str
@@ -160,6 +156,10 @@ class Strings(TypedDict):
     QA_HISTORY_EXPANDER: str
     QA_HISTORY_EMPTY: str
     QA_HISTORY_REPLAY_HELP: str
+    QA_HISTORY_LABEL_QUESTION: str
+    QA_HISTORY_LABEL_TIME: str
+    QA_HISTORY_DETAILS_EXPANDER: str
+    QA_HISTORY_PROMPT_EXPANDER: str
     QA_HISTORY_META_INDEX: str
     QA_HISTORY_META_MODEL: str
     QA_HISTORY_META_TONE: str

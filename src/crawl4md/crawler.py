@@ -464,6 +464,10 @@ class SiteCrawler:
         self._should_cancel = should_cancel
         self._fallback_fetch_function = fallback_fetch_function
         self.content_files: list[Path] = []
+        # Set to the error text when an unexpected error stops the crawl mid-run;
+        # the crawl still finalizes its partial output and the caller (e.g. the
+        # Streamlit job) reads this to report a failure while keeping that output.
+        self.crawl_error: str | None = None
         # Tracks whether the OCR-unavailable warning has already been emitted
         self._ocr_warned: bool = False
         # Internal writer for failed-page content (symmetrical with _writer)
@@ -881,29 +885,18 @@ class SiteCrawler:
             interrupted = True
             _logger.warning("Crawl interrupted; writing final files from saved pages")
             self._report_status("\n\nCrawl stopped! Writing final files...")
-            saved_success, saved_fail = self._saved_results_from_sidecars()
-            if saved_success or saved_fail:
-                all_success = saved_success
-                all_fail = saved_fail
-                succeeded_urls = {result.url for result in all_success}
-            self._emit_progress(
-                {
-                    "event": _PROGRESS_EVENT_INTERRUPTED,
-                    "output_dir": str(self.output_dir) if self.output_dir else "",
-                    "successful_pages": len(all_success),
-                    "failed_pages": len(all_fail),
-                    "processed_pages": len(all_success) + len(all_fail),
-                    "limit": self.config.limit,
-                    "current_url": "",
-                    "next_url": "",
-                    "eta_remaining_seconds": None,
-                    "active_url_count": 0,
-                    "active_urls": [],
-                    "next_url_count": 0,
-                    "next_urls": [],
-                    "max_concurrent": self.config.max_concurrent,
-                }
+            all_success, all_fail = self._recover_saved_results(all_success, all_fail)
+        except Exception as exc:  # noqa: BLE001 - finalize partial output on any crawl error
+            # An unexpected error must not lose the pages already crawled: finalize
+            # the partial output like a stop does, and record the error so the
+            # caller reports a failure while still surfacing that output.
+            interrupted = True
+            self.crawl_error = str(exc)
+            _logger.warning(
+                "Crawl failed mid-run (%s); writing final files from completed pages", exc
             )
+            self._report_status("\n\nCrawl error! Writing final files from completed pages...")
+            all_success, all_fail = self._recover_saved_results(all_success, all_fail)
         finally:
             self._pdf_client = None
 
@@ -919,7 +912,12 @@ class SiteCrawler:
         self.content_files = await asyncio.to_thread(self._get_final_content_files)
 
         total_crawled = len(all_success) + len(all_fail)
-        label = "Interrupted" if interrupted else "Done"
+        if self.crawl_error is not None:
+            label = "Failed"
+        elif interrupted:
+            label = "Interrupted"
+        else:
+            label = "Done"
         _logger.info(
             "Crawl %s: %d succeeded, %d failed (%d total) -> %s",
             label.lower(),
@@ -2418,6 +2416,39 @@ class SiteCrawler:
         if self.output_dir is None:
             return [], []
         return self._final_output_writer().saved_results_from_sidecars()
+
+    def _recover_saved_results(
+        self, all_success: list[CrawlResult], all_fail: list[CrawlResult]
+    ) -> tuple[list[CrawlResult], list[CrawlResult]]:
+        """Reload completed pages from the sidecars and emit the interrupted event.
+
+        Shared by the stop (KeyboardInterrupt / cancel) and the unexpected-error
+        paths so both finalize the same partial output; returns the results to
+        write out as the final files.
+        """
+        saved_success, saved_fail = self._saved_results_from_sidecars()
+        if saved_success or saved_fail:
+            all_success = saved_success
+            all_fail = saved_fail
+        self._emit_progress(
+            {
+                "event": _PROGRESS_EVENT_INTERRUPTED,
+                "output_dir": str(self.output_dir) if self.output_dir else "",
+                "successful_pages": len(all_success),
+                "failed_pages": len(all_fail),
+                "processed_pages": len(all_success) + len(all_fail),
+                "limit": self.config.limit,
+                "current_url": "",
+                "next_url": "",
+                "eta_remaining_seconds": None,
+                "active_url_count": 0,
+                "active_urls": [],
+                "next_url_count": 0,
+                "next_urls": [],
+                "max_concurrent": self.config.max_concurrent,
+            }
+        )
+        return all_success, all_fail
 
     @staticmethod
     def _write_url_file(path: Path, urls: list[str]) -> None:

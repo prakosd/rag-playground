@@ -1493,6 +1493,83 @@ class TestInterruptHandling:
         assert "Interrupted" in out
 
 
+class TestUnexpectedErrorHandling:
+    """An unexpected mid-crawl error finalizes partial output instead of losing it."""
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_unexpected_error_finalizes_partial_output(
+        self, mock_crawler_cls, tmp_path: Path, monkeypatch
+    ):
+        """A generic error mid-crawl records crawl_error and still writes final files."""
+        url_a = "https://example.com/a"
+        result_a = _make_mock_result(url_a)
+
+        async def mock_arun(url, config=None):
+            return result_a
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=[url_a], limit=10, max_retries=0, flush_interval=1)
+        page_config = PageConfig(extract_main_content=False)
+        crawler = SiteCrawler(
+            config,
+            page_config,
+            output_base=tmp_path,
+            extractor=ContentExtractor(page_config),
+            writer=FileWriter(max_file_size_mb=15.0),
+        )
+
+        # A generic failure inside the round loop (after pages are crawled and
+        # flushed to sidecars) must be caught so the crawl still finalizes rather
+        # than losing the completed pages. Per-URL arun errors are swallowed by
+        # gather(return_exceptions=True), so inject the failure at the split step.
+        def boom(_results: object) -> None:
+            raise RuntimeError("browser pool crashed")
+
+        monkeypatch.setattr(crawler, "_split_results", boom)
+
+        results = crawler.crawl()
+
+        assert crawler.crawl_error is not None
+        assert "browser pool crashed" in crawler.crawl_error
+        assert isinstance(results, list)
+        assert crawler.output_dir is not None
+        final_urls = crawler.output_dir / "final" / "success_urls.txt"
+        if final_urls.exists():
+            assert url_a in final_urls.read_text(encoding="utf-8")
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_clean_crawl_leaves_crawl_error_unset(self, mock_crawler_cls, tmp_path: Path):
+        """A crawl that completes normally leaves crawl_error None (reports success)."""
+        url_a = "https://example.com/a"
+
+        async def mock_arun(url, config=None):
+            return _make_mock_result(url_a)
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(urls=[url_a], limit=1, max_retries=0, flush_interval=1)
+        page_config = PageConfig(extract_main_content=False)
+        crawler = SiteCrawler(
+            config,
+            page_config,
+            output_base=tmp_path,
+            extractor=ContentExtractor(page_config),
+            writer=FileWriter(max_file_size_mb=15.0),
+        )
+        crawler.crawl()
+
+        assert crawler.crawl_error is None
+
+
 class TestSidecarFiles:
     """Tests for JSONL sidecar files and memory-efficient field stripping."""
 

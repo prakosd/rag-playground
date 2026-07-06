@@ -78,7 +78,7 @@ def test_options_summary_includes_mmr_and_sources(monkeypatch: MonkeyPatch) -> N
     assert "2 file(s)" in summary
 
 
-def test_index_details_caption_enriches_from_manifest(monkeypatch: MonkeyPatch) -> None:
+def test_index_detail_rows_enrich_from_manifest(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
     from vector_indexer import IndexManifest
 
@@ -104,13 +104,14 @@ def test_index_details_caption_enriches_from_manifest(monkeypatch: MonkeyPatch) 
         manifest=manifest,
     )
 
-    caption = page._index_details_caption(STRINGS_EN, _record(), ref)
+    rows = dict(page._index_detail_rows(STRINGS_EN, _record(), ref))
 
-    assert "amazon.titan-embed-text-v2:0" in caption
-    assert "1197 chunks" in caption
-    assert "512 dim" in caption
-    assert "English" in caption
-    assert "chunk 600 / overlap 100" in caption
+    assert rows[STRINGS_EN["SEARCH_META_MODEL"]] == "amazon.titan-embed-text-v2:0"
+    assert rows[STRINGS_EN["SEARCH_META_DIMENSION"]] == "512"
+    assert rows[STRINGS_EN["SEARCH_META_LANGUAGE"]] == "English"
+    assert rows[STRINGS_EN["SEARCH_META_CHUNK_SIZE"]] == "600"
+    assert rows[STRINGS_EN["SEARCH_META_CHUNKS"]] == "1197"
+    assert rows[STRINGS_EN["SEARCH_META_OVERLAP"]] == "100"
 
 
 def test_search_history_grid_includes_query_facts(monkeypatch: MonkeyPatch) -> None:
@@ -119,16 +120,20 @@ def test_search_history_grid_includes_query_facts(monkeypatch: MonkeyPatch) -> N
     grid = page._search_history_grid(STRINGS_EN, _record(), None)
 
     assert STRINGS_EN["SEARCH_HISTORY_LABEL_OPTIONS"] in grid
+    assert STRINGS_EN["SEARCH_META_MODEL"] in grid
     assert "vector_01_weather / 2026-07-01_09-00-00" in grid
     assert "4 results" in grid
+    assert "titan" in grid
 
 
-def test_index_details_caption_falls_back_when_index_gone(monkeypatch: MonkeyPatch) -> None:
+def test_index_detail_rows_fall_back_when_index_gone(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
 
-    caption = page._index_details_caption(STRINGS_EN, _record(embedding_model="titan-x"), None)
+    rows = dict(page._index_detail_rows(STRINGS_EN, _record(embedding_model="titan-x"), None))
 
-    assert caption == "titan-x"
+    assert rows[STRINGS_EN["SEARCH_META_MODEL"]] == "titan-x"
+    assert rows[STRINGS_EN["SEARCH_META_DIMENSION"]] == "—"
+    assert rows[STRINGS_EN["SEARCH_META_CHUNKS"]] == "—"
 
 
 def test_replay_prefills_query_and_reruns_without_warnings(

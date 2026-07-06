@@ -25,6 +25,25 @@ _FOCUS_COMPONENT_HEIGHT = 1
 # giving up, so the action survives the render race after an st.rerun().
 _FOCUS_MAX_ATTEMPTS = 20
 
+# Tracks which page last became active so a page can focus its primary field once
+# on entry (a fresh navigation) without stealing focus on every later rerun.
+_ACTIVE_PAGE_KEY = "_focus_active_page"
+
+
+def entered_page(page_id: str) -> bool:
+    """Return True the first render after *page_id* becomes the active page.
+
+    ``st.navigation`` runs only the selected page each rerun, so the active page
+    updates a shared marker; this returns True only when the marker changes to
+    *page_id* (a fresh navigation, or the first load) and False on every later
+    rerun of the same page. Callers use it to move focus to a page's primary
+    field once on entry without stealing focus while the user is interacting.
+    """
+    if st.session_state.get(_ACTIVE_PAGE_KEY) != page_id:
+        st.session_state[_ACTIVE_PAGE_KEY] = page_id
+        return True
+    return False
+
 
 def focus_widget(key: str) -> None:
     """Move browser focus to the input/textarea of the widget keyed ``key``."""

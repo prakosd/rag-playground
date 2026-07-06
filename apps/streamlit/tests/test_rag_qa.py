@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from dataclasses import asdict
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -80,3 +81,17 @@ def test_history_grid_includes_model_tone_and_tokens(monkeypatch: MonkeyPatch) -
     assert "Neutral" in grid
     assert "vector_01_weather / 2026-07-04_09-00-00" in grid
     assert "120 in" in grid
+    assert STRINGS_EN["QA_HISTORY_LABEL_TIME"] in grid
+
+
+def test_apply_replay_repopulates_question_and_prompt(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {}
+    monkeypatch.setattr(page.st, "session_state", state)
+
+    page._apply_replay(
+        STRINGS_EN, [], asdict(_record(question="Why sky blue?", prompt="FULL PROMPT BODY"))
+    )
+
+    assert state[page._QUESTION_KEY] == "Why sky blue?"
+    assert state[page._PROMPT_KEY] == "FULL PROMPT BODY"

@@ -26,6 +26,9 @@ from crawl4md_streamlit.form_defaults import (
 )
 from crawl4md_streamlit.i18n import Strings
 
+# The Website URLs field is keyed so the crawl page can move focus to it on entry.
+URLS_WIDGET_KEY = "crawl_urls"
+
 
 def render_crawl_form(
     *,
@@ -50,6 +53,7 @@ def render_crawl_form(
             height=68,
             help=strings["FORM_URLS_HELP"],
             disabled=fields_disabled,
+            key=URLS_WIDGET_KEY,
         )
         include_only_paths = st.text_area(
             strings["FORM_INCLUDE_PATHS_LABEL"],

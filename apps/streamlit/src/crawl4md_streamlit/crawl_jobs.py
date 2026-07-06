@@ -410,20 +410,41 @@ def start_crawl_job(
             results = crawler.crawl()
             success_count = sum(1 for result in results if result.success)
             fail_count = len(results) - success_count
-            state = _EVENT_CANCELLED if cancel_event.is_set() else _EVENT_COMPLETED
-            emit(
-                {
-                    "event": state,
-                    "session_id": session_id,
-                    "crawl_id": crawl_id,
-                    "output_dir": str(crawler.output_dir) if crawler.output_dir else "",
-                    "processed_pages": len(results),
-                    "successful_pages": success_count,
-                    "failed_pages": fail_count,
-                    "limit": crawler_config.limit,
-                    **_cleared_concurrent_progress(crawler_config),
-                }
-            )
+            if crawler.crawl_error is not None:
+                # The crawl hit an unexpected error mid-run but still finalized its
+                # partial output; report a failure that keeps that output available.
+                failure = classify_crawl_error(crawler.crawl_error)
+                emit(
+                    {
+                        "event": _EVENT_FAILED,
+                        "session_id": session_id,
+                        "crawl_id": crawl_id,
+                        "output_dir": str(crawler.output_dir) if crawler.output_dir else "",
+                        "processed_pages": len(results),
+                        "successful_pages": success_count,
+                        "failed_pages": fail_count,
+                        "error": failure.default_text,
+                        "error_code": failure.code,
+                        "error_params": dict(failure.params),
+                        "limit": crawler_config.limit,
+                        **_cleared_concurrent_progress(crawler_config),
+                    }
+                )
+            else:
+                state = _EVENT_CANCELLED if cancel_event.is_set() else _EVENT_COMPLETED
+                emit(
+                    {
+                        "event": state,
+                        "session_id": session_id,
+                        "crawl_id": crawl_id,
+                        "output_dir": str(crawler.output_dir) if crawler.output_dir else "",
+                        "processed_pages": len(results),
+                        "successful_pages": success_count,
+                        "failed_pages": fail_count,
+                        "limit": crawler_config.limit,
+                        **_cleared_concurrent_progress(crawler_config),
+                    }
+                )
         except Exception as exc:  # noqa: BLE001 - surface background errors to the UI.
             failure = classify_crawl_error(str(exc))
             emit(

@@ -1009,6 +1009,7 @@ def test_find_latest_crawl_dir_and_activity_log_path(tmp_path: Path) -> None:
 
 def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     class FakeCrawler:
+        crawl_error = None
         seen_session_id = ""
 
         def __init__(
@@ -1072,6 +1073,7 @@ def test_start_crawl_job_reports_success_and_failure_counts(
             **kwargs: object,
         ) -> None:
             self.output_dir = output_base / "2026-05-04_12-30-45"
+            self.crawl_error = None
 
         def crawl(self) -> list[object]:
             self.output_dir.mkdir(parents=True)
@@ -1184,6 +1186,46 @@ def test_start_crawl_job_reports_generic_error_details(
     assert events[-1]["max_concurrent"] == crawler_config.max_concurrent
 
 
+def test_start_crawl_job_reports_error_with_finalized_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A crawl that errors mid-run but finalizes reports 'failed' with its output."""
+
+    class FakeCrawler:
+        def __init__(self, *args: object, output_base: Path, **kwargs: object) -> None:
+            self.output_dir = output_base / "2026-05-07_09-00-00"
+            self.crawl_error = None
+
+        def crawl(self) -> list[object]:
+            self.output_dir.mkdir(parents=True)
+            self.crawl_error = "browser pool crashed"
+            return [type("Result", (), {"success": True})()]
+
+    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    crawler_config, page_config, activity_log_size = build_configs(_form_values())
+
+    job = start_crawl_job(
+        session_id="abc123",
+        crawl_id="run123",
+        crawler_config=crawler_config,
+        page_config=page_config,
+        activity_log_size=activity_log_size,
+        sessions_root=tmp_path,
+    )
+    job.thread.join(timeout=5)
+
+    events = drain_events(job)
+    failed = events[-1]
+
+    assert failed["event"] == "failed"
+    assert failed["error_code"] == CODE_CRAWL_FAILED
+    assert "browser pool crashed" in str(failed["error"])
+    assert str(failed["output_dir"]).endswith("2026-05-07_09-00-00")
+    assert failed["processed_pages"] == 1
+    assert failed["successful_pages"] == 1
+    assert failed["failed_pages"] == 0
+
+
 def test_start_crawl_job_reports_cancelled_after_request(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1200,6 +1242,7 @@ def test_start_crawl_job_reports_cancelled_after_request(
         ) -> None:
             self.output_dir = output_base / "2026-05-06_12-00-00"
             self._should_cancel = should_cancel
+            self.crawl_error = None
 
         def crawl(self) -> list[object]:
             self.output_dir.mkdir(parents=True)
@@ -1573,6 +1616,7 @@ def test_start_crawl_job_registers_snapshot(
     class FakeCrawler:
         def __init__(self, *args: object, output_base: Path, **kwargs: object) -> None:
             self.output_dir = output_base / "fake_out"
+            self.crawl_error = None
 
         def crawl(self) -> list[object]:
             return []

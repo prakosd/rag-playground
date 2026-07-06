@@ -84,11 +84,12 @@ STRINGS_EN: Strings = {
     "RAG_INDEX_OPTION": "{folder} / {run} · {model} · {chunks} chunks",
     "RAG_LLM_LABEL": "Answer model",
     "RAG_LLM_HELP": (
-        "The chat model that writes the answer. If it is unavailable, the app falls back "
-        "to the offline echo model."
+        "The chat model that writes the answer. Cloud models (☁️‣🔑) need an API key set "
+        "in the config file — see the README for how to configure it. If it is "
+        "unavailable, the app falls back to the offline echo model."
     ),
     "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
-    "RAG_LLM_TAG_CLOUD": "☁️ Cloud (needs API key)",
+    "RAG_LLM_TAG_CLOUD": "☁️‣🔑",
     "RAG_LLM_INDICATOR_OFFLINE": (
         "Runs offline and repeats the question instead of generating an answer. Use it to "
         "try the workflow without credentials."
@@ -175,9 +176,6 @@ STRINGS_EN: Strings = {
     "SEARCH_HISTORY_EXPANDER": ":material/history: Search history",
     "SEARCH_HISTORY_EMPTY": "No searches yet — run a search to build your history.",
     "SEARCH_HISTORY_RESULT_COUNT": "{n} results",
-    "SEARCH_HISTORY_DETAIL_CHUNKS": "{n} chunks",
-    "SEARCH_HISTORY_DETAIL_DIM": "{n} dim",
-    "SEARCH_HISTORY_DETAIL_CHUNKING": "chunk {size} / overlap {overlap}",
     "SEARCH_HISTORY_REPLAY_HELP": "Search this query again",
     "SEARCH_HISTORY_INDEX_GONE": "That vector database no longer exists — pick another index.",
     "SEARCH_HISTORY_OPT_TOP": "top {n}",
@@ -197,8 +195,9 @@ STRINGS_EN: Strings = {
     ),
     "QA_LLM_LABEL": "Language model",
     "QA_LLM_HELP": (
-        "The language model that reads the prompt and writes the answer. Cloud models need "
-        "credentials; without them the app falls back to the offline echo model."
+        "The language model that reads the prompt and writes the answer. Cloud models "
+        "(☁️‣🔑) need an API key set in the config file — see the README for how to "
+        "configure it. Without one, the app falls back to the offline echo model."
     ),
     "QA_TOP_RESULTS_LABEL": "Top results",
     "QA_TOP_RESULTS_HELP": (
@@ -222,12 +221,11 @@ STRINGS_EN: Strings = {
     "QA_SEND_BUTTON": "Send",
     "QA_SEND_HELP": "Send the prompt to the selected language model and stream the answer.",
     "QA_MAXIMIZE_HELP": "Maximize the prompt editor",
-    "QA_SAVE_HELP": "Save the changes",
     "QA_MAXIMIZE_TITLE": "Edit prompt",
     "QA_NO_PROMPT_HINT": "Generate a prompt first, then send it.",
     "QA_ANSWER_HEADER": "Answer",
     "QA_ANSWER_STATS": (
-        "{model} · Tokens — input {input} · output {output} · "
+        "Model — {model} · Tokens — input {input} · output {output} · "
         "total {total} · answered in {seconds}s"
     ),
     "QA_TOKEN_NA": "n/a",
@@ -240,6 +238,10 @@ STRINGS_EN: Strings = {
     "QA_HISTORY_EXPANDER": ":material/history: Prompt history",
     "QA_HISTORY_EMPTY": "No prompts yet — send one to build your history.",
     "QA_HISTORY_REPLAY_HELP": "Load this prompt back into the form",
+    "QA_HISTORY_LABEL_QUESTION": "Question",
+    "QA_HISTORY_LABEL_TIME": "Time",
+    "QA_HISTORY_DETAILS_EXPANDER": "Details",
+    "QA_HISTORY_PROMPT_EXPANDER": "Prompt",
     "QA_HISTORY_META_INDEX": "Index",
     "QA_HISTORY_META_MODEL": "Model",
     "QA_HISTORY_META_TONE": "Tone",
@@ -523,9 +525,9 @@ STRINGS_EN: Strings = {
     "VEC_WORKERS_LABEL": "Workers",
     "VEC_WORKERS_HELP": "Parallel embedding workers (1-8). More speeds up cloud models on large crawls; the local offline model always runs single-threaded.",
     "VEC_EMBEDDING_MODEL_LABEL": "Embedding model",
-    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. If the selected model is unavailable (missing API key, credentials, or internet), indexing stops with an error and you can switch to the local offline model (all-MiniLM-L6-v2), which needs no setup.",
+    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. Cloud models (☁️‣🔑) need an API key set in the config file — see the README for how to configure it. If the selected model is unavailable (missing API key, credentials, or internet), indexing stops with an error and you can switch to the local offline model (all-MiniLM-L6-v2), which needs no setup.",
     "VEC_MODEL_TAG_LOCAL": "💻 Local",
-    "VEC_MODEL_TAG_CLOUD": "☁️ Cloud needs 🔑",
+    "VEC_MODEL_TAG_CLOUD": "☁️‣🔑",
     "VEC_MODEL_INDICATOR_LOCAL": (
         "Runs on this machine. Downloads the model once (about 80 MB) the first time, "
         "then works offline."

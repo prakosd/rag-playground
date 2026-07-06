@@ -1,7 +1,17 @@
 from __future__ import annotations
 
 import crawl4md_streamlit.focus as focus_module
-from crawl4md_streamlit.focus import click_widget, focus_widget
+from crawl4md_streamlit.focus import click_widget, entered_page, focus_widget
+
+
+def test_entered_page_true_once_per_navigation(monkeypatch) -> None:
+    state: dict[str, object] = {}
+    monkeypatch.setattr(focus_module.st, "session_state", state)
+
+    assert entered_page("crawl") is True  # first load
+    assert entered_page("crawl") is False  # rerun on the same page
+    assert entered_page("rag_qa") is True  # navigated away
+    assert entered_page("crawl") is True  # navigated back
 
 
 def test_focus_widget_targets_keyed_container(monkeypatch) -> None:

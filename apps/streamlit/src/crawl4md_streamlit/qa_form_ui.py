@@ -20,7 +20,6 @@ from crawl4md_streamlit.settings import get_settings
 __all__ = [
     "TokenTotals",
     "apply_maximized_prompt",
-    "prompt_has_changes",
     "resolve_qa_prompt_template",
     "token_totals",
     "tone_choices",
@@ -71,16 +70,6 @@ def apply_maximized_prompt(
     """
     if source_key in state:
         state[target_key] = state[source_key]
-
-
-def prompt_has_changes(edited: str | None, current: str | None) -> bool:
-    """Return True when the maximized-editor text differs from the inline prompt.
-
-    Drives the Maximize dialog's Save button: it is enabled only while the dialog
-    holds unsaved edits. ``None`` is treated as an empty string so a freshly
-    opened dialog (mirror seeded from the inline value) reports no changes.
-    """
-    return (edited or "") != (current or "")
 
 
 def tone_choices() -> tuple[list[str], int]:
