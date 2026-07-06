@@ -63,7 +63,6 @@ def test_session_control_strings_are_present() -> None:
     for key in (
         "SESSION_LOADING",
         "SESSION_SELECTOR_LABEL",
-        "SESSION_CREATE_BUTTON",
         "SESSION_CREATE_BUTTON_TOOLTIP",
         "SESSION_LOAD_BUTTON_TOOLTIP",
         "SESSION_EXTEND_BUTTON_TOOLTIP",
@@ -134,11 +133,6 @@ def test_state_labels_cover_known_states() -> None:
 def test_catalog_contains_both_languages() -> None:
     assert "EN" in CATALOG
     assert "ID" in CATALOG
-
-
-def test_files_session_caption_has_path_placeholder() -> None:
-    assert "{path}" in STRINGS_EN["FILES_SESSION_CAPTION"]
-    assert "{path}" in STRINGS_ID["FILES_SESSION_CAPTION"]
 
 
 def test_files_crawl_result_label_defined() -> None:

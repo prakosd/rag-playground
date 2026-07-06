@@ -49,10 +49,12 @@ __all__ = [
     "render_messages",
     "render_model_caption",
     "render_ranked_results",
+    "render_section_header",
     "render_sources",
     "result_detail_caption",
     "select_index",
     "sort_results_by_score",
+    "stacked_label_value_html",
     "to_chat_turns",
 ]
 
@@ -174,12 +176,17 @@ def local_time_label(timestamp_utc: str) -> str:
 
 
 def kv_grid_html(
-    rows: Sequence[tuple[str, str]], *, columns: int = 2, margin_bottom: bool = False
+    rows: Sequence[tuple[str, str]],
+    *,
+    columns: int = 2,
+    margin_bottom: bool = False,
+    margin_top: bool = False,
 ) -> str:
     """Render label/value *rows* as a compact aligned grid (values right-aligned).
 
     *columns* is 2 (label | value, full width) or 4 (label value label value, denser),
     so the index Details panel and the Step 3/4 history cards share one tidy look.
+    *margin_top* pulls the grid up to sit closer to the row above it.
     """
     cells = "".join(
         f'<div style="opacity:0.65">{html.escape(label)}</div>'
@@ -187,10 +194,30 @@ def kv_grid_html(
         for label, value in rows
     )
     template = "auto 1fr auto 1fr" if columns == 4 else "auto 1fr"
-    margin = ";margin-bottom:1rem" if margin_bottom else ""
+    extra = ""
+    if margin_top:
+        extra += ";margin-top:-0.5rem"
+    if margin_bottom:
+        extra += ";margin-bottom:1rem"
     return (
         f'<div style="display:grid;grid-template-columns:{template};'
-        f'gap:2px 1.5rem;font-size:0.875rem{margin}">{cells}</div>'
+        f'gap:2px 1.5rem;font-size:0.875rem{extra}">{cells}</div>'
+    )
+
+
+def stacked_label_value_html(label: str, value: str) -> str:
+    """Build a dim-gray label stacked tightly above a single-line value.
+
+    Matches the kv-grid label style (dim, 0.875rem) and clips the value to one
+    line with an ellipsis (full text on hover), so the Search history card's
+    question label + value stay within the replay button's height.
+    """
+    return (
+        '<div style="display:flex;flex-direction:column;line-height:1.25;overflow:hidden">'
+        f'<div style="opacity:0.65;font-size:0.875rem">{html.escape(label)}</div>'
+        '<div style="font-weight:600;white-space:nowrap;overflow:hidden;'
+        f'text-overflow:ellipsis" title="{html.escape(value)}">{html.escape(value)}</div>'
+        "</div>"
     )
 
 
@@ -214,6 +241,24 @@ def result_detail_caption(strings: Strings, chunk: RetrievedChunk) -> str:
     if language:
         parts.append(strings["SEARCH_RESULT_LANGUAGE"].format(language=language))
     return " · ".join(parts)
+
+
+def render_section_header(header: str, caption: str, *, anchor: str) -> None:
+    """Render a page section's heading + caption with tight, consistent spacing.
+
+    Keeps ``st.subheader`` so Material-icon and emoji headers still render, then
+    pulls the heading up and draws the caption right beneath it (negative margins)
+    so the gap above the heading and between heading and caption stays small and
+    identical across the RAG pages, rather than Streamlit's default flex gap.
+    """
+    st.subheader(header, anchor=anchor)
+    st.markdown(
+        f'<style>div[data-testid="stElementContainer"]:has(h3#{anchor})'
+        "{margin-top:-0.5rem}</style>"
+        '<p style="opacity:0.6;font-size:0.875rem;margin:-0.5rem 0 0.25rem">'
+        f"{html.escape(caption)}</p>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_index_metadata(strings: Strings, index: IndexRef) -> None:
@@ -252,7 +297,6 @@ def render_ranked_results(
     ranked = sort_results_by_score(chunks)
     if not ranked:
         return
-    st.markdown(_RESULT_CARD_CSS, unsafe_allow_html=True)
     tab_order = ordered_result_tabs(default_tab)
     tab_labels = {
         _RESULT_TAB_RAW: strings["SEARCH_RESULT_TAB_RAW"],
@@ -260,6 +304,10 @@ def render_ranked_results(
     }
     label = strings["SEARCH_RESULTS_EXPANDER"].format(count=len(ranked))
     with st.expander(label, expanded=expanded):
+        # Injected inside the panel (not before it) so this lone <style> element
+        # does not add an empty spacer row above the results panel — that keeps the
+        # query→results gap equal to the results→history gap.
+        st.markdown(_RESULT_CARD_CSS, unsafe_allow_html=True)
         for rank, chunk in enumerate(ranked, start=1):
             with st.container(border=True):
                 title_col, score_col = st.columns([0.7, 0.3], vertical_alignment="center")

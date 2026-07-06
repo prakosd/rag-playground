@@ -24,7 +24,6 @@ STRINGS_ID: Strings = {
     "SESSION_EXPIRY_CAPTION_HOURS": "Sesi ini akan kedaluwarsa dalam {hours} jam \u2014 semua file akan dihapus.",
     "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR": "Sesi ini akan kedaluwarsa dalam 1 jam \u2014 semua file akan dihapus.",
     "SESSION_EXPIRY_CAPTION_SOON": "Sesi ini akan segera kedaluwarsa \u2014 semua file akan dihapus.",
-    "SESSION_CREATE_BUTTON": "Baru",
     "SESSION_CREATE_BUTTON_TOOLTIP": "Buat sesi terpisah (hasil saat ini tetap tersimpan)",
     "SESSION_LOAD_BUTTON_TOOLTIP": "Muat sesi yang ada berdasarkan ID",
     "SESSION_EXTEND_BUTTON_TOOLTIP": "Perpanjang sesi — memberikan hingga 7 hari dari sekarang",
@@ -191,6 +190,7 @@ STRINGS_ID: Strings = {
     "SEARCH_HISTORY_OPT_DIVERSITY": "keberagaman {value}",
     "SEARCH_HISTORY_OPT_POOL": "kumpulan {n}",
     "SEARCH_HISTORY_OPT_SOURCES": "{n} berkas",
+    "SEARCH_HISTORY_LABEL_QUERY": "Pertanyaan",
     "SEARCH_HISTORY_LABEL_TIME": "Waktu",
     "SEARCH_HISTORY_LABEL_RESULTS": "Hasil",
     "SEARCH_HISTORY_LABEL_INDEX": "Indeks",
@@ -229,22 +229,24 @@ STRINGS_ID: Strings = {
     "QA_SEND_BUTTON": "Kirim",
     "QA_SEND_HELP": "Kirim prompt ke model bahasa terpilih dan streaming jawabannya.",
     "QA_MAXIMIZE_HELP": "Perbesar editor prompt",
-    "QA_MINIMIZE_HELP": "Perkecil editor prompt",
+    "QA_SAVE_HELP": "Simpan perubahan",
     "QA_MAXIMIZE_TITLE": "Sunting prompt",
-    "QA_SENDING": "Menunggu model…",
     "QA_NO_PROMPT_HINT": "Hasilkan prompt terlebih dahulu, lalu kirim.",
     "QA_ANSWER_HEADER": "Jawaban",
     "QA_ANSWER_STATS": (
-        "Token — input {input} · output {output} · total {total} · dijawab dalam {seconds}s"
+        "{model} · Token — input {input} · output {output} · "
+        "total {total} · dijawab dalam {seconds}s"
     ),
     "QA_TOKEN_NA": "n/a",
-    "QA_SUMMARY_INPUT_LABEL": "Token input",
-    "QA_SUMMARY_OUTPUT_LABEL": "Token output",
-    "QA_SUMMARY_TOTAL_LABEL": "Total token",
+    "QA_TOKEN_PANEL_TITLE": "Jumlah token",
+    "QA_SUMMARY_QUOTA_LABEL": "Kuota",
+    "QA_SUMMARY_USAGE_LABEL": "% Pemakaian",
+    "QA_SUMMARY_INPUT_LABEL": "Input",
+    "QA_SUMMARY_OUTPUT_LABEL": "Output",
+    "QA_SUMMARY_TOTAL_LABEL": "Total",
     "QA_HISTORY_EXPANDER": ":material/history: Riwayat prompt",
     "QA_HISTORY_EMPTY": "Belum ada prompt — kirim satu untuk membangun riwayat Anda.",
     "QA_HISTORY_REPLAY_HELP": "Muat prompt ini kembali ke formulir",
-    "QA_HISTORY_INDEX_GONE": "Vector database itu sudah tidak ada — pilih indeks lain.",
     "QA_HISTORY_META_INDEX": "Indeks",
     "QA_HISTORY_META_MODEL": "Model",
     "QA_HISTORY_META_TONE": "Nada",
@@ -394,7 +396,6 @@ STRINGS_ID: Strings = {
     "PROGRESS_COMPLETE": "selesai",
     "PROGRESS_RETRYING": "Sedang retry halaman gagal",
     # ── Progress charts ───────────────────────────────────────────────────
-    "CHART_CUMULATIVE_TITLE": "Total crawl kumulatif dari waktu ke waktu",
     "CHART_CUMULATIVE_TITLE_SECOND": "Total crawl per detik",
     "CHART_CUMULATIVE_TITLE_MINUTE": "Linimasa kemajuan crawl",
     "CHART_CUMULATIVE_TITLE_HOUR": "Total crawl per jam",
@@ -428,7 +429,6 @@ STRINGS_ID: Strings = {
         "Penyimpanan browser tidak tersedia. Aktifkan local storage di browser ini lalu "
         "muat ulang halaman."
     ),
-    "ERROR_SESSION_FOLDER_MISSING": "Folder sesi tidak ada.",
     "ERROR_CRAWL_FAILED_FALLBACK": "Crawl gagal.",
     # ── Activity log ──────────────────────────────────────────────────────
     "ACTIVITY_LOG_HEADER": "Log aktivitas",
@@ -440,7 +440,6 @@ STRINGS_ID: Strings = {
     "FILES_COL_TYPE": "Tipe",
     "FILES_COL_SIZE": "Ukuran (MB)",
     "FILES_COL_MODIFIED": "Dimodifikasi",
-    "FILES_SESSION_CAPTION": "Folder sesi: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} terlalu besar untuk diunduh dari aplikasi.",
     "FILES_DOWNLOADS_IN_PROGRESS": "Crawl sedang berjalan — file muncul seiring halaman diproses.",
     "FILES_DOWNLOADS_SUBTITLE": "Pratinjau atau unduh file crawl Anda di bawah ini.",
@@ -469,7 +468,6 @@ STRINGS_ID: Strings = {
         "bisa dibatalkan — pastikan Anda sudah mengunduh yang ingin disimpan."
     ),
     "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Hapus folder",
-    "FILES_UPLOAD_LINK": "Klik di sini untuk mengunggah.",
     "FILES_UPLOAD_BUTTON": ":material/upload: Impor",
     "FILES_UPLOAD_BUTTON_HELP": "Impor zip folder yang diekspor dari aplikasi ini",
     "FILES_UPLOAD_DIALOG_TITLE": "Unggah zip folder",

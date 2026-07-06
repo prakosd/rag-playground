@@ -1377,6 +1377,16 @@ def _vector_job_active() -> bool:
     return alive or st.session_state.vector_index_state in _ACTIVE_JOB_STATES
 
 
+def _files_actions_busy() -> bool:
+    """Return True while a crawl or vector-index job is active.
+
+    The Files & folders actions (Import / Export / Delete / Preview / Download)
+    stay visible but disabled while either job runs, so a user cannot mutate the
+    outputs that are being written mid-crawl or mid-index.
+    """
+    return _crawl_job_active() or _vector_job_active()
+
+
 def _auto_refresh_fragment(
     body: Callable[[], None],
     *,
@@ -2500,7 +2510,7 @@ def _render_file_preview_button(file: GeneratedFile) -> None:
         width=_ICON_BUTTON_WIDTH_PX,
         key=f"preview_{st.session_state.session_id}_{file.relative_path}",
         help=preview_help,
-        disabled=not previewable,
+        disabled=_files_actions_busy() or not previewable,
     ):
         st.session_state.preview_file_relative_path = file.relative_path
         st.rerun()
@@ -2518,6 +2528,7 @@ def _render_folder_zip_button(relative_path: str) -> None:
         width="content",
         key=f"export_zip_{st.session_state.session_id}_{relative_path}",
         help=strings["FILES_DOWNLOAD_ZIP_HELP"].format(folder=folder_name),
+        disabled=_files_actions_busy(),
     ):
         st.session_state.export_folder_relative_path = relative_path
         st.session_state.pop("export_zip_payload", None)
@@ -2601,6 +2612,7 @@ def _render_folder_delete_button(relative_path: str) -> None:
         icon=":material/delete_forever:",
         key=f"delete_folder_{st.session_state.session_id}_{relative_path}",
         help=strings["FILES_DELETE_FOLDER_HELP"].format(folder=folder_name),
+        disabled=_files_actions_busy(),
     ):
         st.session_state.delete_folder_relative_path = relative_path
         st.rerun()
@@ -2637,6 +2649,7 @@ def render_generated_file_download(file: GeneratedFile) -> None:
                 file_name=file.name,
                 mime=mime_type,
                 key=f"download_{st.session_state.session_id}_{file.relative_path}",
+                disabled=_files_actions_busy(),
             )
 
 
@@ -2771,6 +2784,7 @@ def _render_import_button() -> None:
         key="open_upload_dialog",
         help=strings["FILES_UPLOAD_BUTTON_HELP"],
         on_click=_open_upload_dialog,
+        disabled=_files_actions_busy(),
     )
 
 
@@ -2892,14 +2906,13 @@ def _downloads_body() -> None:
         """,
         unsafe_allow_html=True,
     )
+    # Keep the panel visible during an active crawl only when it already holds
+    # files; otherwise show it whenever the session folder exists. The Import
+    # button always renders now (disabled while a crawl or index runs) instead of
+    # being hidden, so its position stays stable across job states.
     job_alive = _job_is_alive(st.session_state.job)
-    if job_alive:
-        if files:
-            with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
-                if session_log is not None:
-                    render_generated_file_download(session_log)
-                render_download_tree(download_tree)
-    elif session_folder.exists():
+    show_panel = bool(files) if job_alive else session_folder.exists()
+    if show_panel:
         with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
             _render_import_button()
             if session_log is not None:

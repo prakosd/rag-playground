@@ -9,9 +9,11 @@ from crawl4md_streamlit import qa_form_ui
 from crawl4md_streamlit.qa_form_ui import (
     TokenTotals,
     apply_maximized_prompt,
+    prompt_has_changes,
     resolve_qa_prompt_template,
     token_totals,
     tone_choices,
+    usage_percent,
 )
 from crawl4md_streamlit.qa_history import QaRecord
 
@@ -76,6 +78,21 @@ def test_apply_maximized_prompt_is_noop_when_source_missing() -> None:
     assert state == {"dst": "keep"}
 
 
+def test_prompt_has_changes_detects_difference() -> None:
+    assert prompt_has_changes("edited prompt", "original prompt") is True
+
+
+def test_prompt_has_changes_false_when_equal() -> None:
+    assert prompt_has_changes("same text", "same text") is False
+
+
+def test_prompt_has_changes_treats_none_as_empty() -> None:
+    # A freshly opened dialog (mirror == inline, or either unset) has no changes;
+    # once text is typed against an unset inline value it does.
+    assert prompt_has_changes(None, "") is False
+    assert prompt_has_changes("typed", None) is True
+
+
 def _record(**tokens: object) -> QaRecord:
     return QaRecord(
         timestamp_utc="t",
@@ -105,3 +122,18 @@ def test_token_totals_sums_and_treats_missing_as_zero() -> None:
 
 def test_token_totals_empty() -> None:
     assert token_totals([]) == TokenTotals(0, 0, 0)
+
+
+def test_usage_percent_floors_to_whole_percent() -> None:
+    assert usage_percent(1234, 100000) == 1  # 1.234% floored
+    assert usage_percent(4999, 100000) == 4  # 4.999% floored
+
+
+def test_usage_percent_zero_or_negative_quota_is_zero() -> None:
+    assert usage_percent(500, 0) == 0
+    assert usage_percent(500, -10) == 0
+
+
+def test_usage_percent_at_and_over_budget() -> None:
+    assert usage_percent(100000, 100000) == 100
+    assert usage_percent(150000, 100000) == 150

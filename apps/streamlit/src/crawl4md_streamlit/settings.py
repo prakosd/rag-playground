@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     # that file to reword the generated prompt without a code change; a missing
     # or empty file falls back to the built-in rag_engine default.
     rag_qa_prompt_template_file: str
+    # Per-session token budget shown on the Step 4 Token count panel. The panel's
+    # % Usage is the session total divided by this quota. Display-only; it does
+    # not block sending.
+    rag_qa_session_token_quota: int
     # Language models offered on the RAG pages (comma-separated rag_engine
     # catalog ids), in display order. Unknown ids are ignored.
     rag_llm_models: str

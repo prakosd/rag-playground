@@ -20,9 +20,11 @@ from crawl4md_streamlit.settings import get_settings
 __all__ = [
     "TokenTotals",
     "apply_maximized_prompt",
+    "prompt_has_changes",
     "resolve_qa_prompt_template",
     "token_totals",
     "tone_choices",
+    "usage_percent",
 ]
 
 _logger = get_logger(__name__)
@@ -71,6 +73,16 @@ def apply_maximized_prompt(
         state[target_key] = state[source_key]
 
 
+def prompt_has_changes(edited: str | None, current: str | None) -> bool:
+    """Return True when the maximized-editor text differs from the inline prompt.
+
+    Drives the Maximize dialog's Save button: it is enabled only while the dialog
+    holds unsaved edits. ``None`` is treated as an empty string so a freshly
+    opened dialog (mirror seeded from the inline value) reports no changes.
+    """
+    return (edited or "") != (current or "")
+
+
 def tone_choices() -> tuple[list[str], int]:
     """Return the offered tones and the default-selected index (.env-configured)."""
     tones = list(_TONE_ORDER) or [_DEFAULT_TONE]
@@ -94,3 +106,15 @@ def token_totals(records: Sequence[QaRecord]) -> TokenTotals:
         output_tokens=sum(record.output_tokens or 0 for record in records),
         total_tokens=sum(record.total_tokens or 0 for record in records),
     )
+
+
+def usage_percent(total: int, quota: int) -> int:
+    """Return session token usage as a whole-number percent of *quota* (floored).
+
+    Rounds down to whole percent for a stable, non-alarming readout and returns 0
+    when *quota* is not positive, so a misconfigured budget never divides by zero.
+    May exceed 100 when the session total is over budget.
+    """
+    if quota <= 0:
+        return 0
+    return total * 100 // quota

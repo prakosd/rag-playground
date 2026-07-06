@@ -23,7 +23,6 @@ STRINGS_EN: Strings = {
     "SESSION_EXPIRY_CAPTION_HOURS": "This session expires in {hours} hours \u2014 all files will be deleted.",
     "SESSION_EXPIRY_CAPTION_HOURS_SINGULAR": "This session expires in 1 hour \u2014 all files will be deleted.",
     "SESSION_EXPIRY_CAPTION_SOON": "This session is expiring soon \u2014 all files will be deleted.",
-    "SESSION_CREATE_BUTTON": "New",
     "SESSION_CREATE_BUTTON_TOOLTIP": "Create a separate session (keeps current results)",
     "SESSION_LOAD_BUTTON_TOOLTIP": "Load an existing session by ID",
     "SESSION_EXTEND_BUTTON_TOOLTIP": "Extend session — gives up to 7 days from now",
@@ -186,6 +185,7 @@ STRINGS_EN: Strings = {
     "SEARCH_HISTORY_OPT_DIVERSITY": "diversity {value}",
     "SEARCH_HISTORY_OPT_POOL": "pool {n}",
     "SEARCH_HISTORY_OPT_SOURCES": "{n} file(s)",
+    "SEARCH_HISTORY_LABEL_QUERY": "Question",
     "SEARCH_HISTORY_LABEL_TIME": "Time",
     "SEARCH_HISTORY_LABEL_RESULTS": "Results",
     "SEARCH_HISTORY_LABEL_INDEX": "Index",
@@ -222,22 +222,24 @@ STRINGS_EN: Strings = {
     "QA_SEND_BUTTON": "Send",
     "QA_SEND_HELP": "Send the prompt to the selected language model and stream the answer.",
     "QA_MAXIMIZE_HELP": "Maximize the prompt editor",
-    "QA_MINIMIZE_HELP": "Minimize the prompt editor",
+    "QA_SAVE_HELP": "Save the changes",
     "QA_MAXIMIZE_TITLE": "Edit prompt",
-    "QA_SENDING": "Waiting for the model…",
     "QA_NO_PROMPT_HINT": "Generate a prompt first, then send it.",
     "QA_ANSWER_HEADER": "Answer",
     "QA_ANSWER_STATS": (
-        "Tokens — input {input} · output {output} · total {total} · answered in {seconds}s"
+        "{model} · Tokens — input {input} · output {output} · "
+        "total {total} · answered in {seconds}s"
     ),
     "QA_TOKEN_NA": "n/a",
-    "QA_SUMMARY_INPUT_LABEL": "Input tokens",
-    "QA_SUMMARY_OUTPUT_LABEL": "Output tokens",
-    "QA_SUMMARY_TOTAL_LABEL": "Total tokens",
+    "QA_TOKEN_PANEL_TITLE": "Token count",
+    "QA_SUMMARY_QUOTA_LABEL": "Quota",
+    "QA_SUMMARY_USAGE_LABEL": "% Usage",
+    "QA_SUMMARY_INPUT_LABEL": "Input",
+    "QA_SUMMARY_OUTPUT_LABEL": "Output",
+    "QA_SUMMARY_TOTAL_LABEL": "Total",
     "QA_HISTORY_EXPANDER": ":material/history: Prompt history",
     "QA_HISTORY_EMPTY": "No prompts yet — send one to build your history.",
     "QA_HISTORY_REPLAY_HELP": "Load this prompt back into the form",
-    "QA_HISTORY_INDEX_GONE": "That vector database no longer exists — pick another index.",
     "QA_HISTORY_META_INDEX": "Index",
     "QA_HISTORY_META_MODEL": "Model",
     "QA_HISTORY_META_TONE": "Tone",
@@ -383,7 +385,6 @@ STRINGS_EN: Strings = {
     "PROGRESS_COMPLETE": "complete",
     "PROGRESS_RETRYING": "Retrying failed pages",
     # ── Progress charts ───────────────────────────────────────────────────
-    "CHART_CUMULATIVE_TITLE": "Cumulative crawl totals over time",
     "CHART_CUMULATIVE_TITLE_SECOND": "Crawl totals by second",
     "CHART_CUMULATIVE_TITLE_MINUTE": "Crawl progress timeline",
     "CHART_CUMULATIVE_TITLE_HOUR": "Crawl totals by hour",
@@ -416,7 +417,6 @@ STRINGS_EN: Strings = {
     "ERROR_SESSION_STORAGE_WRITE": (
         "Browser storage is unavailable. Enable local storage in this browser and refresh the page."
     ),
-    "ERROR_SESSION_FOLDER_MISSING": "Session folder does not exist.",
     "ERROR_CRAWL_FAILED_FALLBACK": "The crawl failed.",
     # ── Activity log ──────────────────────────────────────────────────────
     "ACTIVITY_LOG_HEADER": "Activity log",
@@ -428,7 +428,6 @@ STRINGS_EN: Strings = {
     "FILES_COL_TYPE": "Type",
     "FILES_COL_SIZE": "Size (MB)",
     "FILES_COL_MODIFIED": "Modified",
-    "FILES_SESSION_CAPTION": "Session folder: {path}",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} is too large to download from the app.",
     "FILES_DOWNLOADS_IN_PROGRESS": "Crawl in progress — files appear as pages are processed.",
     "FILES_DOWNLOADS_SUBTITLE": "Preview or download your crawled files below.",
@@ -457,7 +456,6 @@ STRINGS_EN: Strings = {
         "make sure you've downloaded anything you want to keep first."
     ),
     "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Delete folder",
-    "FILES_UPLOAD_LINK": "Click here to upload.",
     "FILES_UPLOAD_BUTTON": ":material/upload: Import",
     "FILES_UPLOAD_BUTTON_HELP": "Import a folder zip exported from this app",
     "FILES_UPLOAD_DIALOG_TITLE": "Upload a folder zip",

@@ -60,6 +60,7 @@ crawl/index/RAG config models.
 | `RAG_QA_TONES` | `Neutral,Formal,Friendly,…` | Tones offered on the Step 4 Tone selector (comma-separated, in order) |
 | `RAG_QA_DEFAULT_TONE` | `Neutral` | Tone pre-selected on the Step 4 selector |
 | `RAG_QA_PROMPT_TEMPLATE_FILE` | `apps/streamlit/config/rag_qa_prompt.txt` | Path (relative to the repo root) to the Step 4 prompt template file; edit that file to reword the generated prompt without a code change (a missing/empty file, or one missing a `{question}`/`{start}`/`{knowledge}`/`{end}`/`{tone}` field, falls back to the built-in default) |
+| `RAG_QA_SESSION_TOKEN_QUOTA` | `100000` | Per-session token budget shown on the Step 4 Token count panel (drives Quota and % Usage); display-only — it never blocks sending |
 | `RAG_LLM_MODELS` | `apac.amazon.nova-micro-v1:0,…,gpt-4o-mini,echo` | Language models offered on the RAG pages (comma-separated `rag_engine` catalog ids, in order) |
 | `RAG_DEFAULT_LLM_MODEL` | `apac.amazon.nova-lite-v1:0` | Language model pre-selected on the RAG pages |
 | `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |

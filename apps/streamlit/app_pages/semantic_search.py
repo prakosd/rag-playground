@@ -24,6 +24,7 @@ from crawl4md_streamlit.rag_ui import (
     render_messages,
     render_ranked_results,
     select_index,
+    stacked_label_value_html,
 )
 from crawl4md_streamlit.search_history import (
     SearchRecord,
@@ -385,7 +386,10 @@ def _render_search_history(
             ref = find_index(indexes, record.index_folder, record.index_run)
             with st.container(border=True):
                 head, action = st.columns([0.85, 0.15], vertical_alignment="center")
-                head.markdown(f"**{record.query}**")
+                head.markdown(
+                    stacked_label_value_html(strings["SEARCH_HISTORY_LABEL_QUERY"], record.query),
+                    unsafe_allow_html=True,
+                )
                 with action, st.container(horizontal_alignment="right"):
                     if st.button(
                         ":material/replay:",
@@ -410,4 +414,4 @@ def _search_history_grid(strings: Strings, record: SearchRecord, ref: IndexRef |
         (strings["SEARCH_HISTORY_LABEL_OPTIONS"], _options_summary(strings, record)),
         (strings["SEARCH_HISTORY_LABEL_DETAILS"], _index_details_caption(strings, record, ref)),
     ]
-    return kv_grid_html(rows)
+    return kv_grid_html(rows, margin_bottom=True, margin_top=True)

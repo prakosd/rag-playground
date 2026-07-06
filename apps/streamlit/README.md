@@ -36,8 +36,8 @@ flowchart TD
 | `vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl_jobs.py`) |
 | `index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
 | `llm_form_ui.py` | Steps 4-5 chat-model selector + pure helpers (`.env`-curated `chat_model_choices` / `resolve_chat_model_choices`, label) |
-| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (index picker, index metadata, collapsible ranked-results panel, sources, messages) |
-| `qa_form_ui.py` | Step 4 pure helpers: `tone_choices` (.env tones + default) and `token_totals` (session token summary) |
+| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (tight section header, index picker, index metadata, collapsible ranked-results panel, sources, messages) |
+| `qa_form_ui.py` | Step 4 pure helpers: `tone_choices` (.env tones + default), `token_totals` + `usage_percent` (session Token count panel: Quota / % Usage / Input / Output / Total), and `prompt_has_changes` (Maximize dialog Save enablement) |
 | `qa_history.py` | Step 4 per-session prompt history (`QaRecord`; JSONL + CSV under `rag_qa_history/`) |
 | `focus.py` | One-shot client-side focus helper (`focus_widget`) that focuses a keyed input after a rerun |
 | `generated_files.py` | Output listing, previews, downloads (labels include human-readable file sizes), and per-file deletion |

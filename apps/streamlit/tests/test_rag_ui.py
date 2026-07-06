@@ -19,6 +19,7 @@ from crawl4md_streamlit.rag_ui import (
     ordered_result_tabs,
     result_detail_caption,
     sort_results_by_score,
+    stacked_label_value_html,
 )
 
 
@@ -66,6 +67,21 @@ def test_kv_grid_html_four_column_with_margin() -> None:
 
     assert "grid-template-columns:auto 1fr auto 1fr" in grid
     assert "margin-bottom:1rem" in grid
+
+
+def test_kv_grid_html_margin_top_pulls_grid_up() -> None:
+    grid = kv_grid_html([("A", "1")], margin_top=True)
+
+    assert "margin-top:-0.5rem" in grid
+
+
+def test_stacked_label_value_html_escapes_and_clips() -> None:
+    block = stacked_label_value_html("Question", "a & <b>")
+
+    assert "Question" in block
+    assert "a &amp; &lt;b&gt;" in block  # value is html-escaped
+    assert 'title="a &amp; &lt;b&gt;"' in block  # full text kept for hover
+    assert "text-overflow:ellipsis" in block  # clipped to a single line
 
 
 def _chunk(score: float) -> RetrievedChunk:

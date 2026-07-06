@@ -42,8 +42,9 @@ def _record(**overrides: object) -> QaRecord:
 def test_stats_caption_shows_counts_and_seconds(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
 
-    caption = page._stats_caption(STRINGS_EN, TokenUsage(120, 45, 165), 2.34)
+    caption = page._stats_caption(STRINGS_EN, TokenUsage(120, 45, 165), 2.34, "Nova Lite")
 
+    assert "Nova Lite" in caption
     assert "120" in caption
     assert "45" in caption
     assert "165" in caption
@@ -53,8 +54,9 @@ def test_stats_caption_shows_counts_and_seconds(monkeypatch: MonkeyPatch) -> Non
 def test_stats_caption_shows_na_without_usage(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
 
-    caption = page._stats_caption(STRINGS_EN, None, 1.0)
+    caption = page._stats_caption(STRINGS_EN, None, 1.0, "Echo")
 
+    assert "Echo" in caption
     assert STRINGS_EN["QA_TOKEN_NA"] in caption
     assert "1.0s" in caption
 

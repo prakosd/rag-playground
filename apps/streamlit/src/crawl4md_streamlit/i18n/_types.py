@@ -21,7 +21,6 @@ class Strings(TypedDict):
     SESSION_EXPIRY_CAPTION_HOURS: str  # template: {hours}
     SESSION_EXPIRY_CAPTION_HOURS_SINGULAR: str
     SESSION_EXPIRY_CAPTION_SOON: str
-    SESSION_CREATE_BUTTON: str
     SESSION_CREATE_BUTTON_TOOLTIP: str
     SESSION_LOAD_BUTTON_TOOLTIP: str
     SESSION_EXTEND_BUTTON_TOOLTIP: str
@@ -122,6 +121,7 @@ class Strings(TypedDict):
     SEARCH_HISTORY_OPT_DIVERSITY: str  # template: {value}
     SEARCH_HISTORY_OPT_POOL: str  # template: {n}
     SEARCH_HISTORY_OPT_SOURCES: str  # template: {n}
+    SEARCH_HISTORY_LABEL_QUERY: str
     SEARCH_HISTORY_LABEL_TIME: str
     SEARCH_HISTORY_LABEL_RESULTS: str
     SEARCH_HISTORY_LABEL_INDEX: str
@@ -145,20 +145,21 @@ class Strings(TypedDict):
     QA_SEND_BUTTON: str
     QA_SEND_HELP: str
     QA_MAXIMIZE_HELP: str
-    QA_MINIMIZE_HELP: str
+    QA_SAVE_HELP: str
     QA_MAXIMIZE_TITLE: str
-    QA_SENDING: str
     QA_NO_PROMPT_HINT: str
     QA_ANSWER_HEADER: str
-    QA_ANSWER_STATS: str  # template: {input}, {output}, {total}, {seconds}
+    QA_ANSWER_STATS: str  # template: {model}, {input}, {output}, {total}, {seconds}
     QA_TOKEN_NA: str
+    QA_TOKEN_PANEL_TITLE: str
+    QA_SUMMARY_QUOTA_LABEL: str
+    QA_SUMMARY_USAGE_LABEL: str
     QA_SUMMARY_INPUT_LABEL: str
     QA_SUMMARY_OUTPUT_LABEL: str
     QA_SUMMARY_TOTAL_LABEL: str
     QA_HISTORY_EXPANDER: str
     QA_HISTORY_EMPTY: str
     QA_HISTORY_REPLAY_HELP: str
-    QA_HISTORY_INDEX_GONE: str
     QA_HISTORY_META_INDEX: str
     QA_HISTORY_META_MODEL: str
     QA_HISTORY_META_TONE: str
@@ -268,7 +269,6 @@ class Strings(TypedDict):
     PROGRESS_COMPLETE: str
     PROGRESS_RETRYING: str
     # ── Progress charts ───────────────────────────────────────────────────
-    CHART_CUMULATIVE_TITLE: str
     CHART_CUMULATIVE_TITLE_SECOND: str
     CHART_CUMULATIVE_TITLE_MINUTE: str
     CHART_CUMULATIVE_TITLE_HOUR: str
@@ -299,7 +299,6 @@ class Strings(TypedDict):
     ERROR_NO_ACTIVE_CRAWL: str
     ERROR_CRAWL_ALREADY_RUNNING: str
     ERROR_SESSION_STORAGE_WRITE: str
-    ERROR_SESSION_FOLDER_MISSING: str
     ERROR_CRAWL_FAILED_FALLBACK: str
     # ── Activity log ──────────────────────────────────────────────────────
     ACTIVITY_LOG_HEADER: str
@@ -311,7 +310,6 @@ class Strings(TypedDict):
     FILES_COL_TYPE: str
     FILES_COL_SIZE: str
     FILES_COL_MODIFIED: str
-    FILES_SESSION_CAPTION: str  # template: {path}
     FILES_DOWNLOAD_TOO_LARGE: str  # template: {file}
     FILES_DOWNLOADS_IN_PROGRESS: str
     FILES_DOWNLOADS_SUBTITLE: str
@@ -337,7 +335,6 @@ class Strings(TypedDict):
     FILES_DELETE_FOLDER_DIALOG_TITLE: str
     FILES_DELETE_FOLDER_DIALOG_BODY: str  # template: {folder}
     FILES_DELETE_FOLDER_DIALOG_CONFIRM: str
-    FILES_UPLOAD_LINK: str
     FILES_UPLOAD_BUTTON: str
     FILES_UPLOAD_BUTTON_HELP: str
     FILES_UPLOAD_DIALOG_TITLE: str

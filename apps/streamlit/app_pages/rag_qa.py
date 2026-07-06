@@ -35,9 +35,11 @@ from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.llm_form_ui import chat_model_choices, chat_model_label
 from crawl4md_streamlit.qa_form_ui import (
     apply_maximized_prompt,
+    prompt_has_changes,
     resolve_qa_prompt_template,
     token_totals,
     tone_choices,
+    usage_percent,
 )
 from crawl4md_streamlit.qa_history import QaRecord, append_qa_record, load_qa_history
 from crawl4md_streamlit.rag_ui import (
@@ -48,6 +50,7 @@ from crawl4md_streamlit.rag_ui import (
     local_time_label,
     render_index_metadata,
     render_messages,
+    render_section_header,
     select_index,
 )
 from crawl4md_streamlit.settings import get_settings
@@ -74,6 +77,20 @@ div[data-testid="stDialog"]:has(.{_MAXIMIZE_DIALOG_SCOPE_CLASS}) [role="dialog"]
 </style>
 """
 _PANEL_INDEX_COLUMN_WIDTHS = (0.68, 0.32)
+# The Token count panel packs five metrics in one row; shrink the metric value
+# font and keep it on one line so six-figure counts (e.g. 100,000) never wrap or
+# truncate. Scoped to this panel via a hidden marker (mirrors the dialog CSS).
+_TOKEN_PANEL_SCOPE_CLASS = "rag-qa-token-panel"
+_TOKEN_PANEL_CSS = f"""
+<div class="{_TOKEN_PANEL_SCOPE_CLASS}" style="display:none"></div>
+<style>
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.{_TOKEN_PANEL_SCOPE_CLASS})
+    div[data-testid="stMetricValue"] {{
+    font-size: 1.4rem;
+    white-space: nowrap;
+}}
+</style>
+"""
 
 # Widget keys; a history replay pre-fills these before the widgets render.
 _INDEX_KEY = "rag_qa_index"
@@ -101,8 +118,9 @@ def render_page(context: RagPageContext) -> None:
     session_root = context.session_root()
     indexes = list(context.list_indexes())
 
-    st.subheader(strings["QA_SECTION_HEADER"], anchor="rag-qa-header")
-    st.caption(strings["QA_SECTION_CAPTION"])
+    render_section_header(
+        strings["QA_SECTION_HEADER"], strings["QA_SECTION_CAPTION"], anchor="rag-qa-header"
+    )
 
     # Apply a pending replay before the widgets render, then seed first-run
     # defaults so a replay can overwrite them without a Streamlit warning.
@@ -189,7 +207,7 @@ def _render_panel(
                     key=_TOP_RESULTS_KEY,
                 )
             )
-        model_col, tone_col = st.columns(2)
+        model_col, tone_col = st.columns([0.8, 0.2])
         with model_col:
             model = st.selectbox(
                 strings["QA_LLM_LABEL"],
@@ -249,7 +267,10 @@ def _render_prompt_form(
             disabled=disabled,
             key=_PROMPT_KEY,
         )
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        # Maximize sits at the far left and Send at the far right; Send is still
+        # defined first so Ctrl/Cmd+Enter submits it rather than Maximize.
+        left_col, right_col = st.columns(2, vertical_alignment="center")
+        with right_col, st.container(horizontal_alignment="right"):
             send = st.form_submit_button(
                 strings["QA_SEND_BUTTON"],
                 type="primary",
@@ -257,6 +278,7 @@ def _render_prompt_form(
                 help=strings["QA_SEND_HELP"],
                 disabled=disabled,
             )
+        with left_col:
             maximize = st.form_submit_button(
                 ":material/fullscreen:",
                 help=strings["QA_MAXIMIZE_HELP"],
@@ -266,20 +288,22 @@ def _render_prompt_form(
     return prompt_text, send, maximize, answer_slot
 
 
-def _close_maximized_prompt() -> None:
-    """Save the maximized edit back to the inline field and close the dialog."""
+def _save_maximized_prompt() -> None:
+    """Apply the maximized edit to the inline prompt and keep the dialog open.
+
+    Save is the only way to persist a maximized edit — dismissing the dialog
+    (X / click-away) discards it. The text is written back through the pending
+    key so it lands on the inline widget before it renders; the dialog stays open
+    so the Save button simply disables itself once no unsaved changes remain.
+    """
     apply_maximized_prompt(
         st.session_state, source_key=_PROMPT_MAX_KEY, target_key=_PROMPT_PENDING_KEY
     )
-    st.session_state[_MAXIMIZE_OPEN_KEY] = False
     st.rerun()
 
 
 def _on_maximize_dismiss() -> None:
-    """Preserve the maximized edit when the dialog is dismissed (X / click-away)."""
-    apply_maximized_prompt(
-        st.session_state, source_key=_PROMPT_MAX_KEY, target_key=_PROMPT_PENDING_KEY
-    )
+    """Discard the maximized edit when the dialog is dismissed (X / click-away)."""
     st.session_state[_MAXIMIZE_OPEN_KEY] = False
 
 
@@ -291,11 +315,14 @@ def _prompt_maximize_dialog(strings: Strings) -> None:
     header.markdown(f"**{strings['QA_MAXIMIZE_TITLE']}**")
     with action, st.container(horizontal_alignment="right"):
         if st.button(
-            ":material/close_fullscreen:",
-            key="rag_qa_minimize_button",
-            help=strings["QA_MINIMIZE_HELP"],
+            ":material/save:",
+            key="rag_qa_save_button",
+            help=strings["QA_SAVE_HELP"],
+            disabled=not prompt_has_changes(
+                st.session_state.get(_PROMPT_MAX_KEY), st.session_state.get(_PROMPT_KEY)
+            ),
         ):
-            _close_maximized_prompt()
+            _save_maximized_prompt()
     st.text_area(
         strings["QA_PROMPT_LABEL"],
         height=_MAXIMIZE_PROMPT_HEIGHT,
@@ -344,7 +371,9 @@ def _send_prompt(
             render_messages(strings, [], [messages.classify_generation_failure(str(exc))])
             return False
         elapsed = time.perf_counter() - start
-        caption = _stats_caption(strings, generation.usage, elapsed)
+        caption = _stats_caption(
+            strings, generation.usage, elapsed, chat_model_label(resolved.model_id, strings)
+        )
         st.caption(caption)
     _record_send(
         session_root,
@@ -408,18 +437,34 @@ def _render_stored_answer(strings: Strings) -> None:
 
 
 def _render_token_summary(strings: Strings, records: Sequence[QaRecord]) -> None:
-    """Render the session input/output/total token metrics above the history."""
+    """Render the session Token count panel: budget metrics plus token totals.
+
+    Five equal metrics — Quota and % Usage (session total ÷ quota, floored) on the
+    left, then Input / Output / Total counts. Display-only: the quota never blocks
+    a send. Counts are thousands-separated and kept on one line (scoped CSS) so a
+    six-figure value never wraps.
+    """
     totals = token_totals(records)
-    cols = st.columns(3)
-    cols[0].metric(strings["QA_SUMMARY_INPUT_LABEL"], f"{totals.input_tokens:,}")
-    cols[1].metric(strings["QA_SUMMARY_OUTPUT_LABEL"], f"{totals.output_tokens:,}")
-    cols[2].metric(strings["QA_SUMMARY_TOTAL_LABEL"], f"{totals.total_tokens:,}")
+    quota = _settings.rag_qa_session_token_quota
+    percent = usage_percent(totals.total_tokens, quota)
+    with st.container(border=True):
+        st.markdown(_TOKEN_PANEL_CSS, unsafe_allow_html=True)
+        st.markdown(f"**{strings['QA_TOKEN_PANEL_TITLE']}**")
+        quota_col, usage_col, input_col, output_col, total_col = st.columns(5)
+        quota_col.metric(strings["QA_SUMMARY_QUOTA_LABEL"], f"{quota:,}")
+        usage_col.metric(strings["QA_SUMMARY_USAGE_LABEL"], f"{percent}%")
+        input_col.metric(strings["QA_SUMMARY_INPUT_LABEL"], f"{totals.input_tokens:,}")
+        output_col.metric(strings["QA_SUMMARY_OUTPUT_LABEL"], f"{totals.output_tokens:,}")
+        total_col.metric(strings["QA_SUMMARY_TOTAL_LABEL"], f"{totals.total_tokens:,}")
 
 
-def _stats_caption(strings: Strings, usage: TokenUsage | None, seconds: float) -> str:
-    """Build the per-answer token + latency caption, showing n/a for missing counts."""
+def _stats_caption(
+    strings: Strings, usage: TokenUsage | None, seconds: float, model_label: str
+) -> str:
+    """Build the per-answer model + token + latency caption, n/a for missing counts."""
     na = strings["QA_TOKEN_NA"]
     return strings["QA_ANSWER_STATS"].format(
+        model=model_label,
         input=na if usage is None or usage.input_tokens is None else usage.input_tokens,
         output=na if usage is None or usage.output_tokens is None else usage.output_tokens,
         total=na if usage is None or usage.total_tokens is None else usage.total_tokens,
