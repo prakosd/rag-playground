@@ -17,7 +17,8 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.rag_qa_prompt_template_file == "apps/streamlit/config/rag_qa_prompt.txt"
     assert settings.rag_qa_session_token_quota == 100000
     assert "Neutral" in settings.rag_qa_tones.split(",")
-    assert "echo" in settings.rag_llm_models.split(",")
+    assert "echo" not in settings.rag_llm_models.split(",")
+    assert "qwen.qwen3-32b-v1:0" in settings.rag_llm_models.split(",")
     assert settings.rag_default_llm_model == "apac.amazon.nova-lite-v1:0"
     assert settings.semantic_search_top_n == 5
     assert settings.semantic_search_default_tab == "raw"

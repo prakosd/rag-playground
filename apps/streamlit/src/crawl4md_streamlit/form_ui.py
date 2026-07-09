@@ -109,6 +109,9 @@ def render_crawl_form(
                 help=strings["FORM_OUTPUT_FORMAT_HELP"],
                 disabled=fields_disabled,
             )
+            # A checkbox has no label row above it, so it floats higher than the
+            # adjacent column's "Retry rounds" input; this spacer drops it to line up.
+            st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
             extract_main_content = st.checkbox(
                 strings["FORM_EXTRACT_MAIN_LABEL"],
                 value=bool(defaults.get("extract_main_content", True)),

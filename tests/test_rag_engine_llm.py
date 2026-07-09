@@ -84,7 +84,7 @@ def test_resolve_echo_request_failure_raises() -> None:
 def test_thinking_disabled_kwargs_targets_only_bedrock_qwen() -> None:
     from rag_engine.llm import thinking_disabled_model_kwargs
 
-    qwen = thinking_disabled_model_kwargs("apac.qwen.qwen3-32b-v1:0", "bedrock_converse")
+    qwen = thinking_disabled_model_kwargs("qwen.qwen3-32b-v1:0", "bedrock_converse")
     assert qwen == {
         "additional_model_request_fields": {"chat_template_kwargs": {"enable_thinking": False}}
     }

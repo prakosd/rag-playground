@@ -116,16 +116,16 @@ STRINGS_ID: Strings = {
     "SEARCH_BUTTON": "Cari",
     "SEARCH_SEARCHING": "Mencari…",
     "SEARCH_RESULTS_EXPANDER": ":material/leaderboard: Hasil pencarian • Top {count} kecocokan berdasarkan kemiripan",
+    "SEARCH_RESULTS_PANEL": ":material/leaderboard: Hasil pencarian",
     "SEARCH_NO_RESULTS": "Tidak ada chunk yang cocok untuk kueri ini.",
+    "SEARCH_RESULTS_EMPTY": "Jalankan pencarian untuk melihat chunk yang cocok di sini.",
     "SEARCH_META_HEADER": "Detail",
     "SEARCH_META_CREATED": "Dibuat",
     "SEARCH_META_MODEL": "Model embedding",
-    "SEARCH_META_DIMENSION": "Dimensi",
     "SEARCH_META_LANGUAGE": "Bahasa",
     "SEARCH_META_FILES": "File",
-    "SEARCH_META_CHUNKS": "Chunk",
-    "SEARCH_META_CHUNK_SIZE": "Ukuran chunk",
-    "SEARCH_META_OVERLAP": "Overlap chunk",
+    "SEARCH_META_DIMENSION_CHUNKS": "Dimensi / Chunk",
+    "SEARCH_META_CHUNK_SIZE_OVERLAP": "Ukuran / overlap chunk",
     "SEARCH_META_SKIPPED": "Berkas dilewati",
     "SEARCH_META_COLLECTION": "Koleksi",
     "SEARCH_TOP_N_LABEL": "Hasil teratas",
@@ -142,8 +142,8 @@ STRINGS_ID: Strings = {
         "Cara hasil dipilih. **Terdekat** mengembalikan chunk yang paling mirip dengan kueri "
         "Anda — pilihan aman saat Anda ingin jawaban langsung terbaik. **Beragam** menjaring "
         "lebih luas, lalu menyebar pilihan agar Anda melihat berbagai sudut alih-alih hasil "
-        "yang nyaris sama — lebih baik untuk pertanyaan luas atau eksploratif. Memilih Beragam "
-        "mengaktifkan kontrol Keberagaman dan Kumpulan kandidat."
+        "yang nyaris sama — lebih baik untuk pertanyaan luas atau eksploratif. Kontrol "
+        "Keberagaman dan Kumpulan kandidat hanya berlaku dalam mode Beragam."
     ),
     "SEARCH_MIN_SCORE_LABEL": "Kemiripan minimum",
     "SEARCH_MIN_SCORE_HELP": (
@@ -190,9 +190,10 @@ STRINGS_ID: Strings = {
     "SEARCH_HISTORY_OPT_POOL": "kumpulan {n}",
     "SEARCH_HISTORY_OPT_SOURCES": "{n} berkas",
     "SEARCH_HISTORY_LABEL_QUERY": "Pertanyaan",
-    "SEARCH_HISTORY_LABEL_TIME": "Waktu",
+    "SEARCH_HISTORY_LABEL_TIME": "Dicari",
     "SEARCH_HISTORY_LABEL_RESULTS": "Hasil",
-    "SEARCH_HISTORY_LABEL_INDEX": "Indeks",
+    "SEARCH_HISTORY_LABEL_INDEX_NAME": "Nama indeks",
+    "SEARCH_HISTORY_LABEL_INDEX_DATE": "Tanggal waktu indeks",
     "SEARCH_HISTORY_LABEL_OPTIONS": "Opsi",
     "SEARCH_HISTORY_LABEL_DETAILS": "Detail",
     "QA_SECTION_HEADER": ":material/quiz: Tanya & hasilkan",
@@ -220,6 +221,8 @@ STRINGS_ID: Strings = {
         "Jalankan semantic search dan susun prompt RAG dari pertanyaan, pengetahuan yang "
         "diambil, dan nada."
     ),
+    "QA_SEARCHING": "Mencari di indeks Anda…",
+    "QA_RESULTS_EMPTY": "Hasilkan prompt untuk mencari di indeks Anda dan melihat kecocokannya di sini.",
     "QA_PROMPT_LABEL": "Prompt",
     "QA_PROMPT_PLACEHOLDER": "Hasilkan prompt untuk melihatnya di sini — lalu sunting bila perlu dan kirim.",
     "QA_PROMPT_HELP": (
@@ -231,7 +234,7 @@ STRINGS_ID: Strings = {
     "QA_MAXIMIZE_HELP": "Perbesar editor prompt",
     "QA_MAXIMIZE_TITLE": "Sunting prompt",
     "QA_NO_PROMPT_HINT": "Hasilkan prompt terlebih dahulu, lalu kirim.",
-    "QA_ANSWER_HEADER": "Jawaban",
+    "QA_ANSWER_HEADER": ":material/smart_toy: Jawaban",
     "QA_ANSWER_STATS": (
         "Model — {model} · Token — input {input} · output {output} · "
         "total {total} · dijawab dalam {seconds}s"
@@ -250,7 +253,8 @@ STRINGS_ID: Strings = {
     "QA_HISTORY_LABEL_TIME": "Waktu",
     "QA_HISTORY_DETAILS_EXPANDER": "Detail",
     "QA_HISTORY_PROMPT_EXPANDER": "Prompt",
-    "QA_HISTORY_META_INDEX": "Indeks",
+    "QA_HISTORY_META_INDEX_NAME": "Nama indeks",
+    "QA_HISTORY_META_INDEX_DATE": "Tanggal waktu indeks",
     "QA_HISTORY_META_MODEL": "Model",
     "QA_HISTORY_META_TONE": "Nada",
     "QA_HISTORY_META_TOP": "Hasil teratas",

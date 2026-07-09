@@ -1811,6 +1811,33 @@ def _render_vector_index_live_area() -> None:
     _auto_refresh_fragment(_vector_index_live_area_body, active=_vector_job_active())
 
 
+def _render_crawl_timing(strings: Mapping[str, Any]) -> None:
+    """Render crawl elapsed time (docked left) and the ETA (docked right).
+
+    Sits directly under the crawl progress bar, mirroring the vector-index timing
+    row. Elapsed comes from the run's start (frozen once the job ends); the ETA is
+    the worker's own estimate and shows only while the crawl is active.
+    """
+    elapsed_str = elapsed_time_display(
+        started_at=st.session_state.started_at,
+        job_state=st.session_state.job_state,
+        frozen_elapsed=st.session_state.last_elapsed,
+    )
+    if not elapsed_str:
+        return
+    right = ""
+    if st.session_state.job_state in {_STATE_RUNNING, _STATE_CANCEL_REQUESTED}:
+        eta_seconds_raw = st.session_state.latest_event.get("eta_remaining_seconds")
+        eta_seconds = float(eta_seconds_raw) if eta_seconds_raw is not None else None
+        right = format_eta_seconds(eta_seconds, strings)
+    st.markdown(
+        f'<div style="{_STATUS_ROW_STYLE}">'
+        f"<span>{strings['STATUS_ELAPSED'].format(elapsed=elapsed_str)}</span>"
+        f"<span>{right}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_progress_and_files(
     processed: int,
     successful: int,
@@ -1871,6 +1898,7 @@ def render_progress_and_files(
                 unsafe_allow_html=True,
             )
             st.progress(progress_ratio)
+            _render_crawl_timing(strings)
 
         row1 = st.columns(3)
         row1[0].metric(
@@ -2035,12 +2063,8 @@ def _render_status_rows() -> None:
         int(latest.get("max_concurrent", active_url_count or 1) or 1),
         active_url_count,
     )
-    elapsed_str = elapsed_time_display(
-        started_at=st.session_state.started_at,
-        job_state=st.session_state.job_state,
-        frozen_elapsed=st.session_state.last_elapsed,
-    )
-    right = strings["STATUS_ELAPSED"].format(elapsed=elapsed_str) if elapsed_str else ""
+    # Elapsed + ETA now render under the progress bar (see _render_crawl_timing),
+    # so these active/next URL rows show the URLs only.
     if active_url_count > 1:
         st.markdown(
             format_status_url_preview(
@@ -2050,7 +2074,7 @@ def _render_status_rows() -> None:
                 ),
                 urls=active_urls,
                 total_count=active_url_count,
-                right_text=right,
+                right_text="",
                 style=_STATUS_ROW_STYLE,
                 overflow_template=strings["STATUS_MORE_URLS"],
             ),
@@ -2061,17 +2085,17 @@ def _render_status_rows() -> None:
             format_status_row(
                 url=active_urls[0],
                 url_template=strings["STATUS_CRAWLING"],
-                right_text=right,
+                right_text="",
                 style=_STATUS_ROW_STYLE,
             ),
             unsafe_allow_html=True,
         )
-    elif current_url or elapsed_str:
+    elif current_url:
         st.markdown(
             format_status_row(
                 url=current_url,
                 url_template=strings["STATUS_CRAWLING"],
-                right_text=right,
+                right_text="",
                 style=_STATUS_ROW_STYLE,
             ),
             unsafe_allow_html=True,
@@ -2085,27 +2109,24 @@ def _render_status_rows() -> None:
         int(latest.get("next_url_count", len(next_urls)) or 0),
         len(next_urls),
     )
-    eta_seconds_raw = latest.get("eta_remaining_seconds")
-    eta_seconds = float(eta_seconds_raw) if eta_seconds_raw is not None else None
-    eta_text = format_eta_seconds(eta_seconds, strings)
     if next_url_count > 1:
         st.markdown(
             format_status_url_preview(
                 label=strings["STATUS_NEXT_FETCHES"].format(count=next_url_count),
                 urls=next_urls,
                 total_count=next_url_count,
-                right_text=eta_text,
+                right_text="",
                 style=_STATUS_NEXT_ROW_STYLE,
                 overflow_template=strings["STATUS_MORE_URLS"],
             ),
             unsafe_allow_html=True,
         )
-    elif next_urls or eta_seconds is not None:
+    elif next_urls:
         st.markdown(
             format_status_row(
                 url=next_urls[0] if next_urls else "",
                 url_template=strings["STATUS_NEXT_URL"],
-                right_text=eta_text,
+                right_text="",
                 style=_STATUS_NEXT_ROW_STYLE,
             ),
             unsafe_allow_html=True,

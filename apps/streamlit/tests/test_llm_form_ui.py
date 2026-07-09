@@ -18,7 +18,7 @@ def test_options_are_env_curated_and_catalogued() -> None:
 
     assert set(options) <= catalog_ids  # only catalogued models are offered
     assert get_settings().rag_default_llm_model in options
-    assert ECHO_MODEL in options
+    assert ECHO_MODEL not in options  # echo is the silent fallback, never offered
 
 
 def test_resolve_chat_model_choices_curates_and_orders() -> None:

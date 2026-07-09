@@ -15,7 +15,6 @@ from crawl4md_streamlit.rag_ui import (
     index_metadata_rows,
     kv_grid_html,
     local_time_label,
-    mmr_controls_enabled,
     ordered_result_tabs,
     result_detail_caption,
     sort_results_by_score,
@@ -108,13 +107,6 @@ def test_ordered_result_tabs_preview_first_when_configured() -> None:
     assert ordered_result_tabs(" Preview ") == ("preview", "raw")
 
 
-def test_mmr_controls_enabled_only_for_mmr_mode() -> None:
-    assert mmr_controls_enabled("mmr") is True
-    assert mmr_controls_enabled("similarity") is False
-    assert mmr_controls_enabled("") is False
-    assert mmr_controls_enabled("unknown") is False
-
-
 def test_sort_results_by_score_orders_highest_first() -> None:
     ordered = sort_results_by_score([_chunk(0.2), _chunk(0.9), _chunk(0.5)])
 
@@ -156,7 +148,8 @@ def test_index_metadata_rows_include_key_manifest_fields() -> None:
 
     assert rows[STRINGS_EN["SEARCH_META_MODEL"]] == "amazon.titan-embed-text-v2:0"
     assert rows[STRINGS_EN["SEARCH_META_LANGUAGE"]] == "english"
-    assert rows[STRINGS_EN["SEARCH_META_OVERLAP"]] == "100"
+    assert rows[STRINGS_EN["SEARCH_META_DIMENSION_CHUNKS"]] == "512 / 42"
+    assert rows[STRINGS_EN["SEARCH_META_CHUNK_SIZE_OVERLAP"]] == "600 / 100"
     assert rows[STRINGS_EN["SEARCH_META_COLLECTION"]] == "crawl4md_documents"
     expected_created = format_local_datetime(datetime(2026, 6, 22, 10, 30, tzinfo=timezone.utc))
     assert rows[STRINGS_EN["SEARCH_META_CREATED"]] == expected_created

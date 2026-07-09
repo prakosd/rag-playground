@@ -11,7 +11,6 @@ from crawl4md_streamlit.rag_ui import (
     RagPageContext,
     render_messages,
     render_model_caption,
-    render_section_header,
     render_sources,
     select_index,
     to_chat_turns,
@@ -23,11 +22,8 @@ _HISTORY_KEY = "conversational_rag_history"
 def render_page(context: RagPageContext) -> None:
     """Render the conversational RAG page content area."""
     strings = get_strings(st.session_state.get("language", context.default_language))
-    render_section_header(
-        strings["CHAT_SECTION_HEADER"],
-        strings["CHAT_SECTION_CAPTION"],
-        anchor="conversational-rag-header",
-    )
+    st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
+    st.caption(strings["CHAT_SECTION_CAPTION"])
 
     index = select_index(strings, list(context.list_indexes()), key="conversational_rag_index")
     model, top_k = render_llm_controls(

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import streamlit as st
-from rag_engine import CHAT_MODEL_OPTIONS, ChatModelInfo, get_chat_model_info
+from rag_engine import CHAT_MODEL_OPTIONS, ECHO_MODEL, ChatModelInfo, get_chat_model_info
 
 from crawl4md_streamlit.i18n import Strings
 from crawl4md_streamlit.settings import get_settings
@@ -33,6 +33,9 @@ _RAG_LLM_MODEL_ORDER = tuple(
 )
 _RAG_DEFAULT_LLM_MODEL = _settings.rag_default_llm_model
 _CATALOG_MODEL_IDS = tuple(info.model_id for info in CHAT_MODEL_OPTIONS)
+# The offline echo model is the silent fallback in rag_engine.resolve_chat_model;
+# it is never offered in the picker (it produces no real answer).
+_OFFERED_MODEL_IDS = tuple(mid for mid in _CATALOG_MODEL_IDS if mid != ECHO_MODEL)
 
 # Open fallback used only if a selected model is ever absent from the catalog;
 # the catalog covers every id in ``chat_model_options()``.
@@ -66,9 +69,12 @@ def resolve_chat_model_choices(
 
 
 def chat_model_choices() -> tuple[list[str], int]:
-    """Return the offered chat-model ids and the default-selected index (.env-curated)."""
+    """Return the offered chat-model ids and the default-selected index (.env-curated).
+
+    Echo is excluded — it is the automatic offline fallback, not a user choice.
+    """
     return resolve_chat_model_choices(
-        _RAG_LLM_MODEL_ORDER, _CATALOG_MODEL_IDS, _RAG_DEFAULT_LLM_MODEL
+        _RAG_LLM_MODEL_ORDER, _OFFERED_MODEL_IDS, _RAG_DEFAULT_LLM_MODEL
     )
 
 

@@ -32,3 +32,17 @@ def test_cloud_models_require_a_key() -> None:
 
 def test_lookup_ignores_surrounding_whitespace() -> None:
     assert get_chat_model_info(f"  {ECHO_MODEL}  ") is not None
+
+
+def test_broken_apac_models_removed_and_replacements_present() -> None:
+    ids = {info.model_id for info in CHAT_MODEL_OPTIONS}
+    # APAC-unavailable (invalid identifier) / legacy models were removed.
+    assert "apac.anthropic.claude-3-5-haiku-20241022-v1:0" not in ids
+    assert "apac.anthropic.claude-3-5-sonnet-20241022-v2:0" not in ids
+    assert "apac.meta.llama3-3-70b-instruct-v1:0" not in ids
+    # Active APAC Claude replacements and in-Region Qwen3 models are catalogued.
+    assert "apac.anthropic.claude-sonnet-4-5-20250929-v1:0" in ids
+    assert "apac.anthropic.claude-haiku-4-5-20251001-v1:0" in ids
+    assert "qwen.qwen3-32b-v1:0" in ids
+    assert "qwen.qwen3-next-80b-a3b-v1:0" in ids
+    assert "qwen.qwen3-235b-a22b-2507-v1:0" in ids

@@ -19,10 +19,9 @@ from crawl4md_streamlit.rag_ui import (
     index_option_label,
     kv_grid_html,
     local_time_label,
-    mmr_controls_enabled,
     render_index_metadata,
     render_messages,
-    render_ranked_results,
+    render_results_panel,
     select_index,
     stacked_label_value_html,
 )
@@ -63,22 +62,6 @@ _RESULTS_EXPAND_KEY = "semantic_search_results_expanded"
 # One-shot flag: a history replay sets it so focus moves to the query field.
 _FOCUS_QUERY_KEY = "semantic_search_focus_query"
 
-# Pin the Search-mode segmented control to its natural width so the row's three
-# controls stay evenly spaced (Diversity / Candidate pool absorb the slack)
-# instead of leaving a widening gap after Search mode on large screens.
-_SEARCH_MODE_COLUMN_CSS = (
-    "<style>"
-    "/* Pin the Search-mode column to its natural width */"
-    'div[data-testid="stColumn"]:has(.st-key-semantic_search_mode){flex:0 0 auto!important;width:auto!important;max-width:none!important;padding-right:0!important;margin-right:0!important;}'
-    "/* Remove any right-side padding/margin from the element container and its immediate children */"
-    'div.st-key-semantic_search_mode[data-testid="stElementContainer"],'
-    'div.st-key-semantic_search_mode[data-testid="stElementContainer"] > *{padding-right:0!important;margin-right:0!important;}'
-    "/* Ensure the inner button-group doesn't add extra right spacing */"
-    "div.st-key-semantic_search_mode .stButtonGroup,"
-    "div.st-key-semantic_search_mode .stButtonGroup > *{padding-right:0!important;margin-right:0!important;}"
-    "</style>"
-)
-
 
 def render_page(context: RagPageContext) -> None:
     """Render the semantic search page content area."""
@@ -91,13 +74,8 @@ def render_page(context: RagPageContext) -> None:
     if entered_page("semantic_search"):
         st.session_state[_FOCUS_QUERY_KEY] = True
 
-    st.markdown(
-        f'<h3 id="semantic-search-header" style="margin-bottom:0;padding-bottom:0;padding-top:0">'
-        f"{strings['SEARCH_SECTION_HEADER']}</h3>"
-        f'<p style="opacity:0.6;font-size:0.875rem;margin:0;margin-bottom:1rem">'
-        f"{strings['SEARCH_SECTION_CAPTION']}</p>",
-        unsafe_allow_html=True,
-    )
+    st.subheader(strings["SEARCH_SECTION_HEADER"], anchor="semantic-search-header")
+    st.caption(strings["SEARCH_SECTION_CAPTION"])
 
     # Apply a pending history replay before the widgets render so the form shows
     # the replayed query and options; the search itself runs from the form below.
@@ -145,8 +123,7 @@ def render_page(context: RagPageContext) -> None:
         # appear directly above the Search button and are included in the
         # form state on submit.
         with st.expander(strings["SEARCH_OPTIONS_EXPANDER"]):
-            st.markdown(_SEARCH_MODE_COLUMN_CSS, unsafe_allow_html=True)
-            mode_col, diversity_col, pool_col = st.columns(3)
+            mode_col, diversity_col = st.columns(2)
             with mode_col:
                 search_mode = st.segmented_control(
                     strings["SEARCH_MODE_LABEL"],
@@ -160,7 +137,6 @@ def render_page(context: RagPageContext) -> None:
                     disabled=index is None,
                     key=_MODE_KEY,
                 )
-            mmr_enabled = mmr_controls_enabled(search_mode or _DEFAULT_SEARCH_MODE)
             with diversity_col:
                 mmr_lambda = st.slider(
                     strings["SEARCH_MMR_LAMBDA_LABEL"],
@@ -168,9 +144,10 @@ def render_page(context: RagPageContext) -> None:
                     max_value=1.0,
                     step=0.05,
                     help=strings["SEARCH_MMR_LAMBDA_HELP"],
-                    disabled=index is None or not mmr_enabled,
+                    disabled=index is None,
                     key=_MMR_LAMBDA_KEY,
                 )
+            pool_col, min_score_col = st.columns(2)
             with pool_col:
                 fetch_k = st.number_input(
                     strings["SEARCH_FETCH_K_LABEL"],
@@ -178,19 +155,20 @@ def render_page(context: RagPageContext) -> None:
                     max_value=200,
                     step=5,
                     help=strings["SEARCH_FETCH_K_HELP"],
-                    disabled=index is None or not mmr_enabled,
+                    disabled=index is None,
                     key=_FETCH_K_KEY,
                 )
-            min_score_percent = st.slider(
-                strings["SEARCH_MIN_SCORE_LABEL"],
-                min_value=0,
-                max_value=100,
-                step=5,
-                format="%d%%",
-                help=strings["SEARCH_MIN_SCORE_HELP"],
-                disabled=index is None,
-                key=_MIN_SCORE_KEY,
-            )
+            with min_score_col:
+                min_score_percent = st.slider(
+                    strings["SEARCH_MIN_SCORE_LABEL"],
+                    min_value=0,
+                    max_value=100,
+                    step=5,
+                    format="%d%%",
+                    help=strings["SEARCH_MIN_SCORE_HELP"],
+                    disabled=index is None,
+                    key=_MIN_SCORE_KEY,
+                )
             source_options = list(index.manifest.indexed_sources) if index is not None else []
             _prune_stale_sources(source_options)
             selected_sources = st.multiselect(
@@ -273,17 +251,23 @@ def render_page(context: RagPageContext) -> None:
         # fresh search opens it — it stays collapsed on reload and other reruns.
         st.session_state[_RESULTS_KEY] = list(result.chunks)
         st.session_state[_RESULTS_EXPAND_KEY] = True
-        if not result.chunks and not result.errors:
-            st.info(strings["SEARCH_NO_RESULTS"])
 
+    # The results panel is always rendered so its gap to the history panel stays
+    # constant. Before the first search it invites one; a search that returned
+    # nothing says so instead.
     stored_chunks = st.session_state.get(_RESULTS_KEY)
-    if stored_chunks:
-        render_ranked_results(
-            strings,
-            stored_chunks,
-            default_tab=_DEFAULT_RESULT_TAB,
-            expanded=st.session_state.pop(_RESULTS_EXPAND_KEY, False),
-        )
+    empty_hint = (
+        strings["SEARCH_NO_RESULTS"]
+        if _RESULTS_KEY in st.session_state
+        else strings["SEARCH_RESULTS_EMPTY"]
+    )
+    render_results_panel(
+        strings,
+        stored_chunks or [],
+        empty_hint=empty_hint,
+        default_tab=_DEFAULT_RESULT_TAB,
+        expanded=st.session_state.pop(_RESULTS_EXPAND_KEY, False),
+    )
 
     _render_search_history(strings, session_root, indexes)
 
@@ -367,16 +351,15 @@ def _index_detail_rows(
     model = record.embedding_model
     if manifest is not None and manifest.embedding_model_used:
         model = manifest.embedding_model_used
+    dimension = _text(manifest.embedding_dimension if manifest else None)
+    chunks = _text(manifest.indexed_chunk_count if manifest else None)
+    chunk_size = _text(manifest.chunk_size if manifest else None)
+    overlap = _text(manifest.chunk_overlap if manifest else None)
     return [
         (strings["SEARCH_META_MODEL"], _text(model)),
         (strings["SEARCH_META_LANGUAGE"], _text(manifest.language if manifest else None)),
-        (
-            strings["SEARCH_META_DIMENSION"],
-            _text(manifest.embedding_dimension if manifest else None),
-        ),
-        (strings["SEARCH_META_CHUNK_SIZE"], _text(manifest.chunk_size if manifest else None)),
-        (strings["SEARCH_META_CHUNKS"], _text(manifest.indexed_chunk_count if manifest else None)),
-        (strings["SEARCH_META_OVERLAP"], _text(manifest.chunk_overlap if manifest else None)),
+        (strings["SEARCH_META_DIMENSION_CHUNKS"], f"{dimension} / {chunks}"),
+        (strings["SEARCH_META_CHUNK_SIZE_OVERLAP"], f"{chunk_size} / {overlap}"),
     ]
 
 
@@ -429,7 +412,8 @@ def _search_history_grid(strings: Strings, record: SearchRecord, ref: IndexRef |
             strings["SEARCH_HISTORY_LABEL_RESULTS"],
             strings["SEARCH_HISTORY_RESULT_COUNT"].format(n=record.result_count),
         ),
-        (strings["SEARCH_HISTORY_LABEL_INDEX"], f"{record.index_folder} / {record.index_run}"),
+        (strings["SEARCH_HISTORY_LABEL_INDEX_NAME"], record.index_folder),
+        (strings["SEARCH_HISTORY_LABEL_INDEX_DATE"], record.index_run),
         (strings["SEARCH_HISTORY_LABEL_OPTIONS"], _options_summary(strings, record)),
         *_index_detail_rows(strings, record, ref),
     ]

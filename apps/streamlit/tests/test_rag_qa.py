@@ -79,7 +79,8 @@ def test_history_grid_includes_model_tone_and_tokens(monkeypatch: MonkeyPatch) -
 
     assert "apac.amazon.nova-lite-v1:0" in grid
     assert "Neutral" in grid
-    assert "vector_01_weather / 2026-07-04_09-00-00" in grid
+    assert "vector_01_weather" in grid
+    assert "2026-07-04_09-00-00" in grid
     assert "120 in" in grid
     assert STRINGS_EN["QA_HISTORY_LABEL_TIME"] in grid
 

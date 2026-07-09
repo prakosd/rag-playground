@@ -7,7 +7,7 @@ vector-index (Step 2) configuration, see
 [src/vector_indexer/README.md](../src/vector_indexer/README.md). For RAG (Steps 3-5)
 configuration — `RagConfig` (`llm_model`, `temperature` 0–2 default `0.0`, `max_tokens`
 default `1024`, `top_k` default `4`) and the chat-model catalog (`CHAT_MODEL_OPTIONS`:
-Bedrock Claude / Amazon Nova Lite, OpenAI GPT-4o / GPT-4o mini, and the offline echo
+Bedrock Claude / Amazon Nova / Qwen3, OpenAI GPT-4o / GPT-4o mini, and the offline echo
 model) — see [src/rag_engine/README.md](../src/rag_engine/README.md).
 
 ## Environment configuration & secrets (Streamlit app)
@@ -61,7 +61,7 @@ crawl/index/RAG config models.
 | `RAG_QA_DEFAULT_TONE` | `Neutral` | Tone pre-selected on the Step 4 selector |
 | `RAG_QA_PROMPT_TEMPLATE_FILE` | `apps/streamlit/config/rag_qa_prompt.txt` | Path (relative to the repo root) to the Step 4 prompt template file; edit that file to reword the generated prompt without a code change (a missing/empty file, or one missing a `{question}`/`{start}`/`{knowledge}`/`{end}`/`{tone}` field, falls back to the built-in default) |
 | `RAG_QA_SESSION_TOKEN_QUOTA` | `100000` | Per-session token budget shown on the Step 4 Token count panel (drives Quota and % Usage); display-only — it never blocks sending |
-| `RAG_LLM_MODELS` | `apac.amazon.nova-micro-v1:0,…,gpt-4o-mini,echo` | Language models offered on the RAG pages (comma-separated `rag_engine` catalog ids, in order) |
+| `RAG_LLM_MODELS` | `apac.amazon.nova-micro-v1:0,…,qwen.qwen3-32b-v1:0,…,gpt-4o` | Language models offered on the RAG pages (comma-separated `rag_engine` catalog ids, in order; the offline echo model is the silent fallback and is intentionally not listed) |
 | `RAG_DEFAULT_LLM_MODEL` | `apac.amazon.nova-lite-v1:0` | Language model pre-selected on the RAG pages |
 | `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |
 | `SEMANTIC_SEARCH_DEFAULT_TAB` | `raw` | Default open tab on each result card (`raw` or `preview`) |
@@ -95,6 +95,17 @@ environment variables read by their SDKs:
 
 Locally, copy `.env.example` to `.env` (git-ignored) and fill them in. Leave them
 blank to run fully offline (local embeddings + echo chat model).
+
+**Bedrock model access & IDs.** The Bedrock chat-model IDs are Region-specific: Nova
+and Claude use APAC cross-Region inference profiles (`apac.*`) and Qwen3 is offered
+in-Region (plain `qwen.*` ids) for `ap-southeast-2` (Sydney). Before a model works
+you must enable it under **Bedrock → Model access** in that Region and confirm the
+exact inference-profile/model ID on the model's card (or via
+`aws bedrock list-inference-profiles` / `aws bedrock list-foundation-models`). A model
+that is unavailable in your Region returns *"The provided model identifier is
+invalid"*; a model the provider has marked **Legacy** returns an *"upgrade to an
+active model"* error — replace it with a currently-active model in `RAG_LLM_MODELS`
+and `RAG_DEFAULT_LLM_MODEL`.
 
 ### Anti-bot escalation (Step 1 crawling)
 

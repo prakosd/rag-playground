@@ -107,11 +107,9 @@ def test_index_detail_rows_enrich_from_manifest(monkeypatch: MonkeyPatch) -> Non
     rows = dict(page._index_detail_rows(STRINGS_EN, _record(), ref))
 
     assert rows[STRINGS_EN["SEARCH_META_MODEL"]] == "amazon.titan-embed-text-v2:0"
-    assert rows[STRINGS_EN["SEARCH_META_DIMENSION"]] == "512"
     assert rows[STRINGS_EN["SEARCH_META_LANGUAGE"]] == "English"
-    assert rows[STRINGS_EN["SEARCH_META_CHUNK_SIZE"]] == "600"
-    assert rows[STRINGS_EN["SEARCH_META_CHUNKS"]] == "1197"
-    assert rows[STRINGS_EN["SEARCH_META_OVERLAP"]] == "100"
+    assert rows[STRINGS_EN["SEARCH_META_DIMENSION_CHUNKS"]] == "512 / 1197"
+    assert rows[STRINGS_EN["SEARCH_META_CHUNK_SIZE_OVERLAP"]] == "600 / 100"
 
 
 def test_search_history_grid_includes_query_facts(monkeypatch: MonkeyPatch) -> None:
@@ -121,7 +119,8 @@ def test_search_history_grid_includes_query_facts(monkeypatch: MonkeyPatch) -> N
 
     assert STRINGS_EN["SEARCH_HISTORY_LABEL_OPTIONS"] in grid
     assert STRINGS_EN["SEARCH_META_MODEL"] in grid
-    assert "vector_01_weather / 2026-07-01_09-00-00" in grid
+    assert "vector_01_weather" in grid
+    assert "2026-07-01_09-00-00" in grid
     assert "4 results" in grid
     assert "titan" in grid
 
@@ -132,8 +131,7 @@ def test_index_detail_rows_fall_back_when_index_gone(monkeypatch: MonkeyPatch) -
     rows = dict(page._index_detail_rows(STRINGS_EN, _record(embedding_model="titan-x"), None))
 
     assert rows[STRINGS_EN["SEARCH_META_MODEL"]] == "titan-x"
-    assert rows[STRINGS_EN["SEARCH_META_DIMENSION"]] == "—"
-    assert rows[STRINGS_EN["SEARCH_META_CHUNKS"]] == "—"
+    assert rows[STRINGS_EN["SEARCH_META_DIMENSION_CHUNKS"]] == "— / —"
 
 
 def test_replay_prefills_query_and_reruns_without_warnings(

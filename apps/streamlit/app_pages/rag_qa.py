@@ -51,9 +51,9 @@ from crawl4md_streamlit.rag_ui import (
     index_option_label,
     kv_grid_html,
     local_time_label,
-    render_index_metadata,
     render_messages,
-    render_section_header,
+    render_result_cards,
+    render_results_panel,
     select_index,
     stacked_label_value_html,
 )
@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 
 _settings = get_settings()
 _DEFAULT_TOP_RESULTS = _settings.rag_qa_top_results
+_DEFAULT_RESULT_TAB = _settings.semantic_search_default_tab
 _MAX_TOP_RESULTS = 20
 _PROMPT_FIELD_HEIGHT = 260
 # The maximized editor is a wide dialog with a tall text area, sized close to the
@@ -102,6 +103,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.{_TOKEN_PANEL_SCOPE_CLASS})
 }}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.{_TOKEN_PANEL_SCOPE_CLASS})
     div[data-testid="stMetric"] {{
+    padding-top: 0;
     padding-bottom: 0;
 }}
 </style>
@@ -114,6 +116,9 @@ _MODEL_KEY = "rag_qa_llm_model"
 _TONE_KEY = "rag_qa_tone"
 _QUESTION_KEY = "rag_qa_question"
 _PROMPT_KEY = "rag_qa_prompt"
+# The last Generate-prompt search hits persist so the Search results panel
+# survives reruns and stays a stable fixture between the question and prompt.
+_QA_RESULTS_KEY = "rag_qa_results"
 # The maximized-editor mirror of the prompt, a pending write-back applied before
 # the inline widget renders, and the flag that keeps the dialog open across reruns.
 _PROMPT_MAX_KEY = "rag_qa_prompt_max"
@@ -140,9 +145,8 @@ def render_page(context: RagPageContext) -> None:
     if entered_page("rag_qa"):
         st.session_state[_FOCUS_QUESTION_KEY] = True
 
-    render_section_header(
-        strings["QA_SECTION_HEADER"], strings["QA_SECTION_CAPTION"], anchor="rag-qa-header"
-    )
+    st.subheader(strings["QA_SECTION_HEADER"], anchor="rag-qa-header")
+    st.caption(strings["QA_SECTION_CAPTION"])
 
     # Apply a pending replay before the widgets render, then seed first-run
     # defaults so a replay can overwrite them without a Streamlit warning.
@@ -165,8 +169,10 @@ def render_page(context: RagPageContext) -> None:
     question, generate = _render_question_form(strings, disabled=index is None)
     if st.session_state.pop(_FOCUS_QUESTION_KEY, False):
         focus_widget(_QUESTION_KEY)
-    if generate and index is not None and question.strip():
-        _generate_prompt(strings, index, question.strip(), top_results, tone, model)
+    do_generate = bool(generate and index is not None and question.strip())
+    _render_search_results(
+        strings, index, question.strip() if question else "", top_results, tone, model, do_generate
+    )
 
     prompt_text, send, maximize, answer_slot = _render_prompt_form(strings, disabled=index is None)
     if st.session_state.pop(_FOCUS_PROMPT_KEY, False):
@@ -249,8 +255,6 @@ def _render_panel(
                 disabled=index is None,
                 key=_TONE_KEY,
             )
-        if index is not None:
-            render_index_metadata(strings, index)
     return index, model, tone, top_results
 
 
@@ -312,16 +316,21 @@ def _render_prompt_form(
     return prompt_text, send, maximize, answer_slot
 
 
-def _on_maximize_dismiss() -> None:
-    """Autosave the maximized edit back to the inline prompt, then close the dialog.
+def _autosave_maximized_prompt() -> None:
+    """Mirror the maximized editor's text to the inline prompt's pending key.
 
-    Dismissing the dialog (X / click-away / Esc) is the save action: the edited
-    text is written through the pending key so it lands on the inline prompt
-    widget before it next renders. There is no separate Save button.
+    Runs on every committed edit (``on_change``) and again on dismiss, so the
+    latest text is captured however the dialog closes — including click-away and
+    Esc, where relying on the dismiss handler alone can miss the final edit.
     """
     apply_maximized_prompt(
         st.session_state, source_key=_PROMPT_MAX_KEY, target_key=_PROMPT_PENDING_KEY
     )
+
+
+def _on_maximize_dismiss() -> None:
+    """Autosave the maximized edit, then close the dialog (no separate Save button)."""
+    _autosave_maximized_prompt()
     st.session_state[_MAXIMIZE_OPEN_KEY] = False
 
 
@@ -329,8 +338,8 @@ def _on_maximize_dismiss() -> None:
 def _prompt_maximize_dialog(strings: Strings) -> None:
     """Show the prompt in a large, editable dialog kept in sync with the inline field.
 
-    Edits autosave to the inline prompt when the dialog is dismissed (see
-    ``_on_maximize_dismiss``); there is no explicit Save button.
+    Every committed edit autosaves to the inline prompt (``on_change``), and the
+    dialog also autosaves on dismiss (X / click-away / Esc); there is no Save button.
     """
     st.markdown(_MAXIMIZE_DIALOG_CSS, unsafe_allow_html=True)
     st.markdown(f"**{strings['QA_MAXIMIZE_TITLE']}**")
@@ -339,23 +348,54 @@ def _prompt_maximize_dialog(strings: Strings) -> None:
         height=_MAXIMIZE_PROMPT_HEIGHT,
         label_visibility="collapsed",
         key=_PROMPT_MAX_KEY,
+        on_change=_autosave_maximized_prompt,
     )
 
 
-def _generate_prompt(
-    strings: Strings, index: IndexRef, question: str, top_results: int, tone: str, model: str
+def _render_search_results(
+    strings: Strings,
+    index: IndexRef | None,
+    question: str,
+    top_results: int,
+    tone: str,
+    model: str,
+    do_generate: bool,
 ) -> None:
-    """Retrieve knowledge for *question* and build the editable prompt from it."""
-    config = RagConfig(top_k=top_results, llm_model=model)
-    with st.spinner(strings["SEARCH_SEARCHING"]):
-        result = retrieve(index.run_dir, question, config)
-    render_messages(strings, result.warnings, result.errors)
-    st.session_state[_PROMPT_KEY] = build_rag_prompt(
-        question, result.chunks, tone, template=resolve_qa_prompt_template()
+    """Render the always-present Search results panel between question and prompt.
+
+    On a fresh Generate, retrieve inside the panel (so the spinner shows where the
+    hits will appear), build the editable prompt from them, and render the ranked
+    cards. Otherwise show the last search's hits (or a hint), so the panel stays a
+    stable fixture whose gap to the prompt panel never shifts.
+    """
+    if do_generate and index is not None:
+        with st.expander(strings["SEARCH_RESULTS_PANEL"], expanded=True):
+            with st.spinner(strings["QA_SEARCHING"]):
+                result = retrieve(
+                    index.run_dir, question, RagConfig(top_k=top_results, llm_model=model)
+                )
+            render_messages(strings, result.warnings, result.errors)
+            st.session_state[_QA_RESULTS_KEY] = list(result.chunks)
+            st.session_state[_PROMPT_KEY] = build_rag_prompt(
+                question, result.chunks, tone, template=resolve_qa_prompt_template()
+            )
+            st.session_state[_ANSWER_KEY] = None
+            st.session_state[_STATS_KEY] = None
+            st.session_state[_FOCUS_PROMPT_KEY] = True
+            if result.chunks:
+                render_result_cards(strings, result.chunks, default_tab=_DEFAULT_RESULT_TAB)
+            else:
+                st.caption(strings["SEARCH_NO_RESULTS"])
+        return
+    stored = st.session_state.get(_QA_RESULTS_KEY)
+    empty_hint = (
+        strings["SEARCH_NO_RESULTS"]
+        if _QA_RESULTS_KEY in st.session_state
+        else strings["QA_RESULTS_EMPTY"]
     )
-    st.session_state[_ANSWER_KEY] = None
-    st.session_state[_STATS_KEY] = None
-    st.session_state[_FOCUS_PROMPT_KEY] = True
+    render_results_panel(
+        strings, stored or [], empty_hint=empty_hint, default_tab=_DEFAULT_RESULT_TAB
+    )
 
 
 def _send_prompt(
@@ -459,8 +499,13 @@ def _render_token_summary(strings: Strings, records: Sequence[QaRecord]) -> None
     quota = _settings.rag_qa_session_token_quota
     percent = usage_percent(totals.total_tokens, quota)
     with st.container(border=True):
-        st.markdown(_TOKEN_PANEL_CSS, unsafe_allow_html=True)
-        st.markdown(f"**{strings['QA_TOKEN_PANEL_TITLE']}**")
+        # The blank line (\n\n) is load-bearing: it closes the CSS HTML block so the
+        # following **title** renders as bold markdown, not literal text. Folding the
+        # CSS into the title's element keeps it from adding an empty spacer on top.
+        st.markdown(
+            f"{_TOKEN_PANEL_CSS}\n\n**{strings['QA_TOKEN_PANEL_TITLE']}**",
+            unsafe_allow_html=True,
+        )
         input_col, output_col, total_col, quota_col, usage_col = st.columns(5)
         input_col.metric(strings["QA_SUMMARY_INPUT_LABEL"], f"{totals.input_tokens:,}")
         output_col.metric(strings["QA_SUMMARY_OUTPUT_LABEL"], f"{totals.output_tokens:,}")
@@ -517,7 +562,8 @@ def _history_grid(strings: Strings, record: QaRecord) -> str:
     """Build the 4-column label/value grid summarising one history record."""
     rows = [
         (strings["QA_HISTORY_LABEL_TIME"], local_time_label(record.timestamp_utc)),
-        (strings["QA_HISTORY_META_INDEX"], f"{record.index_folder} / {record.index_run}"),
+        (strings["QA_HISTORY_META_INDEX_NAME"], record.index_folder),
+        (strings["QA_HISTORY_META_INDEX_DATE"], record.index_run),
         (strings["QA_HISTORY_META_MODEL"], record.llm_model or "—"),
         (strings["QA_HISTORY_META_TONE"], record.tone or "—"),
         (strings["QA_HISTORY_META_TOP"], str(record.top_k)),

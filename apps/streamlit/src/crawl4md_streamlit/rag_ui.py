@@ -43,13 +43,12 @@ __all__ = [
     "index_option_label",
     "kv_grid_html",
     "local_time_label",
-    "mmr_controls_enabled",
     "ordered_result_tabs",
     "render_index_metadata",
     "render_messages",
     "render_model_caption",
-    "render_ranked_results",
-    "render_section_header",
+    "render_result_cards",
+    "render_results_panel",
     "render_sources",
     "result_detail_caption",
     "select_index",
@@ -122,15 +121,6 @@ def sort_results_by_score(chunks: Sequence[RetrievedChunk]) -> list[RetrievedChu
     return sorted(chunks, key=lambda chunk: chunk.score, reverse=True)
 
 
-def mmr_controls_enabled(search_mode: str) -> bool:
-    """Return True when *search_mode* is MMR, so its diversity/pool controls apply.
-
-    Closest (similarity) search ignores the candidate-pool and diversity inputs,
-    so the UI disables them unless MMR (Diverse) is selected.
-    """
-    return search_mode == "mmr"
-
-
 def index_metadata_rows(strings: Strings, manifest: IndexManifest) -> list[tuple[str, str]]:
     """Return ordered (label, value) pairs describing an index for compact display."""
     return [
@@ -139,12 +129,16 @@ def index_metadata_rows(strings: Strings, manifest: IndexManifest) -> list[tuple
             strings["SEARCH_META_MODEL"],
             manifest.embedding_model_used or manifest.embedding_model_requested or "—",
         ),
-        (strings["SEARCH_META_DIMENSION"], _value_or_dash(manifest.embedding_dimension)),
         (strings["SEARCH_META_LANGUAGE"], manifest.language or "—"),
-        (strings["SEARCH_META_CHUNK_SIZE"], _value_or_dash(manifest.chunk_size)),
-        (strings["SEARCH_META_OVERLAP"], _value_or_dash(manifest.chunk_overlap)),
+        (
+            strings["SEARCH_META_DIMENSION_CHUNKS"],
+            f"{_value_or_dash(manifest.embedding_dimension)} / {manifest.indexed_chunk_count}",
+        ),
+        (
+            strings["SEARCH_META_CHUNK_SIZE_OVERLAP"],
+            f"{_value_or_dash(manifest.chunk_size)} / {_value_or_dash(manifest.chunk_overlap)}",
+        ),
         (strings["SEARCH_META_FILES"], str(manifest.indexed_file_count)),
-        (strings["SEARCH_META_CHUNKS"], str(manifest.indexed_chunk_count)),
         (strings["SEARCH_META_SKIPPED"], str(manifest.skipped_file_count)),
         (strings["SEARCH_META_COLLECTION"], manifest.collection_name),
     ]
@@ -213,7 +207,8 @@ def stacked_label_value_html(label: str, value: str) -> str:
     question label + value stay within the replay button's height.
     """
     return (
-        '<div style="display:flex;flex-direction:column;line-height:1.25;overflow:hidden">'
+        '<div style="display:flex;flex-direction:column;line-height:1.25;overflow:hidden;'
+        'margin-top:-0.35rem">'
         f'<div style="opacity:0.65;font-size:0.875rem">{html.escape(label)}</div>'
         '<div style="font-weight:600;white-space:nowrap;overflow:hidden;'
         f'text-overflow:ellipsis" title="{html.escape(value)}">{html.escape(value)}</div>'
@@ -243,24 +238,6 @@ def result_detail_caption(strings: Strings, chunk: RetrievedChunk) -> str:
     return " · ".join(parts)
 
 
-def render_section_header(header: str, caption: str, *, anchor: str) -> None:
-    """Render a page section's heading + caption with tight, consistent spacing.
-
-    Keeps ``st.subheader`` so Material-icon and emoji headers still render, then
-    pulls the heading up and draws the caption right beneath it (negative margins)
-    so the gap above the heading and between heading and caption stays small and
-    identical across the RAG pages, rather than Streamlit's default flex gap.
-    """
-    st.subheader(header, anchor=anchor)
-    st.markdown(
-        f'<style>div[data-testid="stElementContainer"]:has(h3#{anchor})'
-        "{margin-top:-0.5rem}</style>"
-        '<p style="opacity:0.6;font-size:0.875rem;margin:-0.5rem 0 0.25rem">'
-        f"{html.escape(caption)}</p>",
-        unsafe_allow_html=True,
-    )
-
-
 def render_index_metadata(strings: Strings, index: IndexRef) -> None:
     """Show the selected index's manifest details as a compact 4-column grid."""
     grid = kv_grid_html(index_metadata_rows(strings, index.manifest), columns=4, margin_bottom=True)
@@ -279,61 +256,81 @@ def ordered_result_tabs(default_tab: str) -> tuple[str, str]:
     return (_RESULT_TAB_RAW, _RESULT_TAB_PREVIEW)
 
 
-def render_ranked_results(
+def render_result_cards(
     strings: Strings,
     chunks: Sequence[RetrievedChunk],
     *,
     default_tab: str = _RESULT_TAB_RAW,
-    expanded: bool = False,
 ) -> None:
-    """Render search hits as ranked cards inside a collapsible panel.
+    """Render ranked result cards (sorted highest-first) with no surrounding panel.
 
-    The panel is titled with the match count and starts collapsed; callers pass
-    ``expanded=True`` right after a search so fresh results open at once. Each
-    card shows a source + similarity header row with the chunk's id, size, and
-    language beneath the title, then the chunk text in Raw/Preview tabs (each
-    wrapped in its own card). The configured *default_tab* is shown first.
+    Shared by the Step 3 results panel and the Step 4 search-results panel so both
+    show identical hit cards. Each card shows a source + similarity header row with
+    the chunk's id, size, and language beneath the title, then the chunk text in
+    Raw/Preview tabs (the configured *default_tab* first). The first card carries
+    the tab-gap CSS inline so it is not a standalone element that adds a spacer.
     """
-    ranked = sort_results_by_score(chunks)
-    if not ranked:
-        return
     tab_order = ordered_result_tabs(default_tab)
     tab_labels = {
         _RESULT_TAB_RAW: strings["SEARCH_RESULT_TAB_RAW"],
         _RESULT_TAB_PREVIEW: strings["SEARCH_RESULT_TAB_PREVIEW"],
     }
+    for rank, chunk in enumerate(sort_results_by_score(chunks), start=1):
+        with st.container(border=True):
+            title_col, score_col = st.columns([0.7, 0.3], vertical_alignment="center")
+            # Fold the tab-gap CSS into the first card's title markdown so it is
+            # not a standalone element that would add an empty spacer above the
+            # first card — keeping the first card flush with the panel top.
+            lead_css = _RESULT_CARD_CSS if rank == 1 else ""
+            title_col.markdown(
+                f"{lead_css}"
+                f'<h4 style="margin:0;padding:0">'
+                f"{html.escape(strings['SEARCH_RESULT_HEADER'].format(rank=rank, source=chunk.source or '?'))}"
+                "</h4>",
+                unsafe_allow_html=True,
+            )
+            title_col.markdown(
+                f'<p style="opacity:0.6;font-size:0.875rem;margin:0;margin-bottom:0">'
+                f"{html.escape(result_detail_caption(strings, chunk))}</p>",
+                unsafe_allow_html=True,
+            )
+            score_col.markdown(
+                f'<h4 style="text-align:right;margin:0">'
+                f"{strings['SEARCH_RESULT_SIMILARITY']} {format_score_percent(chunk.score)}%</h4>",
+                unsafe_allow_html=True,
+            )
+            tabs = st.tabs([tab_labels[key] for key in tab_order])
+            for key, tab in zip(tab_order, tabs, strict=True):
+                with tab, st.container(border=True):
+                    if key == _RESULT_TAB_RAW:
+                        st.code(chunk.text, language="markdown", wrap_lines=True)
+                    else:
+                        st.markdown(chunk.text)
+
+
+def render_results_panel(
+    strings: Strings,
+    chunks: Sequence[RetrievedChunk],
+    *,
+    empty_hint: str,
+    default_tab: str = _RESULT_TAB_RAW,
+    expanded: bool = False,
+) -> None:
+    """Render search hits as ranked cards inside an always-present collapsible panel.
+
+    The panel is a stable fixture: it renders even with no hits (showing *empty_hint*
+    instead of cards) so the gap to the block below never shifts. When there are hits
+    the title carries the match count; callers pass ``expanded=True`` right after a
+    search so fresh results open at once.
+    """
+    ranked = sort_results_by_score(chunks)
+    if not ranked:
+        with st.expander(strings["SEARCH_RESULTS_PANEL"], expanded=expanded):
+            st.caption(empty_hint)
+        return
     label = strings["SEARCH_RESULTS_EXPANDER"].format(count=len(ranked))
     with st.expander(label, expanded=expanded):
-        # Injected inside the panel (not before it) so this lone <style> element
-        # does not add an empty spacer row above the results panel — that keeps the
-        # query→results gap equal to the results→history gap.
-        st.markdown(_RESULT_CARD_CSS, unsafe_allow_html=True)
-        for rank, chunk in enumerate(ranked, start=1):
-            with st.container(border=True):
-                title_col, score_col = st.columns([0.7, 0.3], vertical_alignment="center")
-                title_col.markdown(
-                    f'<h4 style="margin:0;padding:0">'
-                    f"{html.escape(strings['SEARCH_RESULT_HEADER'].format(rank=rank, source=chunk.source or '?'))}"
-                    "</h4>",
-                    unsafe_allow_html=True,
-                )
-                title_col.markdown(
-                    f'<p style="opacity:0.6;font-size:0.875rem;margin:0;margin-bottom:0">'
-                    f"{html.escape(result_detail_caption(strings, chunk))}</p>",
-                    unsafe_allow_html=True,
-                )
-                score_col.markdown(
-                    f'<h4 style="text-align:right;margin:0">'
-                    f"{strings['SEARCH_RESULT_SIMILARITY']} {format_score_percent(chunk.score)}%</h4>",
-                    unsafe_allow_html=True,
-                )
-                tabs = st.tabs([tab_labels[key] for key in tab_order])
-                for key, tab in zip(tab_order, tabs, strict=True):
-                    with tab, st.container(border=True):
-                        if key == _RESULT_TAB_RAW:
-                            st.code(chunk.text, language="markdown", wrap_lines=True)
-                        else:
-                            st.markdown(chunk.text)
+        render_result_cards(strings, ranked, default_tab=default_tab)
 
 
 def render_messages(

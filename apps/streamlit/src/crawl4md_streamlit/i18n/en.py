@@ -112,16 +112,16 @@ STRINGS_EN: Strings = {
     "SEARCH_BUTTON": "Search",
     "SEARCH_SEARCHING": "Searching…",
     "SEARCH_RESULTS_EXPANDER": ":material/leaderboard: Search results • Top {count} matches by similarity",
+    "SEARCH_RESULTS_PANEL": ":material/leaderboard: Search results",
     "SEARCH_NO_RESULTS": "No matching chunks were found for this query.",
+    "SEARCH_RESULTS_EMPTY": "Run a search to see matching chunks here.",
     "SEARCH_META_HEADER": "Details",
     "SEARCH_META_CREATED": "Created",
     "SEARCH_META_MODEL": "Embedding model",
-    "SEARCH_META_DIMENSION": "Dimension",
     "SEARCH_META_LANGUAGE": "Language",
     "SEARCH_META_FILES": "Files",
-    "SEARCH_META_CHUNKS": "Chunks",
-    "SEARCH_META_CHUNK_SIZE": "Chunk size",
-    "SEARCH_META_OVERLAP": "Chunk overlap",
+    "SEARCH_META_DIMENSION_CHUNKS": "Dimension / Chunks",
+    "SEARCH_META_CHUNK_SIZE_OVERLAP": "Chunk size / overlap",
     "SEARCH_META_SKIPPED": "Skipped files",
     "SEARCH_META_COLLECTION": "Collection",
     "SEARCH_TOP_N_LABEL": "Top results",
@@ -137,8 +137,8 @@ STRINGS_EN: Strings = {
         "How matches are picked. **Closest** returns the chunks most similar to your "
         "query — the safe default when you want the best direct answers. **Diverse** "
         "casts a wider net, then spreads the picks so you see different angles instead "
-        "of near-duplicates — better for broad or exploratory questions. Choosing "
-        "Diverse turns on the Diversity and Candidate pool controls."
+        "of near-duplicates — better for broad or exploratory questions. The Diversity "
+        "and Candidate pool controls apply only in Diverse mode."
     ),
     "SEARCH_MIN_SCORE_LABEL": "Minimum similarity",
     "SEARCH_MIN_SCORE_HELP": (
@@ -184,9 +184,10 @@ STRINGS_EN: Strings = {
     "SEARCH_HISTORY_OPT_POOL": "pool {n}",
     "SEARCH_HISTORY_OPT_SOURCES": "{n} file(s)",
     "SEARCH_HISTORY_LABEL_QUERY": "Question",
-    "SEARCH_HISTORY_LABEL_TIME": "Time",
+    "SEARCH_HISTORY_LABEL_TIME": "Searched",
     "SEARCH_HISTORY_LABEL_RESULTS": "Results",
-    "SEARCH_HISTORY_LABEL_INDEX": "Index",
+    "SEARCH_HISTORY_LABEL_INDEX_NAME": "Index name",
+    "SEARCH_HISTORY_LABEL_INDEX_DATE": "Index date time",
     "SEARCH_HISTORY_LABEL_OPTIONS": "Options",
     "SEARCH_HISTORY_LABEL_DETAILS": "Details",
     "QA_SECTION_HEADER": ":material/quiz: Ask & generate",
@@ -213,6 +214,8 @@ STRINGS_EN: Strings = {
         "Run semantic search and assemble the RAG prompt from your question, retrieved "
         "knowledge, and tone."
     ),
+    "QA_SEARCHING": "Searching your index…",
+    "QA_RESULTS_EMPTY": "Generate a prompt to search your index and see the matches here.",
     "QA_PROMPT_LABEL": "Prompt",
     "QA_PROMPT_PLACEHOLDER": "Generate a prompt to see it here — then edit it if you like and send.",
     "QA_PROMPT_HELP": (
@@ -223,7 +226,7 @@ STRINGS_EN: Strings = {
     "QA_MAXIMIZE_HELP": "Maximize the prompt editor",
     "QA_MAXIMIZE_TITLE": "Edit prompt",
     "QA_NO_PROMPT_HINT": "Generate a prompt first, then send it.",
-    "QA_ANSWER_HEADER": "Answer",
+    "QA_ANSWER_HEADER": ":material/smart_toy: Answer",
     "QA_ANSWER_STATS": (
         "Model — {model} · Tokens — input {input} · output {output} · "
         "total {total} · answered in {seconds}s"
@@ -242,7 +245,8 @@ STRINGS_EN: Strings = {
     "QA_HISTORY_LABEL_TIME": "Time",
     "QA_HISTORY_DETAILS_EXPANDER": "Details",
     "QA_HISTORY_PROMPT_EXPANDER": "Prompt",
-    "QA_HISTORY_META_INDEX": "Index",
+    "QA_HISTORY_META_INDEX_NAME": "Index name",
+    "QA_HISTORY_META_INDEX_DATE": "Index date time",
     "QA_HISTORY_META_MODEL": "Model",
     "QA_HISTORY_META_TONE": "Tone",
     "QA_HISTORY_META_TOP": "Top results",
