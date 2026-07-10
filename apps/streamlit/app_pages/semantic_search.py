@@ -10,7 +10,6 @@ from pathlib import Path
 import streamlit as st
 from rag_engine import RagConfig, retrieve
 
-from crawl4md_streamlit.focus import entered_page, focus_widget
 from crawl4md_streamlit.i18n import Strings, get_strings
 from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.rag_ui import (
@@ -59,8 +58,6 @@ _REPLAY_EXECUTE_KEY = "semantic_search_replay_execute"
 # expand flag is a one-shot that opens the panel only right after a fresh search.
 _RESULTS_KEY = "semantic_search_results"
 _RESULTS_EXPAND_KEY = "semantic_search_results_expanded"
-# One-shot flag: a history replay sets it so focus moves to the query field.
-_FOCUS_QUERY_KEY = "semantic_search_focus_query"
 
 
 def render_page(context: RagPageContext) -> None:
@@ -68,11 +65,6 @@ def render_page(context: RagPageContext) -> None:
     strings = get_strings(st.session_state.get("language", context.default_language))
     session_root = context.session_root()
     indexes = list(context.list_indexes())
-
-    # Focus the query field once when the user lands on this page (not on later
-    # reruns), so they can start typing straight away.
-    if entered_page("semantic_search"):
-        st.session_state[_FOCUS_QUERY_KEY] = True
 
     st.subheader(strings["SEARCH_SECTION_HEADER"], anchor="semantic-search-header")
     st.caption(strings["SEARCH_SECTION_CAPTION"])
@@ -187,11 +179,6 @@ def render_page(context: RagPageContext) -> None:
             disabled=index is None,
         )
 
-    # A history replay pre-fills the query across the rerun; move focus there so
-    # the user can edit and re-run it straight away.
-    if st.session_state.pop(_FOCUS_QUERY_KEY, False):
-        focus_widget(_QUERY_KEY)
-
     # Resolve the search to run: a history replay takes precedence over a submit.
     request: tuple[IndexRef, str, RagConfig] | None = None
     replay_execute = st.session_state.pop(_REPLAY_EXECUTE_KEY, None)
@@ -305,7 +292,7 @@ def _config_from_record(record: dict) -> RagConfig:
     return RagConfig(
         top_k=int(record.get("top_k", _DEFAULT_TOP_N)),
         score_threshold=float(record.get("score_threshold", 0.0)),
-        search_type=str(record.get("search_type", _DEFAULT_SEARCH_MODE)),
+        search_type=record.get("search_type", _DEFAULT_SEARCH_MODE),
         fetch_k=int(record.get("fetch_k", _DEFAULT_FETCH_K)),
         lambda_mult=float(record.get("mmr_lambda", _DEFAULT_MMR_LAMBDA)),
         source_filter=tuple(str(source) for source in record.get("source_filter", []) or []),

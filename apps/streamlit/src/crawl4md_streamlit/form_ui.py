@@ -41,7 +41,7 @@ def render_crawl_form(
     activity_log_size: int,
 ) -> dict[str, Any]:
     """Render the crawl settings form and return submitted values."""
-    st.subheader(strings["FORM_SUBHEADER"], anchor="form-subheader")
+    st.subheader(strings["FORM_SUBHEADER"], anchor="crawl4md-header")
     st.caption(strings["FORM_CAPTION"])
     with (
         st.expander(strings["FORM_EXPANDER_LABEL"], expanded=expanded),

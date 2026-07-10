@@ -29,7 +29,6 @@ from rag_engine import (
 )
 from rag_engine.models import TokenUsage
 
-from crawl4md_streamlit.focus import entered_page, focus_widget
 from crawl4md_streamlit.i18n import Strings, get_strings
 from crawl4md_streamlit.index_catalog import IndexRef
 from crawl4md_streamlit.llm_form_ui import (
@@ -130,8 +129,6 @@ _STATS_KEY = "rag_qa_stats"
 # A replay stashes a record here; a one-shot flag then moves focus to the prompt.
 _REPLAY_KEY = "rag_qa_replay"
 _FOCUS_PROMPT_KEY = "rag_qa_focus_prompt"
-# One-shot flag: set on page entry so focus lands on the question field.
-_FOCUS_QUESTION_KEY = "rag_qa_focus_question"
 
 
 def render_page(context: RagPageContext) -> None:
@@ -139,11 +136,6 @@ def render_page(context: RagPageContext) -> None:
     strings = get_strings(st.session_state.get("language", context.default_language))
     session_root = context.session_root()
     indexes = list(context.list_indexes())
-
-    # Focus the question field once when the user lands on this page (not on later
-    # reruns), so they can start typing straight away.
-    if entered_page("rag_qa"):
-        st.session_state[_FOCUS_QUESTION_KEY] = True
 
     st.subheader(strings["QA_SECTION_HEADER"], anchor="rag-qa-header")
     st.caption(strings["QA_SECTION_CAPTION"])
@@ -167,8 +159,6 @@ def render_page(context: RagPageContext) -> None:
 
     index, model, tone, top_results = _render_panel(strings, indexes, model_options, tones)
     question, generate = _render_question_form(strings, disabled=index is None)
-    if st.session_state.pop(_FOCUS_QUESTION_KEY, False):
-        focus_widget(_QUESTION_KEY)
     do_generate = bool(generate and index is not None and question.strip())
     _render_search_results(
         strings, index, question.strip() if question else "", top_results, tone, model, do_generate

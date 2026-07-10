@@ -53,7 +53,9 @@ STRINGS_EN: Strings = {
     ),
     "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Step 5 - Conversational RAG",
     "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
-        "Chat across turns using retrieved context, conversation history, and query rewriting."
+        "Have a multi-turn conversation with your documents. The app automatically rewrites your "
+        "follow-up questions using conversation context, retrieves fresh knowledge for each turn, "
+        "and maintains history throughout the chat."
     ),
     "PLACEHOLDER_SECTION_HEADER": "Step workspace",
     "PLACEHOLDER_SECTION_CAPTION": (
@@ -103,7 +105,7 @@ STRINGS_EN: Strings = {
     "RAG_SOURCE_CAPTION": "{source} · score {score}",
     "RAG_MODEL_USED_CAPTION": "Answered with: {model}",
     "RAG_GENERATING": "Generating answer…",
-    "SEARCH_SECTION_HEADER": "🔍 Search your index",
+    "SEARCH_SECTION_HEADER": ":material/search: Search your index",
     "SEARCH_SECTION_CAPTION": (
         "Find the chunks most similar to a query, with relevance scores and sources."
     ),

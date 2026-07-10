@@ -15,7 +15,7 @@ def render_placeholder_page(page_id: str) -> None:
     page_spec = page_spec_by_id(page_id)
     if page_spec.placeholder_key is None:
         return
-    st.subheader(strings["PLACEHOLDER_SECTION_HEADER"], anchor="form-subheader")
+    st.subheader(strings["PLACEHOLDER_SECTION_HEADER"], anchor="crawl4md-header")
     st.caption(strings["PLACEHOLDER_SECTION_CAPTION"])
     with st.expander(strings["PLACEHOLDER_EXPANDER_LABEL"], expanded=True):
         st.write(strings[page_spec.placeholder_key])

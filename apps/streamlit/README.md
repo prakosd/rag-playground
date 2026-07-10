@@ -39,7 +39,7 @@ flowchart TD
 | `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (tight section header, index picker, index metadata, collapsible ranked-results panel, sources, messages) |
 | `qa_form_ui.py` | Step 4 pure helpers: `tone_choices` (.env tones + default), `token_totals` + `usage_percent` (session Token count panel: Input / Output / Total / Quota / % Usage), and `apply_maximized_prompt` (Maximize dialog ↔ inline prompt sync; edits autosave on every change and on dismiss) |
 | `qa_history.py` | Step 4 per-session prompt history (`QaRecord`; JSONL + CSV under `rag_qa_history/`) |
-| `focus.py` | One-shot client-side focus helpers: `focus_widget` (focus a keyed input after a rerun) and `entered_page` (True once per navigation, so a page can focus its primary field on entry) |
+| `focus.py` | Client-side focus helpers: `focus_widget` (focus a keyed input after a rerun, e.g., after a history replay) and `entered_page` (tracks page navigation) |
 | `generated_files.py` | Output listing, previews, downloads (labels include human-readable file sizes), and per-file deletion |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |

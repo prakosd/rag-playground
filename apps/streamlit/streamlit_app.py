@@ -1833,7 +1833,8 @@ def _render_crawl_timing(strings: Mapping[str, Any]) -> None:
     st.markdown(
         f'<div style="{_STATUS_ROW_STYLE}">'
         f"<span>{strings['STATUS_ELAPSED'].format(elapsed=elapsed_str)}</span>"
-        f"<span>{right}</span></div>",
+        f"<span>{right}</span></div>"
+        f'<div style="{_STATUS_ROW_STYLE};font-size:0.25rem;"><span>&nbsp;</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -3131,11 +3132,11 @@ def _render_shared_styles() -> None:
             margin-left: auto;
             margin-right: auto;
         }}
-        h3#form-subheader {{
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-        }}
-        h3#vector-index-header {{
+        h3#crawl4md-header,
+        h3#vector-index-header,
+        h3#semantic-search-header,
+        h3#rag-qa-header,
+        h3#conversational-rag-header {{
             padding-top: 0 !important;
             padding-bottom: 0 !important;
         }}

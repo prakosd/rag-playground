@@ -54,8 +54,9 @@ STRINGS_ID: Strings = {
     ),
     "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Langkah 5 - Conversational RAG",
     "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
-        "Chat lintas giliran dengan konteks hasil retrieval, riwayat percakapan, dan "
-        "penulisan ulang kueri."
+        "Adakan percakapan multi-giliran dengan dokumen Anda. Aplikasi secara otomatis menulis "
+        "ulang pertanyaan lanjutan menggunakan konteks percakapan, mengambil pengetahuan segar "
+        "untuk setiap giliran, dan mempertahankan riwayat selama chat."
     ),
     "PLACEHOLDER_SECTION_HEADER": "Area kerja langkah",
     "PLACEHOLDER_SECTION_CAPTION": (
