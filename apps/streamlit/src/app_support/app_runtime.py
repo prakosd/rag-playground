@@ -55,6 +55,9 @@ _PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
 _UTC_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
 _SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
 _DEFAULT_LANGUAGE = DEFAULT_SESSION_LANGUAGE
+# Shared status-row style used by both the progress panels and the file-preview
+# dialog caption (two spans pushed to opposite edges of the row).
+_STATUS_ROW_STYLE = "display:flex;justify-content:space-between;font-size:0.875rem;opacity:1"
 
 # ── Job-state vocabulary (shared by the shell orchestration and the panels) ──
 _STATE_CANCEL_REQUESTED = "cancel_requested"
