@@ -50,6 +50,7 @@ def test_apply_vector_index_event_progress_sets_stage(
     progress_ui._apply_vector_index_event({"event": "progress", "stage": "embedding"})
 
     assert state.vector_index_stage == "embedding"
+    assert not hasattr(state, "vector_index_progress")
 
 
 # Risk: a terminal event must capture the final counts into the result panel.
