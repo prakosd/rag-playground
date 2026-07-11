@@ -28,6 +28,7 @@ flowchart TD
 | Helper module | Responsibility |
 | --- | --- |
 | `__init__.py` | Installable package marker |
+| `app_runtime.py` | Shared shell runtime — settings-derived UI constants, job-state vocabulary, and shell helpers (session paths, job liveness/runtime, cached file discovery, auto-refresh fragment) imported by both the shell and the `downloads_ui`/`progress_ui` modules; breaks the import cycle |
 | `controls.py` | Button definitions and state mapping |
 | `crawl/crawl_jobs.py` | Background jobs, config building, progress events |
 | `crawl/form_defaults.py` | Default crawl form payload |
@@ -41,6 +42,8 @@ flowchart TD
 | `basic_rag_qa/basic_rag_qa_history.py` | Step 4 per-session prompt history (`BasicQaRecord` incl. `answer` + `pinned`; JSONL + CSV under `basic_rag_qa_history/`; `set_basic_rag_qa_pinned` sorts pinned records first) |
 | `focus.py` | Client-side focus helpers: `focus_widget` (focus a keyed input after a rerun, e.g., after a history replay) and `entered_page` (tracks page navigation) |
 | `generated_files.py` | Output listing, previews, downloads (labels include human-readable file sizes), and per-file deletion |
+| `downloads_ui.py` | Output Files panel renderer: download tree, per-file preview/download, per-folder zip export + delete, signed-zip import, ready-result panel |
+| `progress_ui.py` | Crawl + vector-index live-area renderers: status boxes, cumulative charts, active/next URL rows, timing, activity log, vector-index status |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
 | `support.py` | Compatibility exports for the split helper modules |
@@ -82,12 +85,14 @@ Everything the user sees and interacts with. Responsibilities:
 - Renders the selected session ID, searchable session selector, create-session button, and language selector.
 - Supplies the crawler page with shell-owned callbacks for job start / stop, ready results, live progress, and downloads.
 - Runs the shell-level crawl event loop, drains background-thread events into UI state, and emits crawl progress toasts that remain visible while users navigate other workflow pages.
-- Renders progress metrics, active/next URL previews, cumulative totals + pace charts, and the
-  activity log (`_render_live_area`). Its auto-refresh fragment only polls (every 3 seconds) while a
-  crawl job is active; when idle it schedules no timer, so an idle or navigated-away page leaves no
+- Wires the crawl + vector-index live areas — progress metrics, active/next URL previews, cumulative
+  totals + pace charts, and the activity log — rendered by `progress_ui` (`_render_live_area` /
+  `_render_vector_index_live_area`). Their auto-refresh fragments only poll (every 3 seconds) while a
+  job is active; when idle they schedule no timer, so an idle or navigated-away page leaves no
   stale fragment timer to log a "fragment ... does not exist anymore" warning.
-- Renders the selected session's generated-file table and a per-file download + preview tree separately
-  (`_render_downloads`, polling every 7 seconds only while a crawl or vector-index job is active).
+- Wires the selected session's generated-file table and per-file download + preview tree, rendered by
+  `downloads_ui` (`_render_downloads`, polling every 7 seconds only while a crawl or vector-index job
+  is active).
 - Runs a one-time startup cleanup of old session folders (`_run_startup_cleanup`, cached with
   `@st.cache_resource`).
 - Renders the global footer and browser-timed portfolio modal with translated copy.
