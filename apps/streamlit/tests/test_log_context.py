@@ -7,7 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from crawl4md_streamlit.log_context import get_log_session_id, set_log_session_id
+from app_support.log_context import get_log_session_id, set_log_session_id
 
 
 @pytest.fixture(autouse=True)

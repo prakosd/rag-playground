@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from app_support.basic_rag_qa.basic_rag_qa_history import (
+    BASIC_QA_HISTORY_DIRNAME,
+    BasicQaRecord,
+    append_basic_rag_qa_record,
+    load_basic_rag_qa_history,
+    set_basic_rag_qa_pinned,
+)
+
+
+def _record(**overrides: object) -> BasicQaRecord:
+    base: dict[str, object] = {
+        "timestamp_utc": "2026-07-04T10:00:00+00:00",
+        "index_folder": "vector_1",
+        "index_run": "2026-07-04_10-00-00",
+        "embedding_model": "titan",
+        "llm_model": "echo",
+        "tone": "Neutral",
+        "top_k": 5,
+        "question": "What is X?",
+        "prompt": "You are a retrieval-augmented AI assistant. …",
+        "answer": "X is the answer.",
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+        "latency_seconds": 1.23,
+    }
+    base.update(overrides)
+    return BasicQaRecord(**base)  # type: ignore[arg-type]
+
+
+def test_append_and_load_round_trip_newest_first(tmp_path: Path) -> None:
+    append_basic_rag_qa_record(tmp_path, _record(question="first"))
+    append_basic_rag_qa_record(tmp_path, _record(question="second"))
+
+    records = load_basic_rag_qa_history(tmp_path)
+
+    assert [record.question for record in records] == ["second", "first"]
+    assert (tmp_path / BASIC_QA_HISTORY_DIRNAME / "basic_rag_qa_history.csv").is_file()
+
+
+def test_optional_tokens_round_trip_as_none(tmp_path: Path) -> None:
+    append_basic_rag_qa_record(
+        tmp_path, _record(input_tokens=None, output_tokens=None, total_tokens=None)
+    )
+
+    record = load_basic_rag_qa_history(tmp_path)[0]
+
+    assert record.input_tokens is None
+    assert record.total_tokens is None
+    assert record.latency_seconds == 1.23
+
+
+def test_answer_round_trips(tmp_path: Path) -> None:
+    append_basic_rag_qa_record(tmp_path, _record(answer="Because it is grounded."))
+
+    record = load_basic_rag_qa_history(tmp_path)[0]
+
+    assert record.answer == "Because it is grounded."
+
+
+def test_pinned_records_sort_first(tmp_path: Path) -> None:
+    append_basic_rag_qa_record(
+        tmp_path, _record(question="a", timestamp_utc="2026-07-04T10:00:00+00:00")
+    )
+    append_basic_rag_qa_record(
+        tmp_path, _record(question="b", timestamp_utc="2026-07-04T10:00:01+00:00")
+    )
+    append_basic_rag_qa_record(
+        tmp_path, _record(question="c", timestamp_utc="2026-07-04T10:00:02+00:00")
+    )
+
+    set_basic_rag_qa_pinned(tmp_path, "2026-07-04T10:00:00+00:00", True)
+
+    history = load_basic_rag_qa_history(tmp_path)
+    assert history[0].question == "a"
+    assert history[0].pinned is True
+    assert [record.question for record in history[1:]] == ["c", "b"]
+
+
+def test_load_skips_malformed_lines(tmp_path: Path) -> None:
+    directory = tmp_path / BASIC_QA_HISTORY_DIRNAME
+    directory.mkdir(parents=True)
+    (directory / "basic_rag_qa_history.jsonl").write_text("not json\n", encoding="utf-8")
+
+    assert load_basic_rag_qa_history(tmp_path) == []
+
+
+def test_load_empty_when_no_history(tmp_path: Path) -> None:
+    assert load_basic_rag_qa_history(tmp_path) == []

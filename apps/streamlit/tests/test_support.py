@@ -14,8 +14,8 @@ import pytest
 from crawl4md.messages import CODE_BROWSER_MISSING, CODE_CRAWL_FAILED
 from pydantic import ValidationError
 
-from crawl4md_streamlit import session_manager
-from crawl4md_streamlit.support import (
+from app_support import session_manager
+from app_support.support import (
     CrawlJob,
     JobSnapshot,
     SessionRecord,
@@ -857,8 +857,8 @@ def test_cleanup_old_sessions_removes_only_expired_safe_sessions(
 
     # The app configures logging with propagate=False, so attach the capture
     # handler directly to the target logger rather than relying on root propagation.
-    caplog.set_level(logging.INFO, logger="crawl4md_streamlit")
-    target_logger = logging.getLogger("crawl4md_streamlit")
+    caplog.set_level(logging.INFO, logger="app_support")
+    target_logger = logging.getLogger("app_support")
     target_logger.addHandler(caplog.handler)
     try:
         removed = cleanup_old_sessions(
@@ -1039,7 +1039,7 @@ def test_start_crawl_job_reports_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
             )
             return [type("Result", (), {"success": True})()]
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -1082,7 +1082,7 @@ def test_start_crawl_job_reports_success_and_failure_counts(
                 type("Result", (), {"success": False})(),
             ]
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values(limit=2))
 
     job = start_crawl_job(
@@ -1128,7 +1128,7 @@ def test_start_crawl_job_reports_missing_playwright_browser_hint(
                 "playwright install"
             )
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -1158,7 +1158,7 @@ def test_start_crawl_job_reports_generic_error_details(
         def crawl(self) -> list[object]:
             raise ValueError("boom")
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -1201,7 +1201,7 @@ def test_start_crawl_job_reports_error_with_finalized_output(
             self.crawl_error = "browser pool crashed"
             return [type("Result", (), {"success": True})()]
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -1253,7 +1253,7 @@ def test_start_crawl_job_reports_cancelled_after_request(
             assert should_cancel()
             return [type("Result", (), {"success": True})()]
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.SiteCrawler", FakeCrawler)
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
 
     job = start_crawl_job(
@@ -1337,13 +1337,13 @@ def test_build_configs_rejects_non_positive_activity_log_size() -> None:
 
 
 def _en_strings() -> Mapping[str, object]:
-    from crawl4md_streamlit.i18n import STRINGS_EN
+    from app_support.i18n import STRINGS_EN
 
     return STRINGS_EN
 
 
 def _id_strings() -> Mapping[str, object]:
-    from crawl4md_streamlit.i18n import STRINGS_ID
+    from app_support.i18n import STRINGS_ID
 
     return STRINGS_ID
 
@@ -1532,7 +1532,7 @@ def _alive_snapshot(
 def test_get_active_job_snapshot_returns_none_when_no_entry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs._JOB_REGISTRY", {})
+    monkeypatch.setattr("app_support.crawl.crawl_jobs._JOB_REGISTRY", {})
     assert get_active_job_snapshot("no_such_session") is None
 
 
@@ -1542,7 +1542,7 @@ def test_get_active_job_snapshot_returns_snapshot_for_alive_thread(
     snap, gate = _alive_snapshot()
     try:
         monkeypatch.setattr(
-            "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+            "app_support.crawl.crawl_jobs._JOB_REGISTRY",
             {snap.job.session_id: snap},
         )
         result = get_active_job_snapshot(snap.job.session_id)
@@ -1563,7 +1563,7 @@ def test_get_active_job_snapshot_returns_none_for_dead_thread(
         job_state="running",
     )
     monkeypatch.setattr(
-        "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+        "app_support.crawl.crawl_jobs._JOB_REGISTRY",
         {dead_job.session_id: snap},
     )
     assert get_active_job_snapshot(dead_job.session_id) is None
@@ -1582,7 +1582,7 @@ def test_active_registry_session_ids_returns_only_alive(
     )
     try:
         monkeypatch.setattr(
-            "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+            "app_support.crawl.crawl_jobs._JOB_REGISTRY",
             {"sess_a": snap_alive, "sess_d": snap_dead},
         )
         ids = active_registry_session_ids()
@@ -1598,7 +1598,7 @@ def test_request_cancel_updates_registry_state(
     snap, gate = _alive_snapshot("sess_cancel")
     try:
         monkeypatch.setattr(
-            "crawl4md_streamlit.crawl_jobs._JOB_REGISTRY",
+            "app_support.crawl.crawl_jobs._JOB_REGISTRY",
             {"sess_cancel": snap},
         )
         request_cancel(snap.job)
@@ -1621,9 +1621,9 @@ def test_start_crawl_job_registers_snapshot(
         def crawl(self) -> list[object]:
             return []
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.SiteCrawler", FakeCrawler)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.SiteCrawler", FakeCrawler)
     registry: dict = {}
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs._JOB_REGISTRY", registry)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs._JOB_REGISTRY", registry)
 
     crawler_config, page_config, activity_log_size = build_configs(_form_values())
     job = start_crawl_job(

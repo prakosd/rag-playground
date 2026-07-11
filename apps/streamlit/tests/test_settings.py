@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from crawl4md_streamlit.settings import Settings, get_settings
+from app_support.settings import Settings, get_settings
 
 
 def test_settings_load_values_from_env_defaults() -> None:
@@ -12,20 +12,19 @@ def test_settings_load_values_from_env_defaults() -> None:
     settings = Settings()
 
     assert settings.rag_top_k == 4
-    assert settings.rag_qa_top_results == 5
-    assert settings.rag_qa_default_tone == "Neutral"
-    assert settings.rag_qa_prompt_template_file == "apps/streamlit/config/rag_qa_prompt.txt"
-    assert settings.rag_qa_session_token_quota == 100000
-    assert "Neutral" in settings.rag_qa_tones.split(",")
+    assert settings.basic_rag_qa_top_results == 5
+    assert settings.basic_rag_qa_default_tone == "Neutral"
+    assert (
+        settings.basic_rag_qa_prompt_template_file
+        == "apps/streamlit/config/basic_rag_qa_prompt.txt"
+    )
+    assert settings.basic_rag_qa_session_token_quota == 100000
+    assert "Neutral" in settings.basic_rag_qa_tones.split(",")
     assert "echo" not in settings.rag_llm_models.split(",")
     assert "qwen.qwen3-32b-v1:0" in settings.rag_llm_models.split(",")
     assert settings.rag_default_llm_model == "apac.amazon.nova-lite-v1:0"
     assert settings.semantic_search_top_n == 5
     assert settings.semantic_search_default_tab == "raw"
-    assert settings.semantic_search_default_mode == "similarity"
-    assert settings.semantic_search_min_score_percent == 0
-    assert settings.semantic_search_fetch_k == 20
-    assert settings.semantic_search_mmr_lambda == 0.5
     assert settings.vector_chunk_size == 600
     assert settings.vector_embedding_dimension == 512
     assert settings.vector_default_embedding_model == "all-MiniLM-L6-v2"

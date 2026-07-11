@@ -7,7 +7,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_STREAMLIT_CONFIG = _REPO_ROOT / ".streamlit" / "config.toml"
 _APP_STREAMLIT_CONFIG = _REPO_ROOT / "apps" / "streamlit" / ".streamlit" / "config.toml"
 _APP_PAGES_SRC = _REPO_ROOT / "apps" / "streamlit" / "app_pages"
-_STREAMLIT_SUPPORT_SRC = _REPO_ROOT / "apps" / "streamlit" / "src" / "crawl4md_streamlit"
+_STREAMLIT_SUPPORT_SRC = _REPO_ROOT / "apps" / "streamlit" / "src" / "app_support"
 _PURE_HELPER_MODULES = frozenset(
     {
         "controls.py",

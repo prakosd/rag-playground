@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from crawl4md_streamlit import crawl_runtime
+from app_support.crawl import crawl_runtime
 
 
 # Risk: the browser bootstrap must stay a no-op off Streamlit Cloud so local/CI runs

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import csv
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from artifact_store.naming import RAG_QA_FOLDER_PREFIX
@@ -22,6 +22,7 @@ __all__ = [
     "append_qa_record",
     "load_qa_history",
     "qa_history_dir",
+    "set_qa_pinned",
 ]
 
 # One folder per session holds the accumulating history. The rag_qa_ prefix gives
@@ -40,10 +41,12 @@ _CSV_COLUMNS = (
     "top_k",
     "question",
     "prompt",
+    "answer",
     "input_tokens",
     "output_tokens",
     "total_tokens",
     "latency_seconds",
+    "pinned",
 )
 
 
@@ -60,10 +63,12 @@ class QaRecord:
     top_k: int
     question: str
     prompt: str
+    answer: str = ""
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
     latency_seconds: float = 0.0
+    pinned: bool = False
 
 
 def qa_history_dir(session_root: Path | str) -> Path:
@@ -72,9 +77,10 @@ def qa_history_dir(session_root: Path | str) -> Path:
 
 
 def load_qa_history(session_root: Path | str) -> list[QaRecord]:
-    """Return saved records newest-first, skipping malformed lines."""
+    """Return saved records pinned-first, then newest-first, skipping malformed lines."""
     records = _read_records(qa_history_dir(session_root) / _HISTORY_FILE)
     records.reverse()
+    records.sort(key=lambda record: not record.pinned)  # stable: pinned first, keep date order
     return records
 
 
@@ -87,6 +93,25 @@ def append_qa_record(session_root: Path | str, record: QaRecord) -> None:
     kept = records[-_MAX_RECORDS:]
     _write_jsonl(directory / _HISTORY_FILE, kept)
     _write_csv(directory / _HISTORY_CSV, kept)
+
+
+def set_qa_pinned(session_root: Path | str, timestamp_utc: str, pinned: bool) -> None:
+    """Set the pinned flag on the record(s) matching *timestamp_utc* and rewrite the log.
+
+    Records are keyed by their second-precision timestamp; a same-second collision
+    (two sends within one second) would flip both, which is harmless.
+    """
+    directory = qa_history_dir(session_root)
+    path = directory / _HISTORY_FILE
+    records = _read_records(path)
+    changed = False
+    for index, record in enumerate(records):
+        if record.timestamp_utc == timestamp_utc and record.pinned != pinned:
+            records[index] = replace(record, pinned=pinned)
+            changed = True
+    if changed:
+        _write_jsonl(path, records)
+        _write_csv(directory / _HISTORY_CSV, records)
 
 
 def _read_records(path: Path) -> list[QaRecord]:
@@ -130,10 +155,12 @@ def _write_csv(path: Path, records: list[QaRecord]) -> None:
                     record.top_k,
                     record.question,
                     record.prompt,
+                    record.answer,
                     "" if record.input_tokens is None else record.input_tokens,
                     "" if record.output_tokens is None else record.output_tokens,
                     "" if record.total_tokens is None else record.total_tokens,
                     f"{record.latency_seconds:.2f}",
+                    record.pinned,
                 ]
             )
 
@@ -156,10 +183,12 @@ def _record_from_payload(payload: object) -> QaRecord | None:
             top_k=int(payload.get("top_k", 0)),
             question=str(payload.get("question", "")),
             prompt=str(payload["prompt"]),
+            answer=str(payload.get("answer", "")),
             input_tokens=_optional_int(payload.get("input_tokens")),
             output_tokens=_optional_int(payload.get("output_tokens")),
             total_tokens=_optional_int(payload.get("total_tokens")),
             latency_seconds=float(payload.get("latency_seconds", 0.0)),
+            pinned=bool(payload.get("pinned", False)),
         )
     except (KeyError, TypeError, ValueError):
         return None

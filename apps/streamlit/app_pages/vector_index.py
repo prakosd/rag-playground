@@ -9,8 +9,8 @@ from typing import Any
 import streamlit as st
 from artifact_store.crawl_results import CrawlResultFile
 
-from crawl4md_streamlit.i18n import get_strings
-from crawl4md_streamlit.vector_form_ui import has_index_inputs, render_vector_index_form
+from app_support.i18n import get_strings
+from app_support.vector_index.vector_form_ui import has_index_inputs, render_vector_index_form
 
 
 @dataclass(frozen=True)

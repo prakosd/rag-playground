@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from crawl4md_streamlit.generated_files import (
+from app_support.generated_files import (
     GeneratedFile,
     ReadyDownload,
     build_download_tree,

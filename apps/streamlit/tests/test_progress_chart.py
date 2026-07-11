@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from crawl4md_streamlit.progress_chart import (
+from app_support.progress_chart import (
     PROGRESS_CHART_TIME_UNIT_HOUR,
     PROGRESS_CHART_TIME_UNIT_MINUTE,
     PROGRESS_CHART_TIME_UNIT_SECOND,

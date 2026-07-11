@@ -6,8 +6,8 @@ from typing import Any
 
 import streamlit as st
 
-from crawl4md_streamlit.controls import crawl_action_buttons
-from crawl4md_streamlit.form_defaults import (
+from app_support.controls import crawl_action_buttons
+from app_support.crawl.form_defaults import (
     DEFAULT_DELAY,
     DEFAULT_EXCLUDE_PATHS,
     DEFAULT_EXCLUDE_TAGS,
@@ -24,7 +24,7 @@ from crawl4md_streamlit.form_defaults import (
     DEFAULT_WAIT_FOR,
     OUTPUT_EXTENSION_OPTIONS,
 )
-from crawl4md_streamlit.i18n import Strings
+from app_support.i18n import Strings
 
 # The Website URLs field is keyed so the crawl page can move focus to it on entry.
 URLS_WIDGET_KEY = "crawl_urls"

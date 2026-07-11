@@ -24,8 +24,8 @@ from vector_indexer.messages import (
 )
 from vector_indexer.models import IndexingResult
 
-from crawl4md_streamlit import session_manager
-from crawl4md_streamlit.vector_index_jobs import (
+from app_support import session_manager
+from app_support.vector_index.vector_index_jobs import (
     VectorIndexJob,
     VectorJobSnapshot,
     active_vector_registry_session_ids,
@@ -308,7 +308,7 @@ def _alive_vector_snapshot(session_id: str = "sess_alive") -> tuple[VectorJobSna
 def test_get_active_vector_job_snapshot_returns_none_when_no_entry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY", {})
+    monkeypatch.setattr("app_support.vector_index.vector_index_jobs._VECTOR_JOB_REGISTRY", {})
     assert get_active_vector_job_snapshot("no_such_session") is None
 
 
@@ -318,7 +318,7 @@ def test_get_active_vector_job_snapshot_returns_snapshot_for_alive_thread(
     snap, gate = _alive_vector_snapshot()
     try:
         monkeypatch.setattr(
-            "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+            "app_support.vector_index.vector_index_jobs._VECTOR_JOB_REGISTRY",
             {snap.job.session_id: snap},
         )
         assert get_active_vector_job_snapshot(snap.job.session_id) is snap
@@ -337,7 +337,7 @@ def test_get_active_vector_job_snapshot_returns_none_for_dead_thread(
         job_state="running",
     )
     monkeypatch.setattr(
-        "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+        "app_support.vector_index.vector_index_jobs._VECTOR_JOB_REGISTRY",
         {dead_job.session_id: snap},
     )
     assert get_active_vector_job_snapshot(dead_job.session_id) is None
@@ -355,7 +355,7 @@ def test_active_vector_registry_session_ids_returns_only_alive(
     )
     try:
         monkeypatch.setattr(
-            "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+            "app_support.vector_index.vector_index_jobs._VECTOR_JOB_REGISTRY",
             {"sess_a": snap_alive, "sess_d": snap_dead},
         )
         ids = active_vector_registry_session_ids()
@@ -371,7 +371,7 @@ def test_request_cancel_updates_registry_state(
     snap, gate = _alive_vector_snapshot("sess_cancel")
     try:
         monkeypatch.setattr(
-            "crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY",
+            "app_support.vector_index.vector_index_jobs._VECTOR_JOB_REGISTRY",
             {"sess_cancel": snap},
         )
         request_cancel(snap.job)
@@ -386,7 +386,7 @@ def test_start_vector_index_job_registers_snapshot_and_tracks_progress(
 ) -> None:
     """The job must register a snapshot that the registry exposes while alive."""
     registry: dict[str, VectorJobSnapshot] = {}
-    monkeypatch.setattr("crawl4md_streamlit.vector_index_jobs._VECTOR_JOB_REGISTRY", registry)
+    monkeypatch.setattr("app_support.vector_index.vector_index_jobs._VECTOR_JOB_REGISTRY", registry)
     session_id = _make_session(tmp_path)
 
     job = start_vector_index_job(

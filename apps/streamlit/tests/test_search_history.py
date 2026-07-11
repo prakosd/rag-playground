@@ -5,12 +5,13 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from crawl4md_streamlit.search_history import (
+from app_support.semantic_search.search_history import (
     SEARCH_HISTORY_DIRNAME,
     SearchRecord,
     append_search_record,
     load_search_history,
     search_history_dir,
+    set_search_pinned,
 )
 
 
@@ -21,12 +22,7 @@ def _record(query: str, **overrides: object) -> SearchRecord:
         "index_run": "2026-07-01_09-00-00",
         "embedding_model": "amazon.titan-embed-text-v2:0",
         "query": query,
-        "search_type": "mmr",
         "top_k": 5,
-        "fetch_k": 20,
-        "mmr_lambda": 0.5,
-        "score_threshold": 0.25,
-        "source_filter": ("a.md", "b.md"),
         "result_count": 3,
         "top_score": 0.8123,
     }
@@ -59,7 +55,6 @@ def test_record_round_trips_all_fields(tmp_path: Path) -> None:
     (loaded,) = load_search_history(tmp_path)
 
     assert loaded == original
-    assert loaded.source_filter == ("a.md", "b.md")
     assert loaded.top_score == 0.8123
 
 
@@ -95,6 +90,27 @@ def test_csv_companion_has_header_and_rows(tmp_path: Path) -> None:
     rows = list(csv.DictReader(csv_path.read_text(encoding="utf-8").splitlines()))
 
     assert [row["query"] for row in rows] == ["alpha", "beta"]
-    assert rows[0]["source_filter"] == "a.md, b.md"
     assert rows[0]["top_score"] == "0.8123"
     assert rows[1]["top_score"] == ""
+
+
+def test_pinned_records_sort_first(tmp_path: Path) -> None:
+    append_search_record(tmp_path, _record("a", timestamp_utc="2026-07-01T10:00:00+00:00"))
+    append_search_record(tmp_path, _record("b", timestamp_utc="2026-07-01T10:00:01+00:00"))
+    append_search_record(tmp_path, _record("c", timestamp_utc="2026-07-01T10:00:02+00:00"))
+
+    set_search_pinned(tmp_path, "2026-07-01T10:00:00+00:00", True)
+
+    history = load_search_history(tmp_path)
+    assert history[0].query == "a"
+    assert history[0].pinned is True
+    assert [record.query for record in history[1:]] == ["c", "b"]
+
+
+def test_unpin_restores_newest_first_order(tmp_path: Path) -> None:
+    append_search_record(tmp_path, _record("a", timestamp_utc="2026-07-01T10:00:00+00:00"))
+    append_search_record(tmp_path, _record("b", timestamp_utc="2026-07-01T10:00:01+00:00"))
+    set_search_pinned(tmp_path, "2026-07-01T10:00:00+00:00", True)
+    set_search_pinned(tmp_path, "2026-07-01T10:00:00+00:00", False)
+
+    assert [record.query for record in load_search_history(tmp_path)] == ["b", "a"]

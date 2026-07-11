@@ -19,9 +19,9 @@ from artifact_store import LibraryMessage
 from rag_engine import ChatTurn, RetrievedChunk
 from vector_indexer import IndexManifest
 
-from crawl4md_streamlit.generated_files import format_local_datetime
-from crawl4md_streamlit.i18n import Strings, localize_message
-from crawl4md_streamlit.index_catalog import IndexRef
+from app_support.generated_files import format_local_datetime
+from app_support.i18n import Strings, localize_message
+from app_support.rag_shared.index_catalog import IndexRef
 
 # Result-card tab identifiers. Streamlit always activates the first tab, so the
 # configured default tab is rendered first to make it the initial selection.

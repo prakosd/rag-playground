@@ -12,8 +12,8 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from vector_indexer import DEFAULT_LOCAL_MODEL, EMBEDDING_MODEL_OPTIONS
 
-from crawl4md_streamlit.pages import APP_PAGE_SPECS, DEFAULT_PAGE_ID
-from crawl4md_streamlit.support import (
+from app_support.pages import APP_PAGE_SPECS, DEFAULT_PAGE_ID
+from app_support.support import (
     CrawlJob,
     JobSnapshot,
     SessionRecord,
@@ -208,7 +208,7 @@ def test_streamlit_preview_keeps_long_lines_unwrapped(
 def test_vector_index_page_model_change_and_no_input_start_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from crawl4md_streamlit.i18n import get_strings
+    from app_support.i18n import get_strings
 
     selected_model = next(
         model for model in EMBEDDING_MODEL_OPTIONS if model != DEFAULT_LOCAL_MODEL
@@ -219,8 +219,8 @@ def test_vector_index_page_model_change_and_no_input_start_warning(
         from importlib import import_module
 
         streamlit_module = import_module("streamlit")
-        i18n_module = import_module("crawl4md_streamlit.i18n")
-        vector_form_module = import_module("crawl4md_streamlit.vector_form_ui")
+        i18n_module = import_module("app_support.i18n")
+        vector_form_module = import_module("app_support.vector_index.vector_form_ui")
 
         strings = i18n_module.get_strings("EN")
         values = vector_form_module.render_vector_index_form(
@@ -379,7 +379,7 @@ def test_refresh_reattaches_running_crawl_from_registry(
                 "streamlit.components.v2.component",
                 partial(_storage_component_factory, initial_records=initial_records),
             ),
-            patch("crawl4md_streamlit.crawl_jobs._JOB_REGISTRY", fake_registry),
+            patch("app_support.crawl.crawl_jobs._JOB_REGISTRY", fake_registry),
         ):
             app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
             app.run(timeout=10)
@@ -481,7 +481,7 @@ def test_starting_new_crawl_resets_progress_toast_counters(
                 "streamlit.components.v2.component",
                 partial(_storage_component_factory, initial_records=initial_records),
             ),
-            patch("crawl4md_streamlit.support.start_crawl_job", fake_start_crawl_job),
+            patch("app_support.support.start_crawl_job", fake_start_crawl_job),
         ):
             app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
             app.run(timeout=10)

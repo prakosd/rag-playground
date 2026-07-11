@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crawl4md_streamlit.qa_history import (
+from app_support.qa_history import (
     QA_HISTORY_DIRNAME,
     QaRecord,
     append_qa_record,
     load_qa_history,
+    set_qa_pinned,
 )
 
 
@@ -21,6 +22,7 @@ def _record(**overrides: object) -> QaRecord:
         "top_k": 5,
         "question": "What is X?",
         "prompt": "You are a retrieval-augmented AI assistant. …",
+        "answer": "X is the answer.",
         "input_tokens": 10,
         "output_tokens": 5,
         "total_tokens": 15,
@@ -48,6 +50,27 @@ def test_optional_tokens_round_trip_as_none(tmp_path: Path) -> None:
     assert record.input_tokens is None
     assert record.total_tokens is None
     assert record.latency_seconds == 1.23
+
+
+def test_answer_round_trips(tmp_path: Path) -> None:
+    append_qa_record(tmp_path, _record(answer="Because it is grounded."))
+
+    record = load_qa_history(tmp_path)[0]
+
+    assert record.answer == "Because it is grounded."
+
+
+def test_pinned_records_sort_first(tmp_path: Path) -> None:
+    append_qa_record(tmp_path, _record(question="a", timestamp_utc="2026-07-04T10:00:00+00:00"))
+    append_qa_record(tmp_path, _record(question="b", timestamp_utc="2026-07-04T10:00:01+00:00"))
+    append_qa_record(tmp_path, _record(question="c", timestamp_utc="2026-07-04T10:00:02+00:00"))
+
+    set_qa_pinned(tmp_path, "2026-07-04T10:00:00+00:00", True)
+
+    history = load_qa_history(tmp_path)
+    assert history[0].question == "a"
+    assert history[0].pinned is True
+    assert [record.question for record in history[1:]] == ["c", "b"]
 
 
 def test_load_skips_malformed_lines(tmp_path: Path) -> None:

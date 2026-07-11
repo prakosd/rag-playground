@@ -92,6 +92,9 @@ STRINGS_EN: Strings = {
     ),
     "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
     "RAG_LLM_TAG_CLOUD": "☁️‣🔑",
+    "RAG_LLM_SIZE_SMALL": "Small",
+    "RAG_LLM_SIZE_MEDIUM": "Medium",
+    "RAG_LLM_SIZE_LARGE": "Large",
     "RAG_LLM_INDICATOR_OFFLINE": (
         "Runs offline and repeats the question instead of generating an answer. Use it to "
         "try the workflow without credentials."
@@ -131,43 +134,6 @@ STRINGS_EN: Strings = {
         "How many matching chunks to show, best score first. Fewer (3-5) keeps reading "
         "quick and focused; more (10+) widens coverage but adds more to scan. Start around 5."
     ),
-    "SEARCH_OPTIONS_EXPANDER": "Search options",
-    "SEARCH_MODE_LABEL": "Search mode",
-    "SEARCH_MODE_SIMILARITY": "Closest",
-    "SEARCH_MODE_MMR": "Diverse",
-    "SEARCH_MODE_HELP": (
-        "How matches are picked. **Closest** returns the chunks most similar to your "
-        "query — the safe default when you want the best direct answers. **Diverse** "
-        "casts a wider net, then spreads the picks so you see different angles instead "
-        "of near-duplicates — better for broad or exploratory questions. The Diversity "
-        "and Candidate pool controls apply only in Diverse mode."
-    ),
-    "SEARCH_MIN_SCORE_LABEL": "Minimum similarity",
-    "SEARCH_MIN_SCORE_HELP": (
-        "Hides any match scoring below this similarity. **0%** keeps everything; raise it "
-        "to filter out weak, loosely-related chunks. Try **50-70%** if results look noisy "
-        "— but if too few come back, lower it again."
-    ),
-    "SEARCH_MMR_LAMBDA_LABEL": "Diversity",
-    "SEARCH_MMR_LAMBDA_HELP": (
-        "Only used in **Diverse** mode. Balances relevance against variety. **1.0** sticks "
-        "to the most relevant chunks (least variety); **0.0** maximises variety (can drift "
-        "off-topic). Around **0.5** is a balanced start — lower it if results repeat, raise "
-        "it if they wander."
-    ),
-    "SEARCH_FETCH_K_LABEL": "Candidate pool",
-    "SEARCH_FETCH_K_HELP": (
-        "Only used in **Diverse** mode. How many top matches to gather before trimming down "
-        "to your Top results. A larger pool gives more variety to choose from but runs a "
-        "little slower; a smaller pool is faster with less variety. A good range is roughly "
-        "5-10x your Top results (e.g. 20-40)."
-    ),
-    "SEARCH_SOURCE_FILTER_LABEL": "Limit to files",
-    "SEARCH_SOURCE_FILTER_HELP": (
-        "Limits the search to specific files. Leave empty to search the whole index, or pick "
-        "one or more files to focus only on those — handy when you know where the answer lives."
-    ),
-    "SEARCH_SOURCE_FILTER_PLACEHOLDER": "All files",
     "SEARCH_RESULT_HEADER": "#{rank} · {source}",
     "SEARCH_RESULT_SIMILARITY": "Similarity",
     "SEARCH_RESULT_TAB_PREVIEW": "Preview",
@@ -179,18 +145,14 @@ STRINGS_EN: Strings = {
     "SEARCH_HISTORY_EMPTY": "No searches yet — run a search to build your history.",
     "SEARCH_HISTORY_RESULT_COUNT": "{n} results",
     "SEARCH_HISTORY_REPLAY_HELP": "Search this query again",
+    "SEARCH_HISTORY_PIN_HELP": "Pin to top",
+    "SEARCH_HISTORY_UNPIN_HELP": "Unpin",
     "SEARCH_HISTORY_INDEX_GONE": "That vector database no longer exists — pick another index.",
-    "SEARCH_HISTORY_OPT_TOP": "top {n}",
-    "SEARCH_HISTORY_OPT_MIN": "min {n}%",
-    "SEARCH_HISTORY_OPT_DIVERSITY": "diversity {value}",
-    "SEARCH_HISTORY_OPT_POOL": "pool {n}",
-    "SEARCH_HISTORY_OPT_SOURCES": "{n} file(s)",
     "SEARCH_HISTORY_LABEL_QUERY": "Question",
     "SEARCH_HISTORY_LABEL_TIME": "Searched",
     "SEARCH_HISTORY_LABEL_RESULTS": "Results",
     "SEARCH_HISTORY_LABEL_INDEX_NAME": "Index name",
     "SEARCH_HISTORY_LABEL_INDEX_DATE": "Index date time",
-    "SEARCH_HISTORY_LABEL_OPTIONS": "Options",
     "SEARCH_HISTORY_LABEL_DETAILS": "Details",
     "QA_SECTION_HEADER": ":material/quiz: Ask & generate",
     "QA_SECTION_CAPTION": (
@@ -227,6 +189,7 @@ STRINGS_EN: Strings = {
     "QA_SEND_HELP": "Send the prompt to the selected language model and stream the answer.",
     "QA_MAXIMIZE_HELP": "Maximize the prompt editor",
     "QA_MAXIMIZE_TITLE": "Edit prompt",
+    "QA_MAXIMIZE_APPLY": "Apply",
     "QA_NO_PROMPT_HINT": "Generate a prompt first, then send it.",
     "QA_ANSWER_HEADER": ":material/smart_toy: Answer",
     "QA_ANSWER_STATS": (
@@ -243,10 +206,13 @@ STRINGS_EN: Strings = {
     "QA_HISTORY_EXPANDER": ":material/history: Prompt history",
     "QA_HISTORY_EMPTY": "No prompts yet — send one to build your history.",
     "QA_HISTORY_REPLAY_HELP": "Load this prompt back into the form",
+    "QA_HISTORY_PIN_HELP": "Pin to top",
+    "QA_HISTORY_UNPIN_HELP": "Unpin",
     "QA_HISTORY_LABEL_QUESTION": "Question",
     "QA_HISTORY_LABEL_TIME": "Time",
     "QA_HISTORY_DETAILS_EXPANDER": "Details",
     "QA_HISTORY_PROMPT_EXPANDER": "Prompt",
+    "QA_HISTORY_ANSWER_EXPANDER": "Answer",
     "QA_HISTORY_META_INDEX_NAME": "Index name",
     "QA_HISTORY_META_INDEX_DATE": "Index date time",
     "QA_HISTORY_META_MODEL": "Model",

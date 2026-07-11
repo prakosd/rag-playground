@@ -5,8 +5,8 @@ from pathlib import Path
 
 from pytest import MonkeyPatch
 
-from crawl4md_streamlit.i18n import STRINGS_EN, STRINGS_ID
-from crawl4md_streamlit.pages import (
+from app_support.i18n import STRINGS_EN, STRINGS_ID
+from app_support.pages import (
     APP_PAGE_SPECS,
     DEFAULT_PAGE_ID,
     default_page_spec,
@@ -24,7 +24,7 @@ def test_app_page_specs_define_five_ordered_steps() -> None:
         "crawl",
         "vector_index",
         "semantic_search",
-        "rag_qa",
+        "basic_rag_qa",
         "conversational_rag",
     ]
     assert default_page_spec().page_id == DEFAULT_PAGE_ID == "crawl"

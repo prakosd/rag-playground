@@ -13,7 +13,7 @@ model) — see [src/rag_engine/README.md](../src/rag_engine/README.md).
 ## Environment configuration & secrets (Streamlit app)
 
 The Streamlit app reads deployment-tunable, **non-secret** defaults from a typed
-settings layer (`crawl4md_streamlit.settings`, built on `pydantic-settings`) so an
+settings layer (`app_support.settings`, built on `pydantic-settings`) so an
 operator can change them per environment **without editing code or redeploying** —
 update the value and restart. Values load in increasing precedence from:
 
@@ -56,19 +56,15 @@ crawl/index/RAG config models.
 | `VECTOR_EMBEDDING_MODELS` | `all-MiniLM-L6-v2,amazon.titan-embed-text-v2:0,text-embedding-3-small` | Embedding models offered in the dropdown, in display order |
 | `VECTOR_DEFAULT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model pre-selected in the dropdown |
 | `RAG_TOP_K` | `4` | Chunks retrieved as context (Step 5 conversational) |
-| `RAG_QA_TOP_RESULTS` | `5` | Top matches retrieved as knowledge on Step 4 (Simple RAG Q&A) |
-| `RAG_QA_TONES` | `Neutral,Formal,Friendly,…` | Tones offered on the Step 4 Tone selector (comma-separated, in order) |
-| `RAG_QA_DEFAULT_TONE` | `Neutral` | Tone pre-selected on the Step 4 selector |
-| `RAG_QA_PROMPT_TEMPLATE_FILE` | `apps/streamlit/config/rag_qa_prompt.txt` | Path (relative to the repo root) to the Step 4 prompt template file; edit that file to reword the generated prompt without a code change (a missing/empty file, or one missing a `{question}`/`{start}`/`{knowledge}`/`{end}`/`{tone}` field, falls back to the built-in default) |
-| `RAG_QA_SESSION_TOKEN_QUOTA` | `100000` | Per-session token budget shown on the Step 4 Token count panel (drives Quota and % Usage); display-only — it never blocks sending |
-| `RAG_LLM_MODELS` | `apac.amazon.nova-micro-v1:0,…,qwen.qwen3-32b-v1:0,…,gpt-4o` | Language models offered on the RAG pages (comma-separated `rag_engine` catalog ids, in order; the offline echo model is the silent fallback and is intentionally not listed) |
+| `BASIC_RAG_QA_TOP_RESULTS` | `5` | Top matches retrieved as knowledge on Step 4 (Basic RAG Q&A) |
+| `BASIC_RAG_QA_TONES` | `Neutral,Formal,Friendly,…` | Tones offered on the Step 4 Tone selector (comma-separated, in order) |
+| `BASIC_RAG_QA_DEFAULT_TONE` | `Neutral` | Tone pre-selected on the Step 4 selector |
+| `BASIC_RAG_QA_PROMPT_TEMPLATE_FILE` | `apps/streamlit/config/basic_rag_qa_prompt.txt` | Path (relative to the repo root) to the Step 4 prompt template file; edit that file to reword the generated prompt without a code change (a missing/empty file, or one missing a `{question}`/`{start}`/`{knowledge}`/`{end}`/`{tone}` field, falls back to the built-in default) |
+| `BASIC_RAG_QA_SESSION_TOKEN_QUOTA` | `100000` | Per-session token budget shown on the Step 4 Token count panel (drives Quota and % Usage); display-only — it never blocks sending |
+| `RAG_LLM_MODELS` | `apac.amazon.nova-micro-v1:0,…,qwen.qwen3-32b-v1:0,…,gpt-4o` | Language models offered on the RAG pages (comma-separated `rag_engine` catalog ids, in order; the picker shows each model's size — small/medium — and large models are omitted here by default; the offline echo model is the silent fallback and is intentionally not listed) |
 | `RAG_DEFAULT_LLM_MODEL` | `apac.amazon.nova-lite-v1:0` | Language model pre-selected on the RAG pages |
 | `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |
 | `SEMANTIC_SEARCH_DEFAULT_TAB` | `raw` | Default open tab on each result card (`raw` or `preview`) |
-| `SEMANTIC_SEARCH_DEFAULT_MODE` | `similarity` | Default search mode (`similarity` or `mmr`) |
-| `SEMANTIC_SEARCH_MIN_SCORE_PERCENT` | `0` | Default minimum-similarity filter (percent; 0 keeps all) |
-| `SEMANTIC_SEARCH_FETCH_K` | `20` | Default MMR candidate-pool size |
-| `SEMANTIC_SEARCH_MMR_LAMBDA` | `0.5` | Default MMR diversity (0 = variety, 1 = relevance) |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |

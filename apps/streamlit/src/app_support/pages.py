@@ -8,7 +8,7 @@ from dataclasses import dataclass
 _PAGE_ID_CRAWL = "crawl"
 _PAGE_ID_VECTOR_INDEX = "vector_index"
 _PAGE_ID_SEMANTIC_SEARCH = "semantic_search"
-_PAGE_ID_RAG_QA = "rag_qa"
+_PAGE_ID_BASIC_RAG_QA = "basic_rag_qa"
 _PAGE_ID_CONVERSATIONAL_RAG = "conversational_rag"
 
 DEFAULT_PAGE_ID = _PAGE_ID_CRAWL
@@ -59,14 +59,14 @@ APP_PAGE_SPECS: tuple[AppPageSpec, ...] = (
         placeholder_key="PLACEHOLDER_SEMANTIC_SEARCH",
     ),
     AppPageSpec(
-        page_id=_PAGE_ID_RAG_QA,
-        nav_label_key="NAV_RAG_QA",
-        title_key="PAGE_RAG_QA_TITLE",
-        subtitle_key="PAGE_RAG_QA_SUBTITLE",
+        page_id=_PAGE_ID_BASIC_RAG_QA,
+        nav_label_key="NAV_BASIC_RAG_QA",
+        title_key="PAGE_BASIC_RAG_QA_TITLE",
+        subtitle_key="PAGE_BASIC_RAG_QA_SUBTITLE",
         icon=":material/question_answer:",
-        url_path="rag-qa",
-        module_name="app_pages.rag_qa",
-        placeholder_key="PLACEHOLDER_RAG_QA",
+        url_path="basic-rag-qa",
+        module_name="app_pages.basic_rag_qa",
+        placeholder_key="PLACEHOLDER_BASIC_RAG_QA",
     ),
     AppPageSpec(
         page_id=_PAGE_ID_CONVERSATIONAL_RAG,

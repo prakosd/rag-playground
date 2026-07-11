@@ -31,8 +31,8 @@ from vector_indexer.messages import (
     CODE_SSL_CERTIFICATE,
 )
 
-from crawl4md_streamlit.log_context import set_log_session_id
-from crawl4md_streamlit.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
+from app_support.log_context import set_log_session_id
+from app_support.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
 
 _EVENT_STARTED = "started"
 _EVENT_PROGRESS = "progress"

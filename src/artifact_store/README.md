@@ -75,6 +75,6 @@ files = list_crawl_result_files("outputs/streamlit_sessions/session_x")
 
 ## Boundary
 
-A test asserts `artifact_store` imports nothing from `streamlit`, `crawl4md_streamlit`,
+A test asserts `artifact_store` imports nothing from `streamlit`, `app_support`,
 `crawl4md`, `crawl4ai`, or `pymupdf`. Keep it that way: this package must remain a
 dependency-free foundation that any future library or UI can reuse.

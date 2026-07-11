@@ -50,7 +50,7 @@ python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app
   Files & folders panel. Never log secrets, PII, or prompt/query text. See
   [logging.instructions.md](../.github/instructions/logging.instructions.md).
 - The Streamlit app's deployment-tunable, non-secret config lives in
-  `crawl4md_streamlit.settings` (`pydantic-settings`), loaded from `.env.defaults`
+  `app_support.settings` (`pydantic-settings`), loaded from `.env.defaults`
   → `.env` → environment; secrets (`AWS_*`, `OPENAI_API_KEY`) stay environment-only.
   See [CONFIGURATION.md](CONFIGURATION.md#environment-configuration--secrets-streamlit-app).
 - Lint and format with **Ruff** (configured in `pyproject.toml`); the repo does not

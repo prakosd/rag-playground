@@ -34,6 +34,11 @@ def test_lookup_ignores_surrounding_whitespace() -> None:
     assert get_chat_model_info(f"  {ECHO_MODEL}  ") is not None
 
 
+def test_every_model_has_a_valid_size() -> None:
+    for info in CHAT_MODEL_OPTIONS:
+        assert info.size in {"small", "medium", "large"}
+
+
 def test_broken_apac_models_removed_and_replacements_present() -> None:
     ids = {info.model_id for info in CHAT_MODEL_OPTIONS}
     # APAC-unavailable (invalid identifier) / legacy models were removed.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from crawl4md_streamlit.form_defaults import (
+from app_support.crawl.form_defaults import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_MAX_CONCURRENT,
     DEFAULT_OUTPUT_EXTENSION,
@@ -8,7 +8,7 @@ from crawl4md_streamlit.form_defaults import (
     OUTPUT_EXTENSION_OPTIONS,
     default_form_values,
 )
-from crawl4md_streamlit.support import build_configs
+from app_support.support import build_configs
 
 
 def test_default_form_values_include_required_build_config_keys() -> None:

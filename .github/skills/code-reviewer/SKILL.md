@@ -57,7 +57,7 @@ Walk through every item. Flag violations with file + line.
 - Flag OWASP-style issues (injection, unvalidated input at a trust boundary). **Security findings are always Must-fix blockers.**
 
 ### 6. Library layering & boundaries
-- **Layer imports (boundary tests enforce):** `artifact_store` is pure stdlib — no `streamlit`, `crawl4md_streamlit`, `crawl4md`, `crawl4ai`, or `pymupdf`. `crawl4md`, `vector_indexer`, and `rag_engine` must not import `streamlit` / `crawl4md_streamlit`; `vector_indexer` / `rag_engine` must not import `crawl4md`; each depends only on lower layers (+ `pydantic`), and `rag_engine` may depend on `vector_indexer`.
+- **Layer imports (boundary tests enforce):** `artifact_store` is pure stdlib — no `streamlit`, `app_support`, `crawl4md`, `crawl4ai`, or `pymupdf`. `crawl4md`, `vector_indexer`, and `rag_engine` must not import `streamlit` / `app_support`; `vector_indexer` / `rag_engine` must not import `crawl4md`; each depends only on lower layers (+ `pydantic`), and `rag_engine` may depend on `vector_indexer`.
 - **Lazy heavy imports:** `vector_indexer` / `rag_engine` must never import `langchain*`, `chromadb`, or `langchain_text_splitters` at module top level — import them inside the function that needs them (a subprocess boundary test asserts this). Flag eager heavy imports.
 - **No app concerns in libraries:** browser storage, UI state, download panels, or app-specific output roots don't belong in a library. Generic hooks (`output_base`, `session_id`, `progress_callback`, `should_cancel`) are fine — other adapters reuse them. UI packages adapt library APIs, not reimplement crawl / extract / write / sort / index / retrieve behavior.
 - **Keep-in-sync constants:** the page-source marker strings are deliberately duplicated in `crawl4md.writer` and `vector_indexer.page_source` (no cross-import). If one changes, the other must change too.
@@ -82,9 +82,9 @@ Walk through every item. Flag violations with file + line.
 ### 10. Streamlit (`apps/streamlit/**`)
 See `.github/instructions/streamlit.instructions.md` for the full rules; flag the common violations:
 - **Thin pages:** page modules expose `render_page()` and render content only — no crawl / index / RAG business logic. Shell state arrives via a context object; a page must not import `streamlit_app.py`.
-- **Pure helpers:** `crawl4md_streamlit.support` (and other pure modules) must not import `streamlit`, so they stay unit-testable.
-- **Session keys** are prefixed by page id (`vector_index_*`, `semantic_search_*`, `rag_qa_*`, `conversational_rag_*`).
-- **Config vs secrets:** deployment-tunable, non-secret values live in `crawl4md_streamlit.settings` (pydantic-settings) — flag hardcoded limits/defaults in app code; secrets stay env-only.
+- **Pure helpers:** `app_support.support` (and other pure modules) must not import `streamlit`, so they stay unit-testable.
+- **Session keys** are prefixed by page id (`vector_index_*`, `semantic_search_*`, `basic_rag_qa_*`, `conversational_rag_*`).
+- **Config vs secrets:** deployment-tunable, non-secret values live in `app_support.settings` (pydantic-settings) — flag hardcoded limits/defaults in app code; secrets stay env-only.
 - **i18n:** new user-facing text goes through `get_strings()` with both `i18n/en.py` and `i18n/id.py` entries — flag hardcoded UI strings; localize `LibraryMessage` by code via `localize_message`.
 - **Caching:** `st.cache_data` for data vs `st.cache_resource` for connections/models; set `ttl` on remote data.
 - **Tests** follow the Streamlit Tests policy (no asserting static UI/layout/styling — test pure logic).

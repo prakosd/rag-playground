@@ -71,7 +71,8 @@ warning, so the workflow always produces output. Credentials come **only** from
 environment variables (`AWS_*`, `OPENAI_API_KEY`).
 
 `CHAT_MODEL_OPTIONS` / `get_chat_model_info` expose the catalog (Bedrock, OpenAI,
-echo) for a UI to render a model picker without constructing anything.
+echo — each with a `size` of small/medium/large and an offline/cloud `kind`) for a
+UI to render a model picker without constructing anything.
 
 ### Retrieval — reopen the exact index
 
@@ -125,7 +126,7 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 ## Constraints
 
 - **No UI / crawler imports.** `rag_engine` must not import `streamlit`,
-  `crawl4md_streamlit`, or `crawl4md`. It may depend on `vector_indexer`,
+  `app_support`, or `crawl4md`. It may depend on `vector_indexer`,
   `artifact_store`, and `pydantic`. A boundary test enforces this.
 - **Lazy heavy imports.** `langchain` (umbrella), `langchain_aws`,
   `langchain_openai`, and `langchain_chroma` are imported inside the functions

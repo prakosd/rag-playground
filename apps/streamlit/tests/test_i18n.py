@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from crawl4md_streamlit.i18n import (
+from app_support.i18n import (
     CATALOG,
     STRINGS_EN,
     STRINGS_ID,

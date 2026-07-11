@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from rag_engine import CHAT_MODEL_OPTIONS, ECHO_MODEL
 
-from crawl4md_streamlit.i18n import STRINGS_EN
-from crawl4md_streamlit.llm_form_ui import (
+from app_support.i18n import STRINGS_EN
+from app_support.rag_shared.llm_form_ui import (
     chat_model_info_for,
     chat_model_label,
     chat_model_options,
     resolve_chat_model_choices,
 )
-from crawl4md_streamlit.settings import get_settings
+from app_support.settings import get_settings
 
 
 def test_options_are_env_curated_and_catalogued() -> None:
@@ -45,6 +45,11 @@ def test_label_tags_offline_and_cloud() -> None:
 
 def test_label_unknown_model_returns_id() -> None:
     assert chat_model_label("unknown/model", STRINGS_EN) == "unknown/model"
+
+
+def test_label_includes_model_size() -> None:
+    # gpt-4o-mini is a small model; its size label appears in the picker text.
+    assert STRINGS_EN["RAG_LLM_SIZE_SMALL"] in chat_model_label("gpt-4o-mini", STRINGS_EN)
 
 
 def test_info_for_unknown_returns_open_fallback() -> None:

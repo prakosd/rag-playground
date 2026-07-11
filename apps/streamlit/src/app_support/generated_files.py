@@ -23,7 +23,7 @@ from artifact_store.archives import (
     verify_zip_bytes,
 )
 from artifact_store.naming import (
-    RAG_QA_FOLDER_PREFIX,
+    BASIC_RAG_QA_FOLDER_PREFIX,
     SEARCH_FOLDER_PREFIX,
     VECTOR_FOLDER_PREFIX,
     folder_name,
@@ -38,20 +38,20 @@ from crawl4md.naming import (
     parse_utc_timestamp_slug,
 )
 
-from crawl4md_streamlit.session_manager import ensure_within_root
+from app_support.session_manager import ensure_within_root
 
 _ACTIVITY_LOG_FILE = "activity_log.txt"
 _CRAWL_DIR_PREFIX = CRAWL_FOLDER_PREFIX
 _VECTOR_DIR_PREFIX = VECTOR_FOLDER_PREFIX
 _SEARCH_DIR_PREFIX = SEARCH_FOLDER_PREFIX
-_RAG_QA_DIR_PREFIX = RAG_QA_FOLDER_PREFIX
+_BASIC_RAG_QA_DIR_PREFIX = BASIC_RAG_QA_FOLDER_PREFIX
 # Material icons for download-tree folders, picked by artifact type so a crawl
 # run reads as exploration and a vector index as a database at a glance.
 _FOLDER_ICON_DEFAULT = ":material/folder_open:"
 _FOLDER_ICON_CRAWL = ":material/travel_explore:"
 _FOLDER_ICON_VECTOR = ":material/database:"
 _FOLDER_ICON_SEARCH = ":material/search:"
-_FOLDER_ICON_RAG_QA = ":material/question_answer:"
+_FOLDER_ICON_BASIC_RAG_QA = ":material/question_answer:"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _BYTES_PER_KB = 1024
@@ -540,7 +540,7 @@ def download_folder_icon(folder_name: str) -> str:
     """Return the Material icon for a download-tree folder by its artifact type.
 
     Crawl runs (``crawl_*``), vector indexes (``vector_*``), search history
-    (``search_*``), and prompt history (``rag_qa_*``) get distinct icons so the
+    (``search_*``), and prompt history (``basic_rag_qa_*``) get distinct icons so the
     tree is scannable; every other folder keeps the neutral folder icon.
     """
     if folder_name.startswith(_CRAWL_DIR_PREFIX):
@@ -549,8 +549,8 @@ def download_folder_icon(folder_name: str) -> str:
         return _FOLDER_ICON_VECTOR
     if folder_name.startswith(_SEARCH_DIR_PREFIX):
         return _FOLDER_ICON_SEARCH
-    if folder_name.startswith(_RAG_QA_DIR_PREFIX):
-        return _FOLDER_ICON_RAG_QA
+    if folder_name.startswith(_BASIC_RAG_QA_DIR_PREFIX):
+        return _FOLDER_ICON_BASIC_RAG_QA
     return _FOLDER_ICON_DEFAULT
 
 

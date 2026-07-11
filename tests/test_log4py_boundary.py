@@ -11,7 +11,7 @@ _LOG4PY_SRC = Path(__file__).resolve().parents[1] / "src" / "log4py"
 _FORBIDDEN_IMPORT_PREFIXES = (
     "artifact_store",
     "crawl4md",
-    "crawl4md_streamlit",
+    "app_support",
     "vector_indexer",
     "rag_engine",
     "streamlit",

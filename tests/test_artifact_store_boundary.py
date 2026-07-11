@@ -8,7 +8,7 @@ import artifact_store
 _ARTIFACT_STORE_SRC = Path(__file__).resolve().parents[1] / "src" / "artifact_store"
 _FORBIDDEN_IMPORT_PREFIXES = (
     "streamlit",
-    "crawl4md_streamlit",
+    "app_support",
     "crawl4md",
     "crawl4ai",
     "pymupdf",

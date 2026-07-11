@@ -114,7 +114,7 @@ flowchart TD
 
 - **Step 3 (semantic search)** stops at `RetrievedChunk[]` — ranked snippets with
   scores and sources.
-- **Step 4 (Simple RAG Q&A)** is a two-stage teaching flow: *Generate prompt* runs
+- **Step 4 (Basic RAG Q&A)** is a two-stage teaching flow: *Generate prompt* runs
   `retrieve` + `build_rag_prompt` to assemble an editable, injection-fenced prompt from
   the retrieved knowledge (the prompt template is operator-configurable via a file, with
   a built-in fallback); the editable field has an icon-only full-screen **Maximize**

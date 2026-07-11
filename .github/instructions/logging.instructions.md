@@ -18,7 +18,7 @@ decides output. Follow the Python logging HOWTO conventions.
   _logger = get_logger(__name__)
   ```
   For an app entry script whose `__name__` is `__main__`, pass an explicit name
-  under a configured package (e.g. `get_logger("crawl4md_streamlit.app")`).
+  under a configured package (e.g. `get_logger("app_support.app")`).
 - Use **`%`-style deferred** formatting — never f-strings or `%`/`.format()`
   pre-formatting: `_logger.info("Indexed %d chunks from %s", n, source)`.
 - In an `except` block that handles (does not re-raise) an error, use

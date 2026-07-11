@@ -5,16 +5,16 @@ from pathlib import Path
 import pytest
 from rag_engine.prompts import RAG_PROMPT_TEMPLATE
 
-from crawl4md_streamlit import qa_form_ui
-from crawl4md_streamlit.qa_form_ui import (
+from app_support.basic_rag_qa import basic_rag_qa_form_ui
+from app_support.basic_rag_qa.basic_rag_qa_form_ui import (
     TokenTotals,
     apply_maximized_prompt,
-    resolve_qa_prompt_template,
+    resolve_basic_rag_qa_prompt_template,
     token_totals,
     tone_choices,
     usage_percent,
 )
-from crawl4md_streamlit.qa_history import QaRecord
+from app_support.basic_rag_qa.basic_rag_qa_history import BasicQaRecord
 
 
 def test_tone_choices_defaults_to_neutral() -> None:
@@ -27,7 +27,7 @@ def test_tone_choices_defaults_to_neutral() -> None:
 def test_shipped_prompt_template_file_matches_builtin_default() -> None:
     # The committed template file must reproduce the built-in default so the
     # deployed prompt is unchanged until an operator edits the file.
-    assert resolve_qa_prompt_template() == RAG_PROMPT_TEMPLATE
+    assert resolve_basic_rag_qa_prompt_template() == RAG_PROMPT_TEMPLATE
 
 
 def test_resolve_prompt_template_returns_file_contents(
@@ -35,29 +35,35 @@ def test_resolve_prompt_template_returns_file_contents(
 ) -> None:
     custom = "Custom {question} {start}{knowledge}{end} {tone}"
     (tmp_path / "custom.txt").write_text(custom, encoding="utf-8")
-    monkeypatch.setattr(qa_form_ui, "_REPO_ROOT", tmp_path)
-    monkeypatch.setattr(qa_form_ui._settings, "rag_qa_prompt_template_file", "custom.txt")
+    monkeypatch.setattr(basic_rag_qa_form_ui, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        basic_rag_qa_form_ui._settings, "basic_rag_qa_prompt_template_file", "custom.txt"
+    )
 
-    assert resolve_qa_prompt_template() == custom
+    assert resolve_basic_rag_qa_prompt_template() == custom
 
 
 def test_resolve_prompt_template_falls_back_when_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(qa_form_ui, "_REPO_ROOT", tmp_path)
-    monkeypatch.setattr(qa_form_ui._settings, "rag_qa_prompt_template_file", "nope.txt")
+    monkeypatch.setattr(basic_rag_qa_form_ui, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        basic_rag_qa_form_ui._settings, "basic_rag_qa_prompt_template_file", "nope.txt"
+    )
 
-    assert resolve_qa_prompt_template() == RAG_PROMPT_TEMPLATE
+    assert resolve_basic_rag_qa_prompt_template() == RAG_PROMPT_TEMPLATE
 
 
 def test_resolve_prompt_template_falls_back_when_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "empty.txt").write_text("   \n", encoding="utf-8")
-    monkeypatch.setattr(qa_form_ui, "_REPO_ROOT", tmp_path)
-    monkeypatch.setattr(qa_form_ui._settings, "rag_qa_prompt_template_file", "empty.txt")
+    monkeypatch.setattr(basic_rag_qa_form_ui, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        basic_rag_qa_form_ui._settings, "basic_rag_qa_prompt_template_file", "empty.txt"
+    )
 
-    assert resolve_qa_prompt_template() == RAG_PROMPT_TEMPLATE
+    assert resolve_basic_rag_qa_prompt_template() == RAG_PROMPT_TEMPLATE
 
 
 def test_apply_maximized_prompt_copies_source_to_target() -> None:
@@ -77,8 +83,8 @@ def test_apply_maximized_prompt_is_noop_when_source_missing() -> None:
     assert state == {"dst": "keep"}
 
 
-def _record(**tokens: object) -> QaRecord:
-    return QaRecord(
+def _record(**tokens: object) -> BasicQaRecord:
+    return BasicQaRecord(
         timestamp_utc="t",
         index_folder="f",
         index_run="r",

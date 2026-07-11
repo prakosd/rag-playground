@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from crawl4md_streamlit.settings import get_settings
+from app_support.settings import get_settings
 
 _settings = get_settings()
 

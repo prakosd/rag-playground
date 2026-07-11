@@ -56,5 +56,5 @@ See [docs/BUILDING_ANOTHER_UI.md](../../docs/BUILDING_ANOTHER_UI.md).
 ## Boundary
 
 The core library must stay usable without the UI: it must not import `streamlit`
-or `crawl4md_streamlit`, and must not reference app-specific paths. It depends on
+or `app_support`, and must not reference app-specific paths. It depends on
 `artifact_store` for naming and path safety. Boundary tests enforce this.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from crawl4md_streamlit.controls import crawl_action_buttons
-from crawl4md_streamlit.i18n import STRINGS_EN
+from app_support.controls import crawl_action_buttons
+from app_support.i18n import STRINGS_EN
 
 
 def _actions_for(

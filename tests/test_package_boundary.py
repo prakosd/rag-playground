@@ -12,10 +12,10 @@ import crawl4md
 _CORE_SRC = Path(__file__).resolve().parents[1] / "src" / "crawl4md"
 _STREAMLIT_CONTROL_MODULE = "streamlit_controls"
 _STREAMLIT_SUPPORT_MODULE = "streamlit_support"
-_FORBIDDEN_CORE_IMPORT_PREFIXES = ("streamlit", "crawl4md_streamlit")
+_FORBIDDEN_CORE_IMPORT_PREFIXES = ("streamlit", "app_support")
 _FORBIDDEN_CORE_SOURCE_STRINGS = (
     "apps/streamlit",
-    "crawl4md_streamlit",
+    "app_support",
     "streamlit_sessions",
 )
 

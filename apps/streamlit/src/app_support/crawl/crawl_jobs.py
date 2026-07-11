@@ -20,18 +20,18 @@ from crawl4md.messages import classify_crawl_error
 from crawl4md.writer import FileWriter
 from log4py import get_logger
 
-from crawl4md_streamlit.crawl_runtime import ensure_playwright_browser
-from crawl4md_streamlit.form_defaults import (
+from app_support.crawl.crawl_runtime import ensure_playwright_browser
+from app_support.crawl.form_defaults import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_MAX_CONCURRENT,
 )
-from crawl4md_streamlit.log_context import set_log_session_id
-from crawl4md_streamlit.session_manager import (
+from app_support.log_context import set_log_session_id
+from app_support.session_manager import (
     DEFAULT_SESSIONS_ROOT,
     SESSION_PREFIX,
     prepare_crawl_output_base,
 )
-from crawl4md_streamlit.settings import get_settings
+from app_support.settings import get_settings
 
 _EVENT_CANCEL_REQUESTED = "cancel_requested"
 _EVENT_CANCELLED = "cancelled"

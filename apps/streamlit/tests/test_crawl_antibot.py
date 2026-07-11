@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from crawl4md_streamlit.crawl_jobs import _build_fallback_fetch_function, build_configs
+from app_support.crawl.crawl_jobs import _build_fallback_fetch_function, build_configs
 
 _VALUES: dict[str, object] = {"urls": "https://example.com"}
 
@@ -60,7 +60,7 @@ def test_fallback_fetch_function_calls_scraping_api(monkeypatch: pytest.MonkeyPa
             captured.update(url=url, params=params, headers=headers)
             return _FakeResponse()
 
-    monkeypatch.setattr("crawl4md_streamlit.crawl_jobs.httpx.AsyncClient", _FakeClient)
+    monkeypatch.setattr("app_support.crawl.crawl_jobs.httpx.AsyncClient", _FakeClient)
 
     fetch = _build_fallback_fetch_function()
     assert fetch is not None

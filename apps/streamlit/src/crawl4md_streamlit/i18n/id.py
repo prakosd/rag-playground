@@ -95,6 +95,9 @@ STRINGS_ID: Strings = {
     ),
     "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
     "RAG_LLM_TAG_CLOUD": "☁️‣🔑",
+    "RAG_LLM_SIZE_SMALL": "Kecil",
+    "RAG_LLM_SIZE_MEDIUM": "Sedang",
+    "RAG_LLM_SIZE_LARGE": "Besar",
     "RAG_LLM_INDICATOR_OFFLINE": (
         "Berjalan offline dan mengulang pertanyaan alih-alih membuat jawaban. Gunakan "
         "untuk mencoba alur tanpa kredensial."
@@ -135,44 +138,6 @@ STRINGS_ID: Strings = {
         "(3-5) membuat pembacaan cepat dan fokus; lebih banyak (10+) memperluas cakupan tetapi "
         "menambah yang harus ditinjau. Mulai dari sekitar 5."
     ),
-    "SEARCH_OPTIONS_EXPANDER": "Opsi pencarian",
-    "SEARCH_MODE_LABEL": "Mode pencarian",
-    "SEARCH_MODE_SIMILARITY": "Terdekat",
-    "SEARCH_MODE_MMR": "Beragam",
-    "SEARCH_MODE_HELP": (
-        "Cara hasil dipilih. **Terdekat** mengembalikan chunk yang paling mirip dengan kueri "
-        "Anda — pilihan aman saat Anda ingin jawaban langsung terbaik. **Beragam** menjaring "
-        "lebih luas, lalu menyebar pilihan agar Anda melihat berbagai sudut alih-alih hasil "
-        "yang nyaris sama — lebih baik untuk pertanyaan luas atau eksploratif. Kontrol "
-        "Keberagaman dan Kumpulan kandidat hanya berlaku dalam mode Beragam."
-    ),
-    "SEARCH_MIN_SCORE_LABEL": "Kemiripan minimum",
-    "SEARCH_MIN_SCORE_HELP": (
-        "Menyembunyikan kecocokan yang skornya di bawah kemiripan ini. **0%** menyimpan semua; "
-        "naikkan untuk menyaring chunk yang lemah dan kurang relevan. Coba **50-70%** jika hasil "
-        "terlihat berisik — tetapi jika terlalu sedikit yang muncul, turunkan lagi."
-    ),
-    "SEARCH_MMR_LAMBDA_LABEL": "Keberagaman",
-    "SEARCH_MMR_LAMBDA_HELP": (
-        "Hanya untuk mode **Beragam**. Menyeimbangkan relevansi dengan variasi. **1.0** berpegang "
-        "pada chunk paling relevan (variasi paling sedikit); **0.0** memaksimalkan variasi (bisa "
-        "melenceng dari topik). Sekitar **0.5** awal yang seimbang — turunkan jika hasil berulang, "
-        "naikkan jika melenceng."
-    ),
-    "SEARCH_FETCH_K_LABEL": "Kumpulan kandidat",
-    "SEARCH_FETCH_K_HELP": (
-        "Hanya untuk mode **Beragam**. Berapa banyak kecocokan teratas yang dikumpulkan sebelum "
-        "dipangkas menjadi Hasil teratas Anda. Kumpulan lebih besar memberi lebih banyak variasi "
-        "tetapi sedikit lebih lambat; kumpulan lebih kecil lebih cepat dengan variasi lebih "
-        "sedikit. Rentang yang baik kira-kira 5-10x Hasil teratas Anda (mis. 20-40)."
-    ),
-    "SEARCH_SOURCE_FILTER_LABEL": "Batasi ke berkas",
-    "SEARCH_SOURCE_FILTER_HELP": (
-        "Membatasi pencarian ke berkas tertentu. Kosongkan untuk mencari seluruh indeks, atau "
-        "pilih satu atau beberapa berkas untuk fokus hanya pada itu — berguna saat Anda tahu di "
-        "mana jawabannya berada."
-    ),
-    "SEARCH_SOURCE_FILTER_PLACEHOLDER": "Semua berkas",
     "SEARCH_RESULT_HEADER": "#{rank} · {source}",
     "SEARCH_RESULT_SIMILARITY": "Kemiripan",
     "SEARCH_RESULT_TAB_PREVIEW": "Pratinjau",
@@ -184,18 +149,14 @@ STRINGS_ID: Strings = {
     "SEARCH_HISTORY_EMPTY": "Belum ada pencarian — jalankan pencarian untuk membangun riwayat.",
     "SEARCH_HISTORY_RESULT_COUNT": "{n} hasil",
     "SEARCH_HISTORY_REPLAY_HELP": "Cari kueri ini lagi",
+    "SEARCH_HISTORY_PIN_HELP": "Sematkan ke atas",
+    "SEARCH_HISTORY_UNPIN_HELP": "Lepas sematan",
     "SEARCH_HISTORY_INDEX_GONE": "Vector database tersebut sudah tidak ada — pilih index lain.",
-    "SEARCH_HISTORY_OPT_TOP": "top {n}",
-    "SEARCH_HISTORY_OPT_MIN": "min {n}%",
-    "SEARCH_HISTORY_OPT_DIVERSITY": "keberagaman {value}",
-    "SEARCH_HISTORY_OPT_POOL": "kumpulan {n}",
-    "SEARCH_HISTORY_OPT_SOURCES": "{n} berkas",
     "SEARCH_HISTORY_LABEL_QUERY": "Pertanyaan",
     "SEARCH_HISTORY_LABEL_TIME": "Dicari",
     "SEARCH_HISTORY_LABEL_RESULTS": "Hasil",
     "SEARCH_HISTORY_LABEL_INDEX_NAME": "Nama indeks",
     "SEARCH_HISTORY_LABEL_INDEX_DATE": "Tanggal waktu indeks",
-    "SEARCH_HISTORY_LABEL_OPTIONS": "Opsi",
     "SEARCH_HISTORY_LABEL_DETAILS": "Detail",
     "QA_SECTION_HEADER": ":material/quiz: Tanya & hasilkan",
     "QA_SECTION_CAPTION": (
@@ -234,6 +195,7 @@ STRINGS_ID: Strings = {
     "QA_SEND_HELP": "Kirim prompt ke model bahasa terpilih dan streaming jawabannya.",
     "QA_MAXIMIZE_HELP": "Perbesar editor prompt",
     "QA_MAXIMIZE_TITLE": "Sunting prompt",
+    "QA_MAXIMIZE_APPLY": "Terapkan",
     "QA_NO_PROMPT_HINT": "Hasilkan prompt terlebih dahulu, lalu kirim.",
     "QA_ANSWER_HEADER": ":material/smart_toy: Jawaban",
     "QA_ANSWER_STATS": (
@@ -250,10 +212,13 @@ STRINGS_ID: Strings = {
     "QA_HISTORY_EXPANDER": ":material/history: Riwayat prompt",
     "QA_HISTORY_EMPTY": "Belum ada prompt — kirim satu untuk membangun riwayat Anda.",
     "QA_HISTORY_REPLAY_HELP": "Muat prompt ini kembali ke formulir",
+    "QA_HISTORY_PIN_HELP": "Sematkan ke atas",
+    "QA_HISTORY_UNPIN_HELP": "Lepas sematan",
     "QA_HISTORY_LABEL_QUESTION": "Pertanyaan",
     "QA_HISTORY_LABEL_TIME": "Waktu",
     "QA_HISTORY_DETAILS_EXPANDER": "Detail",
     "QA_HISTORY_PROMPT_EXPANDER": "Prompt",
+    "QA_HISTORY_ANSWER_EXPANDER": "Jawaban",
     "QA_HISTORY_META_INDEX_NAME": "Nama indeks",
     "QA_HISTORY_META_INDEX_DATE": "Tanggal waktu indeks",
     "QA_HISTORY_META_MODEL": "Model",

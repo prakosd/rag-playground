@@ -5,9 +5,9 @@ from __future__ import annotations
 import streamlit as st
 from rag_engine import RagConfig, chat_answer
 
-from crawl4md_streamlit.i18n import get_strings
-from crawl4md_streamlit.llm_form_ui import render_llm_controls
-from crawl4md_streamlit.rag_ui import (
+from app_support.i18n import get_strings
+from app_support.rag_shared.llm_form_ui import render_llm_controls
+from app_support.rag_shared.rag_ui import (
     RagPageContext,
     render_messages,
     render_model_caption,

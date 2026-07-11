@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import streamlit as st
 
-from crawl4md_streamlit.i18n import get_strings
-from crawl4md_streamlit.pages import page_spec_by_id
-from crawl4md_streamlit.support import DEFAULT_SESSION_LANGUAGE
+from app_support.i18n import get_strings
+from app_support.pages import page_spec_by_id
+from app_support.support import DEFAULT_SESSION_LANGUAGE
 
 
 def render_placeholder_page(page_id: str) -> None:

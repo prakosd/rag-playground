@@ -87,7 +87,7 @@ Cloud credentials are read from the environment. Copy
 [`.env.example`](../.env.example) to `.env` (git-ignored) and set `AWS_*` /
 `OPENAI_API_KEY`; the Streamlit app loads the repo-root `.env` automatically on
 startup. Non-secret, deployment-tunable defaults live separately in the committed
-[`.env.defaults`](../.env.defaults) (loaded by `crawl4md_streamlit.settings`) — see
+[`.env.defaults`](../.env.defaults) (loaded by `app_support.settings`) — see
 [CONFIGURATION.md](CONFIGURATION.md#environment-configuration--secrets-streamlit-app).
 In Codespaces/CI, provide credentials as environment secrets/variables instead; on
 Streamlit Community Cloud, paste them into the Secrets console (template:

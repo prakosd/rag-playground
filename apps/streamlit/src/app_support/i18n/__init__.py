@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from crawl4md_streamlit.i18n._types import Strings
-from crawl4md_streamlit.i18n.en import STRINGS_EN
-from crawl4md_streamlit.i18n.id import STRINGS_ID
+from app_support.i18n._types import Strings
+from app_support.i18n.en import STRINGS_EN
+from app_support.i18n.id import STRINGS_ID
 
 __all__ = [
     "CATALOG",

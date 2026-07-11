@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crawl4md_streamlit import crawl_jobs, generated_files, session_manager, support
+from app_support import generated_files, session_manager, support
+from app_support.crawl import crawl_jobs
 
 _EXPECTED_FACADE_EXPORTS = {
     "CrawlJob": crawl_jobs.CrawlJob,

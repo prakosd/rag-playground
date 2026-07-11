@@ -6,10 +6,10 @@ from pathlib import Path
 from rag_engine import RetrievedChunk
 from vector_indexer import IndexManifest
 
-from crawl4md_streamlit.generated_files import format_local_datetime
-from crawl4md_streamlit.i18n import STRINGS_EN
-from crawl4md_streamlit.index_catalog import IndexRef
-from crawl4md_streamlit.rag_ui import (
+from app_support.generated_files import format_local_datetime
+from app_support.i18n import STRINGS_EN
+from app_support.rag_shared.index_catalog import IndexRef
+from app_support.rag_shared.rag_ui import (
     find_index,
     format_score_percent,
     index_metadata_rows,

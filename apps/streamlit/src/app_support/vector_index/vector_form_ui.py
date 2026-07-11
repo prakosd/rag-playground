@@ -19,9 +19,9 @@ from vector_indexer import (
     get_embedding_model_info,
 )
 
-from crawl4md_streamlit.controls import crawl_action_buttons
-from crawl4md_streamlit.i18n import Strings
-from crawl4md_streamlit.settings import get_settings
+from app_support.controls import crawl_action_buttons
+from app_support.i18n import Strings
+from app_support.settings import get_settings
 
 _settings = get_settings()
 

@@ -13,7 +13,7 @@ from unittest.mock import patch
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from crawl4md_streamlit.support import (
+from app_support.support import (
     SessionRecord,
     serialize_session_records,
 )

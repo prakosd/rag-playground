@@ -53,7 +53,7 @@ _READABLE_SESSION_WORD_COUNT = 2
 # EFF large wordlist — Creative Commons Attribution 4.0 International (CC-BY 4.0).
 # Wordlist provided by the Electronic Frontier Foundation (eff.org).
 # Source: https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt
-_EFF_WORDLIST_PACKAGE = "crawl4md_streamlit"
+_EFF_WORDLIST_PACKAGE = "app_support"
 _EFF_WORDLIST_RESOURCE = ("data", "eff_large_wordlist.txt")
 _EFF_WORDLIST_SIZE = 7776
 _LOCK_STALE_SECONDS = 60 * 60

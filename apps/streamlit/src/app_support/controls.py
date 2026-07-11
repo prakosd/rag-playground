@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from crawl4md_streamlit.i18n import Strings
+from app_support.i18n import Strings
 
 _ACTION_START = "start"
 _ACTION_STOP = "stop"

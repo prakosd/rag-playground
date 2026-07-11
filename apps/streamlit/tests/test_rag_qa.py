@@ -9,8 +9,8 @@ from pathlib import Path
 from pytest import MonkeyPatch
 from rag_engine.models import TokenUsage
 
-from crawl4md_streamlit.i18n import STRINGS_EN
-from crawl4md_streamlit.qa_history import QaRecord
+from app_support.i18n import STRINGS_EN
+from app_support.qa_history import QaRecord
 
 _APP_DIR = Path(__file__).resolve().parents[1]
 
@@ -60,6 +60,18 @@ def test_stats_caption_shows_na_without_usage(monkeypatch: MonkeyPatch) -> None:
     assert "Echo" in caption
     assert STRINGS_EN["QA_TOKEN_NA"] in caption
     assert "1.0s" in caption
+
+
+def test_history_stats_caption_uses_record_fields(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+
+    caption = page._history_stats_caption(STRINGS_EN, _record())
+
+    assert "Amazon Nova Lite" in caption
+    assert "120" in caption
+    assert "45" in caption
+    assert "165" in caption
+    assert "2.3s" in caption
 
 
 def test_tokens_value_uses_na_for_missing_counts(monkeypatch: MonkeyPatch) -> None:

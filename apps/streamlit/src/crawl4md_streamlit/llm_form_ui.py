@@ -37,12 +37,20 @@ _CATALOG_MODEL_IDS = tuple(info.model_id for info in CHAT_MODEL_OPTIONS)
 # it is never offered in the picker (it produces no real answer).
 _OFFERED_MODEL_IDS = tuple(mid for mid in _CATALOG_MODEL_IDS if mid != ECHO_MODEL)
 
+# Maps a model's size to its localized picker label key (shown after the label).
+_SIZE_STRING_KEYS = {
+    "small": "RAG_LLM_SIZE_SMALL",
+    "medium": "RAG_LLM_SIZE_MEDIUM",
+    "large": "RAG_LLM_SIZE_LARGE",
+}
+
 # Open fallback used only if a selected model is ever absent from the catalog;
 # the catalog covers every id in ``chat_model_options()``.
 _UNKNOWN_MODEL_INFO = ChatModelInfo(
     model_id="",
     provider="",
     label="",
+    size="medium",
     kind="cloud",
     requires_api_key=True,
 )
@@ -89,12 +97,12 @@ def chat_model_info_for(model_id: str) -> ChatModelInfo:
 
 
 def chat_model_label(model_id: str, strings: Strings) -> str:
-    """Return a selectbox label tagging a model as offline or cloud."""
+    """Return a selectbox label tagging a model with its size and offline/cloud status."""
     info = get_chat_model_info(model_id)
     if info is None:
         return model_id
     tag_key = "RAG_LLM_TAG_OFFLINE" if info.kind == "local" else "RAG_LLM_TAG_CLOUD"
-    return f"{info.label} · {strings[tag_key]}"
+    return f"{info.label} · {strings[_SIZE_STRING_KEYS[info.size]]} · {strings[tag_key]}"
 
 
 def render_llm_controls(

@@ -20,4 +20,4 @@ applyTo: "tests/**, apps/streamlit/tests/**"
 
 **Do test:** pure business/data logic (transforms, filtering, aggregation, validation, formatting), auth/permission logic, integration behavior (API/file/browser-storage/crawl-job) with mocks, error handling for invalid input, critical user flows where a broken UI corrupts output, and an app-startup smoke test.
 
-Prefer extracting testable logic out of `streamlit_app.py` into pure modules (`crawl4md_streamlit.support`, `controls`, etc.) and test those instead of mocking Streamlit calls. When reviewing existing tests, recommend removing ones that only assert static UI, visual layout, or framework behavior.
+Prefer extracting testable logic out of `streamlit_app.py` into pure modules (`app_support.support`, `controls`, etc.) and test those instead of mocking Streamlit calls. When reviewing existing tests, recommend removing ones that only assert static UI, visual layout, or framework behavior.

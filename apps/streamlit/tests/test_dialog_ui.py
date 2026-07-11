@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from crawl4md_streamlit.dialog_ui import confirm_dialog_css
+from app_support.dialog_ui import confirm_dialog_css
 
 
 def test_confirm_dialog_css_scopes_styles_to_given_keys() -> None:

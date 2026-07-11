@@ -8,8 +8,8 @@ from typing import Any
 
 import streamlit as st
 
-from crawl4md_streamlit.form_ui import render_crawl_form
-from crawl4md_streamlit.i18n import get_strings
+from app_support.crawl.form_ui import render_crawl_form
+from app_support.i18n import get_strings
 
 
 @dataclass(frozen=True)

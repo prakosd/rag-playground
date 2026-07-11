@@ -17,7 +17,7 @@ flowchart TD
   Root --> Config["pyproject.toml<br/>.streamlit/config.toml"]
   Root --> App["streamlit_app.py<br/>UI entry point"]
   Root --> AppPages["app_pages/<br/>content pages"]
-  Root --> HelpersRoot["src/crawl4md_streamlit/<br/>helpers"]
+  Root --> HelpersRoot["src/app_support/<br/>helpers"]
   Root --> TestsRoot["tests/<br/>helper tests"]
   App --> AppPages
   App --> HelpersRoot
@@ -29,16 +29,16 @@ flowchart TD
 | --- | --- |
 | `__init__.py` | Installable package marker |
 | `controls.py` | Button definitions and state mapping |
-| `crawl_jobs.py` | Background jobs, config building, progress events |
-| `form_defaults.py` | Default crawl form payload |
-| `form_ui.py` | Crawl settings form renderer |
-| `vector_form_ui.py` | Step 2 vector-index form renderer + pure option/validation helpers |
-| `vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl_jobs.py`) |
-| `index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
-| `llm_form_ui.py` | Steps 4-5 chat-model selector + pure helpers (`.env`-curated `chat_model_choices` / `resolve_chat_model_choices`, label) |
-| `rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (tight section header, index picker, index metadata, collapsible ranked-results panel, sources, messages) |
-| `qa_form_ui.py` | Step 4 pure helpers: `tone_choices` (.env tones + default), `token_totals` + `usage_percent` (session Token count panel: Input / Output / Total / Quota / % Usage), and `apply_maximized_prompt` (Maximize dialog ↔ inline prompt sync; edits autosave on every change and on dismiss) |
-| `qa_history.py` | Step 4 per-session prompt history (`QaRecord`; JSONL + CSV under `rag_qa_history/`) |
+| `crawl/crawl_jobs.py` | Background jobs, config building, progress events |
+| `crawl/form_defaults.py` | Default crawl form payload |
+| `crawl/form_ui.py` | Crawl settings form renderer |
+| `vector_index/vector_form_ui.py` | Step 2 vector-index form renderer + pure option/validation helpers |
+| `vector_index/vector_index_jobs.py` | Step 2 background indexing job (mirrors `crawl/crawl_jobs.py`) |
+| `rag_shared/index_catalog.py` | Pure discovery of queryable Step-2 indexes in a session (Steps 3-5 index picker) |
+| `rag_shared/llm_form_ui.py` | Steps 4-5 chat-model selector + pure helpers (`.env`-curated `chat_model_choices` / `resolve_chat_model_choices`, label) |
+| `rag_shared/rag_ui.py` | Steps 3-5 `RagPageContext` and shared render helpers (tight section header, index picker, index metadata, collapsible ranked-results panel, sources, messages) |
+| `basic_rag_qa/basic_rag_qa_form_ui.py` | Step 4 pure helpers: `tone_choices` (.env tones + default), `token_totals` + `usage_percent` (session Token count panel: Input / Output / Total / Quota / % Usage), and `apply_maximized_prompt` (Maximize dialog → inline prompt sync; **Apply** writes edits back, dismiss discards) |
+| `basic_rag_qa/basic_rag_qa_history.py` | Step 4 per-session prompt history (`BasicQaRecord` incl. `answer` + `pinned`; JSONL + CSV under `basic_rag_qa_history/`; `set_basic_rag_qa_pinned` sorts pinned records first) |
 | `focus.py` | Client-side focus helpers: `focus_widget` (focus a keyed input after a rerun, e.g., after a history replay) and `entered_page` (tracks page navigation) |
 | `generated_files.py` | Output listing, previews, downloads (labels include human-readable file sizes), and per-file deletion |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
@@ -50,11 +50,11 @@ Workflow content modules live in `app_pages/`. Each module exposes `render_page(
 
 ### Why a separate package?
 
-`crawl4md_streamlit` (`src/crawl4md_streamlit/`) is installed as a proper Python package
-(`pip install -e "apps/streamlit"`). This lets the helpers in `support.py`, `crawl_jobs.py`,
-`form_defaults.py`, `generated_files.py`, `session_manager.py`, and `controls.py` be imported and unit-tested
+`app_support` (`src/app_support/`) is installed as a proper Python package
+(`pip install -e "apps/streamlit"`). This lets the helpers in `support.py`, `crawl/crawl_jobs.py`,
+`crawl/form_defaults.py`, `generated_files.py`, `session_manager.py`, and `controls.py` be imported and unit-tested
 independently of Streamlit — no Streamlit runtime needed in tests.
-Streamlit imports are limited to UI modules such as `streamlit_app.py` and `form_ui.py`.
+Streamlit imports are limited to UI modules such as `streamlit_app.py` and `crawl/form_ui.py`.
 
 This package is a reference adapter over the core `crawl4md`, `vector_indexer`, and
 `rag_engine` libraries, not a second crawl/index/RAG engine. It depends on
@@ -92,7 +92,7 @@ Everything the user sees and interacts with. Responsibilities:
   `@st.cache_resource`).
 - Renders the global footer and browser-timed portfolio modal with translated copy.
 
-The current multipage pass uses dedicated modules in `app_pages/` for every workflow step. Step 1 (`app_pages/crawl4md.py`) renders the crawler content area and Step 2 (`app_pages/vector_index.py`) renders the vector-index content area, both through callbacks from the shared shell. Steps 3-5 (`semantic_search.py`, `rag_qa.py`, `conversational_rag.py`) are implemented over the `rag_engine` library: each receives a `RagPageContext` with an index picker, runs synchronously (a spinner), and renders the structured `RagAnswer`/`RetrievalResult`. They reuse the same width, title/subtitle placement, session-control row, language selector placement, footer, and restrained Streamlit-native styling as the crawler page so navigation feels continuous.
+The current multipage pass uses dedicated modules in `app_pages/` for every workflow step. Step 1 (`app_pages/crawl4md.py`) renders the crawler content area and Step 2 (`app_pages/vector_index.py`) renders the vector-index content area, both through callbacks from the shared shell. Steps 3-5 (`semantic_search.py`, `basic_rag_qa.py`, `conversational_rag.py`) are implemented over the `rag_engine` library: each receives a `RagPageContext` with an index picker, runs synchronously (a spinner), and renders the structured `RagAnswer`/`RetrievalResult`. They reuse the same width, title/subtitle placement, session-control row, language selector placement, footer, and restrained Streamlit-native styling as the crawler page so navigation feels continuous.
 
 ### Toast Emission Model
 
@@ -110,11 +110,11 @@ Streamlit UI modules for individual workflow steps. These files may import Strea
 | --- | --- |
 | `crawl4md.py` | Step 1 crawler content area; receives shell callbacks through `CrawlPageContext` |
 | `vector_index.py` | Step 2 vector-index content area; receives shell callbacks through `VectorIndexPageContext` |
-| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid (Created shown in local time), a Search-options expander above the query form (mode similarity/MMR with Diversity, Candidate pool, and Minimum similarity in a 2×2 grid — always editable when an index is selected, diversity/candidate pool apply only in Diverse mode — plus a source filter), query with a top-N input, an always-present collapsible **Search results** panel (a neutral title + hint when empty; id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs; persists across reruns, opens on a new search), a **Search history** card list (per-session log; each card leads with the query + replay and a collapsed **Details** 4-column grid of searched / results / index name / index date time / options and the broken-out index fields; replay restores query + options + Vector DB and focuses the query), and Output Files (`rag_engine.retrieve`) |
-| `rag_qa.py` | Step 4 Simple RAG Q&A — index/model/tone/top-results panel, question → **Generate prompt** (`retrieve` + `build_rag_prompt`, template from `RAG_QA_PROMPT_TEMPLATE_FILE` via `qa_form_ui.resolve_qa_prompt_template`; retrieved hits render in an always-present **Search results** panel between the question and prompt via the shared `render_result_cards`), editable prompt with an icon-only **Maximize** full-screen dialog that autosaves edits on every change and on dismiss (via `qa_form_ui.apply_maximized_prompt`) → **Send** (`stream_prompt`, streamed answer shown in an **Answer** panel inside the prompt form under the button + token/latency stats naming the model as `Model — …`), per-session prompt history (cards with a **Details** grid and a collapsed **Prompt** expander; replay reloads question + prompt + options) and a session token summary above it |
+| `semantic_search.py` | Step 3 semantic search — carded index picker + `manifest.json` metadata grid (Created shown in local time), a query form with a top-N input (plain closest-match search), an always-present collapsible **Search results** panel (a neutral title + hint when empty; id/size/language caption under the title, right-docked similarity text + Raw/Preview tabs; persists across reruns, opens on a new search), a **Search history** card list (per-session log; each card leads with the query + a pin toggle & replay and a collapsed **Details** 4-column grid of searched / results / index name / index date time and the broken-out index fields; pinned cards sort first; replay restores query + Vector DB and focuses the query), and Output Files (`rag_engine.retrieve`) |
+| `basic_rag_qa.py` | Step 4 Basic RAG Q&A — index/model/tone/top-results panel, question → **Generate prompt** (`retrieve` + `build_rag_prompt`, template from `BASIC_RAG_QA_PROMPT_TEMPLATE_FILE` via `basic_rag_qa_form_ui.resolve_basic_rag_qa_prompt_template`; retrieved hits render in an always-present **Search results** panel between the question and prompt via the shared `render_results_panel` (collapsed, titled with the match count)), editable prompt with an icon-only **Maximize** full-screen dialog with an **Apply** button that writes edits back (dismiss discards; via `basic_rag_qa_form_ui.apply_maximized_prompt`) → **Send** (`stream_prompt`, streamed answer shown in an **Answer** panel inside the prompt form under the button + token/latency stats naming the model as `Model — …`), per-session prompt history (cards with a **Details** grid, a collapsed **Prompt** expander, and a collapsed **Answer** expander with the model/token/latency caption; replay reloads question + prompt + options) and a session token summary above it |
 | `conversational_rag.py` | Step 5 conversational RAG — chat UI with in-session history and history-aware rewriting (`rag_engine.chat_answer`) |
 
-When a page grows complex, keep page-specific state keys prefixed with the page id and move reusable non-UI logic into `src/crawl4md_streamlit/` or the core `crawl4md` package instead of importing from `streamlit_app.py`.
+When a page grows complex, keep page-specific state keys prefixed with the page id and move reusable non-UI logic into `src/app_support/` or the core `crawl4md` package instead of importing from `streamlit_app.py`.
 
 ### `pages.py` — workflow page registry
 
@@ -132,11 +132,11 @@ disabled state. `streamlit_app.py` iterates the tuple and renders each one insid
 This separation makes it easy to unit-test state-machine transitions without needing a
 Streamlit environment.
 
-### `form_defaults.py` and `form_ui.py` — crawl settings
+### `crawl/form_defaults.py` and `crawl/form_ui.py` — crawl settings
 
-`form_defaults.py` is pure Python and owns the default crawl settings used when the form first
+`crawl/form_defaults.py` is pure Python and owns the default crawl settings used when the form first
 loads or resets after a terminal crawl state. That includes advanced crawler controls that map
-directly into `CrawlerConfig`, such as the `max_concurrent` parallel fetch setting. `form_ui.py`
+directly into `CrawlerConfig`, such as the `max_concurrent` parallel fetch setting. `crawl/form_ui.py`
 is a UI module: it imports Streamlit, renders the crawl settings form, and returns the submitted
 values to `streamlit_app.py`.
 
@@ -150,8 +150,8 @@ Step 2 mirrors Step 1's shell pattern and is backed by the UI-independent
 interface). The app owns only input collection, the background job, and result display.
 
 - `app_pages/vector_index.py` — content area; receives a `VectorIndexPageContext` from the shell and renders the form, the start/stop confirmation dialog, the live progress/result area, and the reused output-files panel.
-- `vector_form_ui.py` — the form renderer plus pure, testable helpers: `crawl_result_options` (build the crawl-result multiselect), `has_index_inputs` (validate that at least one file is selected or uploaded), `embedding_model_info_for` (per-model dimension limits + local/cloud metadata, from the library catalog), `embedding_model_label` (tag a model as local or cloud), and `resolve_embedding_model_choices` (order the dropdown and pick its default from `VECTOR_EMBEDDING_MODELS` / `VECTOR_DEFAULT_EMBEDDING_MODEL`, validated against the library's supported models). The embedding model and dimension render above the form so the dimension input only offers values the selected model supports; the dropdown lists `all-MiniLM-L6-v2` first and pre-selects it by default. Crawl inputs are discovered with `artifact_store.crawl_results.list_crawl_result_files`.
-- `vector_index_jobs.py` — `start_vector_index_job` runs `VectorIndexer.run` in a daemon thread, saves uploaded files under the run directory, and emits `started` / `progress` / `completed` / `failed` / `cancelled` events through a queue. `progress` events carry either a pipeline `stage` or per-chunk counts; `vector_progress_fraction` maps them to a labelled progress bar. `IndexingResult` warnings/errors are emitted as structured `LibraryMessage` dicts (the UI localizes them via `i18n.localize_message`); `embedding_error_hint_key` maps an embedding error **code** (not string matching) to a cause-specific hint key so the UI can recommend a fix (set an API key, configure AWS credentials, check the network, or use the local offline model). `request_cancel` sets a cooperative cancel flag; `drain_events` feeds the live area.
+- `vector_index/vector_form_ui.py` — the form renderer plus pure, testable helpers: `crawl_result_options` (build the crawl-result multiselect), `has_index_inputs` (validate that at least one file is selected or uploaded), `embedding_model_info_for` (per-model dimension limits + local/cloud metadata, from the library catalog), `embedding_model_label` (tag a model as local or cloud), and `resolve_embedding_model_choices` (order the dropdown and pick its default from `VECTOR_EMBEDDING_MODELS` / `VECTOR_DEFAULT_EMBEDDING_MODEL`, validated against the library's supported models). The embedding model and dimension render above the form so the dimension input only offers values the selected model supports; the dropdown lists `all-MiniLM-L6-v2` first and pre-selects it by default. Crawl inputs are discovered with `artifact_store.crawl_results.list_crawl_result_files`.
+- `vector_index/vector_index_jobs.py` — `start_vector_index_job` runs `VectorIndexer.run` in a daemon thread, saves uploaded files under the run directory, and emits `started` / `progress` / `completed` / `failed` / `cancelled` events through a queue. `progress` events carry either a pipeline `stage` or per-chunk counts; `vector_progress_fraction` maps them to a labelled progress bar. `IndexingResult` warnings/errors are emitted as structured `LibraryMessage` dicts (the UI localizes them via `i18n.localize_message`); `embedding_error_hint_key` maps an embedding error **code** (not string matching) to a cause-specific hint key so the UI can recommend a fix (set an API key, configure AWS credentials, check the network, or use the local offline model). `request_cancel` sets a cooperative cancel flag; `drain_events` feeds the live area.
 
 Session keys are prefixed with `vector_index_` and kept separate from crawl keys. The shell
 provides `_start_vector_index_job`, `_stop_vector_index_job`, a `vector_index_`-scoped stop
@@ -169,14 +169,14 @@ See [../../src/vector_indexer/README.md](../../src/vector_indexer/README.md).
 
 ### `support.py` — compatibility exports
 
-No Streamlit imports. Keeps the existing `crawl4md_streamlit.support` import surface stable while
+No Streamlit imports. Keeps the existing `app_support.support` import surface stable while
 delegating implementation to smaller pure-Python modules:
 
 | Group | Functions |
 | --- | --- |
 | **`session_manager.py`** | `SessionRecord`, ID generation, session serialization, safe paths, session cleanup |
 | **`generated_files.py`** | `GeneratedFile`, `TextPreview`, output listing, download-tree building, activity-log lookup, text previews |
-| **`crawl_jobs.py`** | `CrawlJob`, config building, progress estimates, crawl-thread lifecycle, event mapping |
+| **`crawl/crawl_jobs.py`** | `CrawlJob`, config building, progress estimates, crawl-thread lifecycle, event mapping |
 
 New code can import from the focused module directly. Existing code may continue importing from
 `support.py`.
@@ -464,14 +464,14 @@ Tests mock `SiteCrawler` — no real network calls are made. The split between `
 
 | Task | Where to look |
 | --- | --- |
-| Add a new form field | `render_crawl_form()` in `form_ui.py` + `default_form_values()` in `form_defaults.py` + `build_configs()` in `crawl_jobs.py` |
+| Add a new form field | `render_crawl_form()` in `crawl/form_ui.py` + `default_form_values()` in `crawl/form_defaults.py` + `build_configs()` in `crawl/crawl_jobs.py` |
 | Change action buttons or states | `controls.py` (`CrawlActionButton`, `crawl_action_buttons`) + `test_controls.py` |
-| Add a new event type from the crawler | `job_state_from_event()` in `crawl_jobs.py` + `_drain_job_events()` in `streamlit_app.py` |
+| Add a new event type from the crawler | `job_state_from_event()` in `crawl/crawl_jobs.py` + `_drain_job_events()` in `streamlit_app.py` |
 | Add a new output panel | A new page-local renderer in `app_pages/crawl4md.py` or a shell callback in `streamlit_app.py`; use `_render_live_area` for crawl-status panels and a separate fragment for selected-session downloads |
 | Add or rename a workflow page | `app_pages/<page>.py` + `pages.py` + i18n keys in `en.py` / `id.py` + `tests/test_pages.py`; keep Steps 2-5 visually aligned with the crawler shell |
 | Change retention or cleanup logic | `cleanup_old_sessions()` in `session_manager.py` + `test_support.py` |
 | Add or change a confirmation dialog | `dialog_ui.render_confirm_dialog` (+ `confirm_dialog_css`) wrapped in a thin `@st.dialog` in `streamlit_app.py`; reuse for any keep/confirm modal |
-| Change Semantic Search options | `app_pages/semantic_search.py` form + `RagConfig` fields in `rag_engine` + `SEMANTIC_SEARCH_*` settings in `settings.py` / `.env.defaults` |
+| Change Semantic Search defaults | `app_pages/semantic_search.py` form + `RagConfig` top_k in `rag_engine` + `SEMANTIC_SEARCH_TOP_N` / `SEMANTIC_SEARCH_DEFAULT_TAB` in `settings.py` / `.env.defaults` |
 | Change the Load Session dialog | `_load_session_dialog()` + `_register_and_select_session()` in `streamlit_app.py`; update i18n keys in `en.py` / `id.py` |
 | Change the server port or theme | `apps/streamlit/.streamlit/config.toml` |
 

@@ -22,6 +22,7 @@ __all__ = [
 ]
 
 ModelKind = Literal["local", "cloud"]
+ModelSize = Literal["small", "medium", "large"]
 
 # The offline built-in. It generates no real answer; it echoes the question so
 # the workflow runs end-to-end without credentials and serves as the universal
@@ -37,6 +38,7 @@ class ChatModelInfo:
     model_id: str
     provider: str
     label: str
+    size: ModelSize
     kind: ModelKind
     requires_api_key: bool
 
@@ -46,6 +48,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
         provider="bedrock_converse",
         label="Claude 3.5 Sonnet (Bedrock)",
+        size="medium",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -53,6 +56,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="amazon.nova-lite-v1:0",
         provider="bedrock_converse",
         label="Amazon Nova Lite (Bedrock)",
+        size="small",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -60,6 +64,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="gpt-4o-mini",
         provider="openai",
         label="GPT-4o mini (OpenAI)",
+        size="small",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -67,6 +72,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="gpt-4o",
         provider="openai",
         label="GPT-4o (OpenAI)",
+        size="medium",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -80,6 +86,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="apac.amazon.nova-micro-v1:0",
         provider="bedrock_converse",
         label="Amazon Nova Micro (Bedrock · APAC)",
+        size="small",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -87,6 +94,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="apac.amazon.nova-lite-v1:0",
         provider="bedrock_converse",
         label="Amazon Nova Lite (Bedrock · APAC)",
+        size="small",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -94,6 +102,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="apac.amazon.nova-pro-v1:0",
         provider="bedrock_converse",
         label="Amazon Nova Pro (Bedrock · APAC)",
+        size="medium",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -101,6 +110,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="apac.anthropic.claude-haiku-4-5-20251001-v1:0",
         provider="bedrock_converse",
         label="Claude Haiku 4.5 (Bedrock · APAC)",
+        size="small",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -108,6 +118,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="apac.anthropic.claude-sonnet-4-5-20250929-v1:0",
         provider="bedrock_converse",
         label="Claude Sonnet 4.5 (Bedrock · APAC)",
+        size="medium",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -117,6 +128,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="qwen.qwen3-32b-v1:0",
         provider="bedrock_converse",
         label="Qwen3 32B (Bedrock)",
+        size="medium",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -124,6 +136,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="qwen.qwen3-next-80b-a3b-v1:0",
         provider="bedrock_converse",
         label="Qwen3 Next 80B A3B (Bedrock)",
+        size="large",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -131,6 +144,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id="qwen.qwen3-235b-a22b-2507-v1:0",
         provider="bedrock_converse",
         label="Qwen3 235B A22B 2507 (Bedrock)",
+        size="large",
         kind="cloud",
         requires_api_key=True,
     ),
@@ -138,6 +152,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         model_id=ECHO_MODEL,
         provider=ECHO_PROVIDER,
         label="Echo (offline, no answer generation)",
+        size="small",
         kind="local",
         requires_api_key=False,
     ),

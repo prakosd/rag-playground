@@ -59,7 +59,7 @@ def format_context(chunks: Sequence[RetrievedChunk]) -> str:
     return "\n\n".join(blocks)
 
 
-# ── Simple RAG Q&A (Step 4): a fully-visible, editable prompt ──────────────
+# ── Basic RAG Q&A (Step 4): a fully-visible, editable prompt ──────────────
 # Unlike QA_SYSTEM_PROMPT (a LangChain template with a {context} slot), this builds
 # a complete, human-readable prompt string that the Step 4 UI shows in an editable
 # field and sends to the model verbatim. Retrieved knowledge is fenced between

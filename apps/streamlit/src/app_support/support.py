@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from crawl4md_streamlit import crawl_jobs as _crawl_jobs
-from crawl4md_streamlit import generated_files as _generated_files
-from crawl4md_streamlit import session_manager as _session_manager
+from app_support import generated_files as _generated_files
+from app_support import session_manager as _session_manager
+from app_support.crawl import crawl_jobs as _crawl_jobs
 
 DEFAULT_ACTIVITY_LOG_SIZE = _crawl_jobs.DEFAULT_ACTIVITY_LOG_SIZE
 CrawlJob = _crawl_jobs.CrawlJob

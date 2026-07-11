@@ -40,10 +40,10 @@ from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
 from vector_indexer import IndexingConfig
 
-from crawl4md_streamlit.dialog_ui import render_confirm_dialog
-from crawl4md_streamlit.focus import click_widget, focus_widget
-from crawl4md_streamlit.form_defaults import DEFAULT_LIMIT, default_form_values
-from crawl4md_streamlit.generated_files import (
+from app_support.crawl.form_defaults import DEFAULT_LIMIT, default_form_values
+from app_support.dialog_ui import render_confirm_dialog
+from app_support.focus import click_widget, focus_widget
+from app_support.generated_files import (
     build_download_tree,
     build_folder_zip_bytes,
     collapse_artifact_run_folder,
@@ -58,16 +58,15 @@ from crawl4md_streamlit.generated_files import (
     is_run_folder,
     zip_top_folder,
 )
-from crawl4md_streamlit.i18n import CATALOG, Strings, get_strings, localize_message
-from crawl4md_streamlit.index_catalog import list_session_indexes
-from crawl4md_streamlit.log_context import get_log_session_id, set_log_session_id
-from crawl4md_streamlit.pages import (
+from app_support.i18n import CATALOG, Strings, get_strings, localize_message
+from app_support.log_context import get_log_session_id, set_log_session_id
+from app_support.pages import (
     APP_PAGE_SPECS,
     DEFAULT_PAGE_ID,
     AppPageSpec,
     page_spec_by_nav_label,
 )
-from crawl4md_streamlit.progress_chart import (
+from app_support.progress_chart import (
     PROGRESS_CHART_TIME_UNIT_HOUR,
     PROGRESS_CHART_TIME_UNIT_MINUTE,
     PROGRESS_CHART_TIME_UNIT_SECOND,
@@ -79,10 +78,11 @@ from crawl4md_streamlit.progress_chart import (
     progress_chart_time_unit_seconds,
     select_progress_chart_time_unit,
 )
-from crawl4md_streamlit.rag_ui import RagPageContext
-from crawl4md_streamlit.session_manager import generate_vector_id, next_vector_sequence
-from crawl4md_streamlit.settings import get_settings
-from crawl4md_streamlit.support import (
+from app_support.rag_shared.index_catalog import list_session_indexes
+from app_support.rag_shared.rag_ui import RagPageContext
+from app_support.session_manager import generate_vector_id, next_vector_sequence
+from app_support.settings import get_settings
+from app_support.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_SESSION_LANGUAGE,
     CrawlJob,
@@ -126,7 +126,7 @@ from crawl4md_streamlit.support import (
     touch_session,
     validate_safe_id,
 )
-from crawl4md_streamlit.vector_index_jobs import (
+from app_support.vector_index.vector_index_jobs import (
     VectorIndexJob,
     active_vector_registry_session_ids,
     embedding_error_hint_key,
@@ -136,9 +136,11 @@ from crawl4md_streamlit.vector_index_jobs import (
     vector_progress_fraction,
     vector_stage_label_key,
 )
-from crawl4md_streamlit.vector_index_jobs import drain_events as drain_vector_events
-from crawl4md_streamlit.vector_index_jobs import job_state_from_event as vector_job_state_from_event
-from crawl4md_streamlit.vector_index_jobs import request_cancel as request_vector_cancel
+from app_support.vector_index.vector_index_jobs import drain_events as drain_vector_events
+from app_support.vector_index.vector_index_jobs import (
+    job_state_from_event as vector_job_state_from_event,
+)
+from app_support.vector_index.vector_index_jobs import request_cancel as request_vector_cancel
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _APP_DIR = Path(__file__).resolve().parent
@@ -162,7 +164,7 @@ except ImportError:
 _PROJECT_LOGGER_NAMES = (
     "artifact_store",
     "crawl4md",
-    "crawl4md_streamlit",
+    "app_support",
     "rag_engine",
     "vector_indexer",
 )
@@ -194,14 +196,14 @@ def _configure_app_logging() -> bool:
 
 
 _configure_app_logging()
-_logger = get_logger("crawl4md_streamlit.app")
+_logger = get_logger("app_support.app")
 
 _DOWNLOAD_LIMIT_BYTES = get_settings().ui_download_limit_mb * 1024 * 1024
 _DOWNLOADS_REFRESH_INTERVAL = f"{get_settings().ui_downloads_refresh_sec}s"
 _GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
 _DIALOG_PLACEHOLDER_TITLE = " "
 _VECTOR_INDEX_PAGE_ID = "vector_index"
-_RAG_PAGE_IDS = ("semantic_search", "rag_qa", "conversational_rag")
+_RAG_PAGE_IDS = ("semantic_search", "basic_rag_qa", "conversational_rag")
 _DIALOG_LOAD_SESSION_TITLE = "Load Session"
 _HOURS_PER_DAY = 24
 _ICON_BUTTON_WIDTH_PX = 44
@@ -3135,7 +3137,7 @@ def _render_shared_styles() -> None:
         h3#crawl4md-header,
         h3#vector-index-header,
         h3#semantic-search-header,
-        h3#rag-qa-header,
+        h3#basic-rag-qa-header,
         h3#conversational-rag-header {{
             padding-top: 0 !important;
             padding-bottom: 0 !important;

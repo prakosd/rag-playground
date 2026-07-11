@@ -29,34 +29,39 @@ from rag_engine import (
 )
 from rag_engine.models import TokenUsage
 
-from crawl4md_streamlit.i18n import Strings, get_strings
-from crawl4md_streamlit.index_catalog import IndexRef
-from crawl4md_streamlit.llm_form_ui import (
+from app_support.focus import focus_widget
+from app_support.i18n import Strings, get_strings
+from app_support.index_catalog import IndexRef
+from app_support.llm_form_ui import (
     chat_model_choices,
     chat_model_info_for,
     chat_model_label,
 )
-from crawl4md_streamlit.qa_form_ui import (
+from app_support.qa_form_ui import (
     apply_maximized_prompt,
     resolve_qa_prompt_template,
     token_totals,
     tone_choices,
     usage_percent,
 )
-from crawl4md_streamlit.qa_history import QaRecord, append_qa_record, load_qa_history
-from crawl4md_streamlit.rag_ui import (
+from app_support.qa_history import (
+    QaRecord,
+    append_qa_record,
+    load_qa_history,
+    set_qa_pinned,
+)
+from app_support.rag_ui import (
     RagPageContext,
     find_index,
     index_option_label,
     kv_grid_html,
     local_time_label,
     render_messages,
-    render_result_cards,
     render_results_panel,
     select_index,
     stacked_label_value_html,
 )
-from crawl4md_streamlit.settings import get_settings
+from app_support.settings import get_settings
 
 if TYPE_CHECKING:
     from streamlit.delta_generator import DeltaGenerator
@@ -199,7 +204,7 @@ def render_page(context: RagPageContext) -> None:
 
     records = load_qa_history(session_root)
     _render_token_summary(strings, records)
-    _render_qa_history(strings, records)
+    _render_qa_history(strings, session_root, records)
 
     context.render_downloads()
 
@@ -306,30 +311,32 @@ def _render_prompt_form(
     return prompt_text, send, maximize, answer_slot
 
 
-def _autosave_maximized_prompt() -> None:
-    """Mirror the maximized editor's text to the inline prompt's pending key.
+def _apply_and_close_maximized_prompt() -> None:
+    """Write the maximized editor's text back to the inline prompt, then close.
 
-    Runs on every committed edit (``on_change``) and again on dismiss, so the
-    latest text is captured however the dialog closes — including click-away and
-    Esc, where relying on the dismiss handler alone can miss the final edit.
+    Bound to the dialog's Apply button: it copies the edited text into the inline
+    prompt's pending key (applied before the inline widget renders next run) and
+    closes the dialog. Dismissing any other way (X / click-away / Esc) keeps the
+    inline prompt as-is, discarding the dialog edits.
     """
     apply_maximized_prompt(
         st.session_state, source_key=_PROMPT_MAX_KEY, target_key=_PROMPT_PENDING_KEY
     )
+    st.session_state[_MAXIMIZE_OPEN_KEY] = False
 
 
 def _on_maximize_dismiss() -> None:
-    """Autosave the maximized edit, then close the dialog (no separate Save button)."""
-    _autosave_maximized_prompt()
+    """Close the dialog without saving — X / click-away / Esc discard the edits."""
     st.session_state[_MAXIMIZE_OPEN_KEY] = False
 
 
 @st.dialog(" ", width="large", on_dismiss=_on_maximize_dismiss)
 def _prompt_maximize_dialog(strings: Strings) -> None:
-    """Show the prompt in a large, editable dialog kept in sync with the inline field.
+    """Show the prompt in a large, editable dialog with an explicit Apply button.
 
-    Every committed edit autosaves to the inline prompt (``on_change``), and the
-    dialog also autosaves on dismiss (X / click-away / Esc); there is no Save button.
+    Editing here does not touch the inline prompt; only **Apply** writes the text
+    back (and closes). Dismissing another way (X / click-away / Esc) discards the
+    edits, leaving the inline prompt unchanged.
     """
     st.markdown(_MAXIMIZE_DIALOG_CSS, unsafe_allow_html=True)
     st.markdown(f"**{strings['QA_MAXIMIZE_TITLE']}**")
@@ -338,8 +345,14 @@ def _prompt_maximize_dialog(strings: Strings) -> None:
         height=_MAXIMIZE_PROMPT_HEIGHT,
         label_visibility="collapsed",
         key=_PROMPT_MAX_KEY,
-        on_change=_autosave_maximized_prompt,
     )
+    with st.container(horizontal_alignment="right"):
+        st.button(
+            strings["QA_MAXIMIZE_APPLY"],
+            type="primary",
+            icon=":material/check:",
+            on_click=_apply_and_close_maximized_prompt,
+        )
 
 
 def _render_search_results(
@@ -353,30 +366,25 @@ def _render_search_results(
 ) -> None:
     """Render the always-present Search results panel between question and prompt.
 
-    On a fresh Generate, retrieve inside the panel (so the spinner shows where the
-    hits will appear), build the editable prompt from them, and render the ranked
-    cards. Otherwise show the last search's hits (or a hint), so the panel stays a
-    stable fixture whose gap to the prompt panel never shifts.
+    On a fresh Generate, run retrieval with a spinner, build the editable prompt
+    from the hits, and store them; the panel below then renders those hits
+    collapsed, its title carrying the match count. Otherwise it shows the last
+    search's hits (or a hint), so the panel stays a stable fixture whose gap to
+    the prompt panel never shifts.
     """
     if do_generate and index is not None:
-        with st.expander(strings["SEARCH_RESULTS_PANEL"], expanded=True):
-            with st.spinner(strings["QA_SEARCHING"]):
-                result = retrieve(
-                    index.run_dir, question, RagConfig(top_k=top_results, llm_model=model)
-                )
-            render_messages(strings, result.warnings, result.errors)
-            st.session_state[_QA_RESULTS_KEY] = list(result.chunks)
-            st.session_state[_PROMPT_KEY] = build_rag_prompt(
-                question, result.chunks, tone, template=resolve_qa_prompt_template()
+        with st.spinner(strings["QA_SEARCHING"]):
+            result = retrieve(
+                index.run_dir, question, RagConfig(top_k=top_results, llm_model=model)
             )
-            st.session_state[_ANSWER_KEY] = None
-            st.session_state[_STATS_KEY] = None
-            st.session_state[_FOCUS_PROMPT_KEY] = True
-            if result.chunks:
-                render_result_cards(strings, result.chunks, default_tab=_DEFAULT_RESULT_TAB)
-            else:
-                st.caption(strings["SEARCH_NO_RESULTS"])
-        return
+        render_messages(strings, result.warnings, result.errors)
+        st.session_state[_QA_RESULTS_KEY] = list(result.chunks)
+        st.session_state[_PROMPT_KEY] = build_rag_prompt(
+            question, result.chunks, tone, template=resolve_qa_prompt_template()
+        )
+        st.session_state[_ANSWER_KEY] = None
+        st.session_state[_STATS_KEY] = None
+        st.session_state[_FOCUS_PROMPT_KEY] = True
     stored = st.session_state.get(_QA_RESULTS_KEY)
     empty_hint = (
         strings["SEARCH_NO_RESULTS"]
@@ -424,6 +432,7 @@ def _send_prompt(
         top_results=top_results,
         question=question,
         prompt_text=prompt_text,
+        answer=generation.text,
         usage=generation.usage,
         elapsed=elapsed,
     )
@@ -441,6 +450,7 @@ def _record_send(
     top_results: int,
     question: str,
     prompt_text: str,
+    answer: str,
     usage: TokenUsage | None,
     elapsed: float,
 ) -> None:
@@ -456,6 +466,7 @@ def _record_send(
             top_k=int(top_results),
             question=question.strip(),
             prompt=prompt_text,
+            answer=answer,
             input_tokens=usage.input_tokens if usage else None,
             output_tokens=usage.output_tokens if usage else None,
             total_tokens=usage.total_tokens if usage else None,
@@ -518,6 +529,18 @@ def _stats_caption(
     )
 
 
+def _history_stats_caption(strings: Strings, record: QaRecord) -> str:
+    """Build the model + token + latency caption for a stored answer in history."""
+    na = strings["QA_TOKEN_NA"]
+    return strings["QA_ANSWER_STATS"].format(
+        model=chat_model_info_for(record.llm_model).label or record.llm_model,
+        input=na if record.input_tokens is None else record.input_tokens,
+        output=na if record.output_tokens is None else record.output_tokens,
+        total=na if record.total_tokens is None else record.total_tokens,
+        seconds=f"{record.latency_seconds:.1f}",
+    )
+
+
 def _apply_replay(strings: Strings, indexes: Sequence[IndexRef], replay: dict) -> None:
     """Pre-fill the Step 4 widgets from a stored history record before they render."""
     st.session_state[_QUESTION_KEY] = str(replay.get("question", ""))
@@ -566,7 +589,7 @@ def _history_grid(strings: Strings, record: QaRecord) -> str:
     return kv_grid_html(rows, columns=4, margin_bottom=True)
 
 
-def _render_qa_history(strings: Strings, records: Sequence[QaRecord]) -> None:
+def _render_qa_history(strings: Strings, session_root: Path, records: Sequence[QaRecord]) -> None:
     """Render the collapsible prompt history as tidy cards with replay + details.
 
     Each card leads with the question + a replay button (mirroring the Search
@@ -580,14 +603,29 @@ def _render_qa_history(strings: Strings, records: Sequence[QaRecord]) -> None:
             return
         for position, record in enumerate(records):
             with st.container(border=True):
-                head, action = st.columns([0.85, 0.15], vertical_alignment="center")
+                head, pin_col, replay_col = st.columns(
+                    [0.8, 0.1, 0.1], vertical_alignment="center"
+                )
                 head.markdown(
                     stacked_label_value_html(
                         strings["QA_HISTORY_LABEL_QUESTION"], record.question or "—"
                     ),
                     unsafe_allow_html=True,
                 )
-                with action, st.container(horizontal_alignment="right"):
+                with pin_col:
+                    pin_help = (
+                        strings["QA_HISTORY_UNPIN_HELP"]
+                        if record.pinned
+                        else strings["QA_HISTORY_PIN_HELP"]
+                    )
+                    if st.button(
+                        ":material/keep_off:" if record.pinned else ":material/keep:",
+                        key=f"qa_history_pin_{position}",
+                        help=pin_help,
+                    ):
+                        set_qa_pinned(session_root, record.timestamp_utc, not record.pinned)
+                        st.rerun()
+                with replay_col:
                     if st.button(
                         ":material/replay:",
                         key=f"qa_history_replay_{position}",
@@ -599,3 +637,6 @@ def _render_qa_history(strings: Strings, records: Sequence[QaRecord]) -> None:
                     st.markdown(_history_grid(strings, record), unsafe_allow_html=True)
                 with st.expander(strings["QA_HISTORY_PROMPT_EXPANDER"], expanded=False):
                     st.code(record.prompt or "—", language="markdown", wrap_lines=True)
+                with st.expander(strings["QA_HISTORY_ANSWER_EXPANDER"], expanded=False):
+                    st.write(record.answer or "—")
+                    st.caption(_history_stats_caption(strings, record))

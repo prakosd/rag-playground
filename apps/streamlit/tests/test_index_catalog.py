@@ -5,7 +5,7 @@ from pathlib import Path
 from artifact_store.naming import VECTOR_FOLDER_PREFIX
 from vector_indexer.manifest import write_manifest
 
-from crawl4md_streamlit.index_catalog import IndexRef, list_session_indexes
+from app_support.rag_shared.index_catalog import IndexRef, list_session_indexes
 
 
 def _make_index(

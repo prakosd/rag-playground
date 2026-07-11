@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from crawl4md_streamlit.support import (
+from app_support.support import (
     SessionRecord,
     normalize_session_records,
     serialize_session_records,
@@ -110,7 +110,7 @@ def _patched_app_test(
             yield AppTest.from_file(str(_STREAMLIT_APP_FILE))
             return
         with patch(
-            "crawl4md_streamlit.support.create_session_record",
+            "app_support.support.create_session_record",
             return_value=created_record,
         ):
             yield AppTest.from_file(str(_STREAMLIT_APP_FILE))

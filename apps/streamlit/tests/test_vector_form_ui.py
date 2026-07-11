@@ -6,8 +6,8 @@ from artifact_store.crawl_results import CrawlResultFile
 from vector_indexer import DEFAULT_LOCAL_MODEL
 from vector_indexer.embeddings import TITAN_MODEL
 
-from crawl4md_streamlit.i18n import get_strings
-from crawl4md_streamlit.vector_form_ui import (
+from app_support.i18n import get_strings
+from app_support.vector_index.vector_form_ui import (
     crawl_result_options,
     embedding_model_info_for,
     embedding_model_label,
