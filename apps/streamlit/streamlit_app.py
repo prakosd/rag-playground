@@ -40,11 +40,54 @@ from pydantic import ValidationError
 from streamlit.components.v2 import component as component_v2
 from vector_indexer import IndexingConfig
 
+from app_support.app_runtime import (
+    _ACTIVE_JOB_STATES,
+    _CHART_AREA_OPACITY,
+    _CHART_COLOR_DISCOVERED,
+    _CHART_COLOR_FAILED,
+    _CHART_COLOR_LIMIT,
+    _CHART_COLOR_SUCCESSFUL,
+    _CHART_CUMULATIVE_INTERPOLATE,
+    _CHART_LIMIT_LINE_WIDTH,
+    _DEFAULT_LANGUAGE,
+    _DIALOG_PLACEHOLDER_TITLE,
+    _DOWNLOAD_LIMIT_BYTES,
+    _DOWNLOADS_REFRESH_INTERVAL,
+    _ICON_BUTTON_WIDTH_PX,
+    _PREVIEW_DIALOG_SCOPE_CLASS,
+    _PREVIEW_DIALOG_VIEWPORT_HEIGHT,
+    _PREVIEW_DIALOG_VIEWPORT_WIDTH,
+    _PREVIEW_DIALOG_WIDTH,
+    _PREVIEW_LIMIT_BYTES,
+    _PREVIEW_LIMIT_KIB,
+    _PROGRESS_CHART_HEIGHT,
+    _SESSIONS_ROOT,
+    _STATE_CANCEL_REQUESTED,
+    _STATE_CANCELLED,
+    _STATE_COMPLETED,
+    _STATE_FAILED,
+    _STATE_IDLE,
+    _STATE_RUNNING,
+    _STATE_STOPPED,
+    _TERMINAL_STATES,
+    _UTC_DISPLAY_FORMAT,
+    _active_file_root,
+    _auto_refresh_fragment,
+    _cached_download_tree,
+    _cached_list_generated_files,
+    _crawl_job_active,
+    _current_crawl_runtime,
+    _current_vector_runtime,
+    _files_actions_busy,
+    _job_is_alive,
+    _session_log_path,
+    _session_root,
+    _vector_job_active,
+)
 from app_support.crawl.form_defaults import DEFAULT_LIMIT, default_form_values
 from app_support.dialog_ui import render_confirm_dialog
 from app_support.focus import click_widget, focus_widget
 from app_support.generated_files import (
-    build_download_tree,
     build_folder_zip_bytes,
     collapse_artifact_run_folder,
     delete_generated_folder,
@@ -59,7 +102,7 @@ from app_support.generated_files import (
     zip_top_folder,
 )
 from app_support.i18n import CATALOG, Strings, get_strings, localize_message
-from app_support.log_context import get_log_session_id, set_log_session_id
+from app_support.log_context import set_log_session_id
 from app_support.pages import (
     APP_PAGE_SPECS,
     DEFAULT_PAGE_ID,
@@ -84,7 +127,6 @@ from app_support.session_manager import generate_vector_id, next_vector_sequence
 from app_support.settings import get_settings
 from app_support.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
-    DEFAULT_SESSION_LANGUAGE,
     CrawlJob,
     GeneratedFile,
     ReadyDownload,
@@ -99,7 +141,6 @@ from app_support.support import (
     drain_events,
     elapsed_time_display,
     ensure_within_root,
-    find_latest_crawl_dir,
     find_ready_download_in_session,
     format_eta_seconds,
     format_status_row,
@@ -109,7 +150,6 @@ from app_support.support import (
     is_text_previewable,
     job_state_from_event,
     latest_session_id,
-    list_generated_files,
     next_crawl_sequence,
     normalize_event_urls,
     normalize_session_records,
@@ -127,7 +167,6 @@ from app_support.support import (
     validate_safe_id,
 )
 from app_support.vector_index.vector_index_jobs import (
-    VectorIndexJob,
     active_vector_registry_session_ids,
     embedding_error_hint_key,
     get_active_vector_job_snapshot,
@@ -170,20 +209,6 @@ _PROJECT_LOGGER_NAMES = (
 )
 
 
-def _session_log_path() -> Path | None:
-    """Route a log record to the active session's log file, or None before one.
-
-    Reads the session id from the per-thread log context (set by the main script
-    each run and by each background job in its own thread), so records route to
-    the right session's file even from crawl/index worker threads. Returns None
-    when no session is active yet, so startup logs go to stderr only.
-    """
-    session_id = get_log_session_id()
-    if not session_id:
-        return None
-    return session_dir(_SESSIONS_ROOT, session_id) / get_settings().log_file
-
-
 @st.cache_resource(show_spinner=False)
 def _configure_app_logging() -> bool:
     settings = get_settings()
@@ -198,17 +223,10 @@ def _configure_app_logging() -> bool:
 _configure_app_logging()
 _logger = get_logger("app_support.app")
 
-_DOWNLOAD_LIMIT_BYTES = get_settings().ui_download_limit_mb * 1024 * 1024
-_DOWNLOADS_REFRESH_INTERVAL = f"{get_settings().ui_downloads_refresh_sec}s"
-_GENERATED_FILES_CACHE_TTL_SECONDS = 2.0
-_DIALOG_PLACEHOLDER_TITLE = " "
 _VECTOR_INDEX_PAGE_ID = "vector_index"
 _RAG_PAGE_IDS = ("semantic_search", "basic_rag_qa", "conversational_rag")
 _DIALOG_LOAD_SESSION_TITLE = "Load Session"
 _HOURS_PER_DAY = 24
-_ICON_BUTTON_WIDTH_PX = 44
-_LIVE_AREA_REFRESH_INTERVAL = f"{get_settings().ui_live_refresh_sec}s"
-_PROGRESS_CHART_HEIGHT = 220
 _CHART_CUMULATIVE_TITLE_KEYS = {
     PROGRESS_CHART_TIME_UNIT_SECOND: "CHART_CUMULATIVE_TITLE_SECOND",
     PROGRESS_CHART_TIME_UNIT_MINUTE: "CHART_CUMULATIVE_TITLE_MINUTE",
@@ -219,13 +237,6 @@ _CHART_TIME_UNIT_KEYS = {
     PROGRESS_CHART_TIME_UNIT_MINUTE: "CHART_TIME_UNIT_MINUTE",
     PROGRESS_CHART_TIME_UNIT_HOUR: "CHART_TIME_UNIT_HOUR",
 }
-_CHART_COLOR_DISCOVERED = "#888888"
-_CHART_COLOR_SUCCESSFUL = "#21C354"
-_CHART_COLOR_FAILED = "#FF4B4B"
-_CHART_COLOR_LIMIT = "#FACA2B"
-_CHART_AREA_OPACITY = 0.45
-_CHART_LIMIT_LINE_WIDTH = 2.0
-_CHART_CUMULATIVE_INTERPOLATE = "linear"
 _AUTHOR_NAME = "Danang Prakoso"
 _AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/prakosd"
 _PROJECT_GITHUB_URL = "https://github.com/prakosd/rag-playground"
@@ -286,17 +297,6 @@ def _github_icon_data_uri() -> str:
 
 
 _AUTHOR_PHOTO_URL = "https://media.licdn.com/dms/image/v2/D5603AQEraqyhOd5bOg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1731589103775?e=2147483647&v=beta&t=RTXvNnlM_jS1bPSRiBSC1hBfeIAAwhYVxXKv3ON9MUs"
-_PREVIEW_DIALOG_WIDTH = "large"
-# Adjust this percentage to resize the preview modal relative to the viewport.
-_PREVIEW_DIALOG_VIEWPORT_PERCENT = 70
-_PREVIEW_DIALOG_VIEWPORT_WIDTH = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vw"
-_PREVIEW_DIALOG_VIEWPORT_HEIGHT = f"{_PREVIEW_DIALOG_VIEWPORT_PERCENT}vh"
-_PREVIEW_DIALOG_SCOPE_CLASS = "crawl4md-preview-dialog-scope"
-_PREVIEW_LIMIT_BYTES = get_settings().ui_preview_limit_kb * 1024
-_PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
-_UTC_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
-_SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
-_DEFAULT_LANGUAGE = DEFAULT_SESSION_LANGUAGE
 _TOAST_PAGE_SUCCESS_ICON = "✅"
 _TOAST_PAGE_FAIL_ICON = "❌"
 _TOAST_PAGE_DISCOVERED_ICON = "🔎"
@@ -306,21 +306,12 @@ _LOAD_TOAST_STATE = "_load_toast"
 _SWITCH_TOAST_STATE = "_switch_toast"
 _EXTEND_TOAST_SUCCESS = "success"
 _EXTEND_TOAST_FAILED = "failed"
-_STATE_CANCEL_REQUESTED = "cancel_requested"
-_STATE_CANCELLED = "cancelled"
-_STATE_COMPLETED = "completed"
-_STATE_FAILED = "failed"
-_STATE_IDLE = "idle"
-_STATE_RUNNING = "running"
-_STATE_STOPPED = "stopped"
 _VECTOR_TERMINAL_STATES = frozenset({_STATE_CANCELLED, _STATE_COMPLETED, _STATE_FAILED})
-_ACTIVE_JOB_STATES = frozenset({_STATE_RUNNING, _STATE_CANCEL_REQUESTED})
 _REFRESH_FORM_STATES = {
     _STATE_COMPLETED,
     _STATE_FAILED,
     _STATE_STOPPED,
 }
-_TERMINAL_STATES = {_STATE_COMPLETED, _STATE_FAILED, _STATE_STOPPED}
 _FORM_MAX_WIDTH_PX = 980
 _PORTFOLIO_MODAL_COMPONENT_KEY = "portfolio_modal"
 _PORTFOLIO_MODAL_FIRST_DELAY_SECONDS = 60
@@ -979,26 +970,6 @@ def _cached_normalize_session_records(payload: object) -> list[SessionRecord]:
     return records
 
 
-@st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
-def _cached_list_generated_files(
-    session_root: str,
-    search_root: str,
-    download_limit_bytes: int,
-    cache_token: tuple[float, int],
-) -> list[GeneratedFile]:
-    _ = cache_token  # Keeps token in st.cache_data's argument hash.
-    return list_generated_files(
-        Path(session_root),
-        Path(search_root),
-        download_limit_bytes=download_limit_bytes,
-    )
-
-
-@st.cache_data(ttl=_GENERATED_FILES_CACHE_TTL_SECONDS, show_spinner=False)
-def _cached_download_tree(files: tuple[GeneratedFile, ...]) -> dict[str, Any]:
-    return build_download_tree(list(files))
-
-
 @st.cache_data(ttl=60, show_spinner=False)
 def _cached_session_exists(sessions_root: str, session_id: str) -> bool:
     return session_exists(Path(sessions_root), session_id)
@@ -1362,50 +1333,6 @@ def _session_selector_index(options: list[str]) -> int:
     return 0
 
 
-def _job_is_alive(job: CrawlJob | None = None) -> bool:
-    current_job = st.session_state.job if job is None else job
-    return bool(current_job is not None and current_job.thread.is_alive())
-
-
-def _crawl_job_active() -> bool:
-    """Return True while the crawl job is running, cancelling, or still alive."""
-    return _job_is_alive() or st.session_state.job_state in _ACTIVE_JOB_STATES
-
-
-def _vector_job_active() -> bool:
-    """Return True while the vector-index job is running, cancelling, or still alive."""
-    job = st.session_state.get("vector_index_job")
-    alive = job is not None and job.thread.is_alive()
-    return alive or st.session_state.vector_index_state in _ACTIVE_JOB_STATES
-
-
-def _files_actions_busy() -> bool:
-    """Return True while a crawl or vector-index job is active.
-
-    The Files & folders actions (Import / Export / Delete / Preview / Download)
-    stay visible but disabled while either job runs, so a user cannot mutate the
-    outputs that are being written mid-crawl or mid-index.
-    """
-    return _crawl_job_active() or _vector_job_active()
-
-
-def _auto_refresh_fragment(
-    body: Callable[[], None],
-    *,
-    active: bool,
-    interval: str = _LIVE_AREA_REFRESH_INTERVAL,
-) -> None:
-    """Render *body* as a fragment that auto-reruns only while *active*.
-
-    Passing ``run_every=None`` while idle schedules no auto-rerun timer, so an
-    idle or navigated-away page leaves no stale fragment timer to fire after a
-    later full-app rerun (which otherwise logs a benign "fragment ... does not
-    exist anymore" warning). Starting a job triggers a full-app rerun that
-    re-registers the fragment with the polling interval.
-    """
-    st.fragment(run_every=interval if active else None)(body)()
-
-
 def _drain_job_events(job: CrawlJob | None) -> bool:
     """Apply worker events to the Streamlit-facing crawl state."""
     if job is None:
@@ -1513,13 +1440,6 @@ def _reattach_selected_session_vector_job() -> None:
         _apply_vector_index_event(snapshot.latest_event)
 
 
-def _session_root(session_id: str | None = None) -> Path:
-    current_session_id = session_id or st.session_state.session_id
-    if not current_session_id:
-        return _SESSIONS_ROOT
-    return session_dir(_SESSIONS_ROOT, current_session_id)
-
-
 def _start_job(values: dict[str, Any]) -> None:
     # Guard: if the registry already has an alive job for this session (e.g. a
     # second tab opened the same session), reattach instead of starting a new crawl.
@@ -1595,14 +1515,6 @@ def _stop_confirmation_dialog() -> None:
         confirm_icon=":material/stop_circle:",
         on_confirm=_confirm,
     )
-
-
-def _current_vector_runtime() -> tuple[VectorIndexJob | None, str, bool, bool]:
-    job = st.session_state.get("vector_index_job")
-    state = st.session_state.vector_index_state
-    job_alive = job is not None and job.thread.is_alive()
-    fields_disabled = (state == _STATE_RUNNING and job_alive) or state == _STATE_CANCEL_REQUESTED
-    return job, state, job_alive, fields_disabled
 
 
 def _crawl_result_files() -> list[Any]:
@@ -2142,23 +2054,6 @@ def _render_status_rows() -> None:
             "params": latest.get("error_params", {}),
         }
         st.error(localize_message(strings, message) or strings["ERROR_CRAWL_FAILED_FALLBACK"])
-
-
-def _active_file_root() -> Path:
-    session_folder = _session_root()
-    active_output_dir = st.session_state.active_output_dir
-    if active_output_dir:
-        try:
-            return ensure_within_root(session_folder, active_output_dir)
-        except ValueError:
-            pass
-    job = st.session_state.job
-    if job is not None and job.session_id == st.session_state.session_id:
-        latest = find_latest_crawl_dir(job.output_base)
-        if latest is not None:
-            return ensure_within_root(session_folder, latest)
-        return ensure_within_root(session_folder, job.output_base)
-    return session_folder
 
 
 def _build_cumulative_progress_chart(
@@ -3166,16 +3061,6 @@ def _render_shared_styles() -> None:
         """,
         unsafe_allow_html=True,
     )
-
-
-def _current_crawl_runtime() -> tuple[CrawlJob | None, str, bool, bool]:
-    current_job = st.session_state.job
-    current_state = st.session_state.job_state
-    job_alive = _job_is_alive(current_job)
-    fields_disabled = (
-        current_state == _STATE_RUNNING and job_alive
-    ) or current_state == _STATE_CANCEL_REQUESTED
-    return current_job, current_state, job_alive, fields_disabled
 
 
 def _render_session_controls(
