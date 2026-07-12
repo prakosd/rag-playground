@@ -28,3 +28,7 @@ outputs/
 # Developer log files (per-session logs live under outputs/; never commit logs)
 *.log
 apps/streamlit/logs/
+
+# Allow checking in fixture data for reproducible RAG testing
+!data/
+!data/**
