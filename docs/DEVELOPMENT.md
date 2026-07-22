@@ -79,3 +79,22 @@ Development guidance in this repository uses external agent skills:
 - Python design patterns: [python-design-patterns](https://www.skills.sh/wshobson/agents/python-design-patterns)
 - Python testing patterns: [python-testing-patterns](https://www.skills.sh/wshobson/agents/python-testing-patterns)
 - Python project structure: [python-project-structure](https://www.skills.sh/wshobson/agents/python-project-structure)
+
+### Three.js skills
+
+Three.js development guidance is provided by 10 skill files sourced from
+[CloudAI-X/threejs-skills](https://github.com/CloudAI-X/threejs-skills) (MIT),
+installed via [skills.sh](https://www.skills.sh/):
+
+| Skill | Covers |
+|---|---|
+| `threejs-fundamentals` | Scene setup, cameras, renderer, Object3D hierarchy, coordinate systems |
+| `threejs-geometry` | Built-in shapes, BufferGeometry, custom geometry, instancing |
+| `threejs-materials` | PBR, basic/phong/standard materials, shader materials |
+| `threejs-lighting` | Light types, shadows, environment lighting |
+| `threejs-textures` | Texture types, UV mapping, environment maps, render targets |
+| `threejs-animation` | Keyframe animation, skeletal animation, morph targets, animation mixing |
+| `threejs-loaders` | GLTF/GLB loading, texture loading, async patterns, caching |
+| `threejs-shaders` | GLSL, ShaderMaterial, uniforms, custom effects |
+| `threejs-postprocessing` | EffectComposer, bloom, DOF, screen effects, custom passes |
+| `threejs-interaction` | Raycasting, controls, mouse/touch input, object selection |

@@ -170,6 +170,12 @@ Step 1 crawling is powered by [Crawl4AI](https://github.com/unclecode/crawl4ai),
 open-source LLM-friendly web crawler and scraper by UncleCode, licensed under the
 [Apache License 2.0](https://github.com/unclecode/crawl4ai/blob/main/LICENSE).
 
+Three.js agent skill files (`.agents/skills/threejs-*`) are sourced from
+[CloudAI-X/threejs-skills](https://github.com/CloudAI-X/threejs-skills) (MIT),
+installed via [skills.sh](https://www.skills.sh/). These skill files provide the
+AI coding agent with accurate Three.js API references, working code examples, and
+performance guidance for building 3D and interactive experiences.
+
 If you use this project in research, please also cite Crawl4AI:
 
 ```bibtex
