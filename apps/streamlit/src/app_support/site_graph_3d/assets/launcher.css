@@ -1,0 +1,46 @@
+/* Launcher button styling for the CCv2 component. Mirrors Streamlit's secondary
+ * button so the "Explore in 3D" control sits cleanly beside the download button.
+ * Uses Streamlit's --st-* theme variables (they inherit into the component's
+ * shadow root) with dark-theme fallbacks. */
+
+.sg-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  margin: 0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--st-border-color, rgba(250, 250, 250, 0.2));
+  background-color: var(--st-secondary-background-color, #1a1d29);
+  color: var(--st-text-color, inherit);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.sg-launch-btn:hover:not(:disabled),
+.sg-launch-btn:focus-visible:not(:disabled) {
+  background-color: rgba(125, 182, 255, 0.14);
+  border-color: var(--st-primary-color, #7db6ff);
+}
+
+.sg-launch-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sg-launch-btn svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  color: var(--st-primary-color, #7db6ff);
+}

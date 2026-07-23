@@ -304,6 +304,8 @@ class Strings(TypedDict):
     FILES_COL_SIZE: str
     FILES_COL_MODIFIED: str
     FILES_DOWNLOAD_TOO_LARGE: str  # template: {file}
+    FILES_EXPLORE_3D_LABEL: str
+    FILES_EXPLORE_3D_HELP: str
     FILES_DOWNLOADS_IN_PROGRESS: str
     FILES_DOWNLOADS_SUBTITLE: str
     FILES_PREVIEW_BUTTON: str

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Site Orrery</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSJzIiBjeD0iNTAlIiBjeT0iNDUlIiByPSI1NSUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmYzYzQiLz48c3RvcCBvZmZzZXQ9IjU1JSIgc3RvcC1jb2xvcj0iI2ZmYjM0NyIvPjxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iI2ZmOGEyYiIvPjwvcmFkaWFsR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGEwZTE4Ii8+PGVsbGlwc2UgY3g9IjMyIiBjeT0iMzMiIHJ4PSIyNCIgcnk9IjkuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNmY4NmM5IiBzdHJva2Utd2lkdGg9IjIiIG9wYWNpdHk9IjAuNzUiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSI5IiBmaWxsPSJ1cmwoJTIzcykiLz48Y2lyY2xlIGN4PSI1NC41IiBjeT0iMzAuNSIgcj0iMy40IiBmaWxsPSIjM2ZiZjgyIi8+PC9zdmc+"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "__THREE_BASE__/build/three.module.js",
+          "three/addons/": "__THREE_BASE__/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      __VIEWER_STYLE__
+    </style>
+  </head>
+  <body>
+    <canvas id="sg-canvas"></canvas>
+
+    <!-- Title + crawl stats -->
+    <section id="sg-hud" class="sg-panel">
+      <h1 id="sg-title">Crawl universe</h1>
+      <div class="sg-stats" id="sg-stats"></div>
+    </section>
+
+    <!-- Controls / help -->
+    <section id="sg-help" class="sg-panel" data-collapsed="false">
+      <button id="sg-help-toggle" type="button" aria-expanded="true">
+        <span aria-hidden="true">&#9737;</span>
+        <span id="sg-help-label">Controls</span>
+      </button>
+      <div id="sg-help-body"></div>
+    </section>
+
+    <!-- Status legend -->
+    <section id="sg-legend" class="sg-panel"></section>
+
+    <!-- Hover tooltip -->
+    <div id="sg-tooltip"></div>
+
+    <!-- Detail panel -->
+    <aside id="sg-info" class="sg-panel" data-open="false">
+      <div id="sg-info-head">
+        <h2 id="sg-info-title"></h2>
+        <button id="sg-info-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div id="sg-info-fields"></div>
+      <a id="sg-open-page" href="#" target="_blank" rel="noopener noreferrer"></a>
+      <div id="sg-preview-wrap">
+        <iframe
+          id="sg-preview"
+          title="Live page preview"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          referrerpolicy="no-referrer"
+          loading="lazy"
+        ></iframe>
+        <div id="sg-preview-msg"></div>
+      </div>
+    </aside>
+
+    <script>
+      window.__SITE_GRAPH__ = __GRAPH_DATA__;
+      window.__VIEWER_LABELS__ = __LABELS__;
+      window.__TEXTURE_BASE__ = "__TEXTURE_BASE_URL__";
+    </script>
+    <script type="module">
+      __VIEWER_SCRIPT__
+    </script>
+  </body>
+</html>

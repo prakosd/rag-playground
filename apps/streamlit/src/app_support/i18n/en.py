@@ -403,6 +403,8 @@ STRINGS_EN: Strings = {
     "FILES_COL_SIZE": "Size (MB)",
     "FILES_COL_MODIFIED": "Modified",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} is too large to download from the app.",
+    "FILES_EXPLORE_3D_LABEL": "Explore in 3D",
+    "FILES_EXPLORE_3D_HELP": "Explore the crawled pages as an interactive 3D universe (opens a new tab)",
     "FILES_DOWNLOADS_IN_PROGRESS": "Crawl in progress — files appear as pages are processed.",
     "FILES_DOWNLOADS_SUBTITLE": "Preview or download your crawled files below.",
     "FILES_PREVIEW_BUTTON": ":material/visibility:",

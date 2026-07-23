@@ -43,6 +43,7 @@ flowchart TD
 | `focus.py` | Client-side focus helpers: `focus_widget` (focus a keyed input after a rerun, e.g., after a history replay) and `entered_page` (tracks page navigation) |
 | `generated_files.py` | Output listing, previews, downloads (labels include human-readable file sizes), and per-file deletion |
 | `downloads_ui.py` | Output Files panel renderer: download tree, per-file preview/download, per-folder zip export + delete, signed-zip import, ready-result panel |
+| `site_graph_3d/` | "Explore in 3D" viewer: pure `graph_data` (`site_graph.jsonl` → node/edge model), `viewer_assembler` (self-contained Three.js HTML), `viewer_labels` (EN/ID), and `launcher.py` (inline CCv2 button that opens the viewer in a new tab) |
 | `progress_ui.py` | Crawl + vector-index live-area renderers: status boxes, cumulative charts, active/next URL rows, timing, activity log, vector-index status |
 | `pages.py` | Pure navigation metadata for the crawl-to-RAG workflow pages |
 | `session_manager.py` | Safe IDs, session records, paths, and cleanup |
@@ -353,6 +354,18 @@ presents those files without transforming their content; when multiple successfu
 are ready, the ready-result button may create an app-owned `final/success_content.zip` archive
 for a single download. For the full file reference (purposes, naming conventions, and cleanup
 behavior), see [Output Structure](../../README.md#output-structure) in the root README.
+
+**Exploring a crawl in 3D.** Each crawl's `logs/site_graph.jsonl` download row carries a second
+control — **:material/bubble_chart: Explore in 3D** — that opens an interactive Three.js "universe"
+of the crawl in a new browser tab: one planet per page (sized by page weight, surfaced by
+information richness, coloured by crawl status, ringed when large), the seed page as a central sun,
+and dim orbit-links to the page each was discovered from. Hovering a planet shows its details and
+lights the link chain back to the root; clicking opens a side panel with the full record and a live
+preview of the page (with an "open in a new tab" fallback for sites that block embedding). The
+viewer is a self-contained page assembled client-side — the crawler and libraries are untouched.
+Backend logic lives in the pure `app_support/site_graph_3d/` package (`graph_data`,
+`viewer_assembler`, `viewer_labels`); `launcher.py` mounts the inline CCv2 component. three.js
+loads from a pinned CDN, so the new tab needs internet access.
 
 **Downloading a folder as a zip.** Each top-level `crawl_*`/`vector_*` run folder in the download
 tree carries a download-zip button (the `:material/folder_zip:` icon) to the left of its **Delete

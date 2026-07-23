@@ -61,6 +61,7 @@ from app_support.generated_files import (
 )
 from app_support.i18n import get_strings
 from app_support.settings import get_settings
+from app_support.site_graph_3d.launcher import render_explore_3d_button
 from app_support.support import (
     GeneratedFile,
     ReadyDownload,
@@ -71,6 +72,10 @@ from app_support.support import (
     preview_created_timestamp,
     read_text_preview,
 )
+
+# The crawl site-graph log (produced by crawl4md) gets an extra "Explore in 3D"
+# control in its download row; keep the file name in one place.
+_SITE_GRAPH_FILENAME = "site_graph.jsonl"
 
 
 def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
@@ -433,6 +438,10 @@ def render_generated_file_download(file: GeneratedFile) -> None:
                 key=f"download_{st.session_state.session_id}_{file.relative_path}",
                 disabled=_files_actions_busy(),
             )
+        if file.name == _SITE_GRAPH_FILENAME:
+            # A crawl's site graph gets a second control that opens the 3D
+            # "universe" viewer in a new tab (see app_support.site_graph_3d).
+            render_explore_3d_button(file, disabled=_files_actions_busy())
 
 
 def render_download_tree(

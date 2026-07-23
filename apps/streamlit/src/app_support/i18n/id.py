@@ -414,6 +414,8 @@ STRINGS_ID: Strings = {
     "FILES_COL_SIZE": "Ukuran (MB)",
     "FILES_COL_MODIFIED": "Dimodifikasi",
     "FILES_DOWNLOAD_TOO_LARGE": "{file} terlalu besar untuk diunduh dari aplikasi.",
+    "FILES_EXPLORE_3D_LABEL": "Jelajahi dalam 3D",
+    "FILES_EXPLORE_3D_HELP": "Jelajahi halaman hasil crawl sebagai jagat 3D interaktif (membuka tab baru)",
     "FILES_DOWNLOADS_IN_PROGRESS": "Crawl sedang berjalan — file muncul seiring halaman diproses.",
     "FILES_DOWNLOADS_SUBTITLE": "Pratinjau atau unduh file crawl Anda di bawah ini.",
     "FILES_PREVIEW_BUTTON": ":material/visibility:",
