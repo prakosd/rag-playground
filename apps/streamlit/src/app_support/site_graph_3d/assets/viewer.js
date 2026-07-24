@@ -22,6 +22,7 @@ const RING_STEP = 7.5;
 const MIN_ARC = 5.2; // min world spacing between planets on a ring (anti-overlap)
 const ROOT_CLUSTER_R = 3.0; // radius when several seed pages share the centre
 const ORBIT_BASE_SPEED = 0.16;
+const AUTO_ROTATE_SPEED = 0.2; // idle camera auto-revolve speed (OrbitControls units)
 const RADIAL_JITTER = 3.6; // world-unit spread across a ring band (organic thickness)
 const VERTICAL_JITTER = 4.2; // small vertical scatter so the disc isn't perfectly flat
 const DEPTH1_JITTER = 0.5; // fraction of a slot the depth-1 ring may wobble
@@ -135,7 +136,7 @@ controls.dampingFactor = 0.06;
 controls.rotateSpeed = 0.7;
 controls.panSpeed = 0.8;
 controls.minDistance = 6;
-controls.autoRotateSpeed = 0.5;
+controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
 
 // ── Realistic textures (CDN, procedural/black fallback) ──────────────────
 const TEX_BASE = window.__TEXTURE_BASE__ || "";
@@ -187,8 +188,12 @@ loadCdnTexture("8k_stars.jpg", (tex) => {
 
 // ── Focus + idle auto-rotate ──────────────────────────────────
 const _focusPos = new THREE.Vector3();
-const IDLE_MS = 3500;
-let lastInteract = performance.now();
+const IDLE_MS = 10000;
+const IDLE_RAMP_LAMBDA = 1.5; // exponential ease rate for ambient motion in/out
+// Start "idle" (timer set in the past) so ambient motion eases in gently on load
+// and only pauses once the user interacts.
+let lastInteract = performance.now() - IDLE_MS;
+let idleFactor = 0; // 0 = interacting (still), 1 = fully idle (ambient motion)
 let focusMesh = null;
 let focusHalo = null;
 let followFocus = false; // camera tracks the focused planet until the user pans
@@ -682,9 +687,18 @@ const edges = (Array.isArray(MODEL.edges) ? MODEL.edges : []).filter(
 );
 const LINE_BASE = new THREE.Color(0x6b7280); // neutral grey (default connections)
 const LINE_DIM = new THREE.Color(0x191c22); // near-invisible while a planet is focused
-const LINE_HI = new THREE.Color(0x8fd0ff);
-const PULSE_SPEED = 4.0; // radians/sec of the focused-chain light wave
-const PULSE_WAVES = 1.5; // number of wave crests along the chain
+// The focused chain renders as a "Petrova line" (Project Hail Mary): a steady
+// crimson thread carrying a hot, white-pink light knot that flows from the sun
+// outward. The crest is pushed HDR so the scene's bloom turns it into a glowing
+// beam and ACES tone-mapping renders the knot's core white-hot; a hovered chain
+// gets a calmer static crimson so it reads as secondary to the selection.
+const PETROVA_CORE = new THREE.Color(0xff1e3c); // steady crimson beam body
+const PETROVA_HOT = new THREE.Color(0xffdbe4); // hot pink-white crest core (blooms white)
+const PETROVA_HOVER = new THREE.Color(0xff2a44); // static soft crimson for a hovered chain
+const PULSE_SPEED = 2.6; // radians/sec of the light knot flowing along the chain
+const PULSE_WAVES = 1.5; // number of light knots travelling the chain at once
+const PETROVA_TROUGH = 0.9; // steady crimson brightness between knots
+const PETROVA_CREST = 3.5; // HDR crest gain so a knot blooms into a white-hot glow
 const _pulse = new THREE.Color();
 let linkMesh = null;
 let linkPositions = null;
@@ -779,8 +793,8 @@ function orderedChain(nodeId) {
   return chain;
 }
 
-// Paint every link once per change: dim base, static-bright hover chain, and an
-// animated cyan pulse that flows along the focused chain.
+// Paint every link once per change: dim base, a static crimson hover chain, and
+// the animated red "Petrova line" pulse that flows along the focused chain.
 function paintLinks(elapsed) {
   if (!linkMesh) return;
   const perEdge = SEG_PER_EDGE * 2;
@@ -794,9 +808,9 @@ function paintLinks(elapsed) {
       }
       continue;
     }
-    // Non-focus edges: a hovered chain stays bright; the rest fade to near-
-    // invisible while a planet is selected so its trajectory reads clearly.
-    const c = hoverChain && hoverChain.has(i) ? LINE_HI : focusChain ? LINE_DIM : LINE_BASE;
+    // Non-focus edges: a hovered chain stays a static crimson; the rest fade to
+    // near-invisible while a planet is selected so its trajectory reads clearly.
+    const c = hoverChain && hoverChain.has(i) ? PETROVA_HOVER : focusChain ? LINE_DIM : LINE_BASE;
     for (let v = 0; v < perEdge; v++) c.toArray(linkColors, base + v * 3);
   }
   linkMesh.geometry.attributes.color.needsUpdate = true;
@@ -804,7 +818,11 @@ function paintLinks(elapsed) {
 
 function writePulse(offset, s, elapsed) {
   const wave = 0.5 + 0.5 * Math.sin(elapsed * PULSE_SPEED - s * PULSE_WAVES * Math.PI * 2);
-  _pulse.copy(LINE_HI).multiplyScalar(0.4 + 0.75 * wave);
+  const knot = wave * wave; // concentrate brightness into a travelling knot of light
+  _pulse
+    .copy(PETROVA_CORE)
+    .lerp(PETROVA_HOT, knot)
+    .multiplyScalar(PETROVA_TROUGH + PETROVA_CREST * knot);
   _pulse.toArray(linkColors, offset);
 }
 
@@ -1090,11 +1108,16 @@ const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
+  // Ambient motion (planet orbit + spin, starfield drift, camera auto-revolve)
+  // plays only when idle, eased in/out via idleFactor so it glides rather than
+  // snaps the moment the user grabs or releases the scene.
+  const idle = performance.now() - lastInteract > IDLE_MS;
+  idleFactor = THREE.MathUtils.damp(idleFactor, idle ? 1 : 0, IDLE_RAMP_LAMBDA, dt);
   for (const p of planets) {
-    if (p.orbitSpeed) p.pivot.rotation.y += p.orbitSpeed * dt;
-    p.mesh.rotation.y += p.selfSpeed * dt;
+    if (p.orbitSpeed) p.pivot.rotation.y += p.orbitSpeed * dt * idleFactor;
+    p.mesh.rotation.y += p.selfSpeed * dt * idleFactor;
   }
-  starfield.rotation.y += dt * 0.005;
+  starfield.rotation.y += dt * 0.005 * idleFactor;
   const zoom = THREE.MathUtils.clamp(
     (camera.position.length() - SUN_NEAR) / (SUN_FAR - SUN_NEAR),
     0,
@@ -1105,13 +1128,15 @@ function animate() {
     c.sprite.material.opacity = THREE.MathUtils.lerp(0.3, 0.72, zoom);
     c.sprite.scale.setScalar(c.baseR * THREE.MathUtils.lerp(5, 9.5, zoom));
   }
-  // Follow the focused planet (as it orbits) until the user pans away; then
-  // auto-revolve only after the viewer has been idle a while.
+  // Follow the focused planet (as it orbits) until the user pans away; the
+  // camera auto-revolve eases in with idleFactor (scaled speed) so it glides to
+  // a stop when the user grabs the scene and back up once idle.
   if (focusMesh && followFocus) {
     focusMesh.getWorldPosition(_focusPos);
     controls.target.lerp(_focusPos, 0.12);
   }
-  controls.autoRotate = performance.now() - lastInteract > IDLE_MS;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = AUTO_ROTATE_SPEED * idleFactor;
   applyKeyboard(dt);
   controls.update();
   scene.updateMatrixWorld(true);

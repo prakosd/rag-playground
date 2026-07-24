@@ -11,6 +11,7 @@ import re
 import shutil
 import tempfile
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path, PurePosixPath
@@ -38,6 +39,8 @@ from crawl4md.naming import (
     parse_utc_timestamp_slug,
 )
 
+from app_support.basic_rag_qa.basic_rag_qa_history import BASIC_QA_HISTORY_DIRNAME
+from app_support.semantic_search.search_history import SEARCH_HISTORY_DIRNAME
 from app_support.session_manager import ensure_within_root
 
 _ACTIVITY_LOG_FILE = "activity_log.txt"
@@ -45,6 +48,10 @@ _CRAWL_DIR_PREFIX = CRAWL_FOLDER_PREFIX
 _VECTOR_DIR_PREFIX = VECTOR_FOLDER_PREFIX
 _SEARCH_DIR_PREFIX = SEARCH_FOLDER_PREFIX
 _BASIC_RAG_QA_DIR_PREFIX = BASIC_RAG_QA_FOLDER_PREFIX
+# Fixed per-session history folders (not timestamped runs). They get the same
+# Export + Delete controls as run folders so a user can download or clear their
+# accumulated search / Q&A history straight from the download tree.
+_HISTORY_FOLDER_NAMES = frozenset({SEARCH_HISTORY_DIRNAME, BASIC_QA_HISTORY_DIRNAME})
 # Material icons for download-tree folders, picked by artifact type so a crawl
 # run reads as exploration and a vector index as a database at a glance.
 _FOLDER_ICON_DEFAULT = ":material/folder_open:"
@@ -63,6 +70,7 @@ _LOGS_DIR_NAME = "logs"
 _MISSING_CACHE_TOKEN = (0.0, 0)
 _EMPTY_FOLDER_ZIP_TOKEN = (0, 0.0, 0)
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
+_SITE_GRAPH_FILENAME = "site_graph.jsonl"
 _RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 _SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
 _SUCCESS_CONTENT_GLOB = "success_content_*"
@@ -170,6 +178,17 @@ def is_run_folder(name: str) -> bool:
     return name.startswith(_CRAWL_DIR_PREFIX) or name.startswith(_VECTOR_DIR_PREFIX)
 
 
+def is_history_folder(name: str) -> bool:
+    """Return ``True`` when *name* is a fixed per-session history folder.
+
+    Search history (``search_history``) and Basic RAG Q&A history
+    (``basic_rag_qa_history``) are single, fixed-name folders rather than
+    timestamped runs, so they need their own predicate: the download tree gives
+    them the same Export + Delete controls as run folders.
+    """
+    return name in _HISTORY_FOLDER_NAMES
+
+
 def delete_generated_folder(session_root: Path | str, relative_path: str) -> bool:
     """Delete one generated folder (and all its contents) within the session.
 
@@ -232,6 +251,8 @@ def zip_top_folder(zip_bytes: bytes) -> str | None:
 
 
 def _next_sequence(session_root: Path, prefix: str) -> int:
+    if not session_root.is_dir():
+        return 1
     sequences = [
         seq
         for path in session_root.iterdir()
@@ -478,6 +499,27 @@ def build_download_tree(files: list[GeneratedFile]) -> dict[str, Any]:
             node = node.setdefault(folder, {})
         node[parts[-1]] = file
     return tree
+
+
+def find_site_graph_file(node: Mapping[str, Any]) -> GeneratedFile | None:
+    """Return the ``site_graph.jsonl`` file within a download-tree *node*, if any.
+
+    Searches the nested folder mapping (as built by :func:`build_download_tree`)
+    depth-first and returns the first matching :class:`GeneratedFile`, or ``None``
+    when the folder holds no site graph — e.g. a vector index or a crawl produced
+    before site graphs existed. Lets the download tree render the "Explore in 3D"
+    control in a crawl folder's action row (beside Export) rather than deep beside
+    the file itself.
+    """
+    for name, entry in node.items():
+        if isinstance(entry, GeneratedFile):
+            if name == _SITE_GRAPH_FILENAME:
+                return entry
+        elif isinstance(entry, Mapping):
+            found = find_site_graph_file(entry)
+            if found is not None:
+                return found
+    return None
 
 
 def files_excluding(files: list[GeneratedFile], relative_path: str | None) -> list[GeneratedFile]:

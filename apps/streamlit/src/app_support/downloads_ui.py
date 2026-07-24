@@ -52,10 +52,12 @@ from app_support.generated_files import (
     download_folder_icon,
     download_tree_entry_sort_key,
     files_excluding,
+    find_site_graph_file,
     format_file_size,
     generated_files_cache_token,
     import_signed_zip,
     import_target_name,
+    is_history_folder,
     is_run_folder,
     zip_top_folder,
 )
@@ -72,10 +74,6 @@ from app_support.support import (
     preview_created_timestamp,
     read_text_preview,
 )
-
-# The crawl site-graph log (produced by crawl4md) gets an extra "Explore in 3D"
-# control in its download row; keep the file name in one place.
-_SITE_GRAPH_FILENAME = "site_graph.jsonl"
 
 
 def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
@@ -438,10 +436,6 @@ def render_generated_file_download(file: GeneratedFile) -> None:
                 key=f"download_{st.session_state.session_id}_{file.relative_path}",
                 disabled=_files_actions_busy(),
             )
-        if file.name == _SITE_GRAPH_FILENAME:
-            # A crawl's site graph gets a second control that opens the 3D
-            # "universe" viewer in a new tab (see app_support.site_graph_3d).
-            render_explore_3d_button(file, disabled=_files_actions_busy())
 
 
 def render_download_tree(
@@ -466,7 +460,7 @@ def render_download_tree(
                     folder_node,
                     allow_run_folder_collapse=False,
                 )
-                if allow_run_folder_collapse and is_run_folder(name):
+                if allow_run_folder_collapse and (is_run_folder(name) or is_history_folder(name)):
                     with st.container(
                         horizontal=True,
                         vertical_alignment="center",
@@ -474,6 +468,12 @@ def render_download_tree(
                         gap="xxsmall",
                     ):
                         _render_folder_zip_button(name)
+                        # A crawl folder's site graph opens the 3D "universe"
+                        # viewer (see app_support.site_graph_3d); place it right
+                        # of Export. Other folders (vector, history) have none.
+                        site_graph = find_site_graph_file(folder_node)
+                        if site_graph is not None:
+                            render_explore_3d_button(site_graph, disabled=_files_actions_busy())
                         _render_folder_delete_button(name)
             continue
         render_generated_file_download(entry)
@@ -652,6 +652,19 @@ def _session_log_generated_file() -> GeneratedFile | None:
     )
 
 
+def _should_show_files_panel(*, job_alive: bool, has_files: bool) -> bool:
+    """Decide whether the 📁 Files & folders panel renders this run.
+
+    While a crawl/index job is active, show it only when it already holds files,
+    so an empty panel never flashes mid-write. When idle, always show it — even
+    before the session folder exists — so the Import button stays reachable after
+    a browser reset clears the session and its outputs.
+    """
+    if job_alive:
+        return has_files
+    return True
+
+
 def _downloads_body() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     session_folder = _session_root()
@@ -672,10 +685,9 @@ def _downloads_body() -> None:
     # tree so its preview widget key is not created twice in the same pass.
     tree_files = files_excluding(files, session_log.relative_path if session_log else None)
     download_tree = _cached_download_tree(tuple(tree_files))
+    job_alive = _job_is_alive(st.session_state.job)
     subtitle_text = (
-        strings["FILES_DOWNLOADS_IN_PROGRESS"]
-        if _job_is_alive(st.session_state.job)
-        else strings["FILES_DOWNLOADS_SUBTITLE"]
+        strings["FILES_DOWNLOADS_IN_PROGRESS"] if job_alive else strings["FILES_DOWNLOADS_SUBTITLE"]
     )
     st.markdown(
         f'<h3 style="padding-bottom:0">{strings["FILES_DOWNLOADS_SUBHEADER"]}</h3>'
@@ -697,12 +709,9 @@ def _downloads_body() -> None:
         """,
         unsafe_allow_html=True,
     )
-    # Keep the panel visible during an active crawl only when it already holds
-    # files; otherwise show it whenever the session folder exists. The Import
-    # button always renders now (disabled while a crawl or index runs) instead of
-    # being hidden, so its position stays stable across job states.
-    job_alive = _job_is_alive(st.session_state.job)
-    show_panel = bool(files) if job_alive else session_folder.exists()
+    # The Import button always renders (disabled mid-job) so its position stays
+    # stable; the panel-visibility rule itself lives in _should_show_files_panel.
+    show_panel = _should_show_files_panel(job_alive=job_alive, has_files=bool(files))
     if show_panel:
         with st.expander(strings["FILES_CRAWL_RESULT_LABEL"], expanded=True):
             _render_import_button()

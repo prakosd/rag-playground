@@ -4,6 +4,13 @@
 
 Requires Python 3.10+ (3.12 or 3.13 recommended).
 
+## Try the hosted demo (no install)
+
+A hosted instance runs on Streamlit Community Cloud at
+**<https://rag-playground-prakosd.streamlit.app/>** — open it in a browser to try Steps 1–5 with
+no setup. It answers with the offline echo model unless cloud credentials are configured, and its
+resources are shared and limited, so keep to a small crawl and index for a quick tour.
+
 ## Run without installing anything
 
 The easiest way to get started is via a pre-configured environment — no Python,

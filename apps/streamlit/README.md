@@ -4,6 +4,9 @@ A browser-based UI for the `crawl4md` library. Non-technical users fill in a for
 **Start**, watch live progress, and download their Markdown files. This guide explains how
 the code is organised, how the pieces connect, and where to look when extending or debugging.
 
+> **Live demo:** a hosted instance runs on Streamlit Community Cloud at
+> **<https://rag-playground-prakosd.streamlit.app/>**.
+
 ---
 
 ## File Map
@@ -355,22 +358,27 @@ are ready, the ready-result button may create an app-owned `final/success_conten
 for a single download. For the full file reference (purposes, naming conventions, and cleanup
 behavior), see [Output Structure](../../README.md#output-structure) in the root README.
 
-**Exploring a crawl in 3D.** Each crawl's `logs/site_graph.jsonl` download row carries a second
-control — **:material/bubble_chart: Explore in 3D** — that opens an interactive Three.js "universe"
-of the crawl in a new browser tab: one planet per page (sized by page weight, surfaced by
-information richness, coloured by crawl status, ringed when large), the seed page as a central sun,
-and dim orbit-links to the page each was discovered from. Hovering a planet shows its details and
-lights the link chain back to the root; clicking opens a side panel with the full record and a live
-preview of the page (with an "open in a new tab" fallback for sites that block embedding). The
-viewer is a self-contained page assembled client-side — the crawler and libraries are untouched.
-Backend logic lives in the pure `app_support/site_graph_3d/` package (`graph_data`,
-`viewer_assembler`, `viewer_labels`); `launcher.py` mounts the inline CCv2 component. three.js
-loads from a pinned CDN, so the new tab needs internet access.
+**Exploring a crawl in 3D.** Each `crawl_*` folder's action row carries a second control —
+**:material/bubble_chart: Explore in 3D**, sitting right of its **Export** button — that opens an
+interactive Three.js "universe" of the crawl in a new browser tab: one planet per page (sized by
+page weight, surfaced by information richness, coloured by crawl status, ringed when large), the
+seed page as a central sun, and dim orbit-links to the page each was discovered from. Hovering a
+planet shows its details and lights the link chain back to the root; clicking opens a side panel
+with the full record and a live preview of the page (with an "open in a new tab" fallback for sites
+that block embedding). Ambient motion (planet orbits and spin, starfield drift, and a slow camera
+auto-revolve) plays only while the viewer is idle and eases in/out, so grabbing the scene calms it
+and it gently resumes about ten seconds after the last interaction. The viewer is a self-contained
+page assembled client-side — the crawler and libraries are untouched. Backend logic lives in the
+pure `app_support/site_graph_3d/` package (`graph_data`, `viewer_assembler`, `viewer_labels`);
+`launcher.py` mounts the inline CCv2 component. three.js loads from a pinned CDN, so the new tab
+needs internet access.
 
-**Downloading a folder as a zip.** Each top-level `crawl_*`/`vector_*` run folder in the download
-tree carries a download-zip button (the `:material/folder_zip:` icon) to the left of its **Delete
-this folder** button. It serves an in-memory archive of the folder's full contents — nested under
-the folder's own name so extracting recreates it — named `<folder>.zip`. The pure
+**Downloading a folder as a zip.** Each top-level `crawl_*`/`vector_*` run folder — plus the fixed
+`search_history` and `basic_rag_qa_history` folders — carries an **Export** button (the
+`:material/folder_zip:` icon) at the start of its action row, before the **Delete this folder**
+button (a `crawl_*` folder's **Explore in 3D** control sits between them). It serves an in-memory
+archive of the folder's full contents — nested under the folder's own name so extracting recreates
+it — named `<folder>.zip`. The pure
 `generated_files.build_folder_zip_bytes(session_root, relative_path)` builds it (validating with
 `ensure_within_root`, refusing the session root); `folder_zip_cache_token` keys an `@st.cache_data`
 wrapper so the archive is rebuilt only when the folder's contents change. The button respects the
@@ -384,8 +392,9 @@ different key is rejected in-dialog. A valid zip prompts a confirm dialog naming
 folder it will become, then `generated_files.import_signed_zip` re-imports it under the next free
 `crawl_*`/`vector_*` sequence and a success toast fires. Extraction is zip-slip-safe.
 
-**Deleting a folder.** Each top-level `crawl_*`/`vector_*` run folder in the download tree
-carries a red **Delete this folder** button beside its download-zip button. It opens a
+**Deleting a folder.** Each top-level `crawl_*`/`vector_*` run folder — and the fixed
+`search_history` and `basic_rag_qa_history` folders — carries a red **Delete this folder** button
+at the end of its action row. It opens a
 confirmation dialog (permanent, advises downloading first) before
 `generated_files.delete_generated_folder(session_root, relative_path)` removes the whole folder —
 the pure helper validates with `ensure_within_root`, refuses the session root itself,

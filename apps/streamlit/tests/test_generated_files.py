@@ -22,6 +22,7 @@ from app_support.generated_files import (
     files_excluding,
     find_latest_crawl_dir,
     find_ready_download_in_session,
+    find_site_graph_file,
     folder_zip_cache_token,
     format_file_size,
     format_run_timestamp_label,
@@ -29,6 +30,7 @@ from app_support.generated_files import (
     generated_files_cache_token,
     import_signed_zip,
     import_target_name,
+    is_history_folder,
     is_run_folder,
 )
 
@@ -265,6 +267,17 @@ def test_import_target_name_advances_sequence_keeping_kind_and_word(tmp_path: Pa
     assert import_target_name(tmp_path, "random_export") == "import_01_upload"
 
 
+def test_import_target_name_works_when_session_folder_does_not_exist(tmp_path: Path) -> None:
+    # Risk: in a fresh browser session the session folder does not yet exist;
+    # import_target_name must not raise FileNotFoundError. Type: regression.
+    session = tmp_path / "session_new"
+    assert not session.exists()
+
+    # Should return sequence 01 for all kinds without crashing.
+    assert import_target_name(session, "crawl_01_river") == "crawl_01_river"
+    assert import_target_name(session, "random_export") == "import_01_upload"
+
+
 def test_import_signed_zip_roundtrip_extracts_to_new_folder(tmp_path: Path) -> None:
     session = tmp_path / "session"
     run = session / "crawl_01_river" / "final"
@@ -295,6 +308,36 @@ def test_is_run_folder_detects_crawl_and_vector_prefixes() -> None:
     assert is_run_folder("vector_01_pentagram") is True
     assert is_run_folder("final") is False
     assert is_run_folder("2026-05-17_10-00-00") is False
+
+
+def test_is_history_folder_detects_search_and_basic_rag_qa_history() -> None:
+    assert is_history_folder("search_history") is True
+    assert is_history_folder("basic_rag_qa_history") is True
+    # Run folders and plain folders are not history folders.
+    assert is_history_folder("crawl_01_boulder") is False
+    assert is_history_folder("vector_01_pentagram") is False
+    assert is_history_folder("final") is False
+
+
+def test_find_site_graph_file_locates_nested_site_graph() -> None:
+    files = [
+        _generated_file("crawl_01/2026-05-17_10-00-00/logs/site_graph.jsonl"),
+        _generated_file("crawl_01/2026-05-17_10-00-00/final/sorted_success_content_001.md"),
+    ]
+    tree = build_download_tree(files)
+
+    found = find_site_graph_file(tree["crawl_01"])
+
+    assert found is not None
+    assert found.name == "site_graph.jsonl"
+    assert found.relative_path == "crawl_01/2026-05-17_10-00-00/logs/site_graph.jsonl"
+
+
+def test_find_site_graph_file_returns_none_when_absent() -> None:
+    files = [_generated_file("vector_01/manifest.json")]
+    tree = build_download_tree(files)
+
+    assert find_site_graph_file(tree["vector_01"]) is None
 
 
 def test_delete_generated_folder_removes_folder_and_contents(tmp_path: Path) -> None:

@@ -19,3 +19,18 @@ def test_format_preview_timestamp_utc_none_returns_none() -> None:
 # crash the preview dialog. Type: unit.
 def test_format_preview_timestamp_utc_out_of_range_returns_none() -> None:
     assert downloads_ui._format_preview_timestamp_utc(1e300) is None
+
+
+# Risk: after a browser reset clears the session, the session folder does not yet
+# exist and holds no files; the panel must still show so Import is reachable.
+# Type: unit.
+def test_should_show_files_panel_idle_shows_even_without_files() -> None:
+    assert downloads_ui._should_show_files_panel(job_alive=False, has_files=False) is True
+    assert downloads_ui._should_show_files_panel(job_alive=False, has_files=True) is True
+
+
+# Risk: an empty panel must not flash mid-write; while a job runs, show the panel
+# only once it holds files. Type: unit.
+def test_should_show_files_panel_hides_empty_panel_during_active_job() -> None:
+    assert downloads_ui._should_show_files_panel(job_alive=True, has_files=False) is False
+    assert downloads_ui._should_show_files_panel(job_alive=True, has_files=True) is True
