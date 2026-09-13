@@ -11,13 +11,16 @@ def test_settings_load_values_from_env_defaults() -> None:
     # from it, since the model declares no in-code fallbacks.
     settings = Settings()
 
-    assert settings.rag_top_k == 4
+    assert settings.rag_top_k == 5
     assert settings.basic_rag_qa_top_results == 5
     assert settings.basic_rag_qa_default_tone == "Neutral"
     assert (
         settings.basic_rag_qa_prompt_template_file
         == "apps/streamlit/config/basic_rag_qa_prompt.txt"
     )
+    assert settings.conv_rag_prompt_template_dir == "apps/streamlit/config"
+    assert settings.conv_rag_session_token_quota == 5700000
+    assert settings.conv_rag_session_cost_quota == 1.0
     assert settings.basic_rag_qa_session_token_quota == 5700000
     assert settings.basic_rag_qa_session_cost_quota == 1.0
     assert "Neutral" in settings.basic_rag_qa_tones.split(",")

@@ -793,31 +793,43 @@ def format_file_size(size_bytes: int) -> str:
 
 
 def format_local_datetime(
-    value: datetime, *, local_timezone: tzinfo | None = None, abbreviate_month: bool = False
+    value: datetime,
+    *,
+    local_timezone: tzinfo | None = None,
+    abbreviate_month: bool = False,
+    with_seconds: bool = False,
 ) -> str:
     """Format a UTC datetime as a local-time label (e.g. '1 July 2026 15:39 AEST').
 
     Reuses the same server-local formatting the download tree applies to run
     folders, so history timestamps read consistently across the app. Set
-    ``abbreviate_month`` for a three-letter month (e.g. '1 Jul 2026 15:39 AEST').
+    ``abbreviate_month`` for a three-letter month; ``with_seconds`` appends
+    ``:SS.mmm`` for a millisecond-precise time (e.g. '1 Jul 2026 15:39:07.482 AEST').
     """
     return _format_local_timestamp(
-        value, local_timezone=local_timezone, abbreviate_month=abbreviate_month
+        value,
+        local_timezone=local_timezone,
+        abbreviate_month=abbreviate_month,
+        with_seconds=with_seconds,
     )
 
 
 def _format_local_timestamp(
-    value: datetime, *, local_timezone: tzinfo | None = None, abbreviate_month: bool = False
+    value: datetime,
+    *,
+    local_timezone: tzinfo | None = None,
+    abbreviate_month: bool = False,
+    with_seconds: bool = False,
 ) -> str:
     target_timezone = local_timezone or datetime.now().astimezone().tzinfo or timezone.utc
     local_value = value.astimezone(timezone.utc).astimezone(target_timezone)
     zone_name = local_value.tzname() or "local"
     months = calendar.month_abbr if abbreviate_month else calendar.month_name
     month_name = months[local_value.month]
-    return (
-        f"{local_value.day} {month_name} {local_value.year} "
-        f"{local_value.hour:02d}:{local_value.minute:02d} {zone_name}"
-    )
+    clock = f"{local_value.hour:02d}:{local_value.minute:02d}"
+    if with_seconds:
+        clock += f":{local_value.second:02d}.{local_value.microsecond // 1000:03d}"
+    return f"{local_value.day} {month_name} {local_value.year} {clock} {zone_name}"
 
 
 def _progress_history_timestamp(folder_node: dict[str, Any] | None) -> datetime | None:

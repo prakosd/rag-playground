@@ -3,7 +3,7 @@ from __future__ import annotations
 from langchain_core.language_models import SimpleChatModel
 
 from rag_engine.catalog import ECHO_MODEL
-from rag_engine.config import ConversationalConfig
+from rag_engine.config import ConversationalConfig, ConversationalPrompts
 from rag_engine.decompose import looks_multi_part, plan_queries, update_state
 from rag_engine.models import ConversationState
 
@@ -65,6 +65,33 @@ def test_plan_queries_short_circuits_single_question() -> None:
 
     assert plan.sub_questions == ["What is X?"]
     assert plan.degraded is False
+
+
+_CAPTURED_PROMPTS: list[str] = []
+
+
+class _CaptureModel(SimpleChatModel):
+    reply: str = "[]"
+
+    @property
+    def _llm_type(self) -> str:
+        return "capture"
+
+    def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+        _CAPTURED_PROMPTS.append(str(messages[-1].content))
+        return self.reply
+
+
+def test_plan_queries_uses_custom_decompose_template() -> None:
+    _CAPTURED_PROMPTS.clear()
+    config = ConversationalConfig(
+        prompts=ConversationalPrompts(decompose="CUSTOM_DECOMPOSE::{question}")
+    )
+
+    plan = plan_queries(_CaptureModel(reply='["x"]'), _STATE, "a and b?", config, model_id="aux")
+
+    assert plan.sub_questions == ["x"]
+    assert _CAPTURED_PROMPTS and _CAPTURED_PROMPTS[0].startswith("CUSTOM_DECOMPOSE::")
 
 
 def test_plan_queries_splits_multi_part() -> None:

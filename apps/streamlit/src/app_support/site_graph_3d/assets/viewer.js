@@ -7,7 +7,6 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import {
   forceSimulation,
   forceManyBody,
@@ -98,7 +97,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.96;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x05070d, 0.0016);
@@ -118,79 +117,14 @@ scene.add(systemGroup);
 // outermost ring — catches its light, giving a real day/night terminator.
 scene.add(new THREE.AmbientLight(0xb8c4e0, 0.32));
 scene.add(new THREE.HemisphereLight(0x9fb4ff, 0x140f22, 0.35));
-const centralLight = new THREE.PointLight(0xfff1d4, 3.0, 0, 0);
+const centralLight = new THREE.PointLight(0xfff6ec, 2.4, 0, 0);
 systemGroup.add(centralLight);
 
 // ── Post-processing ──────────────────────────────────────────────────────────
-// A screen-space gravitational-lensing pass warps the rendered image around each
-// black hole (light bending) and draws its photon ring; bloom then makes the suns
-// and that ring glow. Capped at MAX_LENSED_HOLES per frame and disabled entirely
-// when the crawl has no failed pages, so it costs nothing in the common case.
-const MAX_LENSED_HOLES = 6;
-const blackHoles = []; // { mesh, radius } — projected to screen space each frame
-const blackHoleLensShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-    holeCount: { value: 0 },
-    holeCenter: {
-      value: Array.from({ length: MAX_LENSED_HOLES }, () => new THREE.Vector2()),
-    },
-    holeRadius: { value: new Float32Array(MAX_LENSED_HOLES) },
-  },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: /* glsl */ `
-    #define MAX_HOLES ${MAX_LENSED_HOLES}
-    uniform sampler2D tDiffuse;
-    uniform vec2 resolution;
-    uniform int holeCount;
-    uniform vec2 holeCenter[MAX_HOLES];
-    uniform float holeRadius[MAX_HOLES];
-    varying vec2 vUv;
-    void main() {
-      float aspect = resolution.x / resolution.y;
-      vec3 color = texture2D(tDiffuse, vUv).rgb;
-      vec3 ring = vec3(0.0);
-      float shadow = 0.0;
-      for (int i = 0; i < MAX_HOLES; i++) {
-        if (i >= holeCount) break;
-        float rs = holeRadius[i];
-        if (rs <= 0.0) continue;
-        vec2 d = vUv - holeCenter[i];
-        d.x *= aspect;                        // isotropic (screen-height) units
-        float dist = length(d);
-        vec2 dir = dist > 1e-4 ? d / dist : vec2(0.0);
-        // Bend light toward the mass ~ rs^2 / dist, strongest at the horizon and
-        // fading to nothing a few radii out so the far field stays untouched.
-        float defl = min(rs * rs / max(dist, 1e-4), rs * 3.0);
-        float influence = smoothstep(rs * 5.0, rs * 1.05, dist);
-        vec2 warp = vec2(dir.x / aspect, dir.y) * defl * influence;
-        color = texture2D(tDiffuse, vUv - warp).rgb;
-        // Photon ring: a thin warm band hugging the horizon (bloom lights it up).
-        float band = smoothstep(rs * 1.5, rs * 1.08, dist) *
-                     smoothstep(rs * 0.92, rs * 1.06, dist);
-        ring += vec3(1.0, 0.72, 0.38) * band * 1.6;
-        // Event-horizon shadow: the dark disc the light bends around.
-        shadow = max(shadow, smoothstep(rs * 1.04, rs * 0.97, dist));
-      }
-      color = mix(color, vec3(0.0), shadow);
-      color += ring;
-      gl_FragColor = vec4(color, 1.0);
-    }
-  `,
-};
-
+// A bloom pass makes the bright emissive suns and their coronas glow; ordinary
+// planets and the dark failed-page asteroids stay below its threshold.
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const lensPass = new ShaderPass(blackHoleLensShader);
-lensPass.enabled = false; // switched on in animate() only while holes are on-screen
-composer.addPass(lensPass);
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
   1.15, // strength
@@ -198,33 +132,6 @@ const bloomPass = new UnrealBloomPass(
   0.62, // threshold — only bright emissive suns bloom
 );
 composer.addPass(bloomPass);
-
-// Reused temporaries for projecting each black hole to screen space each frame.
-const _lensWorld = new THREE.Vector3();
-const _lensCenter = new THREE.Vector3();
-const _lensEdge = new THREE.Vector3();
-const _lensUp = new THREE.Vector3();
-
-function updateLensUniforms() {
-  const u = lensPass.uniforms;
-  camera.updateMatrixWorld(); // refresh matrixWorldInverse so project() isn't a frame behind
-  _lensUp.setFromMatrixColumn(camera.matrixWorld, 1); // world-space camera up
-  let count = 0;
-  for (const bh of blackHoles) {
-    if (count >= MAX_LENSED_HOLES) break;
-    bh.mesh.getWorldPosition(_lensWorld);
-    _lensCenter.copy(_lensWorld).project(camera);
-    if (_lensCenter.z > 1.0) continue; // behind the camera / beyond the far plane
-    _lensEdge.copy(_lensWorld).addScaledVector(_lensUp, bh.radius).project(camera);
-    const radiusUv = Math.abs(_lensEdge.y - _lensCenter.y) * 0.5;
-    if (radiusUv <= 0.0) continue;
-    u.holeCenter.value[count].set(_lensCenter.x * 0.5 + 0.5, _lensCenter.y * 0.5 + 0.5);
-    u.holeRadius.value[count] = radiusUv;
-    count++;
-  }
-  u.holeCount.value = count;
-  lensPass.enabled = count > 0;
-}
 
 // ── Controls ─────────────────────────────────────────────────────────────────
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -575,7 +482,7 @@ function createBody(node, isRoot) {
   // An offset seed sun (multi-root crawl) lights its neighbourhood; the central
   // sun at the origin is already lit by the scene's central light.
   if (isRoot && mesh.position.length() > 1e-3) {
-    mesh.add(new THREE.PointLight(0xfff2d6, 1.6, 0, 0));
+    mesh.add(new THREE.PointLight(0xfff6ec, 1.3, 0, 0));
   }
   mesh.userData.node = node;
   systemGroup.add(mesh);
@@ -635,7 +542,7 @@ function makeSun(node) {
 }
 
 function makePlanet(node) {
-  if (node.color_category === "fail") return makeBlackHole(node);
+  if (node.color_category === "fail") return makeAsteroid(node);
   const r = planetRadius(node);
   const isGiant = Boolean(node.is_giant);
   const bucket = Math.max(0, Math.min(3, Math.floor((Number(node.richness) || 0) * 4)));
@@ -672,53 +579,112 @@ function makePlanet(node) {
   return mesh;
 }
 
-// Failed pages collapse into black holes: a pure-black event horizon that emits
-// no light of its own. The screen-space lensing pass warps the starfield around
-// it and draws its photon ring, so it reads as a dark body — a planet-like mass,
-// not a light source. A pulsar-style beacon (below) makes it easy to spot.
-const beacons = []; // { material } — the pulsar beacons pulsed each frame
-const BEACON_PULSE_SPEED = 3.2; // radians/sec of the beacon's brightness pulse
-const BEACON_LEN_SCALE = 6; // beam length as a multiple of the hole radius
-const BEACON_LEN_MIN = 2.5; // floor so even tiny holes get a visible beam (scene units)
-const BEACON_RADIUS_SCALE = 0.32; // beam base radius as a multiple of the hole radius
-const BEACON_HUE = 0xffb84d; // warm photon-ring hue, matching the black-hole look
-const BEACON_OPACITY = 0.34; // base additive opacity — a gentle glow, kept narrow
+// Failed pages render as asteroids: dark, irregular rocky bodies. Each one's
+// shape and surface are derived from its URL so every failed page looks distinct,
+// and they carry no light of their own — the system's suns light them like any
+// planet, and they stay below the bloom threshold so they read as dead rock.
+const ASTEROID_FAMILIES = [
+  // Metallic (nickel-iron): steely blue-grey, only lightly reflective (no envmap).
+  { base: "#3b414b", high: "#93a6bd", low: "#1e222a", roughness: 0.7, metalness: 0.2 },
+  // Carbonaceous rubble: dull warm-grey rock, near-matte.
+  { base: "#4a453e", high: "#8c8478", low: "#242019", roughness: 0.95, metalness: 0.08 },
+];
+const ASTEROID_DETAIL = 3; // icosphere subdivisions before per-vertex displacement
 
-// A pulsar-style beacon: two opposed beams tapering to a point along the vertical
-// axis so a failed page's black hole stands out among many planets. Pure additive
-// geometry with NO THREE.Light, so it never illuminates other bodies; kept narrow
-// and dim so the bloom pass only glows it gently, never washing its neighbours.
-function makeBlackHoleBeacon(r) {
-  const beamLen = r * BEACON_LEN_SCALE + BEACON_LEN_MIN;
-  const beamR = r * BEACON_RADIUS_SCALE;
-  const material = new THREE.MeshBasicMaterial({
-    color: BEACON_HUE,
-    transparent: true,
-    opacity: BEACON_OPACITY,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const group = new THREE.Group();
-  for (const dir of [1, -1]) {
-    // Open-ended cone: base at the pole, apex tapering outward (no bright end cap).
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(beamR, beamLen, 12, 1, true), material);
-    cone.position.y = dir * (r + beamLen / 2);
-    if (dir < 0) cone.rotation.x = Math.PI; // flip the lower beam to point down
-    group.add(cone);
+// A few seeded sinusoidal lobes summed over the unit sphere: a cheap, stable 3D
+// value noise that gives each asteroid a handful of large lumps plus finer bumps.
+function makeAsteroidNoise(rand) {
+  const lobes = [];
+  const count = 5 + Math.floor(rand() * 4); // 5..8 lobes
+  for (let i = 0; i < count; i++) {
+    lobes.push({
+      dir: new THREE.Vector3(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1).normalize(),
+      freq: 0.8 + rand() * 2.6,
+      amp: 0.05 + rand() * 0.08,
+      phase: rand() * Math.PI * 2,
+    });
   }
-  beacons.push({ material });
-  return group;
+  return (unit) => {
+    let d = 0;
+    for (const l of lobes) d += l.amp * Math.sin(unit.dot(l.dir) * l.freq * Math.PI + l.phase);
+    return d;
+  };
 }
 
-function makeBlackHole(node) {
+// Regolith surface: a mottled base speckled with grains, then scattered craters
+// (dark floor, faint bright rim). Small and unique per body — not cached.
+function asteroidTexture(family, rand) {
+  const w = 256;
+  const h = 256;
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = family.base;
+  ctx.fillRect(0, 0, w, h);
+  const grains = 900 + Math.floor(rand() * 700);
+  for (let i = 0; i < grains; i++) {
+    ctx.fillStyle = rand() < 0.5 ? family.low : family.high;
+    ctx.globalAlpha = 0.04 + rand() * 0.14;
+    ctx.beginPath();
+    ctx.arc(rand() * w, rand() * h, 0.6 + rand() * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const craters = 8 + Math.floor(rand() * 12);
+  for (let i = 0; i < craters; i++) {
+    const x = rand() * w;
+    const y = rand() * h;
+    const rr = 4 + rand() * 15;
+    const g = ctx.createRadialGradient(x, y, rr * 0.2, x, y, rr);
+    g.addColorStop(0, family.low);
+    g.addColorStop(0.72, family.low);
+    g.addColorStop(0.86, family.high);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = 0.5 + rand() * 0.3;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, rr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+function makeAsteroid(node) {
   const r = MIN_PLANET_R + clamp01(Number(node.size_scale) || 0) * 0.9;
-  const hole = new THREE.Mesh(
-    new THREE.SphereGeometry(r, 28, 28),
-    new THREE.MeshBasicMaterial({ color: 0x000000 }),
-  );
-  hole.add(makeBlackHoleBeacon(r));
-  blackHoles.push({ mesh: hole, radius: r });
-  return hole;
+  const rand = mulberry32(hashString("asteroid:" + (node.url || node.id)));
+  const family = ASTEROID_FAMILIES[Math.floor(rand() * ASTEROID_FAMILIES.length)];
+  // Displace each icosphere vertex along its normal by the seeded noise so the
+  // silhouette is lumpy and unique; flat shading then facets it like rough rock.
+  const geo = new THREE.IcosahedronGeometry(r, ASTEROID_DETAIL);
+  const noise = makeAsteroidNoise(rand);
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+  const unit = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+    unit.copy(v).normalize();
+    v.multiplyScalar(Math.max(0.6, 1 + noise(unit)));
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  pos.needsUpdate = true;
+  geo.computeBoundingSphere(); // keep hover/click ray-picking correct after displacement
+  const mat = new THREE.MeshStandardMaterial({
+    map: asteroidTexture(family, rand),
+    roughness: family.roughness,
+    metalness: family.metalness,
+    flatShading: true,
+  });
+  if (node.retry) {
+    mat.emissive = new THREE.Color(RETRY_EMISSIVE);
+    mat.emissiveIntensity = 0.14;
+  }
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+  return mesh;
 }
 
 function smooth01(x, a, b) {
@@ -796,6 +762,7 @@ const edges = (Array.isArray(MODEL.edges) ? MODEL.edges : []).filter(
   (e) => planetById.has(e.source) && planetById.has(e.target),
 );
 const LINE_DIM = new THREE.Color(0x191c22); // near-invisible while a planet is focused
+const FAIL_LINK = new THREE.Color(0xff6b6b); // red spoke to a failed page, so failures pop
 // The focused chain renders as a "Petrova line" (Project Hail Mary): a steady
 // crimson thread carrying a hot, white-pink light knot that flows from the sun
 // outward. The crest is pushed HDR so the scene's bloom turns it into a glowing
@@ -853,6 +820,17 @@ function buildLinks() {
   systemGroup.add(linkMesh);
 }
 buildLinks();
+
+// Edge indices touching a failed page — painted red in paintLinks so a failed page
+// (a small asteroid) is easy to spot by following its red spoke.
+const failEdges = new Set();
+for (let i = 0; i < edges.length; i++) {
+  const src = nodeById.get(edges[i].source);
+  const tgt = nodeById.get(edges[i].target);
+  if ((src && src.color_category === "fail") || (tgt && tgt.color_category === "fail")) {
+    failEdges.add(i);
+  }
+}
 
 // How high each link bows off its straight midpoint, as a fraction of the link's
 // length — a gentle upward arc so spokes read as orbits, not taut strings.
@@ -937,6 +915,10 @@ function paintLinks(elapsed) {
     }
     if (hoverChain && hoverChain.has(i)) {
       for (let v = 0; v < perEdge; v++) PETROVA_HOVER.toArray(linkColors, base + v * 3);
+      continue;
+    }
+    if (failEdges.has(i)) {
+      for (let v = 0; v < perEdge; v++) FAIL_LINK.toArray(linkColors, base + v * 3);
       continue;
     }
     if (focusChain) {
@@ -1247,7 +1229,6 @@ function onResize() {
   renderer.setSize(w, h);
   composer.setSize(w, h);
   bloomPass.resolution.set(w, h);
-  lensPass.uniforms.resolution.value.set(w, h);
 }
 window.addEventListener("resize", onResize);
 
@@ -1297,11 +1278,6 @@ function animate() {
   if (focusChain && focusHalo) {
     focusHalo.material.opacity = 0.55 + 0.3 * Math.sin(elapsed * PULSE_SPEED);
   }
-  if (beacons.length) {
-    const beaconOpacity = BEACON_OPACITY + 0.12 * Math.sin(elapsed * BEACON_PULSE_SPEED);
-    for (const b of beacons) b.material.opacity = beaconOpacity;
-  }
-  updateLensUniforms();
   composer.render();
 }
 

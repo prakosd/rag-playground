@@ -16,16 +16,28 @@ import streamlit as st
 from artifact_store import LibraryMessage
 from rag_engine import ChatTurn, ConversationalAnswer, ConversationState, conversational_answer
 
+from app_support.app_runtime import _ICON_BUTTON_WIDTH_PX
+from app_support.conversational_rag.conversation_manager import (
+    ConversationSummary,
+    conversation_summaries,
+    conversation_turns,
+    new_conversation_id,
+    new_transaction_id,
+)
 from app_support.conversational_rag.conversational_rag_form_ui import (
     build_conversational_config,
     render_advanced_controls,
     render_followup_buttons,
     render_turn_inspection,
-    render_turn_metadata,
 )
 from app_support.conversational_rag.conversational_rag_history import (
+    ConversationalStageUsage,
     ConversationalTurnRecord,
     append_conversational_rag_record,
+    load_conversational_rag_history,
+)
+from app_support.conversational_rag.conversational_token_ui import (
+    render_conversational_token_panel,
 )
 from app_support.conversational_rag.followup_cache import get_cached_chunks, replace_followups
 from app_support.i18n import get_strings, localize_message
@@ -37,14 +49,15 @@ _TURNS_KEY = "conversational_rag_turns"
 _STATE_KEY = "conversational_rag_state"
 _CACHE_KEY = "conversational_rag_followup_cache"
 _PENDING_KEY = "conversational_rag_pending"
+_CONV_ID_KEY = "conversational_rag_current_id"
 _USER_TURN_KEY_PREFIX = "conv-user-"
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
 _CHAT_ALIGN_CSS = (
     "<style>"
     f"div[class*='st-key-{_USER_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
-    "{flex-direction:row-reverse}"
+    "{flex-direction:row-reverse;width:fit-content;max-width:80%;margin-left:auto}"
     f"div[class*='st-key-{_USER_TURN_KEY_PREFIX}'] div[data-testid='stChatMessageContent']"
-    "{flex-grow:0;text-align:right}"
+    "{text-align:right}"
     "</style>"
 )
 
@@ -56,17 +69,19 @@ def render_page(context: RagPageContext) -> None:
     st.caption(strings["CHAT_SECTION_CAPTION"])
     st.html(_CHAT_ALIGN_CSS)
 
-    controls = render_advanced_controls(strings, "conversational_rag", list(context.list_indexes()))
+    controls = render_advanced_controls(
+        strings, "conversational_rag", list(context.list_indexes()), context.session_root()
+    )
     index = controls.index
 
-    turns: list[dict] = st.session_state.setdefault(_TURNS_KEY, [])
-    state: ConversationState = st.session_state.setdefault(_STATE_KEY, ConversationState())
-    cache: dict = st.session_state.setdefault(_CACHE_KEY, {})
+    records = load_conversational_rag_history(context.session_root())
+    summaries = conversation_summaries(records)
+    _ensure_active_conversation(records, summaries)
+    _render_conversation_controls(strings, records, summaries)
 
-    if st.button(strings["CHAT_CLEAR_BUTTON"], icon=":material/delete:", disabled=not turns):
-        for key in (_TURNS_KEY, _STATE_KEY, _CACHE_KEY, _PENDING_KEY):
-            st.session_state.pop(key, None)
-        st.rerun()
+    turns: list[dict] = st.session_state[_TURNS_KEY]
+    state: ConversationState = st.session_state[_STATE_KEY]
+    cache: dict = st.session_state[_CACHE_KEY]
 
     if not turns:
         st.info(strings["CHAT_EMPTY_HINT"])
@@ -79,7 +94,6 @@ def render_page(context: RagPageContext) -> None:
             render_messages(strings, answer.warnings, answer.errors)
             if answer.answer:
                 st.write(answer.answer)
-            render_turn_metadata(strings, answer)
             if controls.inspect:
                 render_turn_inspection(strings, answer, default_tab=default_tab)
 
@@ -90,13 +104,16 @@ def render_page(context: RagPageContext) -> None:
             st.session_state[_PENDING_KEY] = clicked
             st.rerun()
 
+    render_conversational_token_panel(strings, records)
+    context.render_downloads()
+
     pending = st.session_state.pop(_PENDING_KEY, None)
     typed = st.chat_input(strings["CHAT_INPUT_PLACEHOLDER"], disabled=index is None)
     question = (pending or typed or "").strip()
     if not (question and index is not None):
         return
 
-    config = build_conversational_config(controls)
+    config = build_conversational_config(controls, context.session_root())
     history = _history_from_turns(turns)
     cached = get_cached_chunks(cache, question)
 
@@ -122,8 +139,92 @@ def render_page(context: RagPageContext) -> None:
     turns.append({"question": question, "answer": answer, "turn_id": len(turns)})
     st.session_state[_STATE_KEY] = answer.state
     replace_followups(cache, answer.follow_ups)
-    _append_history(context.session_root(), index, config, question, answer, elapsed)
+    _append_history(
+        context.session_root(),
+        st.session_state[_CONV_ID_KEY],
+        index,
+        config,
+        question,
+        answer,
+        elapsed,
+    )
     st.rerun()
+
+
+def _ensure_active_conversation(
+    records: list[ConversationalTurnRecord], summaries: list[ConversationSummary]
+) -> None:
+    """Pick the active conversation on first load or after a session switch.
+
+    Defaults to the most recently active saved conversation (rehydrated from
+    disk) or a fresh empty one, materializing its turns/state into session state.
+    A later rerun keeps the existing id, so live full-fidelity turns are never
+    overwritten by their display-adequate disk replay. The shell clears
+    ``_CONV_ID_KEY`` when switching sessions, which re-triggers this.
+    """
+    if _CONV_ID_KEY in st.session_state:
+        return
+    if summaries:
+        _activate_conversation(summaries[0].conversation_id, records)
+    else:
+        _start_new_conversation()
+
+
+def _activate_conversation(conversation_id: str, records: list[ConversationalTurnRecord]) -> None:
+    """Load a saved conversation's turns (display-adequate) into session state."""
+    turns = conversation_turns(records, conversation_id)
+    st.session_state[_CONV_ID_KEY] = conversation_id
+    st.session_state[_TURNS_KEY] = turns
+    st.session_state[_STATE_KEY] = turns[-1]["answer"].state if turns else ConversationState()
+    st.session_state[_CACHE_KEY] = {}
+    st.session_state.pop(_PENDING_KEY, None)
+
+
+def _start_new_conversation() -> None:
+    """Begin a fresh, empty conversation with a new id."""
+    st.session_state[_CONV_ID_KEY] = new_conversation_id()
+    st.session_state[_TURNS_KEY] = []
+    st.session_state[_STATE_KEY] = ConversationState()
+    st.session_state[_CACHE_KEY] = {}
+    st.session_state.pop(_PENDING_KEY, None)
+
+
+def _render_conversation_controls(
+    strings,
+    records: list[ConversationalTurnRecord],
+    summaries: list[ConversationSummary],
+) -> None:
+    """Render the New-conversation button and a picker over saved conversations."""
+    current_id = st.session_state[_CONV_ID_KEY]
+    option_ids = [summary.conversation_id for summary in summaries]
+    if current_id not in option_ids:
+        option_ids = [current_id, *option_ids]  # the unsaved, in-progress conversation
+    titles = {summary.conversation_id: summary.title for summary in summaries}
+
+    def _label(conversation_id: str) -> str:
+        title = titles.get(conversation_id) or strings["CHAT_NEW_CONVERSATION"]
+        return f"{conversation_id} · {title}" if conversation_id else title
+
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        if st.button(
+            "",
+            width=_ICON_BUTTON_WIDTH_PX,
+            icon=":material/add:",
+            help=strings["CHAT_NEW_CONVERSATION"],
+            key="conversational_rag_new",
+        ):
+            _start_new_conversation()
+            st.rerun()
+        selected = st.selectbox(
+            strings["CHAT_CONVERSATION_SELECT"],
+            options=option_ids,
+            index=option_ids.index(current_id),
+            format_func=_label,
+            width=360,
+        )
+    if selected != current_id:
+        _activate_conversation(selected, records)
+        st.rerun()
 
 
 def _render_user_message(question: str, turn_id: int) -> None:
@@ -141,7 +242,13 @@ def _history_from_turns(turns: list[dict]) -> list[ChatTurn]:
 
 
 def _append_history(
-    session_root, index, config, question: str, answer: ConversationalAnswer, elapsed: float
+    session_root,
+    conversation_id: str,
+    index,
+    config,
+    question: str,
+    answer: ConversationalAnswer,
+    elapsed: float,
 ) -> None:
     timings = answer.timings
     manifest = index.manifest
@@ -151,7 +258,7 @@ def _append_history(
         or ""
     )
     record = ConversationalTurnRecord(
-        timestamp_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        timestamp_utc=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
         index_folder=index.vector_folder,
         index_run=index.run_name,
         embedding_model=embedding_model,
@@ -169,6 +276,19 @@ def _append_history(
         state_seconds=timings.get("state", 0.0),
         total_seconds=elapsed,
         results=stored_results(answer.sources),
+        token_usage=tuple(
+            ConversationalStageUsage(
+                process=stage.process,
+                model=stage.model_id,
+                input_tokens=stage.usage.input_tokens,
+                output_tokens=stage.usage.output_tokens,
+                total_tokens=stage.usage.total_tokens,
+            )
+            for stage in answer.token_usage
+        ),
         follow_ups_shown=tuple(item.question for item in answer.follow_ups),
+        conversation_id=conversation_id,
+        transaction_id=new_transaction_id(),
+        state_summary=answer.state.summary,
     )
     append_conversational_rag_record(session_root, record)

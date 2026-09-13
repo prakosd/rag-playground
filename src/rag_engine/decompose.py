@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -20,13 +20,14 @@ from log4py import get_logger
 from rag_engine import messages
 from rag_engine.catalog import ECHO_MODEL
 from rag_engine.config import ConversationalConfig
-from rag_engine.models import ConversationState, QueryPlan
+from rag_engine.models import ConversationState, QueryPlan, TokenUsage
 from rag_engine.prompts import (
     PLAN_QUERIES_TEMPLATE,
     STATE_UPDATE_TEMPLATE,
-    invoke_text,
+    invoke_text_with_usage,
     parse_json_array,
     parse_json_object,
+    render_conversational_template,
 )
 
 if TYPE_CHECKING:
@@ -66,6 +67,7 @@ def plan_queries(
     config: ConversationalConfig,
     *,
     model_id: str,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> QueryPlan:
     """Resolve references and split *raw_question* into standalone sub-questions.
 
@@ -84,20 +86,24 @@ def plan_queries(
         # Nothing to resolve and nothing to split: skip the model call.
         return QueryPlan(sub_questions=[raw_question])
 
-    prompt = PLAN_QUERIES_TEMPLATE.format(
+    prompt = render_conversational_template(
+        config.prompts.decompose,
+        PLAN_QUERIES_TEMPLATE,
         summary=state.summary or _NONE_PLACEHOLDER,
         entities=_format_entities(state.entities),
         recent=_format_recent(state.recent_resolved, config.plan_recent_turns),
         question=raw_question,
     )
     try:
-        reply = invoke_text(model, prompt)
+        reply, usage = invoke_text_with_usage(model, prompt)
     except Exception as exc:  # noqa: BLE001 - planning is best-effort
         _logger.warning("Query planning failed: %s", exc)
         return QueryPlan(
             sub_questions=[raw_question], degraded=True, warnings=[messages.plan_unparsable()]
         )
 
+    if record_usage is not None:
+        record_usage("decomposition", usage)
     parsed = parse_json_array(reply)
     if not parsed:
         return QueryPlan(
@@ -138,6 +144,7 @@ def update_state(
     *,
     model_id: str,
     turn_index: int,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> ConversationState:
     """Return the next conversation state after a turn.
 
@@ -153,7 +160,9 @@ def update_state(
     if model_id == ECHO_MODEL or turn_index < config.state_summary_start_turn:
         return replace(state, recent_resolved=recent)
 
-    prompt = STATE_UPDATE_TEMPLATE.format(
+    prompt = render_conversational_template(
+        config.prompts.state,
+        STATE_UPDATE_TEMPLATE,
         summary=state.summary or _NONE_PLACEHOLDER,
         entities=json.dumps(state.entities) if state.entities else "{}",
         question=resolved_question.strip(),
@@ -161,11 +170,13 @@ def update_state(
         max_words=config.state_summary_max_words,
     )
     try:
-        reply = invoke_text(model, prompt)
+        reply, usage = invoke_text_with_usage(model, prompt)
     except Exception as exc:  # noqa: BLE001 - state update is best-effort
         _logger.warning("Conversation-state update failed: %s", exc)
         return replace(state, recent_resolved=recent)
 
+    if record_usage is not None:
+        record_usage("state", usage)
     parsed = parse_json_object(reply)
     if parsed is None:
         return replace(state, recent_resolved=recent)

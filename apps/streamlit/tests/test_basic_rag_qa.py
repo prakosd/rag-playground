@@ -235,14 +235,15 @@ def test_transaction_rows_empty_without_records(monkeypatch: MonkeyPatch) -> Non
 
 
 def test_format_cost_variants(monkeypatch: MonkeyPatch) -> None:
-    page = _page(monkeypatch)
+    _page(monkeypatch)
+    from app_support.rag_shared.token_usage_ui import format_cost
 
-    assert page._format_cost(STRINGS_EN, None) == STRINGS_EN["BASIC_QA_TOKEN_NA"]
-    assert page._format_cost(STRINGS_EN, 0.0) == "$0.0000"
+    assert format_cost(STRINGS_EN, None) == STRINGS_EN["BASIC_QA_TOKEN_NA"]
+    assert format_cost(STRINGS_EN, 0.0) == "$0.0000"
     # A positive cost that rounds below the minimum shows the hint, not $0.0000.
-    assert page._format_cost(STRINGS_EN, 0.0000189) == STRINGS_EN["BASIC_QA_COST_UNDER_MIN"]
-    assert page._format_cost(STRINGS_EN, 0.025) == "$0.0250"
-    assert page._format_cost(STRINGS_EN, 1234.5) == "$1,234.5000"
+    assert format_cost(STRINGS_EN, 0.0000189) == STRINGS_EN["BASIC_QA_COST_UNDER_MIN"]
+    assert format_cost(STRINGS_EN, 0.025) == "$0.0250"
+    assert format_cost(STRINGS_EN, 1234.5) == "$1,234.5000"
 
 
 def test_record_and_session_cost_sum_priced_records(monkeypatch: MonkeyPatch) -> None:
@@ -322,12 +323,14 @@ def test_transaction_rows_include_provider_cloud_and_cost(monkeypatch: MonkeyPat
 
 def test_transaction_csv_has_header_and_rows(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
+    from app_support.rag_shared.token_usage_ui import _transaction_csv
+
     rows = page._transaction_rows(STRINGS_EN, [_record(llm_model="model-x")])
 
-    csv_text = page._transaction_csv(rows)
+    csv_text = _transaction_csv(rows)
     lines = csv_text.splitlines()
 
     assert STRINGS_EN["BASIC_QA_TXN_COL_COST"] in lines[0]  # header row
     assert STRINGS_EN["BASIC_QA_TXN_COL_PROVIDER"] in lines[0]
     assert len(lines) == 2  # header + one record
-    assert page._transaction_csv([]) == ""
+    assert _transaction_csv([]) == ""

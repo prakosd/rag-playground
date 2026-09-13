@@ -50,3 +50,11 @@ def test_aux_model_choices_has_valid_default() -> None:
 
     assert options
     assert 0 <= default_index < len(options)
+
+
+def test_build_config_populates_prompt_overrides() -> None:
+    # With no session, the six prompts resolve from the shipped config files.
+    config = build_conversational_config(_controls())
+
+    for key in ("answer", "decompose", "rerank", "followups", "answerability", "state"):
+        assert getattr(config.prompts, key)

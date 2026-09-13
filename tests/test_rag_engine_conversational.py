@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langchain_core.language_models import SimpleChatModel
+from langchain_core.language_models import BaseChatModel, SimpleChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 
 from rag_engine import messages
 from rag_engine.chat import conversational_answer
@@ -25,6 +27,29 @@ class _ScriptedModel(SimpleChatModel):
 
     def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
         return self.reply
+
+
+class _UsageModel(BaseChatModel):
+    """A chat model whose reply carries usage_metadata, for token-capture tests."""
+
+    reply: str = "ANSWER"
+    tokens: tuple[int, int, int] = (1, 2, 3)
+
+    @property
+    def _llm_type(self) -> str:
+        return "usage"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        input_tokens, output_tokens, total_tokens = self.tokens
+        message = AIMessage(
+            content=self.reply,
+            usage_metadata={
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+            },
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
 
 
 def _main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
@@ -75,6 +100,51 @@ def test_conversational_answer_basic_flow(tmp_path: Path) -> None:
     assert {"plan", "retrieve", "rerank", "answer"} <= set(result.timings)
     assert captured["query"] == "What is the capital of France?"
     assert result.plan.degraded is True
+
+
+def test_conversational_answer_captures_answer_token_usage(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        return ResolvedChatModel(model=_UsageModel(reply="ANSWER"), model_id="main"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+
+    # Only the answer stage runs an LLM here (planning short-circuits; no
+    # rerank/followups/state), so exactly one usage row is captured for the answer model.
+    assert result.answer == "ANSWER"
+    assert len(result.token_usage) == 1
+    stage = result.token_usage[0]
+    assert stage.process == "answer"
+    assert stage.model_id == "main"
+    assert stage.usage.total_tokens == 3
+
+
+def test_conversational_answer_token_usage_empty_without_reported_usage(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    # The scripted answer model reports no usage_metadata, so nothing is recorded.
+    result = conversational_answer(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+
+    assert result.token_usage == []
 
 
 def test_conversational_answer_reports_progress_stages(tmp_path: Path) -> None:

@@ -64,6 +64,15 @@ def test_local_time_label_abbreviates_month_when_requested() -> None:
     assert "Jul" in short and "July" not in short  # three-letter month for the txn table
 
 
+def test_local_time_label_appends_seconds_when_requested() -> None:
+    minute = local_time_label("2026-07-04T10:00:05.482+00:00")
+    precise = local_time_label("2026-07-04T10:00:05.482+00:00", with_seconds=True)
+
+    assert ".482" not in minute  # default stays minute-precision (shared by Steps 3/4)
+    assert ".482" in precise  # opt-in adds seconds + milliseconds
+    assert precise.count(":") == minute.count(":") + 1  # exactly one extra ':' for :SS
+
+
 def test_kv_grid_html_escapes_and_right_aligns_values() -> None:
     grid = kv_grid_html([("Model", "a & b"), ("Tone", "Neutral")])
 

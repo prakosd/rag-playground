@@ -35,7 +35,7 @@ conversational_answer(run_dir, question, state, config)  # Step 5 (advanced pipe
   ├─ generate_chat_answer(...)               → grounded answer
   ├─ suggest_followups / validate_followups  → ValidatedFollowup[] (answerable only)
   └─ update_state(...)                       → next ConversationState
-                                             → ConversationalAnswer (+ plan, timings)
+                                             → ConversationalAnswer (+ plan, timings, token_usage)
 ```
 
 ## Install
@@ -57,10 +57,10 @@ from rag_engine import RagConfig, answer_question
 config = RagConfig(llm_model="anthropic.claude-3-5-sonnet-20240620-v1:0", top_k=4)
 answer = answer_question(run_dir, "What does the API return on error?", config)
 
-print(answer.answer)              # generated answer (or an echo when no credentials)
-for chunk in answer.sources:      # the retrieved context, with provenance + score
+print(answer.answer)  # generated answer (or an echo when no credentials)
+for chunk in answer.sources:  # the retrieved context, with provenance + score
     print(chunk.source, round(chunk.score, 3))
-for message in answer.warnings:   # structured LibraryMessage warnings (e.g. echo fallback)
+for message in answer.warnings:  # structured LibraryMessage warnings (e.g. echo fallback)
     print(message)
 ```
 
@@ -114,6 +114,23 @@ wording is overridable via the `template` keyword — a template missing a requi
 built-in default — while the fenced, data-only knowledge block is always the
 library's.
 
+### Conversational prompts & token usage (Step 5)
+
+Every LLM stage of `conversational_answer` ships a built-in prompt that a caller can
+override through `ConversationalConfig.prompts` — a `ConversationalPrompts` model with one
+optional field per stage (`answer`, `decompose`, `rerank`, `followups`, `answerability`,
+`state`; `None` keeps the built-in). `CONVERSATIONAL_PROMPT_FIELDS` names the required
+`{placeholders}` for each, and `template_has_fields` / `render_conversational_template`
+validate an override and **fall back to the built-in** on a blank, missing-field, or
+malformed template, so a bad override can never break a turn.
+
+`conversational_answer` also records per-stage token usage: `ConversationalAnswer.token_usage`
+is a list of `StageTokenUsage(process, model_id, usage)` — one per LLM stage, with the
+`answer` stage attributed to the main model and the rest to the auxiliary model.
+`invoke_text_with_usage(model, prompt) -> (text, TokenUsage | None)` and
+`extract_token_usage(message)` expose the same capture for direct callers, and
+`generate_chat_answer_with_usage(...)` returns the answer text plus its `TokenUsage`.
+
 ### Structured results
 
 `answer_question` / `chat_answer` return a `RagAnswer` (answer text, source
@@ -127,18 +144,18 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 
 | Module | Responsibility |
 |---|---|
-| `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter`; `ConversationalConfig` (Step 5 stage flags + thresholds + answer `tone`, wraps a `RagConfig`) |
+| `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter`; `ConversationalConfig` (Step 5 stage flags + thresholds + answer `tone` + `ConversationalPrompts` per-stage prompt overrides, wraps a `RagConfig`) |
 | `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock Nova/Claude APAC profiles + Qwen3/Gemma/Mistral/NVIDIA in-Region + OpenAI Direct API, echo; sorted by cloud → provider → size → name), `DEFAULT_CHAT_MODEL` (pinned to Bedrock Claude), `ECHO_MODEL` |
 | `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), `resolve_auxiliary_model` (small helper model for Step 5), `thinking_disabled_model_kwargs`, lazy echo model |
 | `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, post-filter by score threshold (Step 3); `retrieve_multi` (parallel per-sub-question, deduped) |
 | `search.py` | `VectorSearcher` interface + `ChromaSearcher` + backend-neutral `SearchHit` |
-| `prompts.py` | QA + condense-question prompts, context formatting; `build_rag_prompt` / `format_knowledge` (Step 4); Step 5 auxiliary templates + tolerant JSON parsers |
+| `prompts.py` | QA + condense-question prompts, context formatting; `build_rag_prompt` / `format_knowledge` (Step 4); Step 5 auxiliary templates + tolerant JSON parsers; overridable conversational prompts (`CONVERSATIONAL_PROMPT_FIELDS`, `template_has_fields`, `render_conversational_template`) + token capture (`invoke_text_with_usage`, `extract_token_usage`) |
 | `qa.py` | `answer_question` / `generate_answer` / `stream_answer`; `stream_prompt` / `generate_from_prompt` (raw editable prompt, Step 4) |
-| `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer`; `conversational_answer` (advanced Step 5 pipeline) |
+| `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (+ `generate_chat_answer_with_usage`); `conversational_answer` (advanced Step 5 pipeline, per-stage `token_usage`) |
 | `decompose.py` | `plan_queries` (reference resolution + decomposition) + `update_state` (rolling conversation state) |
 | `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM), lazy `load_cross_encoder` |
 | `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate) + `answerability_check` |
-| `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn`, `TokenUsage`; `QueryPlan`, `ConversationState`, `ValidatedFollowup`, `ConversationalAnswer` |
+| `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn`, `TokenUsage`, `StageTokenUsage`; `QueryPlan`, `ConversationState`, `ValidatedFollowup`, `ConversationalAnswer` |
 | `messages.py` | stable `rag.*` message codes + builders |
 
 ## Constraints

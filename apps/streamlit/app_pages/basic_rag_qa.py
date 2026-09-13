@@ -11,9 +11,6 @@ lifting lives in ``rag_engine`` (prompt builder, streaming) and the app helpers
 
 from __future__ import annotations
 
-import csv
-import html
-import io
 import time
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -35,11 +32,9 @@ from rag_engine.models import TokenUsage
 from app_support.basic_rag_qa.basic_rag_qa_form_ui import (
     apply_maximized_prompt,
     basic_rag_qa_template_is_valid,
-    cost_usage_percent,
     resolve_basic_rag_qa_prompt_template,
     token_totals,
     tone_choices,
-    usage_percent,
 )
 from app_support.basic_rag_qa.basic_rag_qa_history import (
     BasicQaRecord,
@@ -58,8 +53,6 @@ from app_support.i18n import Strings, get_strings
 from app_support.model_pricing import (
     estimate_cost,
     get_model_price,
-    pricing_captured,
-    pricing_sources,
     render_pricing_markdown,
 )
 from app_support.rag_shared.index_catalog import IndexRef
@@ -82,6 +75,11 @@ from app_support.rag_shared.rag_ui import (
     stacked_label_value_html,
 )
 from app_support.rag_shared.result_snapshot import StoredResult, stored_results
+from app_support.rag_shared.token_usage_ui import (
+    TokenPanelData,
+    format_cost,
+    render_token_usage_panel,
+)
 from app_support.settings import get_settings
 
 if TYPE_CHECKING:
@@ -91,10 +89,6 @@ _settings = get_settings()
 _DEFAULT_TOP_RESULTS = _settings.basic_rag_qa_top_results
 _DEFAULT_RESULT_TAB = _settings.semantic_search_default_tab
 _MAX_TOP_RESULTS = 20
-# Estimated costs show 4 decimals; a positive cost that rounds below this would
-# read as $0.0000, so show a "< minimum" hint instead.
-_COST_DECIMALS = 4
-_COST_UNDER_MIN = 5e-5
 # Filename for the Transaction history CSV export.
 _TXN_CSV_FILENAME = "basic_rag_qa_transactions.csv"
 _PROMPT_FIELD_HEIGHT = 260
@@ -121,24 +115,6 @@ div[data-testid="stDialog"]:has(.{_MAXIMIZE_DIALOG_SCOPE_CLASS}) .stTextArea tex
 </style>
 """
 _PANEL_COLUMN_WIDTHS = (0.8, 0.2)
-# The Token usage panel packs five metrics in one row inside a collapsible
-# expander; keep each metric value on one line so a six-figure count never wraps
-# beside its icon. A hidden marker scopes the rule to this panel (mirrors the
-# dialog CSS); its own element is hidden so it adds no vertical gap on top.
-_TOKEN_PANEL_SCOPE_CLASS = "basic-rag-qa-token-panel"
-_TOKEN_PANEL_CSS = f"""
-<div class="{_TOKEN_PANEL_SCOPE_CLASS}" style="display:none"></div>
-<style>
-div[data-testid="stElementContainer"]:has(.{_TOKEN_PANEL_SCOPE_CLASS}) {{
-    display: none;
-}}
-div[data-testid="stExpander"]:has(.{_TOKEN_PANEL_SCOPE_CLASS})
-    div[data-testid="stMetricValue"] {{
-    font-size: 1.4rem;
-    white-space: nowrap;
-}}
-</style>
-"""
 
 # Generate prompt must own the form's Enter key. Streamlit fires the submit button
 # in the FIRST column, so Generate is placed there (Enter's target) and this reverses
@@ -709,20 +685,6 @@ def _session_output_cost(records: Sequence[BasicQaRecord]) -> float | None:
     return sum(priced) if priced else None
 
 
-def _format_cost(strings: Strings, cost: float | None) -> str:
-    """Render a USD cost estimate, the n/a dash, or a below-minimum hint."""
-    if cost is None:
-        return strings["BASIC_QA_TOKEN_NA"]
-    if 0 < cost < _COST_UNDER_MIN:
-        return strings["BASIC_QA_COST_UNDER_MIN"]
-    return f"${cost:,.{_COST_DECIMALS}f}"
-
-
-def _cost_delta(strings: Strings, cost: float | None) -> str | None:
-    """Format a USD cost as a neutral metric delta, or None to omit it."""
-    return None if cost is None else _format_cost(strings, cost)
-
-
 def _on_pricing_dismiss() -> None:
     """Close the read-only pricing preview (X / click-away / Esc)."""
     st.session_state[_PRICING_DIALOG_OPEN_KEY] = False
@@ -747,60 +709,33 @@ def _pricing_dialog(strings: Strings) -> None:
 
 
 def _render_token_summary(strings: Strings, records: Sequence[BasicQaRecord]) -> None:
-    """Render the collapsible Token usage panel: token totals plus budget metrics.
-
-    Five equal metrics, each a token/count on top and its USD figure below (a
-    neutral delta): Input / Output / Total, then the static Quota (token budget /
-    cost budget) and Usage (tokens ÷ token quota, floored; cost ÷ cost quota).
-    Display-only: neither quota blocks a send. A nested Transaction history table
-    breaks the cost down per request. Counts are thousands-separated and kept on
-    one line (scoped CSS) so a six-figure value never wraps beside its icon.
-    """
+    """Build the token panel data from QA history and render the shared panel."""
     totals = token_totals(records)
-    quota = _settings.basic_rag_qa_session_token_quota
-    cost_quota = _settings.basic_rag_qa_session_cost_quota
-    percent = usage_percent(totals.total_tokens, quota)
-    session_cost = _session_cost(records)
-    cost_percent = cost_usage_percent(session_cost, cost_quota)
-    with st.expander(strings["BASIC_QA_TOKEN_PANEL_TITLE"], expanded=False):
-        st.markdown(_TOKEN_PANEL_CSS, unsafe_allow_html=True)
-        input_col, output_col, total_col, quota_col, usage_col = st.columns(5)
-        input_col.metric(
-            strings["BASIC_QA_SUMMARY_INPUT_LABEL"],
-            f"{totals.input_tokens:,}",
-            delta=_cost_delta(strings, _session_input_cost(records)),
-            delta_color="off",
-            icon=":material/login:",
-        )
-        output_col.metric(
-            strings["BASIC_QA_SUMMARY_OUTPUT_LABEL"],
-            f"{totals.output_tokens:,}",
-            delta=_cost_delta(strings, _session_output_cost(records)),
-            delta_color="off",
-            icon=":material/logout:",
-        )
-        total_col.metric(
-            strings["BASIC_QA_SUMMARY_TOTAL_LABEL"],
-            f"{totals.total_tokens:,}",
-            delta=_cost_delta(strings, session_cost),
-            delta_color="off",
-            icon=":material/functions:",
-        )
-        quota_col.metric(
-            strings["BASIC_QA_SUMMARY_QUOTA_LABEL"],
-            f"{quota:,}",
-            delta=f"${cost_quota:,.2f}",
-            delta_color="off",
-            icon=":material/data_usage:",
-        )
-        usage_col.metric(
-            strings["BASIC_QA_SUMMARY_USAGE_LABEL"],
-            f"{percent:.2f}%",
-            delta=None if cost_percent is None else f"{cost_percent:.2f}%",
-            delta_color="off",
-            icon=":material/percent:",
-        )
-        _render_transaction_history(strings, records)
+    data = TokenPanelData(
+        input_tokens=totals.input_tokens,
+        output_tokens=totals.output_tokens,
+        total_tokens=totals.total_tokens,
+        input_cost=_session_input_cost(records),
+        output_cost=_session_output_cost(records),
+        total_cost=_session_cost(records),
+        token_quota=_settings.basic_rag_qa_session_token_quota,
+        cost_quota=_settings.basic_rag_qa_session_cost_quota,
+        rows=_transaction_rows(strings, records),
+        csv_filename=_TXN_CSV_FILENAME,
+    )
+    render_token_usage_panel(
+        strings, data, extra_txn_controls=lambda: _render_pricing_button(strings)
+    )
+
+
+def _render_pricing_button(strings: Strings) -> None:
+    """Open the read-only pricing preview from inside the Transaction history."""
+    if st.button(
+        strings["BASIC_QA_PRICING_LABEL"],
+        icon=":material/request_quote:",
+        help=strings["BASIC_QA_PRICING_HELP"],
+    ):
+        st.session_state[_PRICING_DIALOG_OPEN_KEY] = True
 
 
 def _transaction_rows(
@@ -834,76 +769,11 @@ def _transaction_rows(
                 strings["BASIC_QA_SUMMARY_TOTAL_LABEL"]: na
                 if record.total_tokens is None
                 else record.total_tokens,
-                strings["BASIC_QA_TXN_COL_COST"]: _format_cost(strings, _record_cost(record)),
+                strings["BASIC_QA_TXN_COL_COST"]: format_cost(strings, _record_cost(record)),
                 strings["BASIC_QA_TXN_COL_PROCESS"]: process,
             }
         )
     return rows
-
-
-def _transaction_csv(rows: list[dict[str, object]]) -> str:
-    """Serialize the Transaction history rows to CSV text (localized headers)."""
-    if not rows:
-        return ""
-    buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
-    writer.writeheader()
-    writer.writerows(rows)
-    return buffer.getvalue()
-
-
-def _render_cost_disclaimer(strings: Strings) -> None:
-    """Caption below the table noting costs are estimates, citing the price sources.
-
-    Rendered as a tight, muted HTML line (negative top margin) so it hugs the table
-    above instead of sitting a full block-gap below it.
-    """
-    captured = pricing_captured()
-    sources = pricing_sources()
-    if not captured and not sources:
-        return
-    links = ", ".join(
-        f'<a href="{html.escape(source.url)}" target="_blank" '
-        f'rel="noopener noreferrer">{html.escape(source.name)}</a>'
-        for source in sources
-    )
-    text = strings["BASIC_QA_COST_DISCLAIMER"].format(
-        date=captured or strings["BASIC_QA_TOKEN_NA"],
-        sources=links or strings["BASIC_QA_TOKEN_NA"],
-    )
-    st.markdown(
-        f"<div style='margin-top:-0.75rem;margin-bottom:0.5rem;opacity:0.6;"
-        f"font-size:0.875rem'>{text}</div>",
-        unsafe_allow_html=True,
-    )
-
-
-def _render_transaction_history(strings: Strings, records: Sequence[BasicQaRecord]) -> None:
-    """Render the collapsed per-request token log nested in the Token usage panel."""
-    with st.expander(strings["BASIC_QA_TXN_PANEL_TITLE"], expanded=False):
-        rows = _transaction_rows(strings, records)
-        if not rows:
-            st.caption(strings["BASIC_QA_TXN_EMPTY"])
-            return
-        price_col, csv_col = st.columns(2, vertical_alignment="center")
-        with price_col:
-            if st.button(
-                strings["BASIC_QA_PRICING_LABEL"],
-                icon=":material/request_quote:",
-                help=strings["BASIC_QA_PRICING_HELP"],
-            ):
-                st.session_state[_PRICING_DIALOG_OPEN_KEY] = True
-        with csv_col, st.container(horizontal_alignment="right"):
-            st.download_button(
-                strings["BASIC_QA_TXN_CSV_LABEL"],
-                data=_transaction_csv(rows),
-                file_name=_TXN_CSV_FILENAME,
-                mime="text/csv",
-                icon=":material/download:",
-                help=strings["BASIC_QA_TXN_CSV_HELP"],
-            )
-        st.dataframe(rows, hide_index=True, width="stretch", lazy=True)
-        _render_cost_disclaimer(strings)
 
 
 def _stats_caption(

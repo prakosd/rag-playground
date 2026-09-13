@@ -95,8 +95,11 @@ STRINGS_EN: Strings = {
     "RAG_LLM_SIZE_SMALL": "Small",
     "RAG_LLM_SIZE_MEDIUM": "Medium",
     "RAG_LLM_SIZE_LARGE": "Large",
-    "RAG_TOP_K_LABEL": "Chunks",
-    "RAG_TOP_K_HELP": "How many of the most similar chunks to retrieve as context.",
+    "RAG_TOP_K_LABEL": "Top results",
+    "RAG_TOP_K_HELP": (
+        "How many top-N chunks from semantic search — those with the highest similarity "
+        "score — are retrieved as knowledge for the answer."
+    ),
     "RAG_SOURCES_HEADER": "Sources",
     "RAG_SOURCE_CAPTION": "{source} · score {score}",
     "RAG_MODEL_USED_CAPTION": "Answered with: {model}",
@@ -257,11 +260,12 @@ STRINGS_EN: Strings = {
         "Ask a question, get a grounded answer, and keep following up — each reply is based on "
         "the passages it retrieved."
     ),
-    "CHAT_INPUT_PLACEHOLDER": "Ask a question…",
-    "CHAT_CLEAR_BUTTON": "Clear conversation",
+    "CHAT_INPUT_PLACEHOLDER": "Ask anything…",
+    "CHAT_NEW_CONVERSATION": "New conversation",
+    "CHAT_CONVERSATION_SELECT": "Conversation",
     "CHAT_EMPTY_HINT": "Start the conversation by asking a question below.",
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
-    "CONV_ADVANCED_LABEL": "Advanced options",
+    "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
     "CONV_RERANKER_LABEL": "Re-ranking",
     "CONV_RERANKER_HELP": (
         "Re-order retrieved passages by relevance. Local uses an on-device "
@@ -289,6 +293,25 @@ STRINGS_EN: Strings = {
     "CONV_THRESHOLD_CAPTION": (
         ":red-badge[Drop ≤ {drop}] :orange-badge[Check] :green-badge[Keep ≥ {keep}]"
     ),
+    "CONV_PROMPTS_LABEL": ":material/edit_note: Prompt templates",
+    "CONV_PROMPTS_CAPTION": (
+        "Reword the prompt each stage sends to its model. Saved for this session; "
+        "Reset restores the default."
+    ),
+    "CONV_PROMPT_TAB_ANSWER": "Answer",
+    "CONV_PROMPT_TAB_DECOMPOSE": "Query decomposition",
+    "CONV_PROMPT_TAB_RERANK": "Re-ranking",
+    "CONV_PROMPT_TAB_FOLLOWUPS": "Follow-up suggestions",
+    "CONV_PROMPT_TAB_ANSWERABILITY": "Answerability check",
+    "CONV_PROMPT_TAB_STATE": "Conversation state",
+    "CONV_PROMPT_FIELDS_CAPTION": "Required placeholders: {fields}",
+    "CONV_PROMPT_SAVE": "Save",
+    "CONV_PROMPT_RESET": "Reset to default",
+    "CONV_PROMPT_SAVED_TOAST": "Prompt saved.",
+    "CONV_PROMPT_RESET_TOAST": "Prompt reset to default.",
+    "CONV_PROMPT_INVALID": (
+        "Keep the required placeholders ({fields}) and remove any other braces, then save again."
+    ),
     "CONV_INSPECT_EXPANDER": "🔎 Inspect this turn",
     "CONV_TAB_DECOMPOSITION": "Decomposition",
     "CONV_TAB_RETRIEVAL": "Retrieval",
@@ -315,7 +338,16 @@ STRINGS_EN: Strings = {
     "CONV_META_ANSWER_MODEL": "Answer model",
     "CONV_META_AUX_MODEL": "Auxiliary model",
     "CONV_META_RERANKER": "Re-ranker",
-    "CONV_FOLLOWUPS_CAPTION": "💡 Suggested follow-ups",
+    "CONV_FOLLOWUPS_CAPTION": "You might also want to ask",
+    "CONV_PROCESS_DECOMPOSITION": "Query decomposition",
+    "CONV_PROCESS_RERANKING": "Re-ranking",
+    "CONV_PROCESS_ANSWER": "Answer generation",
+    "CONV_PROCESS_FOLLOWUPS": "Follow-up suggestions",
+    "CONV_PROCESS_ANSWERABILITY": "Answerability check",
+    "CONV_PROCESS_STATE": "Conversation state",
+    "CONV_PROCESS_MULTI": "{count}× {process}",
+    "CONV_TXN_COL_CONVERSATION": "Conversation ID",
+    "CONV_TXN_COL_TRANSACTION": "Transaction ID",
     "CONV_HISTORY_PANEL_TITLE": "Conversation history",
     "CONV_HISTORY_EMPTY": "Saved turns appear here.",
     "CONV_HISTORY_PIN": "Pin",

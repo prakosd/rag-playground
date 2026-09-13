@@ -21,6 +21,7 @@ from app_support.rag_shared.result_snapshot import StoredResult, stored_results_
 
 __all__ = [
     "CONVERSATIONAL_RAG_HISTORY_DIRNAME",
+    "ConversationalStageUsage",
     "ConversationalTurnRecord",
     "append_conversational_rag_record",
     "conversational_rag_history_dir",
@@ -55,7 +56,21 @@ _CSV_COLUMNS = (
     "follow_ups_shown",
     "follow_ups_dropped",
     "pinned",
+    "conversation_id",
+    "transaction_id",
+    "state_summary",
 )
+
+
+@dataclass(frozen=True)
+class ConversationalStageUsage:
+    """Token usage one LLM stage of a turn reported (process + model + counts)."""
+
+    process: str
+    model: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -80,9 +95,16 @@ class ConversationalTurnRecord:
     state_seconds: float = 0.0
     total_seconds: float = 0.0
     results: tuple[StoredResult, ...] = ()
+    token_usage: tuple[ConversationalStageUsage, ...] = ()
     follow_ups_shown: tuple[str, ...] = ()
     follow_ups_dropped: tuple[str, ...] = ()
     pinned: bool = False
+    # Grouping + tracing: the conversation this turn belongs to, a per-turn id,
+    # and the rewriter's rolling summary (persisted so a reloaded session can
+    # title conversations and seed continuity without a live LLM state).
+    conversation_id: str = ""
+    transaction_id: str = ""
+    state_summary: str = ""
 
 
 def conversational_rag_history_dir(session_root: Path | str) -> Path:
@@ -180,6 +202,9 @@ def _write_csv(path: Path, records: list[ConversationalTurnRecord]) -> None:
                     _LIST_SEPARATOR.join(record.follow_ups_shown),
                     _LIST_SEPARATOR.join(record.follow_ups_dropped),
                     record.pinned,
+                    record.conversation_id,
+                    record.transaction_id,
+                    record.state_summary,
                 ]
             )
 
@@ -188,6 +213,34 @@ def _str_tuple(value: object) -> tuple[str, ...]:
     if isinstance(value, (list, tuple)):
         return tuple(str(item) for item in value)
     return ()
+
+
+def _opt_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stage_usages_from_payload(value: object) -> tuple[ConversationalStageUsage, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    usages: list[ConversationalStageUsage] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        usages.append(
+            ConversationalStageUsage(
+                process=str(item.get("process", "")),
+                model=str(item.get("model", "")),
+                input_tokens=_opt_int(item.get("input_tokens")),
+                output_tokens=_opt_int(item.get("output_tokens")),
+                total_tokens=_opt_int(item.get("total_tokens")),
+            )
+        )
+    return tuple(usages)
 
 
 def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
@@ -213,9 +266,13 @@ def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
             state_seconds=float(payload.get("state_seconds", 0.0)),
             total_seconds=float(payload.get("total_seconds", 0.0)),
             results=stored_results_from_payload(payload.get("results")),
+            token_usage=_stage_usages_from_payload(payload.get("token_usage")),
             follow_ups_shown=_str_tuple(payload.get("follow_ups_shown")),
             follow_ups_dropped=_str_tuple(payload.get("follow_ups_dropped")),
             pinned=bool(payload.get("pinned", False)),
+            conversation_id=str(payload.get("conversation_id", "")),
+            transaction_id=str(payload.get("transaction_id", "")),
+            state_summary=str(payload.get("state_summary", "")),
         )
     except (KeyError, TypeError, ValueError):
         return None

@@ -4,18 +4,23 @@ import logging
 
 import pytest
 
-from rag_engine.models import RetrievedChunk
+from rag_engine.models import RetrievedChunk, TokenUsage
 from rag_engine.prompts import (
+    CONVERSATIONAL_PROMPT_FIELDS,
     PLAN_QUERIES_TEMPLATE,
     QA_SYSTEM_PROMPT,
     RAG_PROMPT_TEMPLATE,
     STATE_UPDATE_TEMPLATE,
     build_rag_prompt,
+    extract_token_usage,
     format_context,
     format_knowledge,
+    invoke_text_with_usage,
     parse_json_array,
     parse_json_object,
     parse_ranking,
+    render_conversational_template,
+    template_has_fields,
 )
 
 _CHUNKS = [
@@ -202,3 +207,91 @@ def test_build_rag_prompt_falls_back_when_template_is_invalid(
     # A broken override never breaks generation: the built-in default is used.
     assert "retrieval-augmented AI assistant" in prompt
     assert any("invalid" in record.getMessage().lower() for record in caplog.records)
+
+
+def test_template_has_fields_accepts_allowed_and_partial_fields() -> None:
+    assert template_has_fields("Q: {question} C: {context}", ("question", "context")) is True
+    # Using fewer of the allowed fields is fine — an unused slot is not required.
+    assert template_has_fields("just {question}", ("question", "context")) is True
+
+
+def test_template_has_fields_rejects_unknown_field_or_stray_brace() -> None:
+    assert template_has_fields("{question} {oops}", ("question",)) is False
+    assert template_has_fields("a { stray", ("question",)) is False
+
+
+def test_render_conversational_template_uses_valid_override() -> None:
+    assert render_conversational_template("Only: {q}", "Default: {q}", q="hi") == "Only: hi"
+
+
+def test_render_conversational_template_blank_override_falls_back() -> None:
+    assert render_conversational_template("   ", "Default: {q}", q="hi") == "Default: hi"
+    assert render_conversational_template(None, "Default: {q}", q="hi") == "Default: hi"
+
+
+def test_render_conversational_template_invalid_override_falls_back(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="rag_engine"):
+        out = render_conversational_template("{q} {nope}", "Default: {q}", q="hi")
+
+    assert out == "Default: hi"
+    assert any("invalid" in record.getMessage().lower() for record in caplog.records)
+
+
+def test_render_conversational_template_inserts_brace_values_literally() -> None:
+    # A value that itself contains braces must be inserted verbatim, not re-parsed.
+    assert render_conversational_template(None, "X: {q}", q="a {b} c") == "X: a {b} c"
+
+
+def test_conversational_prompt_fields_cover_every_stage() -> None:
+    assert set(CONVERSATIONAL_PROMPT_FIELDS) == {
+        "answer",
+        "decompose",
+        "rerank",
+        "followups",
+        "answerability",
+        "state",
+    }
+    # Each built-in template must satisfy its own declared field contract.
+    assert template_has_fields(PLAN_QUERIES_TEMPLATE, CONVERSATIONAL_PROMPT_FIELDS["decompose"])
+    assert template_has_fields(STATE_UPDATE_TEMPLATE, CONVERSATIONAL_PROMPT_FIELDS["state"])
+    assert template_has_fields(QA_SYSTEM_PROMPT, CONVERSATIONAL_PROMPT_FIELDS["answer"])
+
+
+class _FakeMessage:
+    def __init__(self, content: str, usage_metadata: dict | None = None) -> None:
+        self.content = content
+        self.usage_metadata = usage_metadata
+
+
+class _FakeUsageModel:
+    def __init__(self, message: _FakeMessage) -> None:
+        self._message = message
+
+    def invoke(self, _messages: object) -> _FakeMessage:
+        return self._message
+
+
+def test_extract_token_usage_reads_usage_metadata() -> None:
+    message = _FakeMessage("hi", {"input_tokens": 3, "output_tokens": 5, "total_tokens": 8})
+    assert extract_token_usage(message) == TokenUsage(3, 5, 8)
+
+
+def test_extract_token_usage_none_when_absent_or_all_none() -> None:
+    assert extract_token_usage(_FakeMessage("hi")) is None
+    assert extract_token_usage("plain string") is None
+    assert (
+        extract_token_usage(
+            _FakeMessage("hi", {"input_tokens": None, "output_tokens": None, "total_tokens": None})
+        )
+        is None
+    )
+
+
+def test_invoke_text_with_usage_returns_text_and_usage() -> None:
+    message = _FakeMessage("answer", {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3})
+    text, usage = invoke_text_with_usage(_FakeUsageModel(message), "prompt")
+
+    assert text == "answer"
+    assert usage == TokenUsage(1, 2, 3)

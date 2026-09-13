@@ -119,6 +119,23 @@ def test_streamlit_app_starts_without_crashing(
     assert not app.exception
 
 
+# Risk: Step 5 must close with the shared Output Files panel like the other RAG
+# pages; if the render_downloads wiring were dropped it silently disappears.
+# Type: smoke.
+def test_conversational_page_renders_output_files_panel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    with patch("streamlit.components.v2.component", _storage_component_factory):
+        app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
+        app.run(timeout=10)
+        app.switch_page(_CONVERSATIONAL_PAGE_PATH)
+        app.run(timeout=10)
+
+    assert not app.exception
+    assert any("Output Files" in markdown.value for markdown in app.markdown)
+
+
 # Risk: registry entries can point at pages that fail only after navigation.
 # Type: workflow smoke.
 def test_streamlit_app_switches_through_registered_workflow_pages(

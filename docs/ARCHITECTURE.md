@@ -130,9 +130,15 @@ flowchart TD
   the answer is generated, then `suggest_followups` + `validate_followups` propose only
   corpus-answerable follow-ups and `update_state` rolls conversation memory forward. It
   returns a `ConversationalAnswer` (answer + `QueryPlan` + sources + `ValidatedFollowup`s
-  + next `ConversationState` + per-stage `timings`) that the UI renders as a metadata
-  strip and a per-turn inspection panel. Every stage degrades safely (offline model,
-  missing re-rank dependency, unparsable output) with a recorded warning, never an error.
+  + next `ConversationState` + per-stage `timings` + per-process `token_usage`) that the
+  UI renders as a per-turn inspection panel, disk-persisted per-session conversations (a
+  New button + picker; a selected conversation's turns are replayed from the history log on
+  session load), a Token usage panel (a shared renderer also
+  used by Step 4), and the standard Output Files section. Every stage's built-in prompt is
+  overridable through `ConversationalConfig.prompts` (a `ConversationalPrompts` model), and
+  the Step 5 page exposes an editable prompt-template editor; a malformed override falls
+  back to the built-in. Every stage degrades safely (offline model, missing re-rank
+  dependency, unparsable output) with a recorded warning, never an error.
 
 When a cloud chat model is unavailable, `resolve_chat_model` falls back to an offline
 echo model (which repeats the question) and records a warning, so the workflow runs

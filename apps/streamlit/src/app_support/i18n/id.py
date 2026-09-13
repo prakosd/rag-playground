@@ -97,8 +97,11 @@ STRINGS_ID: Strings = {
     "RAG_LLM_SIZE_SMALL": "Kecil",
     "RAG_LLM_SIZE_MEDIUM": "Sedang",
     "RAG_LLM_SIZE_LARGE": "Besar",
-    "RAG_TOP_K_LABEL": "Chunk",
-    "RAG_TOP_K_HELP": "Berapa banyak chunk paling mirip yang diambil sebagai konteks.",
+    "RAG_TOP_K_LABEL": "Hasil teratas",
+    "RAG_TOP_K_HELP": (
+        "Berapa banyak chunk top-N dari semantic search — dengan skor kemiripan tertinggi "
+        "— yang diambil sebagai pengetahuan untuk jawaban."
+    ),
     "RAG_SOURCES_HEADER": "Sumber",
     "RAG_SOURCE_CAPTION": "{source} · skor {score}",
     "RAG_MODEL_USED_CAPTION": "Dijawab dengan: {model}",
@@ -262,11 +265,12 @@ STRINGS_ID: Strings = {
         "Ajukan pertanyaan, dapatkan jawaban yang berlandaskan sumber, dan terus lanjutkan — "
         "setiap balasan didasarkan pada bagian yang diambil."
     ),
-    "CHAT_INPUT_PLACEHOLDER": "Ajukan pertanyaan…",
-    "CHAT_CLEAR_BUTTON": "Hapus percakapan",
+    "CHAT_INPUT_PLACEHOLDER": "Tanyakan apa saja…",
+    "CHAT_NEW_CONVERSATION": "Percakapan baru",
+    "CHAT_CONVERSATION_SELECT": "Percakapan",
     "CHAT_EMPTY_HINT": "Mulai percakapan dengan mengajukan pertanyaan di bawah.",
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
-    "CONV_ADVANCED_LABEL": "Opsi lanjutan",
+    "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
     "CONV_RERANKER_LABEL": "Pemeringkatan ulang",
     "CONV_RERANKER_HELP": (
         "Urutkan ulang bagian yang diambil berdasarkan relevansi. Local memakai "
@@ -294,6 +298,25 @@ STRINGS_ID: Strings = {
     "CONV_THRESHOLD_CAPTION": (
         ":red-badge[Buang ≤ {drop}] :orange-badge[Periksa] :green-badge[Simpan ≥ {keep}]"
     ),
+    "CONV_PROMPTS_LABEL": ":material/edit_note: Templat prompt",
+    "CONV_PROMPTS_CAPTION": (
+        "Ubah kata-kata prompt yang dikirim tiap tahap ke modelnya. Disimpan untuk sesi "
+        "ini; Reset mengembalikan ke bawaan."
+    ),
+    "CONV_PROMPT_TAB_ANSWER": "Jawaban",
+    "CONV_PROMPT_TAB_DECOMPOSE": "Dekomposisi kueri",
+    "CONV_PROMPT_TAB_RERANK": "Pemeringkatan ulang",
+    "CONV_PROMPT_TAB_FOLLOWUPS": "Saran pertanyaan lanjutan",
+    "CONV_PROMPT_TAB_ANSWERABILITY": "Pemeriksaan keterjawaban",
+    "CONV_PROMPT_TAB_STATE": "State percakapan",
+    "CONV_PROMPT_FIELDS_CAPTION": "Placeholder wajib: {fields}",
+    "CONV_PROMPT_SAVE": "Simpan",
+    "CONV_PROMPT_RESET": "Reset ke bawaan",
+    "CONV_PROMPT_SAVED_TOAST": "Prompt disimpan.",
+    "CONV_PROMPT_RESET_TOAST": "Prompt direset ke bawaan.",
+    "CONV_PROMPT_INVALID": (
+        "Pertahankan placeholder wajib ({fields}) dan hapus kurung kurawal lainnya, lalu simpan lagi."
+    ),
     "CONV_INSPECT_EXPANDER": "🔎 Inspeksi giliran ini",
     "CONV_TAB_DECOMPOSITION": "Dekomposisi",
     "CONV_TAB_RETRIEVAL": "Retrieval",
@@ -320,7 +343,16 @@ STRINGS_ID: Strings = {
     "CONV_META_ANSWER_MODEL": "Model jawaban",
     "CONV_META_AUX_MODEL": "Model bantu",
     "CONV_META_RERANKER": "Pemeringkat ulang",
-    "CONV_FOLLOWUPS_CAPTION": "💡 Saran pertanyaan lanjutan",
+    "CONV_FOLLOWUPS_CAPTION": "Anda mungkin juga ingin menanyakan",
+    "CONV_PROCESS_DECOMPOSITION": "Dekomposisi kueri",
+    "CONV_PROCESS_RERANKING": "Pemeringkatan ulang",
+    "CONV_PROCESS_ANSWER": "Pembuatan jawaban",
+    "CONV_PROCESS_FOLLOWUPS": "Saran pertanyaan lanjutan",
+    "CONV_PROCESS_ANSWERABILITY": "Pemeriksaan keterjawaban",
+    "CONV_PROCESS_STATE": "State percakapan",
+    "CONV_PROCESS_MULTI": "{count}× {process}",
+    "CONV_TXN_COL_CONVERSATION": "ID Percakapan",
+    "CONV_TXN_COL_TRANSACTION": "ID Transaksi",
     "CONV_HISTORY_PANEL_TITLE": "Riwayat percakapan",
     "CONV_HISTORY_EMPTY": "Giliran tersimpan muncul di sini.",
     "CONV_HISTORY_PIN": "Sematkan",

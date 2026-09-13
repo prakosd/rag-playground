@@ -11,10 +11,12 @@ from __future__ import annotations
 import html
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import streamlit as st
 from rag_engine import (
     CHAT_MODEL_OPTIONS,
+    CONVERSATIONAL_PROMPT_FIELDS,
     ConversationalAnswer,
     ConversationalConfig,
     ConversationState,
@@ -24,6 +26,14 @@ from rag_engine import (
 )
 
 from app_support.basic_rag_qa.basic_rag_qa_form_ui import tone_choices
+from app_support.conversational_rag.conversational_prompts import (
+    CONVERSATIONAL_PROMPT_KEYS,
+    conversational_prompt_is_valid,
+    reset_conversational_prompt,
+    resolve_conversational_prompt,
+    resolve_conversational_prompts,
+    save_conversational_prompt,
+)
 from app_support.i18n._types import Strings
 from app_support.rag_shared.index_catalog import IndexRef
 from app_support.rag_shared.llm_form_ui import (
@@ -48,6 +58,16 @@ _RERANKER_KEYS = ("off", "local", "llm")
 # Panel layout mirrors Step 4's Basic RAG Q&A panel: a wide control + a compact one.
 _PANEL_COLUMN_WIDTHS = (0.8, 0.2)
 _MAX_TOP_K = 20
+_PROMPT_EDITOR_HEIGHT = 240  # px height of each prompt-template text area
+# ConversationalPrompts field name → its editor tab's i18n label key.
+_PROMPT_TAB_KEYS = {
+    "answer": "CONV_PROMPT_TAB_ANSWER",
+    "decompose": "CONV_PROMPT_TAB_DECOMPOSE",
+    "rerank": "CONV_PROMPT_TAB_RERANK",
+    "followups": "CONV_PROMPT_TAB_FOLLOWUPS",
+    "answerability": "CONV_PROMPT_TAB_ANSWERABILITY",
+    "state": "CONV_PROMPT_TAB_STATE",
+}
 
 
 @dataclass(frozen=True)
@@ -77,11 +97,18 @@ def aux_model_choices() -> tuple[list[str], int]:
     return resolve_chat_model_choices(configured, allowed, settings.conv_rag_default_aux_model)
 
 
-def build_conversational_config(controls: ConversationalControls) -> ConversationalConfig:
-    """Build the library config from the UI *controls* and deployment settings."""
+def build_conversational_config(
+    controls: ConversationalControls, session_root: Path | str | None = None
+) -> ConversationalConfig:
+    """Build the library config from the UI *controls* and deployment settings.
+
+    Prompt overrides resolve from the session's saved edits → the shipped config
+    files → the built-in library templates via ``resolve_conversational_prompts``.
+    """
     settings = get_settings()
     return ConversationalConfig(
         rag=RagConfig(llm_model=controls.answer_model, top_k=controls.top_k),
+        prompts=resolve_conversational_prompts(session_root),
         aux_model_id=controls.aux_model_id or None,
         plan_enabled=controls.decomposition,
         reranker=controls.reranker,
@@ -95,7 +122,7 @@ def build_conversational_config(controls: ConversationalControls) -> Conversatio
 
 
 def render_advanced_controls(
-    strings: Strings, key_prefix: str, indexes: Sequence[IndexRef]
+    strings: Strings, key_prefix: str, indexes: Sequence[IndexRef], session_root: Path
 ) -> ConversationalControls:
     """Render the index / chunks / model / tone panel and the advanced options."""
     settings = get_settings()
@@ -203,6 +230,7 @@ def render_advanced_controls(
                 disabled=disabled,
                 key=f"{key_prefix}_inspect",
             )
+        _render_prompt_editor(strings, key_prefix, session_root, disabled=disabled)
     return ConversationalControls(
         index=index,
         answer_model=answer_model,
@@ -216,6 +244,64 @@ def render_advanced_controls(
         followup_drop=float(drop),
         followup_keep=float(keep),
     )
+
+
+def _render_prompt_editor(
+    strings: Strings, key_prefix: str, session_root: Path, *, disabled: bool
+) -> None:
+    """Render the per-stage prompt-template editor (one tab per Step 5 LLM prompt)."""
+    st.caption(strings["CONV_PROMPTS_LABEL"])
+    st.caption(strings["CONV_PROMPTS_CAPTION"])
+    tabs = st.tabs([strings[_PROMPT_TAB_KEYS[key]] for key in CONVERSATIONAL_PROMPT_KEYS])
+    for tab, prompt_key in zip(tabs, CONVERSATIONAL_PROMPT_KEYS, strict=True):
+        with tab:
+            _render_single_prompt(strings, key_prefix, session_root, prompt_key, disabled=disabled)
+
+
+def _render_single_prompt(
+    strings: Strings, key_prefix: str, session_root: Path, prompt_key: str, *, disabled: bool
+) -> None:
+    """Render one prompt's editable text area with Save / Reset-to-default."""
+    fields = ", ".join("{" + name + "}" for name in CONVERSATIONAL_PROMPT_FIELDS[prompt_key])
+    widget_key = f"{key_prefix}_prompt_{prompt_key}"
+    # Seed session state once so the text area shows the effective prompt without
+    # passing both a value and a key (which Streamlit warns about).
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = resolve_conversational_prompt(prompt_key, session_root)
+    st.text_area(
+        strings[_PROMPT_TAB_KEYS[prompt_key]],
+        height=_PROMPT_EDITOR_HEIGHT,
+        label_visibility="collapsed",
+        disabled=disabled,
+        key=widget_key,
+    )
+    st.caption(strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields))
+    reset_col, save_col = st.columns(2, vertical_alignment="center")
+    with reset_col:
+        if st.button(
+            strings["CONV_PROMPT_RESET"],
+            icon=":material/restart_alt:",
+            disabled=disabled,
+            key=f"{widget_key}_reset",
+        ):
+            reset_conversational_prompt(session_root, prompt_key)
+            st.session_state.pop(widget_key, None)
+            st.toast(strings["CONV_PROMPT_RESET_TOAST"], icon=":material/check:")
+            st.rerun()
+    with save_col, st.container(horizontal_alignment="right"):
+        if st.button(
+            strings["CONV_PROMPT_SAVE"],
+            type="primary",
+            icon=":material/check:",
+            disabled=disabled,
+            key=f"{widget_key}_save",
+        ):
+            if conversational_prompt_is_valid(prompt_key, st.session_state.get(widget_key, "")):
+                save_conversational_prompt(session_root, prompt_key, st.session_state[widget_key])
+                st.toast(strings["CONV_PROMPT_SAVED_TOAST"], icon=":material/check:")
+                st.rerun()
+            else:
+                st.warning(strings["CONV_PROMPT_INVALID"].format(fields=fields))
 
 
 def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None:
@@ -238,8 +324,9 @@ def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None
 def render_turn_inspection(
     strings: Strings, answer: ConversationalAnswer, *, default_tab: str = "raw"
 ) -> None:
-    """Render the collapsed 'Inspect this turn' expander with a tab per stage."""
+    """Render the 'Inspect this turn' expander: metadata strip + a tab per stage."""
     with st.expander(strings["CONV_INSPECT_EXPANDER"], expanded=False):
+        render_turn_metadata(strings, answer)
         tabs = st.tabs(
             [
                 strings["CONV_TAB_DECOMPOSITION"],

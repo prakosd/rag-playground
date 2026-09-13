@@ -21,9 +21,10 @@ from rag_engine.chat import (
     condense_question,
     conversational_answer,
     generate_chat_answer,
+    generate_chat_answer_with_usage,
     stream_chat_answer,
 )
-from rag_engine.config import ConversationalConfig, RagConfig
+from rag_engine.config import ConversationalConfig, ConversationalPrompts, RagConfig
 from rag_engine.llm import (
     ChatModelUnavailable,
     ResolvedChatModel,
@@ -37,10 +38,16 @@ from rag_engine.models import (
     QueryPlan,
     RagAnswer,
     RetrievedChunk,
+    StageTokenUsage,
     TokenUsage,
     ValidatedFollowup,
 )
-from rag_engine.prompts import build_rag_prompt, format_knowledge
+from rag_engine.prompts import (
+    CONVERSATIONAL_PROMPT_FIELDS,
+    build_rag_prompt,
+    format_knowledge,
+    template_has_fields,
+)
 from rag_engine.qa import (
     PromptGeneration,
     answer_question,
@@ -55,6 +62,7 @@ from rag_engine.search import ChromaSearcher, SearchHit, VectorSearcher, open_se
 
 __all__ = [
     "CHAT_MODEL_OPTIONS",
+    "CONVERSATIONAL_PROMPT_FIELDS",
     "DEFAULT_CHAT_MODEL",
     "ECHO_MODEL",
     "ChatModelInfo",
@@ -64,6 +72,7 @@ __all__ = [
     "ConversationState",
     "ConversationalAnswer",
     "ConversationalConfig",
+    "ConversationalPrompts",
     "PromptGeneration",
     "QueryPlan",
     "RagAnswer",
@@ -72,6 +81,7 @@ __all__ = [
     "RetrievalResult",
     "RetrievedChunk",
     "SearchHit",
+    "StageTokenUsage",
     "TokenUsage",
     "ValidatedFollowup",
     "VectorSearcher",
@@ -83,6 +93,7 @@ __all__ = [
     "format_knowledge",
     "generate_answer",
     "generate_chat_answer",
+    "generate_chat_answer_with_usage",
     "generate_from_prompt",
     "get_chat_model_info",
     "open_searcher",
@@ -94,4 +105,5 @@ __all__ = [
     "stream_answer",
     "stream_chat_answer",
     "stream_prompt",
+    "template_has_fields",
 ]

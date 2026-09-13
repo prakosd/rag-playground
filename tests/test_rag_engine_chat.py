@@ -39,6 +39,48 @@ def test_generate_chat_answer_with_echo_includes_question() -> None:
     assert "What is its capital?" in answer
 
 
+def test_generate_chat_answer_uses_custom_system_prompt() -> None:
+    from langchain_core.language_models import SimpleChatModel
+
+    captured: list[str] = []
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            captured.append(str(messages[0].content))  # the formatted system message
+            return "ok"
+
+    answer = generate_chat_answer(
+        _Capture(), "q", _CHUNKS, [], system_prompt="CUSTOM_SYS {context} {tone}"
+    )
+
+    assert answer == "ok"
+    assert captured and captured[0].startswith("CUSTOM_SYS ")
+
+
+def test_generate_chat_answer_ignores_invalid_system_prompt() -> None:
+    from langchain_core.language_models import SimpleChatModel
+
+    captured: list[str] = []
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture2"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            captured.append(str(messages[0].content))
+            return "ok"
+
+    # A system prompt missing the {context}/{tone} slots falls back to the default.
+    generate_chat_answer(_Capture(), "q", _CHUNKS, [], system_prompt="broken {oops}")
+
+    assert captured and "question-answering assistant" in captured[0]
+
+
 def test_chat_answer_with_echo_skips_condensation(tmp_path: Path) -> None:
     captured: dict[str, str] = {}
 

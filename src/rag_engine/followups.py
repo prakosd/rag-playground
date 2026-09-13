@@ -16,12 +16,13 @@ from typing import TYPE_CHECKING
 
 from log4py import get_logger
 from rag_engine.config import ConversationalConfig
-from rag_engine.models import QueryPlan, RetrievedChunk, ValidatedFollowup
+from rag_engine.models import QueryPlan, RetrievedChunk, TokenUsage, ValidatedFollowup
 from rag_engine.prompts import (
     ANSWERABILITY_TEMPLATE,
     SUGGEST_FOLLOWUPS_TEMPLATE,
-    invoke_text,
+    invoke_text_with_usage,
     parse_json_array,
+    render_conversational_template,
 )
 from rag_engine.retrieval import RetrievalResult, retrieve
 
@@ -43,6 +44,8 @@ def suggest_followups(
     chunks: Sequence[RetrievedChunk],
     plan: QueryPlan,
     config: ConversationalConfig,
+    *,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> list[str]:
     """Generate candidate follow-up questions from the retrieved topics.
 
@@ -52,12 +55,17 @@ def suggest_followups(
     """
     if not config.followups_enabled or not chunks:
         return []
-    prompt = SUGGEST_FOLLOWUPS_TEMPLATE.format(
+    prompt = render_conversational_template(
+        config.prompts.followups,
+        SUGGEST_FOLLOWUPS_TEMPLATE,
         topics=_context_topics(chunks),
         questions=_format_questions(plan.sub_questions),
         count=config.followup_candidate_count,
     )
-    return parse_json_array(invoke_text(model, prompt)) or []
+    reply, usage = invoke_text_with_usage(model, prompt)
+    if record_usage is not None:
+        record_usage("followups", usage)
+    return parse_json_array(reply) or []
 
 
 def answerability_check(
@@ -65,16 +73,23 @@ def answerability_check(
     question: str,
     chunks: Sequence[RetrievedChunk],
     limit: int,
+    *,
+    template: str | None = None,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> bool:
     """Return whether the top *limit* *chunks* can answer *question* (YES/NO)."""
     context = "\n\n".join(chunk.text for chunk in list(chunks)[:limit])
-    prompt = ANSWERABILITY_TEMPLATE.format(context=context, question=question)
+    prompt = render_conversational_template(
+        template, ANSWERABILITY_TEMPLATE, context=context, question=question
+    )
     try:
-        reply = invoke_text(model, prompt).strip().lower()
+        reply, usage = invoke_text_with_usage(model, prompt)
     except Exception as exc:  # noqa: BLE001 - the check is best-effort
         _logger.warning("Answerability check failed: %s", exc)
         return False
-    return reply.startswith(_YES)
+    if record_usage is not None:
+        record_usage("answerability", usage)
+    return reply.strip().lower().startswith(_YES)
 
 
 def validate_followups(
@@ -84,6 +99,7 @@ def validate_followups(
     *,
     model: BaseChatModel | None = None,
     retriever: Callable[..., RetrievalResult] = retrieve,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> list[ValidatedFollowup]:
     """Keep only candidates the corpus can answer, carrying their probe chunks.
 
@@ -121,7 +137,14 @@ def validate_followups(
             keep = False
         elif model is not None:
             checked = True
-            keep = answerability_check(model, question, result.chunks, config.answerability_chunks)
+            keep = answerability_check(
+                model,
+                question,
+                result.chunks,
+                config.answerability_chunks,
+                template=config.prompts.answerability,
+                record_usage=record_usage,
+            )
         else:
             keep = False
         if keep:

@@ -30,13 +30,17 @@ from rag_engine.models import (
     QueryPlan,
     RagAnswer,
     RetrievedChunk,
+    StageTokenUsage,
+    TokenUsage,
     ValidatedFollowup,
 )
 from rag_engine.prompts import (
     _DEFAULT_TONE,
     CONDENSE_SYSTEM_PROMPT,
     QA_SYSTEM_PROMPT,
+    extract_token_usage,
     format_context,
+    template_has_fields,
 )
 from rag_engine.rerank import rerank_chunks
 from rag_engine.retrieval import RetrievalResult, retrieve, retrieve_multi
@@ -49,6 +53,7 @@ __all__ = [
     "condense_question",
     "conversational_answer",
     "generate_chat_answer",
+    "generate_chat_answer_with_usage",
     "stream_chat_answer",
 ]
 
@@ -63,6 +68,33 @@ def _report(callback: Callable[[LibraryMessage], None] | None, message: LibraryM
 
 def _history_messages(history: Sequence[ChatTurn]) -> list[tuple[str, str]]:
     return [("ai" if turn.role == "assistant" else "human", turn.content) for turn in history]
+
+
+class _UsageLedger:
+    """Collects per-stage token usage across one conversational turn.
+
+    ``record`` is passed to each stage as a callback; the stage tags its usage
+    with a stable process key. ``stage_usages`` assembles the entries into
+    :class:`StageTokenUsage` once the turn's models are known (the answer model
+    for the ``answer`` stage, the auxiliary model for the rest).
+    """
+
+    def __init__(self) -> None:
+        self.entries: list[tuple[str, TokenUsage]] = []
+
+    def record(self, process: str, usage: TokenUsage | None) -> None:
+        if usage is not None:
+            self.entries.append((process, usage))
+
+    def stage_usages(self, main_model_id: str, aux_model_id: str) -> list[StageTokenUsage]:
+        return [
+            StageTokenUsage(
+                process=process,
+                model_id=main_model_id if process == "answer" else aux_model_id,
+                usage=usage,
+            )
+            for process, usage in self.entries
+        ]
 
 
 def condense_question(chat_model: BaseChatModel, history: Sequence[ChatTurn], question: str) -> str:
@@ -81,21 +113,26 @@ def condense_question(chat_model: BaseChatModel, history: Sequence[ChatTurn], qu
     return rewritten or question
 
 
-def _chat_chain(
-    chat_model: BaseChatModel,
+def _chat_prompt(
     chunks: Sequence[RetrievedChunk],
     history: Sequence[ChatTurn],
     *,
-    tone: str = _DEFAULT_TONE,
+    tone: str,
+    system_prompt: str | None,
 ) -> tuple[Any, dict]:
-    from langchain_core.output_parsers import StrOutputParser
     from langchain_core.prompts import ChatPromptTemplate
 
-    prompt = ChatPromptTemplate.from_messages(
-        [("system", QA_SYSTEM_PROMPT), *_history_messages(history), ("human", "{question}")]
+    # A custom system prompt is used only when it keeps the {context}/{tone} slots;
+    # anything else falls back so a bad override never breaks answer generation.
+    system = (
+        system_prompt
+        if system_prompt and template_has_fields(system_prompt, ("context", "tone"))
+        else QA_SYSTEM_PROMPT
     )
-    base = {"context": format_context(chunks), "tone": tone}
-    return prompt | chat_model | StrOutputParser(), base
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", system), *_history_messages(history), ("human", "{question}")]
+    )
+    return prompt, {"context": format_context(chunks), "tone": tone}
 
 
 def generate_chat_answer(
@@ -105,10 +142,30 @@ def generate_chat_answer(
     history: Sequence[ChatTurn],
     *,
     tone: str = _DEFAULT_TONE,
+    system_prompt: str | None = None,
 ) -> str:
     """Generate a conversational answer string."""
-    chain, base = _chat_chain(chat_model, chunks, history, tone=tone)
-    return chain.invoke({**base, "question": question})
+    text, _ = generate_chat_answer_with_usage(
+        chat_model, question, chunks, history, tone=tone, system_prompt=system_prompt
+    )
+    return text
+
+
+def generate_chat_answer_with_usage(
+    chat_model: BaseChatModel,
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+    history: Sequence[ChatTurn],
+    *,
+    tone: str = _DEFAULT_TONE,
+    system_prompt: str | None = None,
+) -> tuple[str, TokenUsage | None]:
+    """Generate a conversational answer with the token usage it reported."""
+    from langchain_core.output_parsers import StrOutputParser
+
+    prompt, values = _chat_prompt(chunks, history, tone=tone, system_prompt=system_prompt)
+    message = (prompt | chat_model).invoke({**values, "question": question})
+    return StrOutputParser().invoke(message), extract_token_usage(message)
 
 
 def stream_chat_answer(
@@ -118,10 +175,13 @@ def stream_chat_answer(
     history: Sequence[ChatTurn],
     *,
     tone: str = _DEFAULT_TONE,
+    system_prompt: str | None = None,
 ) -> Iterator[str]:
     """Yield conversational answer tokens as they are generated."""
-    chain, base = _chat_chain(chat_model, chunks, history, tone=tone)
-    yield from chain.stream({**base, "question": question})
+    from langchain_core.output_parsers import StrOutputParser
+
+    prompt, values = _chat_prompt(chunks, history, tone=tone, system_prompt=system_prompt)
+    yield from (prompt | chat_model | StrOutputParser()).stream({**values, "question": question})
 
 
 def chat_answer(
@@ -214,6 +274,7 @@ def conversational_answer(
 
     timings: dict[str, float] = {}
     warnings: list[LibraryMessage] = []
+    ledger = _UsageLedger()
 
     resolved, chat_warnings = chat_resolver(
         config.rag.llm_model,
@@ -243,6 +304,7 @@ def conversational_answer(
             timings=timings,
             turn_index=turn_index,
             reranker_used=None,
+            ledger=ledger,
             progress_callback=progress_callback,
         )
 
@@ -256,7 +318,12 @@ def conversational_answer(
     _report(progress_callback, messages.progress_plan())
     start = perf_counter()
     plan = plan_queries(
-        aux_resolved.model, state, raw_question, config, model_id=aux_resolved.model_id
+        aux_resolved.model,
+        state,
+        raw_question,
+        config,
+        model_id=aux_resolved.model_id,
+        record_usage=ledger.record,
     )
     timings["plan"] = perf_counter() - start
     warnings.extend(plan.warnings)
@@ -282,6 +349,7 @@ def conversational_answer(
             model_used=resolved.model_id,
             aux_model_used=aux_resolved.model_id,
             timings=timings,
+            token_usage=ledger.stage_usages(resolved.model_id, aux_resolved.model_id),
             warnings=warnings,
             errors=retrieval.errors,
         )
@@ -294,6 +362,7 @@ def conversational_answer(
         config.rerank_top_n,
         config,
         chat_model=aux_resolved.model if aux_resolved.model_id != ECHO_MODEL else None,
+        record_usage=ledger.record,
     )
     timings["rerank"] = perf_counter() - start
     warnings.extend(rerank_warnings)
@@ -313,6 +382,7 @@ def conversational_answer(
         timings=timings,
         turn_index=turn_index,
         reranker_used=config.reranker,
+        ledger=ledger,
         progress_callback=progress_callback,
     )
 
@@ -323,13 +393,19 @@ def _answer_stage(
     chunks: Sequence[RetrievedChunk],
     history: Sequence[ChatTurn],
     tone: str,
+    system_prompt: str | None = None,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> tuple[str, list[LibraryMessage], float]:
     """Generate the grounded answer, returning (text, errors, elapsed seconds)."""
     errors: list[LibraryMessage] = []
     start = perf_counter()
     answer_text = ""
     try:
-        answer_text = generate_chat_answer(resolved.model, raw_question, chunks, history, tone=tone)
+        answer_text, usage = generate_chat_answer_with_usage(
+            resolved.model, raw_question, chunks, history, tone=tone, system_prompt=system_prompt
+        )
+        if record_usage is not None:
+            record_usage("answer", usage)
     except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
         _logger.warning("Conversational RAG generation failed: %s", exc)
         errors.append(messages.classify_generation_failure(str(exc)))
@@ -343,15 +419,21 @@ def _followups_stage(
     plan: QueryPlan,
     config: ConversationalConfig,
     retriever: Callable[..., RetrievalResult],
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> tuple[list[ValidatedFollowup], list[LibraryMessage], float]:
     """Suggest and validate follow-ups, returning (follow_ups, warnings, elapsed seconds)."""
     warnings: list[LibraryMessage] = []
     follow_ups: list[ValidatedFollowup] = []
     start = perf_counter()
     try:
-        candidates = suggest_followups(aux.model, chunks, plan, config)
+        candidates = suggest_followups(aux.model, chunks, plan, config, record_usage=record_usage)
         follow_ups = validate_followups(
-            run_dir, candidates, config, model=aux.model, retriever=retriever
+            run_dir,
+            candidates,
+            config,
+            model=aux.model,
+            retriever=retriever,
+            record_usage=record_usage,
         )
         if candidates and not follow_ups:
             warnings.append(messages.followups_none_valid())
@@ -377,6 +459,7 @@ def _compose_turn(
     timings: dict[str, float],
     turn_index: int,
     reranker_used: str | None,
+    ledger: _UsageLedger,
     progress_callback: Callable[[LibraryMessage], None] | None = None,
 ) -> ConversationalAnswer:
     """Generate the answer and follow-ups concurrently, then roll state forward.
@@ -389,10 +472,19 @@ def _compose_turn(
     follow_ups: list[ValidatedFollowup] = []
     with ThreadPoolExecutor(max_workers=2) as executor:
         answer_future = executor.submit(
-            _answer_stage, resolved, raw_question, chunks, history, config.tone
+            _answer_stage,
+            resolved,
+            raw_question,
+            chunks,
+            history,
+            config.tone,
+            config.prompts.answer,
+            ledger.record,
         )
         followups_future = (
-            executor.submit(_followups_stage, run_dir, aux, chunks, plan, config, retriever)
+            executor.submit(
+                _followups_stage, run_dir, aux, chunks, plan, config, retriever, ledger.record
+            )
             if config.followups_enabled and aux.model_id != ECHO_MODEL
             else None
         )
@@ -412,6 +504,7 @@ def _compose_turn(
         config,
         model_id=aux.model_id,
         turn_index=turn_index,
+        record_usage=ledger.record,
     )
     timings["state"] = perf_counter() - start
 
@@ -425,6 +518,7 @@ def _compose_turn(
         aux_model_used=aux.model_id,
         reranker_used=reranker_used,
         timings=timings,
+        token_usage=ledger.stage_usages(resolved.model_id, aux.model_id),
         warnings=warnings,
         errors=errors,
     )

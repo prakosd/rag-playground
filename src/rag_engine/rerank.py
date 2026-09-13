@@ -25,8 +25,13 @@ from artifact_store import LibraryMessage
 from log4py import get_logger
 from rag_engine import messages
 from rag_engine.config import ConversationalConfig
-from rag_engine.models import RetrievedChunk
-from rag_engine.prompts import RERANK_TEMPLATE, invoke_text, parse_ranking
+from rag_engine.models import RetrievedChunk, TokenUsage
+from rag_engine.prompts import (
+    RERANK_TEMPLATE,
+    invoke_text_with_usage,
+    parse_ranking,
+    render_conversational_template,
+)
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -75,6 +80,7 @@ def rerank_chunks(
     *,
     encoder_loader: Callable[..., object] = load_cross_encoder,
     chat_model: BaseChatModel | None = None,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> tuple[list[RetrievedChunk], list[LibraryMessage]]:
     """Reorder *chunks* per ``config.reranker`` and return the top ``top_n``."""
     ordered = list(chunks)
@@ -83,7 +89,7 @@ def rerank_chunks(
     if config.reranker == "local":
         return _rerank_local(queries, ordered, top_n, encoder_loader)
     if config.reranker == "llm":
-        return _rerank_llm(queries, ordered, top_n, chat_model)
+        return _rerank_llm(queries, ordered, top_n, chat_model, config.prompts.rerank, record_usage)
     return ordered[:top_n], []
 
 
@@ -109,17 +115,23 @@ def _rerank_llm(
     chunks: list[RetrievedChunk],
     top_n: int,
     chat_model: BaseChatModel | None,
+    template: str | None = None,
+    record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> tuple[list[RetrievedChunk], list[LibraryMessage]]:
     if chat_model is None:
         return chunks[:top_n], [messages.rerank_unavailable("llm", "no auxiliary model available")]
     query_text = " ".join(queries)
     passages = "\n".join(f"[{index}] {chunk.text}" for index, chunk in enumerate(chunks))
-    prompt = RERANK_TEMPLATE.format(query=query_text, passages=passages)
+    prompt = render_conversational_template(
+        template, RERANK_TEMPLATE, query=query_text, passages=passages
+    )
     try:
-        reply = invoke_text(chat_model, prompt)
+        reply, usage = invoke_text_with_usage(chat_model, prompt)
     except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
         _logger.warning("LLM re-ranking failed: %s", exc)
         return chunks[:top_n], [messages.rerank_unavailable("llm", str(exc))]
+    if record_usage is not None:
+        record_usage("reranking", usage)
     order = parse_ranking(reply, len(chunks))
     if not order:
         return chunks[:top_n], [messages.rerank_unavailable("llm", "unparsable ranking")]

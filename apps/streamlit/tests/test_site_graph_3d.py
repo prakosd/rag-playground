@@ -510,10 +510,33 @@ def test_build_viewer_html_embeds_graph_labels_and_cdn() -> None:
     assert "three/addons/" in html  # import map wired
 
 
-# Risk: failed pages render as black holes with a screen-space gravitational-lens
-# pass; if the pass or its per-frame projection were dropped the lensing silently
-# disappears. Verify the lensing code is inlined into the viewer. Type: unit.
-def test_build_viewer_html_includes_black_hole_lensing() -> None:
+# Risk: failed pages must render as asteroids — dark, irregular rocky bodies whose
+# shape/surface derive from the URL — not the old black holes. Verify the asteroid
+# builder is inlined and wired to the "fail" category. Type: unit.
+def test_build_viewer_html_failed_pages_render_as_asteroids() -> None:
+    html = build_viewer_html(
+        _jsonl(
+            {
+                "url": "https://x.com/bad",
+                "discovered_from": None,
+                "page_size_kb": None,
+                "status": "fail",
+                "depth": 0,
+                "round_num": 1,
+            }
+        ),
+        {},
+    )
+    assert "makeAsteroid" in html  # asteroid builder inlined
+    assert 'color_category === "fail"' in html  # routed from the fail category
+    assert "IcosahedronGeometry" in html  # deformed icosphere body
+
+
+# Risk: every failed page must look distinct — its shape and surface are seeded
+# from the page URL via the deterministic PRNG. If the seed were dropped, all
+# failed pages would render identically. Verify the per-URL seeding is wired and
+# the vertex-displacement noise is present. Type: unit.
+def test_build_viewer_html_asteroids_are_seeded_per_url() -> None:
     html = build_viewer_html(
         _jsonl(
             {
@@ -527,17 +550,14 @@ def test_build_viewer_html_includes_black_hole_lensing() -> None:
         ),
         {},
     )
-    assert "postprocessing/ShaderPass.js" in html  # lens pass imported
-    assert "blackHoleLensShader" in html  # custom lensing shader inlined
-    assert "updateLensUniforms" in html  # per-frame hole projection wired
+    assert 'mulberry32(hashString("asteroid:"' in html  # per-URL seeded shape + surface
+    assert "makeAsteroidNoise" in html  # seeded per-vertex displacement noise
 
 
-# Risk: a black hole must read as a dark body (a planet-like mass), not a light
-# source. It previously carried a bright additive accretion disc + glow sprite
-# whose bloom washed nearby planets orange; if that emitting disc were
-# reintroduced the wash returns. Verify the black hole emits no light while its
-# gravitational lensing (the ring) stays. Type: unit.
-def test_build_viewer_html_black_hole_is_dark_body() -> None:
+# Risk: the old black-hole rendering (event horizon, pulsar beacon, and the
+# screen-space gravitational-lens pass) was replaced by asteroids. If any of it
+# were reintroduced the failed-page look would regress. Type: unit.
+def test_build_viewer_html_has_no_black_hole_machinery() -> None:
     html = build_viewer_html(
         _jsonl(
             {
@@ -551,32 +571,32 @@ def test_build_viewer_html_black_hole_is_dark_body() -> None:
         ),
         {},
     )
-    assert "makeAccretionDisk" not in html  # no emitting accretion disc
-    assert "accretionDisks" not in html  # no disc bookkeeping/animation
-    assert "blackHoleLensShader" in html  # gravitational lensing + photon ring kept
+    assert "makeBlackHole" not in html  # no event-horizon body
+    assert "beacon" not in html.lower()  # no pulsar beacon
+    assert "blackHoleLensShader" not in html  # no gravitational-lens pass
+    assert "ShaderPass" not in html  # lens pass import removed
 
 
-# Risk: black holes are dark and hard to spot among many planets, so each carries
-# a pulsar-style beacon (two additive beams) pulsed each frame. It must stay a
-# pure-geometry effect — no THREE.Light — and be wired into the animation loop; if
-# the beacon or its pulse were dropped, failed pages become easy to miss. Type: unit.
-def test_build_viewer_html_black_hole_has_pulsar_beacon() -> None:
+# Risk: failed pages are small asteroids that are easy to miss; the spoke that
+# connects each one is painted red so a user can follow it. If the fail-edge
+# wiring were dropped, failures become hard to find. Type: unit.
+def test_build_viewer_html_failed_page_edges_are_red() -> None:
     html = build_viewer_html(
         _jsonl(
             {
-                "url": "https://x.com",
+                "url": "https://x.com/bad",
                 "discovered_from": None,
-                "page_size_kb": 5.0,
-                "status": "success",
+                "page_size_kb": None,
+                "status": "fail",
                 "depth": 0,
                 "round_num": 1,
             }
         ),
         {},
     )
-    assert "makeBlackHoleBeacon" in html  # beacon geometry inlined
-    assert "beacons" in html  # beacon bookkeeping present
-    assert "BEACON_PULSE_SPEED" in html  # per-frame pulse wired
+    assert "failEdges" in html  # the fail-edge set is computed
+    assert "FAIL_LINK" in html  # the red spoke colour is defined
+    assert 'color_category === "fail"' in html  # keyed on the fail category
 
 
 # Risk: a crawled URL could contain "</script>"; injected verbatim it would break

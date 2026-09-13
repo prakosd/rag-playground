@@ -19,6 +19,7 @@ __all__ = [
     "QueryPlan",
     "RagAnswer",
     "RetrievedChunk",
+    "StageTokenUsage",
     "TokenUsage",
     "ValidatedFollowup",
 ]
@@ -73,6 +74,21 @@ class TokenUsage:
     total_tokens: int | None = None
 
 
+@dataclass(frozen=True)
+class StageTokenUsage:
+    """Token usage a single conversational-RAG stage reported.
+
+    ``process`` is a stable stage key (``decomposition``/``reranking``/``answer``/
+    ``followups``/``answerability``/``state``); ``model_id`` is the model that ran
+    it (the answer model for ``answer``, otherwise the auxiliary model). A UI maps
+    the key to a localized label and sums usage per process.
+    """
+
+    process: str
+    model_id: str
+    usage: TokenUsage
+
+
 @dataclass
 class QueryPlan:
     """How a raw question was resolved and split into standalone sub-questions.
@@ -122,8 +138,9 @@ class ConversationalAnswer:
     """Structured outcome of one conversational RAG turn.
 
     Extends the single-turn answer with the query plan, validated follow-ups, the
-    next conversation state, and per-stage ``timings`` (plan/retrieve/rerank/
-    answer/followups seconds) so a UI can render an inspection view.
+    next conversation state, per-stage ``timings`` (plan/retrieve/rerank/answer/
+    followups seconds), and per-stage ``token_usage`` so a UI can render an
+    inspection view and a token panel.
     """
 
     answer: str
@@ -135,5 +152,6 @@ class ConversationalAnswer:
     aux_model_used: str | None = None
     reranker_used: str | None = None
     timings: dict[str, float] = field(default_factory=dict)
+    token_usage: list[StageTokenUsage] = field(default_factory=list)
     warnings: list[LibraryMessage] = field(default_factory=list)
     errors: list[LibraryMessage] = field(default_factory=list)

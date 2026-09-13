@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from rag_engine.catalog import DEFAULT_CHAT_MODEL
 
-__all__ = ["ConversationalConfig", "RagConfig"]
+__all__ = ["ConversationalConfig", "ConversationalPrompts", "RagConfig"]
 
 _DEFAULT_TEMPERATURE = 0.0
 _MAX_TEMPERATURE = 2.0
@@ -64,6 +64,23 @@ class RagConfig(BaseModel):
         return value
 
 
+class ConversationalPrompts(BaseModel):
+    """Optional per-stage prompt overrides for the Step 5 pipeline.
+
+    Each field defaults to ``None`` → the library's built-in template is used. An
+    override that drops a required placeholder is ignored at format time (the
+    default is used), so a bad custom prompt never breaks a turn. The required
+    placeholders per field live in ``prompts.CONVERSATIONAL_PROMPT_FIELDS``.
+    """
+
+    answer: str | None = None
+    decompose: str | None = None
+    rerank: str | None = None
+    followups: str | None = None
+    answerability: str | None = None
+    state: str | None = None
+
+
 class ConversationalConfig(BaseModel):
     """Knobs for the advanced conversational RAG pipeline (Step 5).
 
@@ -74,6 +91,8 @@ class ConversationalConfig(BaseModel):
     """
 
     rag: RagConfig = Field(default_factory=RagConfig)
+    # Optional per-stage prompt overrides; unset (None) fields use the built-in templates.
+    prompts: ConversationalPrompts = Field(default_factory=ConversationalPrompts)
     # Small helper model for planning/state/follow-ups/LLM re-rank; None = auto-pick.
     aux_model_id: str | None = None
 

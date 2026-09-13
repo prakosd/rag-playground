@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from log4py import get_logger
-from rag_engine.models import RetrievedChunk
+from rag_engine.models import RetrievedChunk, TokenUsage
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ANSWERABILITY_TEMPLATE",
     "CONDENSE_SYSTEM_PROMPT",
+    "CONVERSATIONAL_PROMPT_FIELDS",
     "PLAN_QUERIES_TEMPLATE",
     "QA_SYSTEM_PROMPT",
     "RAG_PROMPT_TEMPLATE",
@@ -27,12 +28,15 @@ __all__ = [
     "STATE_UPDATE_TEMPLATE",
     "SUGGEST_FOLLOWUPS_TEMPLATE",
     "build_rag_prompt",
+    "extract_token_usage",
     "format_context",
     "format_knowledge",
-    "invoke_text",
+    "invoke_text_with_usage",
     "parse_json_array",
     "parse_json_object",
     "parse_ranking",
+    "render_conversational_template",
+    "template_has_fields",
 ]
 
 _logger = get_logger(__name__)
@@ -267,6 +271,50 @@ STATE_UPDATE_TEMPLATE = (
     "JSON object:"
 )
 
+# Required ``str.format`` placeholders each conversational prompt must keep, keyed
+# by ConversationalPrompts field name. The app validates edits against these and
+# the library falls back to the built-in template when an override drops one.
+CONVERSATIONAL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
+    "answer": ("tone", "context"),
+    "decompose": ("summary", "entities", "recent", "question"),
+    "rerank": ("query", "passages"),
+    "followups": ("topics", "questions", "count"),
+    "answerability": ("context", "question"),
+    "state": ("summary", "entities", "question", "answer", "max_words"),
+}
+
+
+def template_has_fields(template: str, fields: Sequence[str]) -> bool:
+    """Return True when *template* uses only ``str.format`` *fields* (no stray braces).
+
+    Mirrors the Step 4 template contract: an unknown ``{field}`` or a stray brace
+    raises, so an editor can reject an override that would break formatting.
+    Missing an allowed field is fine — the template simply does not use it.
+    """
+    try:
+        template.format(**{name: "" for name in fields})
+    except (KeyError, IndexError, ValueError):
+        return False
+    return True
+
+
+def render_conversational_template(override: str | None, default: str, /, **values: object) -> str:
+    """Format *override* with *values*, falling back to *default* on any gap.
+
+    A blank override, a missing placeholder, or a stray brace all fall back to the
+    built-in *default* so a bad custom prompt never breaks a turn. Values that
+    themselves contain braces are inserted literally (never re-parsed).
+    """
+    if override and override.strip():
+        try:
+            return override.format(**values)
+        except (KeyError, IndexError, ValueError) as error:
+            _logger.warning(
+                "Custom conversational prompt is invalid (%s); using the built-in default.",
+                error,
+            )
+    return default.format(**values)
+
 
 def parse_json_array(text: str) -> list[str] | None:
     """Decode a model reply into a list of non-empty strings, or ``None``.
@@ -338,15 +386,37 @@ def _loads(span: str) -> object | None:
         return None
 
 
-def invoke_text(model: BaseChatModel, prompt: str) -> str:
-    """Send *prompt* as a single human message and return the reply text.
+def invoke_text_with_usage(model: BaseChatModel, prompt: str) -> tuple[str, TokenUsage | None]:
+    """Send *prompt* as a single human message; return (reply text, token usage).
 
-    Shared by the Step 5 auxiliary-model callers (planning, re-ranking,
-    follow-ups). The ``langchain_core`` import stays lazy so importing this
-    module never pulls it.
+    Shared by the Step 5 auxiliary-model callers (planning, re-ranking, follow-ups,
+    answerability, state) so each stage can record its token cost. Usage is
+    ``None`` when the provider reports none (e.g. the offline echo model). The
+    ``langchain_core`` import stays lazy so importing this module never pulls it.
     """
     from langchain_core.messages import HumanMessage
 
     reply = model.invoke([HumanMessage(content=prompt)])
     content = getattr(reply, "content", reply)
-    return content if isinstance(content, str) else str(content)
+    text = content if isinstance(content, str) else str(content)
+    return text, extract_token_usage(reply)
+
+
+def extract_token_usage(message: object) -> TokenUsage | None:
+    """Return the token counts a LangChain reply reported, or None when absent.
+
+    Reads the standard ``usage_metadata`` an AI message carries (input/output/
+    total tokens). The offline echo model and providers that omit usage yield
+    ``None`` so a UI shows "n/a" instead of a fabricated count.
+    """
+    usage = getattr(message, "usage_metadata", None)
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    total_tokens = usage.get("total_tokens")
+    if input_tokens is None and output_tokens is None and total_tokens is None:
+        return None
+    return TokenUsage(
+        input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens
+    )

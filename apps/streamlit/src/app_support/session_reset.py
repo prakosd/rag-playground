@@ -42,12 +42,15 @@ BASIC_RAG_QA_RESULT_KEYS: tuple[str, ...] = (
     "basic_rag_qa_stats",
 )
 
-# Step 5: the conversation turns, rolling state, follow-up cache, and pending click.
+# Step 5: the conversation turns, rolling state, follow-up cache, pending click,
+# and the active conversation id (dropped so a switched-to session re-defaults to
+# its own most-recent conversation rather than another session's).
 CONVERSATIONAL_RAG_RESULT_KEYS: tuple[str, ...] = (
     "conversational_rag_turns",
     "conversational_rag_state",
     "conversational_rag_followup_cache",
     "conversational_rag_pending",
+    "conversational_rag_current_id",
 )
 
 TRANSIENT_RESULT_KEYS: tuple[str, ...] = (

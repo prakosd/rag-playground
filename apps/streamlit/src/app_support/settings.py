@@ -166,6 +166,17 @@ class Settings(BaseSettings):
     conv_rag_followup_drop_score: float
     # Number of validated follow-up buttons shown.
     conv_rag_followup_show_count: int
+    # Directory (relative to the repo root) holding the six Step 5 default prompt
+    # files (answer/decompose/rerank/followups/answerability/state). Edit those to
+    # reword a default without a code change; a per-session edit from the app's
+    # prompt editor takes precedence, and a missing/empty file falls back to the
+    # built-in library template.
+    conv_rag_prompt_template_dir: str
+    # Per-session token / USD budgets shown on the Step 5 Token usage panel (its %
+    # Usage). Display-only; they never block a send. Mirror the Step 4 quotas but
+    # cover every conversational LLM stage.
+    conv_rag_session_token_quota: int
+    conv_rag_session_cost_quota: float
 
     # ── Session lifecycle ────────────────────────────────────────────────────
     # Days an inactive browser session's files are kept before the startup

@@ -55,7 +55,7 @@ crawl/index/RAG config models.
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
 | `VECTOR_EMBEDDING_MODELS` | `all-MiniLM-L6-v2,amazon.titan-embed-text-v2:0,text-embedding-3-small` | Embedding models offered in the dropdown, in display order |
 | `VECTOR_DEFAULT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model pre-selected in the dropdown |
-| `RAG_TOP_K` | `4` | Chunks retrieved as context (Step 5 conversational) |
+| `RAG_TOP_K` | `5` | Chunks retrieved as context (Step 5 conversational) |
 | `BASIC_RAG_QA_TOP_RESULTS` | `5` | Top matches retrieved as knowledge on Step 4 (Basic RAG Q&A) |
 | `BASIC_RAG_QA_TONES` | `Neutral,Formal,Friendly,…` | Tones offered on the Step 4 and Step 5 Tone selectors (comma-separated, in order) |
 | `BASIC_RAG_QA_DEFAULT_TONE` | `Neutral` | Tone pre-selected on the Step 4 selector |
@@ -76,6 +76,9 @@ crawl/index/RAG config models.
 | `CONV_RAG_FOLLOWUP_MIN_SCORE` | `0.60` | A follow-up is kept outright at/above this similarity |
 | `CONV_RAG_FOLLOWUP_DROP_SCORE` | `0.40` | A follow-up is dropped outright at/below this similarity (in between → the model checks) |
 | `CONV_RAG_FOLLOWUP_SHOW_COUNT` | `3` | Validated follow-up buttons shown on Step 5 |
+| `CONV_RAG_PROMPT_TEMPLATE_DIR` | `apps/streamlit/config` | Directory (relative to the repo root) holding the six Step 5 default prompt files (`conversational_{answer,decompose,rerank,followups,answerability,state}_prompt.txt`). Edit them to reword a default without a code change; a per-session edit from the app's prompt editor takes precedence, and a missing/empty/invalid file falls back to the built-in library template |
+| `CONV_RAG_SESSION_TOKEN_QUOTA` | `5700000` | Per-session token budget shown on the Step 5 Token usage panel (its % Usage). Display-only; never blocks a send |
+| `CONV_RAG_SESSION_COST_QUOTA` | `1.0` | Per-session USD cost budget shown beside the Step 5 token quota. Display-only; overridable per deploy |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |

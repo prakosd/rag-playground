@@ -75,4 +75,5 @@ def test_conversational_rag_keys_match_page_module(monkeypatch: MonkeyPatch) -> 
         page._STATE_KEY,
         page._CACHE_KEY,
         page._PENDING_KEY,
+        page._CONV_ID_KEY,
     }
