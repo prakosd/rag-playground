@@ -45,9 +45,12 @@ crawl = [
 ]
 # vector_indexer — chunk + embed + store (Step 2). Local offline embeddings
 # work with just this extra; cloud backends below are additional opt-ins.
-# langchain-chroma pulls chromadb (the offline ONNX embedder lives there too).
+# chromadb is imported directly and pinned below its next major (the offline
+# ONNX embedder lives there too); langchain-chroma wraps it. The major cap is
+# insurance against an untested change to chromadb's Rust-backend client init.
 vector = [
-    "langchain-chroma>=1.0",
+    "langchain-chroma>=1.0,<2.0",
+    "chromadb>=1.0,<2.0",
     "langchain-text-splitters>=1.0",
     "langchain-core>=1.0",
     "pydantic>=2.0",

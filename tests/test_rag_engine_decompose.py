@@ -205,3 +205,85 @@ def test_update_state_recent_window_capped() -> None:
     result = update_state(_BoomModel(), state, "q3", "a", config, model_id=ECHO_MODEL, turn_index=0)
 
     assert result.recent_resolved == ("q2", "q3")
+
+
+def test_update_state_accumulates_asked_questions() -> None:
+    state = ConversationState(asked_questions=("q1",))
+    result = update_state(
+        _BoomModel(),
+        state,
+        "resolved",
+        "a",
+        ConversationalConfig(),
+        model_id=ECHO_MODEL,
+        turn_index=0,
+        asked_this_turn=["q2a", "q2b"],
+    )
+
+    assert result.asked_questions == ("q1", "q2a", "q2b")
+
+
+def test_update_state_records_resolved_question_when_no_sub_questions() -> None:
+    result = update_state(
+        _BoomModel(),
+        ConversationState(),
+        "the resolved question",
+        "a",
+        ConversationalConfig(),
+        model_id=ECHO_MODEL,
+        turn_index=0,
+    )
+
+    assert result.asked_questions == ("the resolved question",)
+
+
+def test_update_state_asked_history_dedupes_case_insensitively() -> None:
+    state = ConversationState(asked_questions=("What is CTP?",))
+    result = update_state(
+        _BoomModel(),
+        state,
+        "r",
+        "a",
+        ConversationalConfig(),
+        model_id=ECHO_MODEL,
+        turn_index=0,
+        asked_this_turn=["what is ctp?", "New one"],
+    )
+
+    assert result.asked_questions == ("What is CTP?", "New one")
+
+
+def test_update_state_caps_asked_history() -> None:
+    existing = tuple(f"q{i}" for i in range(20))
+    state = ConversationState(asked_questions=existing)
+    result = update_state(
+        _BoomModel(),
+        state,
+        "newest",
+        "a",
+        ConversationalConfig(),
+        model_id=ECHO_MODEL,
+        turn_index=0,
+        asked_this_turn=["newest"],
+    )
+
+    assert len(result.asked_questions) == 20
+    assert result.asked_questions[-1] == "newest"
+    assert "q0" not in result.asked_questions
+
+
+def test_update_state_summarized_turn_keeps_asked_history() -> None:
+    model = _ScriptedModel(reply='{"summary": "s", "entities": {}, "open_threads": []}')
+    config = ConversationalConfig(state_summary_start_turn=1)
+    result = update_state(
+        model,
+        ConversationState(asked_questions=("prior",)),
+        "resolved",
+        "ans",
+        config,
+        model_id="aux",
+        turn_index=5,
+        asked_this_turn=["resolved"],
+    )
+
+    assert result.asked_questions == ("prior", "resolved")

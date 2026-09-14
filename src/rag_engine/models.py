@@ -109,12 +109,15 @@ class ConversationState:
 
     ``recent_resolved`` holds *rewritten* (standalone) questions, never raw user
     text, so ambiguity does not compound as the conversation grows.
+    ``asked_questions`` is the capped, whole-conversation history of resolved
+    questions, used to keep follow-up suggestions from repeating earlier ground.
     """
 
     summary: str = ""
     entities: dict[str, str] = field(default_factory=dict)
     recent_resolved: tuple[str, ...] = ()
     open_threads: tuple[str, ...] = ()
+    asked_questions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

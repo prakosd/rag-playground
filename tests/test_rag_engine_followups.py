@@ -127,3 +127,61 @@ def test_validate_followups_sorts_and_truncates() -> None:
     )
 
     assert [f.question for f in result] == ["b", "c"]
+
+
+def test_validate_followups_drops_already_asked() -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=[_chunk("c", 0.9)])
+
+    # "What is CTP?" was already asked; its close match is filtered before probing,
+    # while a genuinely new question survives.
+    result = validate_followups(
+        "/tmp",
+        ["What is CTP?", "How do I claim CTP?"],
+        ConversationalConfig(),
+        retriever=retriever,
+        asked_questions=["what is ctp"],
+    )
+
+    assert [f.question for f in result] == ["How do I claim CTP?"]
+
+
+def test_validate_followups_filters_close_paraphrase() -> None:
+    def retriever(run_dir, query, config):  # pragma: no cover - repeat filtered before probe
+        return RetrievalResult(chunks=[_chunk("c", 0.9)])
+
+    result = validate_followups(
+        "/tmp",
+        ["What's the cost of CTP insurance?"],
+        ConversationalConfig(),
+        retriever=retriever,
+        asked_questions=["What is the cost of CTP insurance?"],
+    )
+
+    assert result == []
+
+
+def test_suggest_followups_prompt_includes_asked_history() -> None:
+    captured: list[str] = []
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            captured.append(messages[0].content)
+            return '["brand new question?"]'
+
+    result = suggest_followups(
+        _Capture(),
+        [_chunk("topic text", 0.9)],
+        QueryPlan(sub_questions=["current q"]),
+        ConversationalConfig(),
+        asked_questions=["an earlier question", "another earlier question"],
+    )
+
+    assert result == ["brand new question?"]
+    assert captured
+    assert "an earlier question" in captured[0]
+    assert "another earlier question" in captured[0]

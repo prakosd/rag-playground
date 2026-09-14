@@ -11,6 +11,7 @@ from rag_engine.prompts import (
     QA_SYSTEM_PROMPT,
     RAG_PROMPT_TEMPLATE,
     STATE_UPDATE_TEMPLATE,
+    SUGGEST_FOLLOWUPS_TEMPLATE,
     build_rag_prompt,
     extract_token_usage,
     format_context,
@@ -257,6 +258,9 @@ def test_conversational_prompt_fields_cover_every_stage() -> None:
     assert template_has_fields(PLAN_QUERIES_TEMPLATE, CONVERSATIONAL_PROMPT_FIELDS["decompose"])
     assert template_has_fields(STATE_UPDATE_TEMPLATE, CONVERSATIONAL_PROMPT_FIELDS["state"])
     assert template_has_fields(QA_SYSTEM_PROMPT, CONVERSATIONAL_PROMPT_FIELDS["answer"])
+    assert template_has_fields(
+        SUGGEST_FOLLOWUPS_TEMPLATE, CONVERSATIONAL_PROMPT_FIELDS["followups"]
+    )
 
 
 class _FakeMessage:

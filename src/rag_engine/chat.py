@@ -420,19 +420,28 @@ def _followups_stage(
     config: ConversationalConfig,
     retriever: Callable[..., RetrievalResult],
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    asked_questions: Sequence[str] = (),
 ) -> tuple[list[ValidatedFollowup], list[LibraryMessage], float]:
     """Suggest and validate follow-ups, returning (follow_ups, warnings, elapsed seconds)."""
     warnings: list[LibraryMessage] = []
     follow_ups: list[ValidatedFollowup] = []
     start = perf_counter()
     try:
-        candidates = suggest_followups(aux.model, chunks, plan, config, record_usage=record_usage)
+        candidates = suggest_followups(
+            aux.model,
+            chunks,
+            plan,
+            config,
+            asked_questions=asked_questions,
+            record_usage=record_usage,
+        )
         follow_ups = validate_followups(
             run_dir,
             candidates,
             config,
             model=aux.model,
             retriever=retriever,
+            asked_questions=asked_questions,
             record_usage=record_usage,
         )
         if candidates and not follow_ups:
@@ -483,7 +492,15 @@ def _compose_turn(
         )
         followups_future = (
             executor.submit(
-                _followups_stage, run_dir, aux, chunks, plan, config, retriever, ledger.record
+                _followups_stage,
+                run_dir,
+                aux,
+                chunks,
+                plan,
+                config,
+                retriever,
+                ledger.record,
+                asked_questions=state.asked_questions,
             )
             if config.followups_enabled and aux.model_id != ECHO_MODEL
             else None
@@ -504,6 +521,7 @@ def _compose_turn(
         config,
         model_id=aux.model_id,
         turn_index=turn_index,
+        asked_this_turn=plan.sub_questions,
         record_usage=ledger.record,
     )
     timings["state"] = perf_counter() - start

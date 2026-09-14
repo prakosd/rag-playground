@@ -70,8 +70,14 @@ def retrieve(
         [Path | str], tuple[ResolvedEmbedding, list[LibraryMessage]]
     ] = load_index_embeddings,
     searcher_factory: Callable[[Path | str, Any], VectorSearcher] = open_searcher,
+    searcher: VectorSearcher | None = None,
 ) -> RetrievalResult:
-    """Run similarity search for *query* over the index in *run_dir*."""
+    """Run similarity search for *query* over the index in *run_dir*.
+
+    *searcher*, when given, is used as-is (already opened/warmed) and the per-call
+    embedding load and searcher construction are skipped, so ``retrieve_multi``
+    can share one vector-store client across its parallel workers.
+    """
     result = RetrievalResult()
     run_path = Path(run_dir)
     _logger.info(
@@ -80,20 +86,24 @@ def retrieve(
         config.search_type,
         run_path.name,
     )
+    embeddings: Any = None
+    if searcher is None:
+        try:
+            resolved_emb, emb_warnings = embedding_loader(run_path)
+        except FileNotFoundError:
+            result.errors.append(messages.index_not_found(str(run_path)))
+            return result
+        except EmbeddingProviderUnavailable as exc:
+            result.errors.append(messages.embedding_unavailable(str(exc)))
+            return result
+        except (OSError, ValueError) as exc:
+            result.errors.append(messages.index_unreadable(str(run_path), str(exc)))
+            return result
+        result.warnings.extend(emb_warnings)
+        embeddings = resolved_emb.embeddings
     try:
-        resolved_emb, emb_warnings = embedding_loader(run_path)
-    except FileNotFoundError:
-        result.errors.append(messages.index_not_found(str(run_path)))
-        return result
-    except EmbeddingProviderUnavailable as exc:
-        result.errors.append(messages.embedding_unavailable(str(exc)))
-        return result
-    except (OSError, ValueError) as exc:
-        result.errors.append(messages.index_unreadable(str(run_path), str(exc)))
-        return result
-    result.warnings.extend(emb_warnings)
-    try:
-        searcher = searcher_factory(run_path, resolved_emb.embeddings)
+        if searcher is None:
+            searcher = searcher_factory(run_path, embeddings)
         hits = searcher.search(
             query,
             config.top_k,
@@ -144,6 +154,32 @@ def chunk_identity(chunk: RetrievedChunk) -> str:
     return f"{chunk.source}::{digest}"
 
 
+def warm_shared_searcher(
+    run_dir: Path | str,
+    retriever: Callable[..., RetrievalResult],
+    embedding_loader: Callable[[Path | str], tuple[ResolvedEmbedding, list[LibraryMessage]]],
+    searcher_factory: Callable[[Path | str, Any], VectorSearcher],
+) -> tuple[VectorSearcher | None, list[LibraryMessage]]:
+    """Open and warm one searcher for the parallel workers to share.
+
+    Only the default :func:`retrieve` accepts a ``searcher=`` override, so a
+    custom (test) retriever gets ``None`` and keeps its own per-call path.
+    Warm-up is best-effort: on any failure the workers open their own searcher
+    and :func:`retrieve` re-reports the real error.
+    """
+    if retriever is not retrieve:
+        return None, []
+    run_path = Path(run_dir)
+    try:
+        resolved_emb, emb_warnings = embedding_loader(run_path)
+        searcher = searcher_factory(run_path, resolved_emb.embeddings)
+        searcher.ensure_ready()
+    except Exception as exc:  # noqa: BLE001 - warm-up is best-effort; retrieve re-reports
+        _logger.debug("Shared searcher warm-up skipped for %s: %s", run_path.name, exc)
+        return None, []
+    return searcher, emb_warnings
+
+
 def retrieve_multi(
     run_dir: Path | str,
     sub_questions: Sequence[str],
@@ -151,6 +187,10 @@ def retrieve_multi(
     *,
     retriever: Callable[..., RetrievalResult] = retrieve,
     max_workers: int = _DEFAULT_MAX_WORKERS,
+    embedding_loader: Callable[
+        [Path | str], tuple[ResolvedEmbedding, list[LibraryMessage]]
+    ] = load_index_embeddings,
+    searcher_factory: Callable[[Path | str, Any], VectorSearcher] = open_searcher,
 ) -> RetrievalResult:
     """Retrieve for each sub-question in parallel, then merge and de-duplicate.
 
@@ -160,18 +200,31 @@ def retrieve_multi(
     the sub-questions it matched. One sub-question failing does not sink the
     others — a ``rag.retrieval.partial_failure`` warning is recorded; only when
     every sub-question fails are the errors surfaced.
+
+    With the default :func:`retrieve`, one vector-store client is opened and
+    warmed up front and shared across the workers (fewer clients — less memory —
+    and no cold-start init race); warm-up is best-effort and falls back to
+    per-worker opening.
     """
     questions = [text for text in (item.strip() for item in sub_questions) if text]
     if not questions:
         return RetrievalResult()
+
+    shared, shared_warnings = warm_shared_searcher(
+        run_dir, retriever, embedding_loader, searcher_factory
+    )
+    extra: dict[str, Any] = {"searcher": shared} if shared is not None else {}
+
     if len(questions) == 1:
-        return retriever(run_dir, questions[0], config)
+        result = retriever(run_dir, questions[0], config, **extra)
+        result.warnings = [*shared_warnings, *result.warnings]
+        return result
 
     workers = max(1, min(max_workers, len(questions)))
     results: dict[str, RetrievalResult] = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(retriever, run_dir, question, config): question
+            executor.submit(retriever, run_dir, question, config, **extra): question
             for question in questions
         }
         for future, question in futures.items():
@@ -182,7 +235,7 @@ def retrieve_multi(
 
     merged: list[RetrievedChunk] = []
     index_by_identity: dict[str, int] = {}
-    warnings: list[LibraryMessage] = []
+    warnings: list[LibraryMessage] = list(shared_warnings)
     errors: list[LibraryMessage] = []
     failed: list[str] = []
     any_ok = False

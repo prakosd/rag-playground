@@ -13,7 +13,7 @@ replay a selected conversation's turns.
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from rag_engine import (
     ConversationalAnswer,
@@ -28,11 +28,13 @@ from app_support.rag_shared.result_snapshot import StoredResult
 
 __all__ = [
     "ConversationSummary",
+    "asked_questions_from_records",
     "conversation_summaries",
     "conversation_title",
     "conversation_turns",
     "new_conversation_id",
     "new_transaction_id",
+    "trim_old_turn_payloads",
     "turn_from_record",
 ]
 
@@ -40,6 +42,9 @@ __all__ = [
 _ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 _ID_LENGTH = 6
 _TITLE_MAX_CHARS = 48
+# Mirrors rag_engine's asked-question history cap so a reloaded conversation seeds
+# the same bounded history the live pipeline maintains.
+_ASKED_HISTORY_CAP = 20
 
 
 @dataclass(frozen=True)
@@ -138,6 +143,47 @@ def conversation_turns(records: list[ConversationalTurnRecord], conversation_id:
         turn["turn_id"] = index
         turns.append(turn)
     return turns
+
+
+def asked_questions_from_records(
+    records: list[ConversationalTurnRecord], conversation_id: str
+) -> tuple[str, ...]:
+    """Rebuild a conversation's asked-question history from its saved turns.
+
+    Folds every turn's resolved sub-questions (oldest first, case-insensitively
+    de-duplicated, capped) so follow-up de-duplication survives a reload — the
+    live ``ConversationState.asked_questions`` is not persisted to disk.
+    """
+    ordered = sorted(
+        (record for record in records if record.conversation_id == conversation_id),
+        key=lambda record: record.timestamp_utc,
+    )
+    asked: list[str] = []
+    seen: set[str] = set()
+    for record in ordered:
+        for question in record.sub_questions or (record.raw_question,):
+            text = question.strip()
+            key = text.lower()
+            if text and key not in seen:
+                seen.add(key)
+                asked.append(text)
+    return tuple(asked[-_ASKED_HISTORY_CAP:])
+
+
+def trim_old_turn_payloads(turns: list[dict], keep_recent: int) -> None:
+    """Shed heavy chunk payloads from turns older than the *keep_recent* newest.
+
+    Frees each old turn's retrieved ``sources`` and follow-up ``chunks`` (the bulk
+    of a turn's memory) in place while keeping its question/answer text so the
+    transcript still renders. The newest ``keep_recent`` turns stay intact so the
+    follow-up buttons and per-turn inspector keep working.
+    """
+    if keep_recent <= 0 or len(turns) <= keep_recent:
+        return
+    for turn in turns[:-keep_recent]:
+        answer = turn["answer"]
+        answer.sources = []
+        answer.follow_ups = [replace(followup, chunks=[]) for followup in answer.follow_ups]
 
 
 def conversation_summaries(

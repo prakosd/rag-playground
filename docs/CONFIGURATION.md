@@ -67,8 +67,9 @@ crawl/index/RAG config models.
 | `RAG_LLM_SIZE_BANDS` | `XS,Small` | Size bands shown in the RAG model picker (comma-separated: XS, Small, Medium, Large, XL, Frontier); models outside these bands are hidden. Per-model metadata + pricing live in `apps/streamlit/config/model_pricing.yaml` |
 | `SEMANTIC_SEARCH_TOP_N` | `5` | Ranked matches shown on the Search page |
 | `SEMANTIC_SEARCH_DEFAULT_TAB` | `raw` | Default open tab on each result card (`raw` or `preview`) |
-| `CONV_RAG_RERANKER` | `local` | Step 5 default re-ranking: `off`, `local` (on-device cross-encoder, needs the `[rerank]` extra + torch), or `llm` (reuses the auxiliary model). Users can switch per session; set `llm`/`off` on memory-limited hosts (e.g. Streamlit Cloud) so the local model is never loaded |
+| `CONV_RAG_RERANKER` | `llm` | Step 5 default re-ranking: `off`, `local` (on-device cross-encoder, needs the `[rerank]` extra + torch), or `llm` (reuses the auxiliary model). Defaults to `llm` so memory-limited hosts (e.g. Streamlit Cloud) never load the heavy local model (torch) unless a user opts in per session |
 | `CONV_RAG_RERANK_TOP_N` | `5` | Passages kept after re-ranking as answer context (Step 5) |
+| `CONV_RAG_MAX_LIVE_TURNS` | `30` | Most recent Step 5 turns kept fully in memory; older turns keep their question/answer text but shed retrieved-chunk payloads (they stay on disk and reload via the conversation picker). Bounds a long conversation's memory |
 | `CONV_RAG_AUX_MODELS` | `apac.amazon.nova-micro-v1:0,…` | Small helper models offered as the Step 5 **Auxiliary model** (decomposition / state / follow-ups / LLM re-rank) |
 | `CONV_RAG_DEFAULT_AUX_MODEL` | `apac.amazon.nova-micro-v1:0` | Auxiliary model pre-selected on Step 5 |
 | `CONV_RAG_DECOMPOSITION_ENABLED` | `true` | Whether query decomposition starts on (users can toggle it) |

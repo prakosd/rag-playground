@@ -21,6 +21,8 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.conv_rag_prompt_template_dir == "apps/streamlit/config"
     assert settings.conv_rag_session_token_quota == 5700000
     assert settings.conv_rag_session_cost_quota == 1.0
+    assert settings.conv_rag_reranker == "llm"
+    assert settings.conv_rag_max_live_turns == 30
     assert settings.basic_rag_qa_session_token_quota == 5700000
     assert settings.basic_rag_qa_session_cost_quota == 1.0
     assert "Neutral" in settings.basic_rag_qa_tones.split(",")

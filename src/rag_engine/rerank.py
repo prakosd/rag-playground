@@ -48,11 +48,12 @@ class CrossEncoderUnavailable(RuntimeError):
     """Raised when the local cross-encoder dependency or model cannot be loaded."""
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=1)
 def load_cross_encoder(model_name: str = _LOCAL_CROSS_ENCODER) -> object:
     """Load and cache a sentence-transformers ``CrossEncoder``, or raise.
 
-    The heavy import stays here so ``import rag_engine`` never pulls torch.
+    The heavy import stays here so ``import rag_engine`` never pulls torch. Only
+    one model stays resident (``maxsize=1``) to bound memory on shared hosts.
     """
     try:
         from sentence_transformers import CrossEncoder

@@ -102,6 +102,35 @@ def test_conversational_answer_basic_flow(tmp_path: Path) -> None:
     assert result.plan.degraded is True
 
 
+def test_conversational_answer_records_individual_asked_questions(tmp_path: Path) -> None:
+    # The live pipeline must fold the plan's *individual* sub-questions into
+    # asked_questions (matching disk rehydration), not the joined resolved string,
+    # so follow-up de-dup behaves the same before and after a reload.
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    def aux_resolver(config):
+        return (
+            ResolvedChatModel(
+                model=_ScriptedModel(reply='["What is X?", "What is Y?"]'), model_id="aux"
+            ),
+            [],
+        )
+
+    result = conversational_answer(
+        tmp_path,
+        "What is X and what is Y?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    assert result.plan.sub_questions == ["What is X?", "What is Y?"]
+    assert result.state.asked_questions == ("What is X?", "What is Y?")
+
+
 def test_conversational_answer_captures_answer_token_usage(tmp_path: Path) -> None:
     def retriever(run_dir, query, config):
         return RetrievalResult(chunks=list(_CHUNKS))

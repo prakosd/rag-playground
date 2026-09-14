@@ -33,7 +33,7 @@ conversational_answer(run_dir, question, state, config)  # Step 5 (advanced pipe
   ├─ retrieve_multi(...)                     → merged, deduped chunks (parallel)
   ├─ rerank_chunks(...)                      → off / local cross-encoder / LLM
   ├─ generate_chat_answer(...)               → grounded answer
-  ├─ suggest_followups / validate_followups  → ValidatedFollowup[] (answerable only)
+  ├─ suggest_followups / validate_followups  → ValidatedFollowup[] (answerable · not already asked)
   └─ update_state(...)                       → next ConversationState
                                              → ConversationalAnswer (+ plan, timings, token_usage)
 ```
@@ -91,8 +91,11 @@ collection produced the vectors, rebuilds the matching embeddings with
 — a small backend-neutral interface (`search.py`). Its only implementation,
 `ChromaSearcher`, reopens the collection with the same `langchain_chroma.Chroma`
 class the indexer wrote with (guaranteeing on-disk compatibility) and returns
-plain `SearchHit`s, so no LangChain types leak across the boundary. Swapping
-vector backends later means writing one new `VectorSearcher`, not touching the
+plain `SearchHit`s, so no LangChain types leak across the boundary. A
+module-level lock serializes chromadb client construction (its Rust backend is
+not thread-safe on a cold start), and `ensure_ready()` lets
+`retrieve_multi`/`validate_followups` warm one shared searcher before fanning
+out. Swapping vector backends later means writing one new `VectorSearcher`, not touching the
 pipeline. The embedding loader and `searcher_factory` are injectable so the flow
 can be tested without ChromaDB or network access.
 
@@ -147,14 +150,14 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter`; `ConversationalConfig` (Step 5 stage flags + thresholds + answer `tone` + `ConversationalPrompts` per-stage prompt overrides, wraps a `RagConfig`) |
 | `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock Nova/Claude APAC profiles + Qwen3/Gemma/Mistral/NVIDIA in-Region + OpenAI Direct API, echo; sorted by cloud → provider → size → name), `DEFAULT_CHAT_MODEL` (pinned to Bedrock Claude), `ECHO_MODEL` |
 | `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), `resolve_auxiliary_model` (small helper model for Step 5), `thinking_disabled_model_kwargs`, lazy echo model |
-| `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, post-filter by score threshold (Step 3); `retrieve_multi` (parallel per-sub-question, deduped) |
-| `search.py` | `VectorSearcher` interface + `ChromaSearcher` + backend-neutral `SearchHit` |
+| `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, post-filter by score threshold (Step 3); `retrieve_multi` (parallel per-sub-question, deduped, sharing one warmed searcher) |
+| `search.py` | `VectorSearcher` interface (+ `ensure_ready` warm hook) + `ChromaSearcher` (thread-safe lazy open behind a module lock) + backend-neutral `SearchHit` |
 | `prompts.py` | QA + condense-question prompts, context formatting; `build_rag_prompt` / `format_knowledge` (Step 4); Step 5 auxiliary templates + tolerant JSON parsers; overridable conversational prompts (`CONVERSATIONAL_PROMPT_FIELDS`, `template_has_fields`, `render_conversational_template`) + token capture (`invoke_text_with_usage`, `extract_token_usage`) |
 | `qa.py` | `answer_question` / `generate_answer` / `stream_answer`; `stream_prompt` / `generate_from_prompt` (raw editable prompt, Step 4) |
 | `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (+ `generate_chat_answer_with_usage`); `conversational_answer` (advanced Step 5 pipeline, per-stage `token_usage`) |
-| `decompose.py` | `plan_queries` (reference resolution + decomposition) + `update_state` (rolling conversation state) |
+| `decompose.py` | `plan_queries` (reference resolution + decomposition) + `update_state` (rolling conversation state + capped `asked_questions` history) |
 | `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM), lazy `load_cross_encoder` |
-| `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate) + `answerability_check` |
+| `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate + drop already-asked questions) + `answerability_check` |
 | `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn`, `TokenUsage`, `StageTokenUsage`; `QueryPlan`, `ConversationState`, `ValidatedFollowup`, `ConversationalAnswer` |
 | `messages.py` | stable `rag.*` message codes + builders |
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -250,3 +253,58 @@ def test_chroma_searcher_single_source_filter_uses_exact_match() -> None:
     searcher.search("q", k=5, source_filter=["a.md"])
 
     assert store.last_filter == {"source": "a.md"}
+
+
+def test_retrieve_uses_provided_searcher_and_skips_embedding_load() -> None:
+    hits = [SearchHit(text="hello", source="a.md", distance=0.0, metadata={"source": "a.md"})]
+
+    def loader(run_dir: Path | str):  # pragma: no cover - must not run
+        raise AssertionError("embedding load must be skipped when a searcher is given")
+
+    result = retrieve(
+        "/tmp/index",
+        "q",
+        RagConfig(top_k=1),
+        embedding_loader=loader,
+        searcher=_FakeSearcher(hits),
+    )
+
+    assert [chunk.source for chunk in result.chunks] == ["a.md"]
+    assert not result.errors
+
+
+def test_chroma_client_construction_is_serialized(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression for the ChromaDB "'RustBindingsAPI' object has no attribute
+    # 'bindings'" crash: concurrent first-opens must not construct the client in
+    # parallel (its Rust backend's shared-system init is not thread-safe).
+    langchain_chroma = pytest.importorskip("langchain_chroma")
+    import rag_engine.search as search_mod
+
+    active = 0
+    max_active = 0
+    guard = threading.Lock()
+
+    class _SlowChroma:
+        def __init__(self, **kwargs: object) -> None:
+            nonlocal active, max_active
+            with guard:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.01)
+            with guard:
+                active -= 1
+
+    monkeypatch.setattr(
+        search_mod, "load_manifest", lambda run_dir: SimpleNamespace(collection_name="c")
+    )
+    monkeypatch.setattr(langchain_chroma, "Chroma", _SlowChroma)
+
+    # Separate searcher instances mirror the retrieve_multi / validate_followups threads.
+    searchers = [ChromaSearcher(f"/tmp/index-{i}", embeddings=object()) for i in range(8)]
+    threads = [threading.Thread(target=searcher.ensure_ready) for searcher in searchers]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert max_active == 1  # the module-level lock made client construction single-flight

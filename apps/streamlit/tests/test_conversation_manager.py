@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from rag_engine import ConversationalAnswer, RetrievedChunk, ValidatedFollowup
+
 from app_support.conversational_rag.conversation_manager import (
+    asked_questions_from_records,
     conversation_summaries,
     conversation_title,
     conversation_turns,
     new_conversation_id,
     new_transaction_id,
+    trim_old_turn_payloads,
     turn_from_record,
 )
 from app_support.conversational_rag.conversational_rag_history import ConversationalTurnRecord
@@ -119,3 +123,72 @@ def test_conversation_summaries_group_newest_first_with_titles() -> None:
     assert summaries[0].turn_count == 2
     assert summaries[0].title == "Alpha topic"  # latest turn's summary wins
     assert summaries[1].title == "beta only"  # falls back to the first question
+
+
+def test_asked_questions_from_records_folds_dedupes_oldest_first() -> None:
+    records = [
+        _record("2026-09-01T10:00:00+00:00", sub_questions=("What is CTP?", "Is it costly?")),
+        _record("2026-09-01T10:01:00+00:00", sub_questions=("what is ctp?", "How to claim?")),
+    ]
+
+    asked = asked_questions_from_records(records, "conv1")
+
+    # Oldest first; "what is ctp?" folds into the earlier "What is CTP?".
+    assert asked == ("What is CTP?", "Is it costly?", "How to claim?")
+
+
+def test_asked_questions_from_records_falls_back_to_raw_question() -> None:
+    records = [_record("2026-09-01T10:00:00+00:00", question="Only raw", sub_questions=())]
+
+    assert asked_questions_from_records(records, "conv1") == ("Only raw",)
+
+
+def test_asked_questions_from_records_ignores_other_conversations() -> None:
+    records = [
+        _record("2026-09-01T10:00:00+00:00", conversation_id="conv1", sub_questions=("a?",)),
+        _record("2026-09-01T10:01:00+00:00", conversation_id="conv2", sub_questions=("b?",)),
+    ]
+
+    assert asked_questions_from_records(records, "conv1") == ("a?",)
+
+
+def test_asked_questions_from_records_caps_history() -> None:
+    records = [
+        _record(f"2026-09-01T10:{i:02d}:00+00:00", sub_questions=(f"q{i}?",)) for i in range(25)
+    ]
+
+    asked = asked_questions_from_records(records, "conv1")
+
+    assert len(asked) == 20
+    assert asked[-1] == "q24?"
+    assert "q0?" not in asked
+
+
+def _live_turn(index: int) -> dict:
+    chunk = RetrievedChunk(text="t", source="a.md", score=0.9, metadata={})
+    answer = ConversationalAnswer(
+        answer=f"a{index}",
+        sources=[chunk],
+        follow_ups=[ValidatedFollowup(question="f?", chunks=[chunk])],
+    )
+    return {"question": f"q{index}", "answer": answer, "turn_id": index}
+
+
+def test_trim_old_turn_payloads_frees_old_chunks_keeps_text() -> None:
+    turns = [_live_turn(0), _live_turn(1), _live_turn(2)]
+
+    trim_old_turn_payloads(turns, keep_recent=1)
+
+    assert turns[0]["answer"].sources == []
+    assert turns[0]["answer"].follow_ups[0].chunks == []
+    assert turns[0]["answer"].answer == "a0"  # transcript text preserved
+    assert turns[-1]["answer"].sources  # newest turn kept intact
+    assert turns[-1]["answer"].follow_ups[0].chunks
+
+
+def test_trim_old_turn_payloads_noop_within_cap() -> None:
+    turns = [_live_turn(0)]
+
+    trim_old_turn_payloads(turns, keep_recent=30)
+
+    assert turns[0]["answer"].sources  # within cap → untouched

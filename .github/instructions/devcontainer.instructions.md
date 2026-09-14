@@ -29,9 +29,10 @@ lightweight and atomic:
   (the crawler; `truststore` lets direct PDF/DOCX downloads trust the OS certificate store
   — like the browser — so they verify behind a corporate TLS-intercepting proxy; `mammoth`
   converts `.docx` and is pure Python, so it needs no system package).
-- `vector` → `langchain-chroma`, `langchain-text-splitters`, `langchain-core`, `pydantic`
-  (chunking + vector store; pulls `chromadb` transitively; local offline embeddings work
-  with just this).
+- `vector` → `langchain-chroma`, `chromadb`, `langchain-text-splitters`, `langchain-core`,
+  `pydantic` (chunking + vector store; `chromadb` is imported directly and pinned below its
+  next major so an untested Rust-backend threading change can't slip in; local offline
+  embeddings work with just this).
 - `bedrock` → `langchain-aws` (Amazon Titan embeddings + Bedrock chat models; pulls `boto3`).
 - `openai` → `langchain-openai` (OpenAI embeddings + chat models; pulls `openai`).
 - `rag` → `langchain` (umbrella) + `langchain-core` + `pydantic` (`rag_engine`: retrieval +

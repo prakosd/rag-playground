@@ -48,6 +48,9 @@ _MULTI_PART_MARKERS = (
 )
 _AND_BEFORE_QUESTION = re.compile(r"\band\b[^?]*\?")
 _NONE_PLACEHOLDER = "(none)"
+# Cap on the whole-conversation asked-question history carried in ConversationState
+# so a long chat cannot grow it without bound; oldest questions drop first.
+_MAX_ASKED_HISTORY = 20
 
 
 def looks_multi_part(text: str) -> bool:
@@ -144,6 +147,7 @@ def update_state(
     *,
     model_id: str,
     turn_index: int,
+    asked_this_turn: Sequence[str] = (),
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> ConversationState:
     """Return the next conversation state after a turn.
@@ -152,13 +156,17 @@ def update_state(
     *resolved* questions without summarizing. From ``state_summary_start_turn``
     onward, the auxiliary model rolls the summary/entities/open-threads forward;
     a failed or unparsable update preserves the prior state, with only the recent
-    window advanced.
+    window advanced. ``asked_this_turn`` (the turn's resolved sub-questions) is
+    folded into the capped ``asked_questions`` history on every path.
     """
     recent = _append_recent(
         state.recent_resolved, resolved_question.strip(), config.plan_recent_turns
     )
+    asked = _extend_asked(
+        state.asked_questions, asked_this_turn or (resolved_question,), _MAX_ASKED_HISTORY
+    )
     if model_id == ECHO_MODEL or turn_index < config.state_summary_start_turn:
-        return replace(state, recent_resolved=recent)
+        return replace(state, recent_resolved=recent, asked_questions=asked)
 
     prompt = render_conversational_template(
         config.prompts.state,
@@ -173,13 +181,13 @@ def update_state(
         reply, usage = invoke_text_with_usage(model, prompt)
     except Exception as exc:  # noqa: BLE001 - state update is best-effort
         _logger.warning("Conversation-state update failed: %s", exc)
-        return replace(state, recent_resolved=recent)
+        return replace(state, recent_resolved=recent, asked_questions=asked)
 
     if record_usage is not None:
         record_usage("state", usage)
     parsed = parse_json_object(reply)
     if parsed is None:
-        return replace(state, recent_resolved=recent)
+        return replace(state, recent_resolved=recent, asked_questions=asked)
     return ConversationState(
         summary=_cap_words(
             str(parsed.get("summary") or state.summary), config.state_summary_max_words
@@ -187,6 +195,7 @@ def update_state(
         entities=_coerce_entities(parsed.get("entities"), state.entities),
         recent_resolved=recent,
         open_threads=_coerce_str_tuple(parsed.get("open_threads")),
+        asked_questions=asked,
     )
 
 
@@ -194,6 +203,23 @@ def _append_recent(recent: Sequence[str], item: str, limit: int) -> tuple[str, .
     if not item or limit <= 0:
         return () if limit <= 0 else tuple(recent)
     return (*recent, item)[-limit:]
+
+
+def _extend_asked(existing: Sequence[str], new: Sequence[str], limit: int) -> tuple[str, ...]:
+    """Return *existing* asked questions plus new unique ones, capped to *limit*.
+
+    Case-insensitive de-dup keeps the history compact; oldest entries drop first
+    so it never grows without bound over a long conversation.
+    """
+    combined = list(existing)
+    seen = {item.lower() for item in combined}
+    for item in new:
+        text = item.strip()
+        key = text.lower()
+        if text and key not in seen:
+            seen.add(key)
+            combined.append(text)
+    return tuple(combined[-limit:]) if limit > 0 else ()
 
 
 def _cap_words(text: str, max_words: int) -> str:

@@ -11,6 +11,7 @@ backend-specific types (e.g. LangChain ``Document``) cross the interface.
 
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -23,6 +24,13 @@ if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
 
 __all__ = ["ChromaSearcher", "SearchHit", "VectorSearcher", "open_searcher"]
+
+# Serializes chromadb client construction. Its Rust backend shares a process-wide
+# system cache whose init is not thread-safe on a cold start, so concurrent
+# first-opens (retrieve_multi, validate_followups) could read a half-built client
+# ("'RustBindingsAPI' object has no attribute 'bindings'"). One global lock makes
+# the first open single-flight; once the cache is warm, searches run concurrently.
+_STORE_INIT_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -61,6 +69,13 @@ class VectorSearcher(ABC):
         *source_filter*, when non-empty, restricts hits to those source files.
         """
 
+    def ensure_ready(self) -> None:  # noqa: B027 - optional hook; default no-op is intentional
+        """Open lazily-initialized backend resources now (default: no-op).
+
+        Callers that fan out concurrent searches can warm a single searcher once
+        up front so no worker thread races to initialize the backend.
+        """
+
 
 class ChromaSearcher(VectorSearcher):
     """:class:`VectorSearcher` backed by the langchain-chroma store the indexer wrote.
@@ -95,18 +110,24 @@ class ChromaSearcher(VectorSearcher):
             return _mmr_hits(store, query, k, fetch_k, lambda_mult, where)
         return _similarity_hits(store, query, k, where)
 
-    def _ensure_store(self) -> Any:
-        if self._store is None:
-            from chromadb.config import Settings
-            from langchain_chroma import Chroma
+    def ensure_ready(self) -> None:
+        self._ensure_store()
 
-            manifest = load_manifest(self._run_dir)
-            self._store = Chroma(
-                collection_name=manifest.collection_name,
-                embedding_function=self._embeddings,
-                persist_directory=str(self._run_dir / CHROMA_SUBDIR),
-                client_settings=Settings(anonymized_telemetry=False),
-            )
+    def _ensure_store(self) -> Any:
+        if self._store is not None:
+            return self._store
+        with _STORE_INIT_LOCK:
+            if self._store is None:
+                from chromadb.config import Settings
+                from langchain_chroma import Chroma
+
+                manifest = load_manifest(self._run_dir)
+                self._store = Chroma(
+                    collection_name=manifest.collection_name,
+                    embedding_function=self._embeddings,
+                    persist_directory=str(self._run_dir / CHROMA_SUBDIR),
+                    client_settings=Settings(anonymized_telemetry=False),
+                )
         return self._store
 
 

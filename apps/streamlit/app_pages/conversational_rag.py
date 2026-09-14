@@ -9,6 +9,7 @@ rendering reuse the pure ``conversational_rag`` helpers and shared rag_shared UI
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from time import perf_counter
 
@@ -19,10 +20,12 @@ from rag_engine import ChatTurn, ConversationalAnswer, ConversationState, conver
 from app_support.app_runtime import _ICON_BUTTON_WIDTH_PX
 from app_support.conversational_rag.conversation_manager import (
     ConversationSummary,
+    asked_questions_from_records,
     conversation_summaries,
     conversation_turns,
     new_conversation_id,
     new_transaction_id,
+    trim_old_turn_payloads,
 )
 from app_support.conversational_rag.conversational_rag_form_ui import (
     build_conversational_config,
@@ -137,6 +140,7 @@ def render_page(context: RagPageContext) -> None:
         elapsed = perf_counter() - start
 
     turns.append({"question": question, "answer": answer, "turn_id": len(turns)})
+    trim_old_turn_payloads(turns, get_settings().conv_rag_max_live_turns)
     st.session_state[_STATE_KEY] = answer.state
     replace_followups(cache, answer.follow_ups)
     _append_history(
@@ -173,9 +177,13 @@ def _ensure_active_conversation(
 def _activate_conversation(conversation_id: str, records: list[ConversationalTurnRecord]) -> None:
     """Load a saved conversation's turns (display-adequate) into session state."""
     turns = conversation_turns(records, conversation_id)
+    trim_old_turn_payloads(turns, get_settings().conv_rag_max_live_turns)
+    base_state = turns[-1]["answer"].state if turns else ConversationState()
     st.session_state[_CONV_ID_KEY] = conversation_id
     st.session_state[_TURNS_KEY] = turns
-    st.session_state[_STATE_KEY] = turns[-1]["answer"].state if turns else ConversationState()
+    st.session_state[_STATE_KEY] = replace(
+        base_state, asked_questions=asked_questions_from_records(records, conversation_id)
+    )
     st.session_state[_CACHE_KEY] = {}
     st.session_state.pop(_PENDING_KEY, None)
 

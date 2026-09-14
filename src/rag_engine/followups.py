@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,7 +25,13 @@ from rag_engine.prompts import (
     parse_json_array,
     render_conversational_template,
 )
-from rag_engine.retrieval import RetrievalResult, retrieve
+from rag_engine.retrieval import (
+    RetrievalResult,
+    load_index_embeddings,
+    retrieve,
+    warm_shared_searcher,
+)
+from rag_engine.search import open_searcher
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -37,6 +44,9 @@ _MAX_TOPICS = 6
 _TOPIC_SNIPPET_CHARS = 160
 _NONE_PLACEHOLDER = "(none)"
 _YES = "yes"
+# A follow-up whose normalized text matches an already-asked question at or above
+# this difflib ratio is dropped as a repeat (a backstop to the prompt instruction).
+_DEDUP_THRESHOLD = 0.85
 
 
 def suggest_followups(
@@ -45,13 +55,15 @@ def suggest_followups(
     plan: QueryPlan,
     config: ConversationalConfig,
     *,
+    asked_questions: Sequence[str] = (),
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> list[str]:
     """Generate candidate follow-up questions from the retrieved topics.
 
     Returns an empty list when follow-ups are disabled or nothing was retrieved,
     and on a parse failure. A model error propagates so the caller can record a
-    generation-failure warning.
+    generation-failure warning. ``asked_questions`` (the conversation's resolved
+    history) is passed to the model so it avoids re-suggesting covered ground.
     """
     if not config.followups_enabled or not chunks:
         return []
@@ -61,6 +73,7 @@ def suggest_followups(
         topics=_context_topics(chunks),
         questions=_format_questions(plan.sub_questions),
         count=config.followup_candidate_count,
+        asked=_format_questions(asked_questions),
     )
     reply, usage = invoke_text_with_usage(model, prompt)
     if record_usage is not None:
@@ -99,6 +112,7 @@ def validate_followups(
     *,
     model: BaseChatModel | None = None,
     retriever: Callable[..., RetrievalResult] = retrieve,
+    asked_questions: Sequence[str] = (),
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> list[ValidatedFollowup]:
     """Keep only candidates the corpus can answer, carrying their probe chunks.
@@ -106,17 +120,22 @@ def validate_followups(
     Each candidate is probe-retrieved in parallel. A best score at/above
     ``followup_min_score`` keeps it outright; at/below ``followup_drop_score``
     drops it; in between, the LLM answerability check decides. Kept follow-ups
-    are sorted by score and truncated to ``followup_show_count``.
+    are sorted by score and truncated to ``followup_show_count``. Candidates that
+    repeat or closely paraphrase an ``asked_questions`` entry are dropped first.
     """
     unique = _dedupe([text.strip() for text in candidates if text.strip()])
+    unique = _filter_asked(unique, asked_questions)
     if not unique:
         return []
     probe = config.rag.model_copy(update={"top_k": config.followup_probe_k})
+    shared, _ = warm_shared_searcher(run_dir, retriever, load_index_embeddings, open_searcher)
+    extra = {"searcher": shared} if shared is not None else {}
     workers = max(1, min(config.max_workers, len(unique)))
     results: dict[str, RetrievalResult] = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(retriever, run_dir, question, probe): question for question in unique
+            executor.submit(retriever, run_dir, question, probe, **extra): question
+            for question in unique
         }
         for future, question in futures.items():
             try:
@@ -189,3 +208,27 @@ def _dedupe(items: Sequence[str]) -> list[str]:
             seen.add(key)
             unique.append(item)
     return unique
+
+
+def _filter_asked(candidates: Sequence[str], asked: Sequence[str]) -> list[str]:
+    """Drop candidates that repeat or closely paraphrase an already-asked question."""
+    if not asked:
+        return list(candidates)
+    return [text for text in candidates if not _is_repeat(text, asked)]
+
+
+def _is_repeat(candidate: str, asked: Sequence[str]) -> bool:
+    cand = _normalize(candidate)
+    if not cand:
+        return True
+    for prior in asked:
+        prev = _normalize(prior)
+        if not prev:
+            continue
+        if cand == prev or SequenceMatcher(None, cand, prev).ratio() >= _DEDUP_THRESHOLD:
+            return True
+    return False
+
+
+def _normalize(text: str) -> str:
+    return " ".join(text.lower().split()).rstrip("?").strip()

@@ -177,6 +177,10 @@ class Settings(BaseSettings):
     # cover every conversational LLM stage.
     conv_rag_session_token_quota: int
     conv_rag_session_cost_quota: float
+    # Most recent Step 5 turns kept fully in memory; older turns keep their
+    # question/answer text but shed retrieved-chunk payloads (they remain on disk
+    # and reload via the conversation picker). Bounds a long chat's memory.
+    conv_rag_max_live_turns: int
 
     # ── Session lifecycle ────────────────────────────────────────────────────
     # Days an inactive browser session's files are kept before the startup
