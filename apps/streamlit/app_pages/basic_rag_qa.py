@@ -49,7 +49,7 @@ from app_support.dialog_ui import (
     scrollable_dialog_css,
 )
 from app_support.focus import focus_widget
-from app_support.i18n import Strings, get_strings
+from app_support.i18n import Strings, answer_language_name, get_strings
 from app_support.model_pricing import (
     estimate_cost,
     get_model_price,
@@ -213,6 +213,7 @@ def render_page(context: RagPageContext) -> None:
         tone,
         do_generate,
         session_root,
+        answer_language_name(st.session_state.get("language", context.default_language)),
     )
 
     prompt_text, send, maximize, answer_slot = _render_prompt_form(strings, disabled=index is None)
@@ -514,6 +515,7 @@ def _render_search_results(
     tone: str,
     do_generate: bool,
     session_root: Path,
+    language: str,
 ) -> None:
     """Render the always-present Search results panel between question and prompt.
 
@@ -536,6 +538,7 @@ def _render_search_results(
             result.chunks,
             tone,
             template=resolve_basic_rag_qa_prompt_template(session_root),
+            language=language,
         )
         st.session_state[_ANSWER_KEY] = None
         st.session_state[_STATS_KEY] = None

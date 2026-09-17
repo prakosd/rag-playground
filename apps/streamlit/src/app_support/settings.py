@@ -157,6 +157,10 @@ class Settings(BaseSettings):
     conv_rag_aux_models: str
     # The auxiliary model pre-selected on Step 5.
     conv_rag_default_aux_model: str
+    # Comma-separated size bands (XS, Small, …) the auxiliary-model list is limited
+    # to, so only genuinely small helper models (micro/mini/lite) are offered;
+    # larger or unpriced ids are dropped even if listed in conv_rag_aux_models.
+    conv_rag_aux_size_bands: str
     # Whether query decomposition / follow-up suggestions start on (toggleable).
     conv_rag_decomposition_enabled: bool
     conv_rag_followups_enabled: bool

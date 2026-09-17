@@ -15,7 +15,12 @@ from time import perf_counter
 
 import streamlit as st
 from artifact_store import LibraryMessage
-from rag_engine import ChatTurn, ConversationalAnswer, ConversationState, conversational_answer
+from rag_engine import (
+    ChatTurn,
+    ConversationalAnswer,
+    ConversationState,
+    conversational_answer_stream,
+)
 
 from app_support.app_runtime import _ICON_BUTTON_WIDTH_PX
 from app_support.conversational_rag.conversation_manager import (
@@ -27,6 +32,7 @@ from app_support.conversational_rag.conversation_manager import (
     new_transaction_id,
     trim_old_turn_payloads,
 )
+from app_support.conversational_rag.conversational_prompts import resolve_welcome_message
 from app_support.conversational_rag.conversational_rag_form_ui import (
     build_conversational_config,
     render_advanced_controls,
@@ -43,7 +49,8 @@ from app_support.conversational_rag.conversational_token_ui import (
     render_conversational_token_panel,
 )
 from app_support.conversational_rag.followup_cache import get_cached_chunks, replace_followups
-from app_support.i18n import get_strings, localize_message
+from app_support.focus import entered_page, focus_chat_input, scroll_to_bottom
+from app_support.i18n import answer_language_name, get_strings, localize_message
 from app_support.rag_shared.rag_ui import RagPageContext, render_messages
 from app_support.rag_shared.result_snapshot import stored_results
 from app_support.settings import get_settings
@@ -54,6 +61,13 @@ _CACHE_KEY = "conversational_rag_followup_cache"
 _PENDING_KEY = "conversational_rag_pending"
 _CONV_ID_KEY = "conversational_rag_current_id"
 _USER_TURN_KEY_PREFIX = "conv-user-"
+_CHAT_INPUT_KEY = "conversational_rag_input"
+_CHAT_PANEL_KEY = "conversational_rag_panel"
+_SCROLL_BOTTOM_KEY = "conversational_rag_scroll_bottom"
+_FOCUS_INPUT_KEY = "conversational_rag_focus_input"
+# Fixed-height scrollable chat panel so the conversation reads like a messenger
+# thread; follow-ups, token usage, and Output Files sit below it.
+_CHAT_PANEL_HEIGHT_PX = 460
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
 _CHAT_ALIGN_CSS = (
     "<style>"
@@ -68,6 +82,7 @@ _CHAT_ALIGN_CSS = (
 def render_page(context: RagPageContext) -> None:
     """Render the conversational RAG page content area."""
     strings = get_strings(st.session_state.get("language", context.default_language))
+    on_entry = entered_page("conversational_rag")
     st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
     st.caption(strings["CHAT_SECTION_CAPTION"])
     st.html(_CHAT_ALIGN_CSS)
@@ -86,50 +101,125 @@ def render_page(context: RagPageContext) -> None:
     state: ConversationState = st.session_state[_STATE_KEY]
     cache: dict = st.session_state[_CACHE_KEY]
 
-    if not turns:
-        st.info(strings["CHAT_EMPTY_HINT"])
+    # The chat input renders inline under the panel + follow-ups (see below), so a
+    # typed message arrives via _PENDING_KEY + a rerun (like a follow-up click). This
+    # run only needs the pending question so the panel can stream its answer in place.
+    pending = st.session_state.pop(_PENDING_KEY, None)
+    question = (pending or "").strip()
+    submitting = bool(question and index is not None)
 
     default_tab = get_settings().semantic_search_default_tab
-    for turn in turns:
-        _render_user_message(turn["question"], turn["turn_id"])
-        with st.chat_message("assistant"):
-            answer: ConversationalAnswer = turn["answer"]
-            render_messages(strings, answer.warnings, answer.errors)
-            if answer.answer:
-                st.write(answer.answer)
-            if controls.inspect:
-                render_turn_inspection(strings, answer, default_tab=default_tab)
+    answer: ConversationalAnswer | None = None
+    elapsed = 0.0
+    config = None
+    with st.container(height=_CHAT_PANEL_HEIGHT_PX, key=_CHAT_PANEL_KEY):
+        if not turns and not submitting:
+            _render_welcome_bubble(strings, context.session_root())
+        for turn in turns:
+            _render_stored_turn(strings, turn, inspect=controls.inspect, default_tab=default_tab)
+        if submitting:
+            config = build_conversational_config(
+                controls,
+                context.session_root(),
+                language=answer_language_name(
+                    st.session_state.get("language", context.default_language)
+                ),
+            )
+            answer, elapsed = _stream_pending_turn(
+                strings,
+                question,
+                len(turns),
+                index.run_dir,
+                state,
+                config,
+                _history_from_turns(turns),
+                get_cached_chunks(cache, question),
+            )
+
+    if on_entry or st.session_state.pop(_SCROLL_BOTTOM_KEY, False):
+        scroll_to_bottom(_CHAT_PANEL_KEY)
 
     if turns:
         latest = turns[-1]
         clicked = render_followup_buttons(strings, latest["answer"].follow_ups, latest["turn_id"])
         if clicked:
             st.session_state[_PENDING_KEY] = clicked
+            st.session_state[_SCROLL_BOTTOM_KEY] = True
             st.rerun()
+
+    # Dock the input just under the panel + follow-ups. Wrapping it in a container
+    # makes Streamlit render it inline (not viewport-pinned); a typed message queues
+    # via _PENDING_KEY and reruns so the next run streams it into the panel above.
+    with st.container():
+        typed = st.chat_input(
+            strings["CHAT_INPUT_PLACEHOLDER"], disabled=index is None, key=_CHAT_INPUT_KEY
+        )
+    if typed and index is not None:
+        st.session_state[_PENDING_KEY] = typed.strip()
+        st.session_state[_SCROLL_BOTTOM_KEY] = True
+        st.rerun()
 
     render_conversational_token_panel(strings, records)
     context.render_downloads()
 
-    pending = st.session_state.pop(_PENDING_KEY, None)
-    typed = st.chat_input(strings["CHAT_INPUT_PLACEHOLDER"], disabled=index is None)
-    question = (pending or typed or "").strip()
-    if not (question and index is not None):
-        return
+    if on_entry or st.session_state.pop(_FOCUS_INPUT_KEY, False):
+        focus_chat_input()
 
-    config = build_conversational_config(controls, context.session_root())
-    history = _history_from_turns(turns)
-    cached = get_cached_chunks(cache, question)
+    if submitting and answer is not None:
+        turns.append({"question": question, "answer": answer, "turn_id": len(turns)})
+        trim_old_turn_payloads(turns, get_settings().conv_rag_max_live_turns)
+        st.session_state[_STATE_KEY] = answer.state
+        replace_followups(cache, answer.follow_ups)
+        _append_history(
+            context.session_root(),
+            st.session_state[_CONV_ID_KEY],
+            index,
+            config,
+            question,
+            answer,
+            elapsed,
+        )
+        st.session_state[_SCROLL_BOTTOM_KEY] = True
+        st.session_state[_FOCUS_INPUT_KEY] = True
+        st.rerun()
 
-    _render_user_message(question, len(turns))
+
+def _render_welcome_bubble(strings, session_root) -> None:
+    """Show the editable assistant greeting at the start of a fresh conversation."""
     with st.chat_message("assistant"):
+        st.write(resolve_welcome_message(session_root, strings["CHAT_WELCOME_DEFAULT"]))
+
+
+def _render_stored_turn(strings, turn: dict, *, inspect: bool, default_tab: str) -> None:
+    """Render one persisted turn: the user bubble and the assistant's answer."""
+    _render_user_message(turn["question"], turn["turn_id"])
+    with st.chat_message("assistant"):
+        answer: ConversationalAnswer = turn["answer"]
+        render_messages(strings, answer.warnings, answer.errors)
+        if answer.answer:
+            st.write(answer.answer)
+        if inspect:
+            render_turn_inspection(strings, answer, default_tab=default_tab)
+
+
+def _stream_pending_turn(strings, question, turn_id, run_dir, state, config, history, cached):
+    """Stream the pending turn's answer into the chat panel; return (answer, seconds).
+
+    The grounded answer streams token-by-token at the top; a live ``st.status``
+    footer below it narrates the plan/retrieve/re-rank/state stages and collapses
+    when the turn completes.
+    """
+    _render_user_message(question, turn_id)
+    with st.chat_message("assistant"):
+        answer_area = st.container()
         status = st.status(strings["RAG_GENERATING"])
 
         def _report_progress(message: LibraryMessage) -> None:
             status.update(label=localize_message(strings, message.as_dict()))
 
         start = perf_counter()
-        answer = conversational_answer(
-            index.run_dir,
+        generation = conversational_answer_stream(
+            run_dir,
             question,
             state,
             config,
@@ -137,22 +227,13 @@ def render_page(context: RagPageContext) -> None:
             cached_chunks=cached,
             progress_callback=_report_progress,
         )
-        elapsed = perf_counter() - start
-
-    turns.append({"question": question, "answer": answer, "turn_id": len(turns)})
-    trim_old_turn_payloads(turns, get_settings().conv_rag_max_live_turns)
-    st.session_state[_STATE_KEY] = answer.state
-    replace_followups(cache, answer.follow_ups)
-    _append_history(
-        context.session_root(),
-        st.session_state[_CONV_ID_KEY],
-        index,
-        config,
-        question,
-        answer,
-        elapsed,
-    )
-    st.rerun()
+        with answer_area:
+            st.write_stream(generation)
+            elapsed = perf_counter() - start
+            answer = generation.answer or ConversationalAnswer(answer="", state=state)
+            render_messages(strings, answer.warnings, answer.errors)
+        status.update(state="complete")
+    return answer, elapsed
 
 
 def _ensure_active_conversation(

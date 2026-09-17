@@ -78,6 +78,7 @@ def test_conversational_config_defaults() -> None:
     assert config.followup_drop_score <= config.followup_min_score
     assert config.max_workers >= 1
     assert config.tone == "Neutral"
+    assert config.language == "English"
 
 
 @pytest.mark.parametrize(
@@ -93,6 +94,7 @@ def test_conversational_config_defaults() -> None:
         {"max_workers": 0},
         {"plan_recent_turns": -1},
         {"tone": "   "},
+        {"language": "   "},
     ],
 )
 def test_conversational_config_rejects_invalid(overrides: dict) -> None:
@@ -102,6 +104,10 @@ def test_conversational_config_rejects_invalid(overrides: dict) -> None:
 
 def test_conversational_config_strips_tone() -> None:
     assert ConversationalConfig(tone="  Formal  ").tone == "Formal"
+
+
+def test_conversational_config_strips_language() -> None:
+    assert ConversationalConfig(language="  Indonesian  ").language == "Indonesian"
 
 
 def test_conversational_config_accepts_custom_values() -> None:

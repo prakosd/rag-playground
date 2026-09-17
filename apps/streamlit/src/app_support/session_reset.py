@@ -43,14 +43,18 @@ BASIC_RAG_QA_RESULT_KEYS: tuple[str, ...] = (
 )
 
 # Step 5: the conversation turns, rolling state, follow-up cache, pending click,
-# and the active conversation id (dropped so a switched-to session re-defaults to
-# its own most-recent conversation rather than another session's).
+# the active conversation id (dropped so a switched-to session re-defaults to its
+# own most-recent conversation rather than another session's), the chat input
+# value, and the one-shot scroll/focus flags.
 CONVERSATIONAL_RAG_RESULT_KEYS: tuple[str, ...] = (
     "conversational_rag_turns",
     "conversational_rag_state",
     "conversational_rag_followup_cache",
     "conversational_rag_pending",
     "conversational_rag_current_id",
+    "conversational_rag_input",
+    "conversational_rag_scroll_bottom",
+    "conversational_rag_focus_input",
 )
 
 TRANSIENT_RESULT_KEYS: tuple[str, ...] = (

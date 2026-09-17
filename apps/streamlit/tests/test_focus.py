@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import app_support.focus as focus_module
-from app_support.focus import click_widget, entered_page, focus_widget
+from app_support.focus import (
+    click_widget,
+    entered_page,
+    focus_chat_input,
+    focus_widget,
+    scroll_to_bottom,
+)
 
 
 def test_entered_page_true_once_per_navigation(monkeypatch) -> None:
@@ -30,6 +36,23 @@ def test_focus_widget_targets_keyed_container(monkeypatch) -> None:
     assert captured["kwargs"]["height"] == 1
 
 
+def test_focus_chat_input_targets_chat_input(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_iframe(src: str, **kwargs: object) -> None:
+        captured["html"] = src
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(focus_module.st, "iframe", fake_iframe)
+
+    focus_chat_input()
+
+    assert "stChatInput" in captured["html"]  # targets the chat input by test id
+    assert "textarea" in captured["html"]
+    assert "target.focus()" in captured["html"]
+    assert captured["kwargs"]["height"] == 1
+
+
 def test_click_widget_targets_keyed_button(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -43,4 +66,20 @@ def test_click_widget_targets_keyed_button(monkeypatch) -> None:
 
     assert ".st-key-export_download_crawl_01_river button" in captured["html"]
     assert "target.click()" in captured["html"]
+
+
+def test_scroll_to_bottom_targets_keyed_container(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_iframe(src: str, **kwargs: object) -> None:
+        captured["html"] = src
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(focus_module.st, "iframe", fake_iframe)
+
+    scroll_to_bottom("conversational_rag_panel")
+
+    assert ".st-key-conversational_rag_panel" in captured["html"]
+    assert "scrollTop" in captured["html"]  # nudges the panel to its bottom
+    assert captured["kwargs"]["height"] == 1
     assert captured["kwargs"]["height"] == 1

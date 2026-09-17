@@ -28,18 +28,22 @@ from rag_engine import (
 from app_support.basic_rag_qa.basic_rag_qa_form_ui import tone_choices
 from app_support.conversational_rag.conversational_prompts import (
     CONVERSATIONAL_PROMPT_KEYS,
+    WELCOME_PROMPT_KEY,
     conversational_prompt_is_valid,
+    editor_prompt_text,
     reset_conversational_prompt,
-    resolve_conversational_prompt,
     resolve_conversational_prompts,
+    resolve_welcome_message,
     save_conversational_prompt,
 )
 from app_support.i18n._types import Strings
+from app_support.model_pricing import load_pricing_catalog
 from app_support.rag_shared.index_catalog import IndexRef
 from app_support.rag_shared.llm_form_ui import (
     chat_model_choices,
     chat_model_label,
     resolve_chat_model_choices,
+    resolve_offered_from_pricing,
 )
 from app_support.rag_shared.rag_ui import kv_grid_html, render_result_cards, select_index
 from app_support.settings import get_settings
@@ -88,22 +92,40 @@ class ConversationalControls:
 
 
 def aux_model_choices() -> tuple[list[str], int]:
-    """Return the curated auxiliary-model options and the default-selected index."""
+    """Return the curated auxiliary-model options and the default-selected index.
+
+    The configured list (``CONV_RAG_AUX_MODELS``) is filtered to models priced in
+    the small size bands (``CONV_RAG_AUX_SIZE_BANDS``), so only genuinely small
+    helper models (micro / mini / lite) are offered — larger or unpriced ids are
+    dropped even if listed. Falls back to the full catalog only if that filter
+    yields nothing (e.g. the pricing config is missing).
+    """
     settings = get_settings()
     configured = [
         model.strip() for model in settings.conv_rag_aux_models.split(",") if model.strip()
     ]
-    allowed = [info.model_id for info in CHAT_MODEL_OPTIONS]
+    aux_bands = {
+        band.strip() for band in settings.conv_rag_aux_size_bands.split(",") if band.strip()
+    }
+    catalog_ids = [info.model_id for info in CHAT_MODEL_OPTIONS]
+    allowed = resolve_offered_from_pricing(load_pricing_catalog().models, aux_bands, catalog_ids)
+    if not allowed:
+        allowed = catalog_ids
     return resolve_chat_model_choices(configured, allowed, settings.conv_rag_default_aux_model)
 
 
 def build_conversational_config(
-    controls: ConversationalControls, session_root: Path | str | None = None
+    controls: ConversationalControls,
+    session_root: Path | str | None = None,
+    *,
+    language: str = "English",
 ) -> ConversationalConfig:
     """Build the library config from the UI *controls* and deployment settings.
 
     Prompt overrides resolve from the session's saved edits → the shipped config
     files → the built-in library templates via ``resolve_conversational_prompts``.
+    *language* is the answer language (a free-form name) threaded into the answer
+    prompt so the reply matches the active UI language.
     """
     settings = get_settings()
     return ConversationalConfig(
@@ -118,6 +140,7 @@ def build_conversational_config(
         followup_min_score=controls.followup_keep,
         followup_drop_score=controls.followup_drop,
         tone=controls.tone,
+        language=language,
     )
 
 
@@ -249,33 +272,34 @@ def render_advanced_controls(
 def _render_prompt_editor(
     strings: Strings, key_prefix: str, session_root: Path, *, disabled: bool
 ) -> None:
-    """Render the per-stage prompt-template editor (one tab per Step 5 LLM prompt)."""
+    """Render the prompt-template editor (one tab per Step 5 LLM prompt + Welcome)."""
     st.caption(strings["CONV_PROMPTS_LABEL"])
     st.caption(strings["CONV_PROMPTS_CAPTION"])
-    tabs = st.tabs([strings[_PROMPT_TAB_KEYS[key]] for key in CONVERSATIONAL_PROMPT_KEYS])
-    for tab, prompt_key in zip(tabs, CONVERSATIONAL_PROMPT_KEYS, strict=True):
+    tab_labels = [strings[_PROMPT_TAB_KEYS[key]] for key in CONVERSATIONAL_PROMPT_KEYS]
+    tab_labels.append(strings["CONV_PROMPT_TAB_WELCOME"])
+    tabs = st.tabs(tab_labels)
+    for tab, prompt_key in zip(tabs[:-1], CONVERSATIONAL_PROMPT_KEYS, strict=True):
         with tab:
             _render_single_prompt(strings, key_prefix, session_root, prompt_key, disabled=disabled)
+    with tabs[-1]:
+        _render_welcome_prompt(strings, key_prefix, session_root, disabled=disabled)
 
 
-def _render_single_prompt(
-    strings: Strings, key_prefix: str, session_root: Path, prompt_key: str, *, disabled: bool
+def _render_prompt_actions(
+    strings: Strings,
+    session_root: Path,
+    prompt_key: str,
+    widget_key: str,
+    *,
+    disabled: bool,
+    fields: str | None = None,
 ) -> None:
-    """Render one prompt's editable text area with Save / Reset-to-default."""
-    fields = ", ".join("{" + name + "}" for name in CONVERSATIONAL_PROMPT_FIELDS[prompt_key])
-    widget_key = f"{key_prefix}_prompt_{prompt_key}"
-    # Seed session state once so the text area shows the effective prompt without
-    # passing both a value and a key (which Streamlit warns about).
-    if widget_key not in st.session_state:
-        st.session_state[widget_key] = resolve_conversational_prompt(prompt_key, session_root)
-    st.text_area(
-        strings[_PROMPT_TAB_KEYS[prompt_key]],
-        height=_PROMPT_EDITOR_HEIGHT,
-        label_visibility="collapsed",
-        disabled=disabled,
-        key=widget_key,
-    )
-    st.caption(strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields))
+    """Render the shared Reset / Save row for a prompt-editor tab.
+
+    ``fields`` is the placeholder list shown when an edit drops a required
+    placeholder; pass ``None`` for a prompt with no placeholders (the Welcome
+    greeting), which then saves unconditionally.
+    """
     reset_col, save_col = st.columns(2, vertical_alignment="center")
     with reset_col:
         if st.button(
@@ -296,12 +320,60 @@ def _render_single_prompt(
             disabled=disabled,
             key=f"{widget_key}_save",
         ):
-            if conversational_prompt_is_valid(prompt_key, st.session_state.get(widget_key, "")):
+            if fields is not None and not conversational_prompt_is_valid(
+                prompt_key, st.session_state.get(widget_key, "")
+            ):
+                st.warning(strings["CONV_PROMPT_INVALID"].format(fields=fields))
+            else:
                 save_conversational_prompt(session_root, prompt_key, st.session_state[widget_key])
                 st.toast(strings["CONV_PROMPT_SAVED_TOAST"], icon=":material/check:")
                 st.rerun()
-            else:
-                st.warning(strings["CONV_PROMPT_INVALID"].format(fields=fields))
+
+
+def _render_single_prompt(
+    strings: Strings, key_prefix: str, session_root: Path, prompt_key: str, *, disabled: bool
+) -> None:
+    """Render one prompt's editable text area with Save / Reset-to-default."""
+    fields = ", ".join("{" + name + "}" for name in CONVERSATIONAL_PROMPT_FIELDS[prompt_key])
+    widget_key = f"{key_prefix}_prompt_{prompt_key}"
+    # Seed the text area with the effective prompt (and self-heal a blank value so
+    # the editor never shows empty); assigning before the widget avoids the
+    # value+key warning.
+    st.session_state[widget_key] = editor_prompt_text(
+        st.session_state.get(widget_key), prompt_key, session_root
+    )
+    st.text_area(
+        strings[_PROMPT_TAB_KEYS[prompt_key]],
+        height=_PROMPT_EDITOR_HEIGHT,
+        label_visibility="collapsed",
+        disabled=disabled,
+        key=widget_key,
+    )
+    st.caption(strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields))
+    _render_prompt_actions(
+        strings, session_root, prompt_key, widget_key, disabled=disabled, fields=fields
+    )
+
+
+def _render_welcome_prompt(
+    strings: Strings, key_prefix: str, session_root: Path, *, disabled: bool
+) -> None:
+    """Render the editable new-conversation welcome greeting (app-only, no placeholders)."""
+    widget_key = f"{key_prefix}_prompt_{WELCOME_PROMPT_KEY}"
+    current = st.session_state.get(widget_key)
+    if not (current and str(current).strip()):
+        st.session_state[widget_key] = resolve_welcome_message(
+            session_root, strings["CHAT_WELCOME_DEFAULT"]
+        )
+    st.text_area(
+        strings["CONV_PROMPT_TAB_WELCOME"],
+        height=_PROMPT_EDITOR_HEIGHT,
+        label_visibility="collapsed",
+        disabled=disabled,
+        key=widget_key,
+    )
+    st.caption(strings["CONV_PROMPT_WELCOME_CAPTION"])
+    _render_prompt_actions(strings, session_root, WELCOME_PROMPT_KEY, widget_key, disabled=disabled)
 
 
 def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None:

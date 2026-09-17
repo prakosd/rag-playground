@@ -10,11 +10,14 @@ from rag_engine.prompts import QA_SYSTEM_PROMPT, STATE_UPDATE_TEMPLATE
 from app_support.conversational_rag import conversational_prompts as cp
 from app_support.conversational_rag.conversational_prompts import (
     CONVERSATIONAL_PROMPT_KEYS,
+    WELCOME_PROMPT_KEY,
     conversational_prompt_is_valid,
+    editor_prompt_text,
     load_saved_conversational_prompt,
     reset_conversational_prompt,
     resolve_conversational_prompt,
     resolve_conversational_prompts,
+    resolve_welcome_message,
     save_conversational_prompt,
 )
 
@@ -26,6 +29,24 @@ def _point_config_at(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "cfg"
     cfg.mkdir()
     return cfg
+
+
+def test_editor_prompt_text_keeps_edit_but_heals_blank() -> None:
+    # A real edit is kept verbatim; a blank/missing value self-heals to the
+    # effective prompt so the editor never shows empty.
+    default = resolve_conversational_prompt("answer")
+    assert editor_prompt_text(None, "answer") == default
+    assert editor_prompt_text("   ", "answer") == default
+    kept = "my custom {tone} {context} {language}"
+    assert editor_prompt_text(kept, "answer") == kept
+
+
+def test_resolve_welcome_message_prefers_saved_then_default(tmp_path: Path) -> None:
+    # No session or nothing saved → the caller's localized default; a saved edit wins.
+    assert resolve_welcome_message(None, "hello") == "hello"
+    assert resolve_welcome_message(tmp_path, "hello") == "hello"
+    save_conversational_prompt(tmp_path, WELCOME_PROMPT_KEY, "Custom greeting")
+    assert resolve_welcome_message(tmp_path, "hello") == "Custom greeting"
 
 
 def test_resolve_returns_config_file_contents(

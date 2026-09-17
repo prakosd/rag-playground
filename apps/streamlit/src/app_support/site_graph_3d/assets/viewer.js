@@ -26,6 +26,9 @@ const MIN_PLANET_R = 0.6;
 const MAX_PLANET_R = 3.0;
 const SUN_R = 3.4;
 const SUN_CLEARANCE = 9; // min camera clearance from the central sun
+// Central sun light reaches this multiple of the system radius, then eases to
+// zero — so inner planets read bright and the outer ring dims with distance.
+const SUN_LIGHT_RANGE = 1.4;
 const AUTO_ROTATE_SPEED = 0.2; // idle camera auto-revolve speed (OrbitControls units)
 // Planet positions are computed in the browser by a d3-force simulation (see
 // runForceLayout below): pages repel, parent→child links attract, collision +
@@ -74,7 +77,6 @@ const SUCCESS_BIOME_TEX = [
 ];
 const CATEGORY_TEX = { skipped: "mercury.jpg", discovered: "mercury.jpg" };
 const GIANT_TEX = "saturn.jpg";
-const RETRY_EMISSIVE = 0xffce54;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const canvas = document.getElementById("sg-canvas");
@@ -97,7 +99,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.96;
+renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x05070d, 0.0016);
@@ -112,12 +114,14 @@ const camera = new THREE.PerspectiveCamera(
 const systemGroup = new THREE.Group();
 scene.add(systemGroup);
 
-// Warm ambient + hemisphere fill keep night sides dim (not black); the sun's
-// point light has NO distance decay (4th arg 0) so every planet — even the
-// outermost ring — catches its light, giving a real day/night terminator.
-scene.add(new THREE.AmbientLight(0xb8c4e0, 0.32));
-scene.add(new THREE.HemisphereLight(0x9fb4ff, 0x140f22, 0.35));
-const centralLight = new THREE.PointLight(0xfff6ec, 2.4, 0, 0);
+// A dim, cool ambient + hemisphere fill keep night sides visible (not black)
+// while staying weak enough that the sun's positional light dominates — so each
+// planet shows a clear day/night terminator instead of a flat, washed-out look.
+// The sun's reach (distance) is set from the system radius once the layout is
+// known, so inner planets read bright and the outer ring falls off with distance.
+scene.add(new THREE.AmbientLight(0xb8c4e0, 0.2));
+scene.add(new THREE.HemisphereLight(0x9fb4ff, 0x140f22, 0.22));
+const centralLight = new THREE.PointLight(0xfff6ec, 2.8, 0, 0);
 systemGroup.add(centralLight);
 
 // ── Post-processing ──────────────────────────────────────────────────────────
@@ -127,9 +131,9 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  1.15, // strength
+  0.9, // strength
   0.55, // radius
-  0.62, // threshold — only bright emissive suns bloom
+  0.7, // threshold — only bright emissive suns bloom
 );
 composer.addPass(bloomPass);
 
@@ -479,10 +483,10 @@ function createBody(node, isRoot) {
   const mesh = isRoot ? makeSun(node) : makePlanet(node);
   const p = forcePositions.get(node.id) || { x: 0, y: 0 };
   mesh.position.set(p.x, domeLift(p), p.y);
-  // An offset seed sun (multi-root crawl) lights its neighbourhood; the central
-  // sun at the origin is already lit by the scene's central light.
+  // An offset seed sun (multi-root crawl) lights its neighbourhood, falling off
+  // over its local radius; the central sun at the origin is lit by centralLight.
   if (isRoot && mesh.position.length() > 1e-3) {
-    mesh.add(new THREE.PointLight(0xfff6ec, 1.3, 0, 0));
+    mesh.add(new THREE.PointLight(0xfff6ec, 1.5, layoutRadius * 0.9, 0));
   }
   mesh.userData.node = node;
   systemGroup.add(mesh);
@@ -522,14 +526,14 @@ function makeSun(node) {
   const corona = new THREE.Sprite(
     new THREE.SpriteMaterial({
       map: GLOW_TEXTURE,
-      color: 0xffc46b,
+      color: 0xffce9a,
       blending: THREE.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      opacity: 0.5,
+      opacity: 0.4,
     }),
   );
-  corona.scale.setScalar(r * 7);
+  corona.scale.setScalar(r * 5.5);
   sun.add(corona);
   coronas.push({ sprite: corona, baseR: r });
   // Swap in the real sun texture when reachable; keep the warm sphere otherwise.
@@ -569,10 +573,6 @@ function makePlanet(node) {
     metalness: 0.0,
   });
   applyCdnTexture(mat, texFile);
-  if (node.retry) {
-    mat.emissive = new THREE.Color(RETRY_EMISSIVE);
-    mat.emissiveIntensity = 0.14;
-  }
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 32), mat);
   mesh.rotation.z = (hashString(node.id) % 40) / 100 - 0.2; // gentle axial tilt
   if (isGiant) mesh.add(makeRing(r));
@@ -678,10 +678,6 @@ function makeAsteroid(node) {
     metalness: family.metalness,
     flatShading: true,
   });
-  if (node.retry) {
-    mat.emissive = new THREE.Color(RETRY_EMISSIVE);
-    mat.emissiveIntensity = 0.14;
-  }
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
   return mesh;
@@ -750,19 +746,21 @@ function makeRing(planetR) {
 }
 
 const outerRadius = buildLayout();
+// Now the system radius is known: give the sun a finite reach so its light eases
+// to zero past the outer ring (a scale-independent day/night falloff).
+centralLight.distance = outerRadius * SUN_LIGHT_RANGE;
 
 // Zoom-responsive sun: soft up close, blazing when far (distance to the centre).
 const SUN_NEAR = 32;
 const SUN_FAR = outerRadius * 2.2 + 90;
-const SUN_BLOOM_NEAR = 0.55;
-const SUN_BLOOM_FAR = 1.95;
+const SUN_BLOOM_NEAR = 0.42;
+const SUN_BLOOM_FAR = 1.35;
 
 // ── Connection lines (parent → child), updated each frame ────────────────────
 const edges = (Array.isArray(MODEL.edges) ? MODEL.edges : []).filter(
   (e) => planetById.has(e.source) && planetById.has(e.target),
 );
 const LINE_DIM = new THREE.Color(0x191c22); // near-invisible while a planet is focused
-const FAIL_LINK = new THREE.Color(0xff6b6b); // red spoke to a failed page, so failures pop
 // The focused chain renders as a "Petrova line" (Project Hail Mary): a steady
 // crimson thread carrying a hot, white-pink light knot that flows from the sun
 // outward. The crest is pushed HDR so the scene's bloom turns it into a glowing
@@ -820,17 +818,6 @@ function buildLinks() {
   systemGroup.add(linkMesh);
 }
 buildLinks();
-
-// Edge indices touching a failed page — painted red in paintLinks so a failed page
-// (a small asteroid) is easy to spot by following its red spoke.
-const failEdges = new Set();
-for (let i = 0; i < edges.length; i++) {
-  const src = nodeById.get(edges[i].source);
-  const tgt = nodeById.get(edges[i].target);
-  if ((src && src.color_category === "fail") || (tgt && tgt.color_category === "fail")) {
-    failEdges.add(i);
-  }
-}
 
 // How high each link bows off its straight midpoint, as a fraction of the link's
 // length — a gentle upward arc so spokes read as orbits, not taut strings.
@@ -917,10 +904,6 @@ function paintLinks(elapsed) {
       for (let v = 0; v < perEdge; v++) PETROVA_HOVER.toArray(linkColors, base + v * 3);
       continue;
     }
-    if (failEdges.has(i)) {
-      for (let v = 0; v < perEdge; v++) FAIL_LINK.toArray(linkColors, base + v * 3);
-      continue;
-    }
     if (focusChain) {
       for (let v = 0; v < perEdge; v++) LINE_DIM.toArray(linkColors, base + v * 3);
       continue;
@@ -944,15 +927,21 @@ function writePulse(offset, s, elapsed) {
   _pulse.toArray(linkColors, offset);
 }
 
-// Colour one link vertex for the idle flow: the steady grey line plus a gentle
-// Gaussian electron whose centre rides a triangle wave 0→1→0 (so it flows out
-// and back), offset per edge by its phase/speed/direction.
-function writeElectron(offset, s, elapsed, flow) {
+// A gliding "electron": a Gaussian bump whose centre rides a triangle wave 0→1→0
+// (so it flows out and back along the link), offset per edge by its
+// phase/speed/direction. Used only by the idle electron writer.
+function flowSpark(s, elapsed, flow) {
   const cycles = flow.phase + flow.dir * elapsed * FLOW_SPEED * flow.speed;
   const frac = cycles - Math.floor(cycles);
   const tri = 1 - Math.abs(2 * frac - 1); // 0 → 1 → 0 along the link
   const d = s - tri;
-  const spark = Math.exp(-(d * d) / (2 * FLOW_WIDTH * FLOW_WIDTH));
+  return Math.exp(-(d * d) / (2 * FLOW_WIDTH * FLOW_WIDTH));
+}
+
+// Colour one link vertex for the idle flow: the steady grey line plus a gentle
+// cool electron riding flowSpark.
+function writeElectron(offset, s, elapsed, flow) {
+  const spark = flowSpark(s, elapsed, flow);
   _pulse
     .copy(FLOW_BASE)
     .lerp(ELECTRON_COOL, spark)
@@ -1257,8 +1246,8 @@ function animate() {
   );
   bloomPass.strength = THREE.MathUtils.lerp(SUN_BLOOM_NEAR, SUN_BLOOM_FAR, zoom);
   for (const c of coronas) {
-    c.sprite.material.opacity = THREE.MathUtils.lerp(0.3, 0.72, zoom);
-    c.sprite.scale.setScalar(c.baseR * THREE.MathUtils.lerp(5, 9.5, zoom));
+    c.sprite.material.opacity = THREE.MathUtils.lerp(0.22, 0.5, zoom);
+    c.sprite.scale.setScalar(c.baseR * THREE.MathUtils.lerp(4, 7, zoom));
   }
   // Follow the focused planet (as it orbits) until the user pans away; the
   // camera auto-revolve eases in with idleFactor (scaled speed) so it glides to

@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from rag_engine.catalog import DEFAULT_CHAT_MODEL
+from rag_engine.prompts import DEFAULT_ANSWER_LANGUAGE
 
 __all__ = ["ConversationalConfig", "ConversationalPrompts", "RagConfig"]
 
@@ -121,6 +122,9 @@ class ConversationalConfig(BaseModel):
     # Requested answer tone (free-form label, e.g. "Neutral"/"Formal"/"Friendly");
     # threaded into the answer prompt so the model matches it.
     tone: str = "Neutral"
+    # Language the answer must be written in (free-form name, e.g. "English");
+    # threaded into the answer prompt so the answer matches the UI language.
+    language: str = DEFAULT_ANSWER_LANGUAGE
 
     @field_validator("followup_min_score", "followup_drop_score")
     @classmethod
@@ -158,6 +162,14 @@ class ConversationalConfig(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("tone must not be empty.")
+        return cleaned
+
+    @field_validator("language")
+    @classmethod
+    def _validate_language(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("language must not be empty.")
         return cleaned
 
     @model_validator(mode="after")

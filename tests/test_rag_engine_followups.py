@@ -185,3 +185,27 @@ def test_suggest_followups_prompt_includes_asked_history() -> None:
     assert captured
     assert "an earlier question" in captured[0]
     assert "another earlier question" in captured[0]
+
+
+def test_suggest_followups_prompt_carries_language() -> None:
+    captured: list[str] = []
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            captured.append(messages[0].content)
+            return '["pertanyaan baru?"]'
+
+    result = suggest_followups(
+        _Capture(),
+        [_chunk("topic text", 0.9)],
+        QueryPlan(sub_questions=["current q"]),
+        ConversationalConfig(language="Indonesian"),
+    )
+
+    assert result == ["pertanyaan baru?"]
+    assert captured
+    assert "Indonesian" in captured[0]

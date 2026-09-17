@@ -268,7 +268,11 @@ STRINGS_ID: Strings = {
     "CHAT_INPUT_PLACEHOLDER": "Tanyakan apa saja…",
     "CHAT_NEW_CONVERSATION": "Percakapan baru",
     "CHAT_CONVERSATION_SELECT": "Percakapan",
-    "CHAT_EMPTY_HINT": "Mulai percakapan dengan mengajukan pertanyaan di bawah.",
+    "CHAT_WELCOME_DEFAULT": (
+        "Hai! Saya siap membantu dengan dokumen yang sudah Anda indeks. Tanyakan "
+        "apa saja tentang dokumen itu — apa isi sebuah halaman, cara kerja sesuatu, "
+        "atau di mana menemukan detail tertentu."
+    ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
     "CONV_RERANKER_LABEL": "Pemeringkatan ulang",
@@ -309,7 +313,9 @@ STRINGS_ID: Strings = {
     "CONV_PROMPT_TAB_FOLLOWUPS": "Saran pertanyaan lanjutan",
     "CONV_PROMPT_TAB_ANSWERABILITY": "Pemeriksaan keterjawaban",
     "CONV_PROMPT_TAB_STATE": "State percakapan",
+    "CONV_PROMPT_TAB_WELCOME": "Pesan sambutan",
     "CONV_PROMPT_FIELDS_CAPTION": "Placeholder wajib: {fields}",
+    "CONV_PROMPT_WELCOME_CAPTION": "Ditampilkan sebagai sapaan asisten di awal percakapan baru.",
     "CONV_PROMPT_SAVE": "Simpan",
     "CONV_PROMPT_RESET": "Reset ke bawaan",
     "CONV_PROMPT_SAVED_TOAST": "Prompt disimpan.",

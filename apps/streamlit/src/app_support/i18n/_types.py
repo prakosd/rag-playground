@@ -188,7 +188,7 @@ class Strings(TypedDict):
     CHAT_INPUT_PLACEHOLDER: str
     CHAT_NEW_CONVERSATION: str
     CHAT_CONVERSATION_SELECT: str
-    CHAT_EMPTY_HINT: str
+    CHAT_WELCOME_DEFAULT: str
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     CONV_ADVANCED_LABEL: str
     CONV_RERANKER_LABEL: str
@@ -215,7 +215,9 @@ class Strings(TypedDict):
     CONV_PROMPT_TAB_FOLLOWUPS: str
     CONV_PROMPT_TAB_ANSWERABILITY: str
     CONV_PROMPT_TAB_STATE: str
+    CONV_PROMPT_TAB_WELCOME: str
     CONV_PROMPT_FIELDS_CAPTION: str  # template: {fields}
+    CONV_PROMPT_WELCOME_CAPTION: str
     CONV_PROMPT_SAVE: str
     CONV_PROMPT_RESET: str
     CONV_PROMPT_SAVED_TOAST: str

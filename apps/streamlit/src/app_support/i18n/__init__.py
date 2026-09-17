@@ -18,9 +18,11 @@ from app_support.i18n.id import STRINGS_ID
 
 __all__ = [
     "CATALOG",
+    "LANGUAGE_ANSWER_NAMES",
     "Strings",
     "STRINGS_EN",
     "STRINGS_ID",
+    "answer_language_name",
     "get_strings",
     "localize_message",
 ]
@@ -29,6 +31,18 @@ CATALOG: dict[str, Strings] = {
     "EN": STRINGS_EN,
     "ID": STRINGS_ID,
 }
+
+# Free-form language names injected into the answer prompt so a model replies in
+# the active UI language; an unknown code falls back to English.
+LANGUAGE_ANSWER_NAMES: dict[str, str] = {
+    "EN": "English",
+    "ID": "Indonesian",
+}
+
+
+def answer_language_name(lang: str) -> str:
+    """Return the answer-prompt language name for UI code *lang* (default English)."""
+    return LANGUAGE_ANSWER_NAMES.get(str(lang).strip().upper(), "English")
 
 
 def get_strings(lang: str) -> Strings:

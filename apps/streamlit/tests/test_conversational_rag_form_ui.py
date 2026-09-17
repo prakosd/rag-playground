@@ -45,11 +45,28 @@ def test_build_config_blank_aux_becomes_none() -> None:
     assert config.aux_model_id is None
 
 
-def test_aux_model_choices_has_valid_default() -> None:
+def test_build_config_threads_language() -> None:
+    assert build_conversational_config(_controls()).language == "English"
+    assert build_conversational_config(_controls(), language="Indonesian").language == "Indonesian"
+
+
+def test_aux_model_choices_offers_only_small_priced_models() -> None:
+    # Only genuinely small helper models (micro / mini / lite) are offered as the
+    # auxiliary model; larger or unpriced models (e.g. Claude Haiku) are dropped.
+    from app_support.model_pricing import get_model_price
+
     options, default_index = aux_model_choices()
 
     assert options
     assert 0 <= default_index < len(options)
+    for model_id in options:
+        price = get_model_price(model_id)
+        assert price is not None, model_id  # unpriced models are filtered out
+        assert price.size_band in {"XS", "Small"}, (model_id, price.size_band)
+    assert "apac.amazon.nova-micro-v1:0" in options  # the pre-selected micro model
+    assert "google.gemma-3-4b-it" in options  # a cheap cross-provider (Google) helper
+    # Claude Haiku is not a micro/mini/lite model and must not be offered here.
+    assert "apac.anthropic.claude-haiku-4-5-20251001-v1:0" not in options
 
 
 def test_build_config_populates_prompt_overrides() -> None:

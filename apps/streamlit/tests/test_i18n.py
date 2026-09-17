@@ -5,9 +5,21 @@ from app_support.i18n import (
     STRINGS_EN,
     STRINGS_ID,
     Strings,
+    answer_language_name,
     get_strings,
     localize_message,
 )
+
+
+def test_answer_language_name_maps_codes() -> None:
+    assert answer_language_name("EN") == "English"
+    assert answer_language_name("ID") == "Indonesian"
+    assert answer_language_name("id") == "Indonesian"
+
+
+def test_answer_language_name_unknown_falls_back_to_english() -> None:
+    assert answer_language_name("fr") == "English"
+    assert answer_language_name("") == "English"
 
 
 def test_get_strings_english() -> None:

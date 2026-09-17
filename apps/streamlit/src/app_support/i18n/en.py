@@ -263,7 +263,11 @@ STRINGS_EN: Strings = {
     "CHAT_INPUT_PLACEHOLDER": "Ask anything…",
     "CHAT_NEW_CONVERSATION": "New conversation",
     "CHAT_CONVERSATION_SELECT": "Conversation",
-    "CHAT_EMPTY_HINT": "Start the conversation by asking a question below.",
+    "CHAT_WELCOME_DEFAULT": (
+        "Hi! I'm here to help with the documents you've indexed. Ask me anything "
+        "about them — what a page covers, how something works, or where to find a "
+        "specific detail."
+    ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
     "CONV_RERANKER_LABEL": "Re-ranking",
@@ -304,7 +308,11 @@ STRINGS_EN: Strings = {
     "CONV_PROMPT_TAB_FOLLOWUPS": "Follow-up suggestions",
     "CONV_PROMPT_TAB_ANSWERABILITY": "Answerability check",
     "CONV_PROMPT_TAB_STATE": "Conversation state",
+    "CONV_PROMPT_TAB_WELCOME": "Welcome message",
     "CONV_PROMPT_FIELDS_CAPTION": "Required placeholders: {fields}",
+    "CONV_PROMPT_WELCOME_CAPTION": (
+        "Shown as the assistant's greeting at the start of a new conversation."
+    ),
     "CONV_PROMPT_SAVE": "Save",
     "CONV_PROMPT_RESET": "Reset to default",
     "CONV_PROMPT_SAVED_TOAST": "Prompt saved.",

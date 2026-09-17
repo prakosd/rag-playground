@@ -10,7 +10,8 @@ offline with the echo model.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
@@ -37,9 +38,11 @@ from rag_engine.models import (
 from rag_engine.prompts import (
     _DEFAULT_TONE,
     CONDENSE_SYSTEM_PROMPT,
+    DEFAULT_ANSWER_LANGUAGE,
     QA_SYSTEM_PROMPT,
     extract_token_usage,
     format_context,
+    message_text,
     template_has_fields,
 )
 from rag_engine.rerank import rerank_chunks
@@ -49,12 +52,16 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
 __all__ = [
+    "ChatAnswerStream",
+    "ConversationalGeneration",
     "chat_answer",
     "condense_question",
     "conversational_answer",
+    "conversational_answer_stream",
     "generate_chat_answer",
     "generate_chat_answer_with_usage",
     "stream_chat_answer",
+    "stream_chat_answer_with_usage",
 ]
 
 _logger = get_logger(__name__)
@@ -118,21 +125,23 @@ def _chat_prompt(
     history: Sequence[ChatTurn],
     *,
     tone: str,
+    language: str,
     system_prompt: str | None,
 ) -> tuple[Any, dict]:
     from langchain_core.prompts import ChatPromptTemplate
 
-    # A custom system prompt is used only when it keeps the {context}/{tone} slots;
-    # anything else falls back so a bad override never breaks answer generation.
+    # A custom system prompt is used only when it keeps the {context}/{tone}/
+    # {language} slots; anything else falls back so a bad override never breaks
+    # answer generation.
     system = (
         system_prompt
-        if system_prompt and template_has_fields(system_prompt, ("context", "tone"))
+        if system_prompt and template_has_fields(system_prompt, ("context", "tone", "language"))
         else QA_SYSTEM_PROMPT
     )
     prompt = ChatPromptTemplate.from_messages(
         [("system", system), *_history_messages(history), ("human", "{question}")]
     )
-    return prompt, {"context": format_context(chunks), "tone": tone}
+    return prompt, {"context": format_context(chunks), "tone": tone, "language": language}
 
 
 def generate_chat_answer(
@@ -142,11 +151,18 @@ def generate_chat_answer(
     history: Sequence[ChatTurn],
     *,
     tone: str = _DEFAULT_TONE,
+    language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
 ) -> str:
     """Generate a conversational answer string."""
     text, _ = generate_chat_answer_with_usage(
-        chat_model, question, chunks, history, tone=tone, system_prompt=system_prompt
+        chat_model,
+        question,
+        chunks,
+        history,
+        tone=tone,
+        language=language,
+        system_prompt=system_prompt,
     )
     return text
 
@@ -158,12 +174,15 @@ def generate_chat_answer_with_usage(
     history: Sequence[ChatTurn],
     *,
     tone: str = _DEFAULT_TONE,
+    language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
 ) -> tuple[str, TokenUsage | None]:
     """Generate a conversational answer with the token usage it reported."""
     from langchain_core.output_parsers import StrOutputParser
 
-    prompt, values = _chat_prompt(chunks, history, tone=tone, system_prompt=system_prompt)
+    prompt, values = _chat_prompt(
+        chunks, history, tone=tone, language=language, system_prompt=system_prompt
+    )
     message = (prompt | chat_model).invoke({**values, "question": question})
     return StrOutputParser().invoke(message), extract_token_usage(message)
 
@@ -175,13 +194,87 @@ def stream_chat_answer(
     history: Sequence[ChatTurn],
     *,
     tone: str = _DEFAULT_TONE,
+    language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
 ) -> Iterator[str]:
     """Yield conversational answer tokens as they are generated."""
     from langchain_core.output_parsers import StrOutputParser
 
-    prompt, values = _chat_prompt(chunks, history, tone=tone, system_prompt=system_prompt)
+    prompt, values = _chat_prompt(
+        chunks, history, tone=tone, language=language, system_prompt=system_prompt
+    )
     yield from (prompt | chat_model | StrOutputParser()).stream({**values, "question": question})
+
+
+class ChatAnswerStream:
+    """Streams a conversational answer's tokens and captures the full text + usage.
+
+    Mirrors :class:`rag_engine.qa.PromptGeneration` for the chat prompt (system +
+    history + question): iterate it to receive answer-text chunks; when iteration
+    finishes ``text`` holds the complete answer and ``usage`` the token counts the
+    model reported (``None`` when the provider reports none, e.g. the echo model).
+    """
+
+    def __init__(
+        self,
+        chat_model: BaseChatModel,
+        question: str,
+        chunks: Sequence[RetrievedChunk],
+        history: Sequence[ChatTurn],
+        *,
+        tone: str,
+        language: str,
+        system_prompt: str | None,
+    ) -> None:
+        self._chat_model = chat_model
+        self._question = question
+        self._prompt, self._values = _chat_prompt(
+            chunks, history, tone=tone, language=language, system_prompt=system_prompt
+        )
+        self.text = ""
+        self.usage: TokenUsage | None = None
+
+    def __iter__(self) -> Iterator[str]:
+        aggregate: Any = None
+        parts: list[str] = []
+        for chunk in (self._prompt | self._chat_model).stream(
+            {**self._values, "question": self._question}
+        ):
+            if aggregate is None:
+                aggregate = chunk
+            else:
+                try:
+                    aggregate = aggregate + chunk
+                except TypeError:  # a chunk type that does not support merging
+                    aggregate = chunk
+            piece = message_text(chunk)
+            if piece:
+                parts.append(piece)
+                yield piece
+        self.text = "".join(parts)
+        self.usage = extract_token_usage(aggregate) if aggregate is not None else None
+
+
+def stream_chat_answer_with_usage(
+    chat_model: BaseChatModel,
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+    history: Sequence[ChatTurn],
+    *,
+    tone: str = _DEFAULT_TONE,
+    language: str = DEFAULT_ANSWER_LANGUAGE,
+    system_prompt: str | None = None,
+) -> ChatAnswerStream:
+    """Return a :class:`ChatAnswerStream` that streams the answer and captures usage."""
+    return ChatAnswerStream(
+        chat_model,
+        question,
+        chunks,
+        history,
+        tone=tone,
+        language=language,
+        system_prompt=system_prompt,
+    )
 
 
 def chat_answer(
@@ -242,31 +335,47 @@ def chat_answer(
     return answer
 
 
-def conversational_answer(
+@dataclass
+class _PreparedTurn:
+    """Resolved models + retrieved context for a turn, ready to answer.
+
+    Produced by :func:`_prepare_turn` (the plan → retrieve → re-rank pipeline) and
+    consumed by both the blocking (:func:`_compose_turn`) and streaming
+    (:class:`ConversationalGeneration`) answer paths so they share one pipeline.
+    """
+
+    raw_question: str
+    resolved: ResolvedChatModel
+    aux: ResolvedChatModel
+    chunks: list[RetrievedChunk]
+    plan: QueryPlan
+    recent: list[ChatTurn]
+    reranker_used: str | None
+    warnings: list[LibraryMessage]
+    timings: dict[str, float]
+    turn_index: int
+    ledger: _UsageLedger
+
+
+def _prepare_turn(
     run_dir: Path | str,
     raw_question: str,
     state: ConversationState,
     config: ConversationalConfig,
     *,
-    history: Sequence[ChatTurn] = (),
-    cached_chunks: Sequence[RetrievedChunk] | None = None,
-    retriever: Callable[..., RetrievalResult] = retrieve,
-    chat_resolver: Callable[
-        ..., tuple[ResolvedChatModel, list[LibraryMessage]]
-    ] = resolve_chat_model,
-    aux_resolver: Callable[
-        ..., tuple[ResolvedChatModel, list[LibraryMessage]]
-    ] = resolve_auxiliary_model,
-    progress_callback: Callable[[LibraryMessage], None] | None = None,
-) -> ConversationalAnswer:
-    """Answer a turn with the advanced conversational RAG pipeline (Step 5).
+    history: Sequence[ChatTurn],
+    cached_chunks: Sequence[RetrievedChunk] | None,
+    retriever: Callable[..., RetrievalResult],
+    chat_resolver: Callable[..., tuple[ResolvedChatModel, list[LibraryMessage]]],
+    aux_resolver: Callable[..., tuple[ResolvedChatModel, list[LibraryMessage]]],
+    progress_callback: Callable[[LibraryMessage], None] | None,
+) -> _PreparedTurn | ConversationalAnswer:
+    """Resolve models and gather context (plan → retrieve → re-rank) for a turn.
 
-    Resolves the answer model and a small auxiliary model, then runs the full
-    pipeline: plan (decompose) → multi-query retrieval → re-ranking → grounded
-    answer → validated follow-ups → conversation-state update, returning a
-    ``ConversationalAnswer`` with per-stage timings. A ``cached_chunks`` hit skips
-    planning, retrieval, and re-ranking and answers straight from the carried
-    passages (still generating follow-ups and updating state).
+    Returns a ``_PreparedTurn`` ready to answer, or a terminal
+    ``ConversationalAnswer`` when the turn cannot proceed (empty question or a
+    retrieval error). A ``cached_chunks`` hit skips planning, retrieval, and
+    re-ranking.
     """
     raw_question = raw_question.strip()
     if not raw_question:
@@ -289,23 +398,18 @@ def conversational_answer(
 
     if cached_chunks is not None:
         _logger.info("Conversational RAG over %s: cache hit", Path(run_dir).name)
-        return _compose_turn(
-            run_dir,
-            raw_question,
-            list(cached_chunks),
-            recent,
-            QueryPlan(sub_questions=[raw_question]),
-            state,
-            resolved,
-            aux_resolved,
-            config,
-            retriever=retriever,
+        return _PreparedTurn(
+            raw_question=raw_question,
+            resolved=resolved,
+            aux=aux_resolved,
+            chunks=list(cached_chunks),
+            plan=QueryPlan(sub_questions=[raw_question]),
+            recent=recent,
+            reranker_used=None,
             warnings=warnings,
             timings=timings,
             turn_index=turn_index,
-            reranker_used=None,
             ledger=ledger,
-            progress_callback=progress_callback,
         )
 
     _logger.info(
@@ -367,22 +471,133 @@ def conversational_answer(
     timings["rerank"] = perf_counter() - start
     warnings.extend(rerank_warnings)
 
-    return _compose_turn(
-        run_dir,
-        raw_question,
-        reranked,
-        recent,
-        plan,
-        state,
-        resolved,
-        aux_resolved,
-        config,
-        retriever=retriever,
+    return _PreparedTurn(
+        raw_question=raw_question,
+        resolved=resolved,
+        aux=aux_resolved,
+        chunks=reranked,
+        plan=plan,
+        recent=recent,
+        reranker_used=config.reranker,
         warnings=warnings,
         timings=timings,
         turn_index=turn_index,
-        reranker_used=config.reranker,
         ledger=ledger,
+    )
+
+
+def conversational_answer(
+    run_dir: Path | str,
+    raw_question: str,
+    state: ConversationState,
+    config: ConversationalConfig,
+    *,
+    history: Sequence[ChatTurn] = (),
+    cached_chunks: Sequence[RetrievedChunk] | None = None,
+    retriever: Callable[..., RetrievalResult] = retrieve,
+    chat_resolver: Callable[
+        ..., tuple[ResolvedChatModel, list[LibraryMessage]]
+    ] = resolve_chat_model,
+    aux_resolver: Callable[
+        ..., tuple[ResolvedChatModel, list[LibraryMessage]]
+    ] = resolve_auxiliary_model,
+    progress_callback: Callable[[LibraryMessage], None] | None = None,
+) -> ConversationalAnswer:
+    """Answer a turn with the advanced conversational RAG pipeline (Step 5).
+
+    Resolves the answer model and a small auxiliary model, then runs the full
+    pipeline: plan (decompose) → multi-query retrieval → re-ranking → grounded
+    answer → validated follow-ups → conversation-state update, returning a
+    ``ConversationalAnswer`` with per-stage timings. A ``cached_chunks`` hit skips
+    planning, retrieval, and re-ranking and answers straight from the carried
+    passages (still generating follow-ups and updating state).
+    """
+    prepared = _prepare_turn(
+        run_dir,
+        raw_question,
+        state,
+        config,
+        history=history,
+        cached_chunks=cached_chunks,
+        retriever=retriever,
+        chat_resolver=chat_resolver,
+        aux_resolver=aux_resolver,
+        progress_callback=progress_callback,
+    )
+    if isinstance(prepared, ConversationalAnswer):
+        return prepared
+    return _compose_turn(
+        run_dir,
+        prepared.raw_question,
+        prepared.chunks,
+        prepared.recent,
+        prepared.plan,
+        state,
+        prepared.resolved,
+        prepared.aux,
+        config,
+        retriever=retriever,
+        warnings=prepared.warnings,
+        timings=prepared.timings,
+        turn_index=prepared.turn_index,
+        reranker_used=prepared.reranker_used,
+        ledger=prepared.ledger,
+        progress_callback=progress_callback,
+    )
+
+
+def conversational_answer_stream(
+    run_dir: Path | str,
+    raw_question: str,
+    state: ConversationState,
+    config: ConversationalConfig,
+    *,
+    history: Sequence[ChatTurn] = (),
+    cached_chunks: Sequence[RetrievedChunk] | None = None,
+    retriever: Callable[..., RetrievalResult] = retrieve,
+    chat_resolver: Callable[
+        ..., tuple[ResolvedChatModel, list[LibraryMessage]]
+    ] = resolve_chat_model,
+    aux_resolver: Callable[
+        ..., tuple[ResolvedChatModel, list[LibraryMessage]]
+    ] = resolve_auxiliary_model,
+    progress_callback: Callable[[LibraryMessage], None] | None = None,
+) -> ConversationalGeneration:
+    """Stream the Step 5 conversational answer (see :func:`conversational_answer`).
+
+    Runs the same pre-answer pipeline (plan → retrieve → re-rank) synchronously,
+    firing progress, then returns a :class:`ConversationalGeneration` whose
+    iteration streams the grounded answer's tokens (follow-ups run concurrently);
+    once drained, ``answer`` holds the full ``ConversationalAnswer``.
+    """
+    prepared = _prepare_turn(
+        run_dir,
+        raw_question,
+        state,
+        config,
+        history=history,
+        cached_chunks=cached_chunks,
+        retriever=retriever,
+        chat_resolver=chat_resolver,
+        aux_resolver=aux_resolver,
+        progress_callback=progress_callback,
+    )
+    if isinstance(prepared, ConversationalAnswer):
+        return ConversationalGeneration(
+            run_dir,
+            state,
+            config,
+            None,
+            retriever=retriever,
+            progress_callback=progress_callback,
+            answer=prepared,
+        )
+    return ConversationalGeneration(
+        run_dir,
+        state,
+        config,
+        prepared,
+        retriever=retriever,
         progress_callback=progress_callback,
     )
 
@@ -393,6 +608,7 @@ def _answer_stage(
     chunks: Sequence[RetrievedChunk],
     history: Sequence[ChatTurn],
     tone: str,
+    language: str,
     system_prompt: str | None = None,
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
 ) -> tuple[str, list[LibraryMessage], float]:
@@ -402,7 +618,13 @@ def _answer_stage(
     answer_text = ""
     try:
         answer_text, usage = generate_chat_answer_with_usage(
-            resolved.model, raw_question, chunks, history, tone=tone, system_prompt=system_prompt
+            resolved.model,
+            raw_question,
+            chunks,
+            history,
+            tone=tone,
+            language=language,
+            system_prompt=system_prompt,
         )
         if record_usage is not None:
             record_usage("answer", usage)
@@ -452,6 +674,90 @@ def _followups_stage(
     return follow_ups, warnings, perf_counter() - start
 
 
+def _submit_followups(
+    executor: ThreadPoolExecutor,
+    run_dir: Path | str,
+    aux: ResolvedChatModel,
+    chunks: Sequence[RetrievedChunk],
+    plan: QueryPlan,
+    config: ConversationalConfig,
+    retriever: Callable[..., RetrievalResult],
+    record_usage: Callable[[str, TokenUsage | None], None],
+    *,
+    asked_questions: Sequence[str],
+) -> Future | None:
+    """Submit the follow-up stage to *executor*, or None when it is off/offline."""
+    if not (config.followups_enabled and aux.model_id != ECHO_MODEL):
+        return None
+    return executor.submit(
+        _followups_stage,
+        run_dir,
+        aux,
+        chunks,
+        plan,
+        config,
+        retriever,
+        record_usage,
+        asked_questions=asked_questions,
+    )
+
+
+def _finalize_turn(
+    raw_question: str,
+    chunks: list[RetrievedChunk],
+    plan: QueryPlan,
+    state: ConversationState,
+    resolved: ResolvedChatModel,
+    aux: ResolvedChatModel,
+    config: ConversationalConfig,
+    *,
+    answer_text: str,
+    follow_ups: list[ValidatedFollowup],
+    warnings: list[LibraryMessage],
+    errors: list[LibraryMessage],
+    timings: dict[str, float],
+    turn_index: int,
+    reranker_used: str | None,
+    ledger: _UsageLedger,
+    progress_callback: Callable[[LibraryMessage], None] | None,
+) -> ConversationalAnswer:
+    """Roll conversation state forward and assemble the ``ConversationalAnswer``.
+
+    Shared tail of the blocking and streaming answer paths: ``update_state`` runs
+    here because it needs the finished answer text.
+    """
+    resolved_question = "; ".join(plan.sub_questions) or raw_question
+    _report(progress_callback, messages.progress_state())
+    start = perf_counter()
+    next_state = update_state(
+        aux.model,
+        state,
+        resolved_question,
+        answer_text,
+        config,
+        model_id=aux.model_id,
+        turn_index=turn_index,
+        asked_this_turn=plan.sub_questions,
+        record_usage=ledger.record,
+    )
+    timings["state"] = perf_counter() - start
+
+    return ConversationalAnswer(
+        answer=answer_text,
+        sources=chunks,
+        plan=plan,
+        follow_ups=follow_ups,
+        state=next_state,
+        model_used=resolved.model_id,
+        aux_model_used=aux.model_id,
+        reranker_used=reranker_used,
+        timings=timings,
+        token_usage=ledger.stage_usages(resolved.model_id, aux.model_id),
+        warnings=warnings,
+        errors=errors,
+    )
+
+
 def _compose_turn(
     run_dir: Path | str,
     raw_question: str,
@@ -487,56 +793,138 @@ def _compose_turn(
             chunks,
             history,
             config.tone,
+            config.language,
             config.prompts.answer,
             ledger.record,
         )
-        followups_future = (
-            executor.submit(
-                _followups_stage,
-                run_dir,
-                aux,
-                chunks,
-                plan,
-                config,
-                retriever,
-                ledger.record,
-                asked_questions=state.asked_questions,
-            )
-            if config.followups_enabled and aux.model_id != ECHO_MODEL
-            else None
+        followups_future = _submit_followups(
+            executor,
+            run_dir,
+            aux,
+            chunks,
+            plan,
+            config,
+            retriever,
+            ledger.record,
+            asked_questions=state.asked_questions,
         )
         answer_text, errors, timings["answer"] = answer_future.result()
         if followups_future is not None:
             follow_ups, followups_warnings, timings["followups"] = followups_future.result()
             warnings.extend(followups_warnings)
 
-    resolved_question = "; ".join(plan.sub_questions) or raw_question
-    _report(progress_callback, messages.progress_state())
-    start = perf_counter()
-    next_state = update_state(
-        aux.model,
+    return _finalize_turn(
+        raw_question,
+        chunks,
+        plan,
         state,
-        resolved_question,
-        answer_text,
+        resolved,
+        aux,
         config,
-        model_id=aux.model_id,
-        turn_index=turn_index,
-        asked_this_turn=plan.sub_questions,
-        record_usage=ledger.record,
-    )
-    timings["state"] = perf_counter() - start
-
-    return ConversationalAnswer(
-        answer=answer_text,
-        sources=chunks,
-        plan=plan,
+        answer_text=answer_text,
         follow_ups=follow_ups,
-        state=next_state,
-        model_used=resolved.model_id,
-        aux_model_used=aux.model_id,
-        reranker_used=reranker_used,
-        timings=timings,
-        token_usage=ledger.stage_usages(resolved.model_id, aux.model_id),
         warnings=warnings,
         errors=errors,
+        timings=timings,
+        turn_index=turn_index,
+        reranker_used=reranker_used,
+        ledger=ledger,
+        progress_callback=progress_callback,
     )
+
+
+class ConversationalGeneration:
+    """Streams a Step 5 turn's answer tokens, then exposes the full answer.
+
+    Iterate it (e.g. via ``st.write_stream``) to receive the grounded answer's
+    tokens as they arrive; follow-ups run concurrently on a worker thread. When the
+    stream drains, conversation state is rolled forward and ``answer`` holds the
+    complete ``ConversationalAnswer``. A terminal turn (empty question or a
+    retrieval error) yields no tokens and ``answer`` is set from the start.
+    """
+
+    def __init__(
+        self,
+        run_dir: Path | str,
+        state: ConversationState,
+        config: ConversationalConfig,
+        prepared: _PreparedTurn | None,
+        *,
+        retriever: Callable[..., RetrievalResult],
+        progress_callback: Callable[[LibraryMessage], None] | None = None,
+        answer: ConversationalAnswer | None = None,
+    ) -> None:
+        self._run_dir = run_dir
+        self._state = state
+        self._config = config
+        self._prepared = prepared
+        self._retriever = retriever
+        self._progress = progress_callback
+        self.answer: ConversationalAnswer | None = answer
+
+    def __iter__(self) -> Iterator[str]:
+        prepared = self._prepared
+        if prepared is None:  # terminal turn: nothing to stream
+            return
+        config = self._config
+        errors: list[LibraryMessage] = []
+        follow_ups: list[ValidatedFollowup] = []
+
+        _report(self._progress, messages.progress_answer())
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            followups_future = _submit_followups(
+                executor,
+                self._run_dir,
+                prepared.aux,
+                prepared.chunks,
+                prepared.plan,
+                config,
+                self._retriever,
+                prepared.ledger.record,
+                asked_questions=self._state.asked_questions,
+            )
+            start = perf_counter()
+            parts: list[str] = []
+            try:
+                answer_stream = stream_chat_answer_with_usage(
+                    prepared.resolved.model,
+                    prepared.raw_question,
+                    prepared.chunks,
+                    prepared.recent,
+                    tone=config.tone,
+                    language=config.language,
+                    system_prompt=config.prompts.answer,
+                )
+                for piece in answer_stream:
+                    parts.append(piece)
+                    yield piece
+                prepared.ledger.record("answer", answer_stream.usage)
+            except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
+                _logger.warning("Conversational RAG generation failed: %s", exc)
+                errors.append(messages.classify_generation_failure(str(exc)))
+            answer_text = "".join(parts)
+            prepared.timings["answer"] = perf_counter() - start
+            if followups_future is not None:
+                follow_ups, followups_warnings, prepared.timings["followups"] = (
+                    followups_future.result()
+                )
+                prepared.warnings.extend(followups_warnings)
+
+        self.answer = _finalize_turn(
+            prepared.raw_question,
+            prepared.chunks,
+            prepared.plan,
+            self._state,
+            prepared.resolved,
+            prepared.aux,
+            config,
+            answer_text=answer_text,
+            follow_ups=follow_ups,
+            warnings=prepared.warnings,
+            errors=errors,
+            timings=prepared.timings,
+            turn_index=prepared.turn_index,
+            reranker_used=prepared.reranker_used,
+            ledger=prepared.ledger,
+            progress_callback=self._progress,
+        )

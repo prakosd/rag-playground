@@ -17,9 +17,11 @@ from rag_engine.catalog import (
     get_chat_model_info,
 )
 from rag_engine.chat import (
+    ConversationalGeneration,
     chat_answer,
     condense_question,
     conversational_answer,
+    conversational_answer_stream,
     generate_chat_answer,
     generate_chat_answer_with_usage,
     stream_chat_answer,
@@ -72,6 +74,7 @@ __all__ = [
     "ConversationState",
     "ConversationalAnswer",
     "ConversationalConfig",
+    "ConversationalGeneration",
     "ConversationalPrompts",
     "PromptGeneration",
     "QueryPlan",
@@ -90,6 +93,7 @@ __all__ = [
     "chat_answer",
     "condense_question",
     "conversational_answer",
+    "conversational_answer_stream",
     "format_knowledge",
     "generate_answer",
     "generate_chat_answer",

@@ -577,10 +577,10 @@ def test_build_viewer_html_has_no_black_hole_machinery() -> None:
     assert "ShaderPass" not in html  # lens pass import removed
 
 
-# Risk: failed pages are small asteroids that are easy to miss; the spoke that
-# connects each one is painted red so a user can follow it. If the fail-edge
-# wiring were dropped, failures become hard to find. Type: unit.
-def test_build_viewer_html_failed_page_edges_are_red() -> None:
+# Risk: a future change could re-introduce a coloured/glowing "failure" cue (a red
+# spoke or emissive) and re-tint the whole scene; failed pages must stay plain — lit
+# only by the suns and set apart solely by their asteroid shape. Type: unit.
+def test_build_viewer_html_failed_pages_are_plain_asteroids() -> None:
     html = build_viewer_html(
         _jsonl(
             {
@@ -594,9 +594,11 @@ def test_build_viewer_html_failed_page_edges_are_red() -> None:
         ),
         {},
     )
-    assert "failEdges" in html  # the fail-edge set is computed
-    assert "FAIL_LINK" in html  # the red spoke colour is defined
-    assert 'color_category === "fail"' in html  # keyed on the fail category
+    assert 'color_category === "fail"' in html  # failed pages still route to makeAsteroid
+    assert "failEdges" not in html  # no special fail-edge set
+    assert "FAIL_FLOW_BASE" not in html  # no red spoke colour
+    assert "writeFailFlow" not in html  # no pulsing fail spoke
+    assert "RETRY_EMISSIVE" not in html  # retried nodes no longer self-illuminate
 
 
 # Risk: a crawled URL could contain "</script>"; injected verbatim it would break

@@ -30,11 +30,14 @@ from app_support.settings import get_settings
 
 __all__ = [
     "CONVERSATIONAL_PROMPT_KEYS",
+    "WELCOME_PROMPT_KEY",
     "conversational_prompt_is_valid",
+    "editor_prompt_text",
     "load_saved_conversational_prompt",
     "reset_conversational_prompt",
     "resolve_conversational_prompt",
     "resolve_conversational_prompts",
+    "resolve_welcome_message",
     "save_conversational_prompt",
 ]
 
@@ -49,6 +52,10 @@ CONVERSATIONAL_PROMPT_KEYS: tuple[str, ...] = (
     "answerability",
     "state",
 )
+
+# App-only greeting shown at the top of a fresh conversation. Not a model prompt
+# (no placeholders / library default), so it lives outside CONVERSATIONAL_PROMPT_KEYS.
+WELCOME_PROMPT_KEY = "welcome"
 
 _PROMPT_FILENAMES = {
     "answer": "conversational_answer_prompt.txt",
@@ -121,6 +128,20 @@ def resolve_conversational_prompt(key: str, session_root: Path | str | None = No
     return text if text.strip() else _LIBRARY_DEFAULTS[key]
 
 
+def editor_prompt_text(
+    current: str | None, key: str, session_root: Path | str | None = None
+) -> str:
+    """Return the editor text for *key*: a real edit is kept, a blank one self-heals.
+
+    The prompt editor seeds its text area from session state; should a blank value
+    ever persist there, the editor would show empty. Falling back to the resolved
+    prompt whenever *current* is blank keeps the editor from ever emptying.
+    """
+    if current and current.strip():
+        return current
+    return resolve_conversational_prompt(key, session_root)
+
+
 def resolve_conversational_prompts(
     session_root: Path | str | None = None,
 ) -> ConversationalPrompts:
@@ -131,3 +152,17 @@ def resolve_conversational_prompts(
             for key in CONVERSATIONAL_PROMPT_KEYS
         }
     )
+
+
+def resolve_welcome_message(session_root: Path | str | None, default: str) -> str:
+    """Return the session's saved welcome greeting, or the localized *default*.
+
+    The greeting is app-only display text, so it resolves from just the session's
+    saved edit falling back to the caller-supplied localized default (keeping this
+    module UI-agnostic). A blank saved file falls through to *default*.
+    """
+    if session_root is not None:
+        saved = load_saved_conversational_prompt(session_root, WELCOME_PROMPT_KEY)
+        if saved is not None:
+            return saved
+    return default

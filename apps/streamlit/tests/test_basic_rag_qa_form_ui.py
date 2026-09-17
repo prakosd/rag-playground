@@ -112,6 +112,7 @@ def test_resolve_prompt_template_uses_config_without_session(
 
 def test_template_is_valid_accepts_the_expected_fields() -> None:
     assert basic_rag_qa_template_is_valid("{question} {start}{knowledge}{end} {tone}") is True
+    assert basic_rag_qa_template_is_valid("{question} {knowledge} {tone} {language}") is True
 
 
 def test_template_is_valid_rejects_unknown_or_stray_braces() -> None:

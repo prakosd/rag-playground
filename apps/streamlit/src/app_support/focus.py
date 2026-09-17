@@ -47,7 +47,22 @@ def entered_page(page_id: str) -> bool:
 
 def focus_widget(key: str) -> None:
     """Move browser focus to the input/textarea of the widget keyed ``key``."""
-    selector = json.dumps(f".st-key-{key} input, .st-key-{key} textarea")
+    _focus_first(f".st-key-{key} input, .st-key-{key} textarea")
+
+
+def focus_chat_input() -> None:
+    """Move browser focus to the page's chat input.
+
+    ``st.chat_input`` is pinned to the viewport bottom and its textarea does not
+    carry the ``st-key-<key>`` class other widgets expose, so :func:`focus_widget`
+    cannot target it; this focuses its stable test-id'd textarea instead.
+    """
+    _focus_first('[data-testid="stChatInput"] textarea')
+
+
+def _focus_first(selector_expr: str) -> None:
+    """Inject a one-shot script that focuses the first element matching a selector."""
+    selector = json.dumps(selector_expr)
     st.iframe(
         f"""
         <script>
@@ -100,6 +115,44 @@ def click_widget(key: str) -> None:
                 }}
             }}
             tryClick();
+        }})();
+        </script>
+        """,
+        height=_FOCUS_COMPONENT_HEIGHT,
+    )
+
+
+def scroll_to_bottom(key: str) -> None:
+    """Scroll the keyed scrollable container (e.g. a chat panel) to its bottom.
+
+    ``st.container(height=...)`` keeps its scroll position across reruns, so a chat
+    panel would not follow new turns; this nudges the container (or its scrollable
+    descendant) to the bottom. Best-effort — if the element is not found the scroll
+    is simply left where it was. Inject it only once (via a one-shot flag) so it
+    never fights the user scrolling up to read history.
+    """
+    selector = json.dumps(f".st-key-{key}")
+    st.iframe(
+        f"""
+        <script>
+        (function() {{
+            const selector = {selector};
+            const doc = window.parent.document;
+            let attempts = 0;
+            function toBottom() {{
+                const root = doc.querySelector(selector);
+                if (root) {{
+                    const scrollable = [root, ...root.querySelectorAll(":scope *")].find(
+                        (el) => el.scrollHeight > el.clientHeight + 4
+                    ) || root;
+                    scrollable.scrollTop = scrollable.scrollHeight;
+                    return;
+                }}
+                if (attempts++ < {_FOCUS_MAX_ATTEMPTS}) {{
+                    window.requestAnimationFrame(toBottom);
+                }}
+            }}
+            toBottom();
         }})();
         </script>
         """,

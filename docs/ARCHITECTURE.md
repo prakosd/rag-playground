@@ -127,8 +127,8 @@ flowchart TD
   `plan_queries` decomposes the question into standalone sub-questions (small auxiliary
   model from `resolve_auxiliary_model`), `retrieve_multi` searches each in parallel and
   de-dupes, `rerank_chunks` re-orders them (off / local cross-encoder / LLM),
-  the answer is generated, then `suggest_followups` + `validate_followups` propose only
-  corpus-answerable follow-ups and `update_state` rolls conversation memory forward. It
+  the answer is generated (the Streamlit page streams it token-by-token via the `conversational_answer_stream` variant, which returns a `ConversationalGeneration` and shares `_prepare_turn`/`_finalize_turn` with the blocking call, while follow-ups run concurrently), then `suggest_followups` + `validate_followups` propose only
+  corpus-answerable follow-ups (written in the configured language) and `update_state` rolls conversation memory forward. It
   returns a `ConversationalAnswer` (answer + `QueryPlan` + sources + `ValidatedFollowup`s
   + next `ConversationState` + per-stage `timings` + per-process `token_usage`) that the
   UI renders as a per-turn inspection panel, disk-persisted per-session conversations (a
@@ -136,9 +136,12 @@ flowchart TD
   session load), a Token usage panel (a shared renderer also
   used by Step 4), and the standard Output Files section. Every stage's built-in prompt is
   overridable through `ConversationalConfig.prompts` (a `ConversationalPrompts` model), and
-  the Step 5 page exposes an editable prompt-template editor; a malformed override falls
+  the Step 5 page exposes an editable prompt-template editor (plus an editable **Welcome message** greeting shown as the assistant's opening bubble on a fresh conversation); a malformed override falls
   back to the built-in. Every stage degrades safely (offline model, missing re-rank
   dependency, unparsable output) with a recorded warning, never an error.
+
+Both Step 4 and Step 5 inject the active UI language (default English) into the answer
+prompt, so generated replies match the selected UI language.
 
 When a cloud chat model is unavailable, `resolve_chat_model` falls back to an offline
 echo model (which repeats the question) and records a warning, so the workflow runs

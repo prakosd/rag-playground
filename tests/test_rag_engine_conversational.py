@@ -3,14 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from langchain_core.language_models import BaseChatModel, SimpleChatModel
-from langchain_core.messages import AIMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 from rag_engine import messages
-from rag_engine.chat import conversational_answer
+from rag_engine.chat import conversational_answer, conversational_answer_stream
 from rag_engine.config import ConversationalConfig
 from rag_engine.llm import ResolvedChatModel
-from rag_engine.models import ConversationState, RetrievedChunk
+from rag_engine.models import ChatTurn, ConversationState, RetrievedChunk
 from rag_engine.retrieval import RetrievalResult
 
 _CHUNKS = [
@@ -50,6 +50,38 @@ class _UsageModel(BaseChatModel):
             },
         )
         return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class _StreamingUsageModel(BaseChatModel):
+    """Streams answer chunks and reports usage on the final chunk (like real models)."""
+
+    pieces: tuple[str, ...] = ("AN", "SWER")
+    tokens: tuple[int, int, int] = (1, 2, 3)
+
+    @property
+    def _llm_type(self) -> str:
+        return "streaming-usage"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        i, o, t = self.tokens
+        message = AIMessage(
+            content="".join(self.pieces),
+            usage_metadata={"input_tokens": i, "output_tokens": o, "total_tokens": t},
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        last = len(self.pieces) - 1
+        for index, piece in enumerate(self.pieces):
+            if index == last:
+                i, o, t = self.tokens
+                message = AIMessageChunk(
+                    content=piece,
+                    usage_metadata={"input_tokens": i, "output_tokens": o, "total_tokens": t},
+                )
+            else:
+                message = AIMessageChunk(content=piece)
+            yield ChatGenerationChunk(message=message)
 
 
 def _main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
@@ -206,6 +238,124 @@ def test_conversational_answer_reports_progress_stages(tmp_path: Path) -> None:
     assert messages.CODE_PROGRESS_ANSWER in codes
     assert messages.CODE_PROGRESS_STATE in codes
     assert codes.index(messages.CODE_PROGRESS_ANSWER) < codes.index(messages.CODE_PROGRESS_STATE)
+
+
+def test_conversational_answer_stream_streams_tokens_and_finalizes(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        return ResolvedChatModel(model=_StreamingUsageModel(), model_id="main"), []
+
+    generation = conversational_answer_stream(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+    tokens = list(generation)
+
+    assert tokens == ["AN", "SWER"]  # streamed token-by-token
+    assert generation.answer is not None
+    assert generation.answer.answer == "ANSWER"
+    assert generation.answer.sources == _CHUNKS
+    assert {"retrieve", "answer", "state"} <= set(generation.answer.timings)
+
+
+def test_conversational_answer_stream_empty_question_yields_nothing() -> None:
+    generation = conversational_answer_stream(
+        "/tmp/x",
+        "   ",
+        ConversationState(),
+        ConversationalConfig(),
+        chat_resolver=_main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+
+    assert list(generation) == []  # nothing to stream
+    assert generation.answer is not None
+    assert any(e.code == messages.CODE_EMPTY_QUESTION for e in generation.answer.errors)
+
+
+def test_conversational_answer_stream_captures_answer_usage(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        return ResolvedChatModel(model=_StreamingUsageModel(), model_id="main"), []
+
+    generation = conversational_answer_stream(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+    list(generation)
+
+    # Only the answer stage runs an LLM here, so exactly one usage row is captured.
+    assert len(generation.answer.token_usage) == 1
+    stage = generation.answer.token_usage[0]
+    assert stage.process == "answer"
+    assert stage.model_id == "main"
+    assert stage.usage.total_tokens == 3
+
+
+def test_conversational_answer_stream_matches_blocking(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    config = ConversationalConfig(reranker="off", followups_enabled=False)
+    blocking = conversational_answer(
+        tmp_path,
+        "What is the capital?",
+        ConversationState(),
+        config,
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+    generation = conversational_answer_stream(
+        tmp_path,
+        "What is the capital?",
+        ConversationState(),
+        config,
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+    list(generation)
+
+    # The streaming and blocking paths produce the same grounded answer.
+    assert generation.answer.answer == blocking.answer == "ANSWER"
+
+
+def test_conversational_answer_stream_survives_bad_history_brace(tmp_path: Path) -> None:
+    # A prior turn containing a stray "{" breaks ChatPromptTemplate construction; the
+    # streaming path must catch it and record an error, not raise a raw traceback.
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    generation = conversational_answer_stream(
+        tmp_path,
+        "What is the capital?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        history=[ChatTurn(role="assistant", content="see config {oops")],
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+    tokens = list(generation)  # must not raise
+
+    assert tokens == []  # nothing streamed
+    assert generation.answer is not None
+    assert generation.answer.errors  # a generation error was recorded
 
 
 def test_conversational_answer_decomposes_with_real_aux(tmp_path: Path) -> None:

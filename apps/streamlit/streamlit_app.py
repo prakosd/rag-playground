@@ -22,6 +22,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import html
 import importlib
 import sys
+import warnings
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
 from functools import partial
@@ -153,6 +154,10 @@ def _configure_app_logging() -> bool:
         logger_names=_PROJECT_LOGGER_NAMES,
         log_file_router=_session_log_path,
     )
+    # langchain_aws warns once per model when a provider is not on its streaming
+    # allowlist (e.g. nvidia); it then falls back to the non-streaming Converse API.
+    # That fallback is harmless, so silence the notice to keep logs readable.
+    warnings.filterwarnings("ignore", message=r".*is not verified as streaming-capable.*")
     return True
 
 

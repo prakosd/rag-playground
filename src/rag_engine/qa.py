@@ -18,7 +18,13 @@ from rag_engine import messages
 from rag_engine.config import RagConfig
 from rag_engine.llm import ResolvedChatModel, resolve_chat_model
 from rag_engine.models import RagAnswer, RetrievedChunk, TokenUsage
-from rag_engine.prompts import _DEFAULT_TONE, QA_SYSTEM_PROMPT, format_context
+from rag_engine.prompts import (
+    _DEFAULT_TONE,
+    DEFAULT_ANSWER_LANGUAGE,
+    QA_SYSTEM_PROMPT,
+    format_context,
+    message_text,
+)
 from rag_engine.retrieval import RetrievalResult, retrieve
 
 if TYPE_CHECKING:
@@ -37,7 +43,11 @@ _logger = get_logger(__name__)
 
 
 def _qa_chain(
-    chat_model: BaseChatModel, chunks: Sequence[RetrievedChunk], *, tone: str = _DEFAULT_TONE
+    chat_model: BaseChatModel,
+    chunks: Sequence[RetrievedChunk],
+    *,
+    tone: str = _DEFAULT_TONE,
+    language: str = DEFAULT_ANSWER_LANGUAGE,
 ) -> tuple[Any, dict]:
     from langchain_core.output_parsers import StrOutputParser
     from langchain_core.prompts import ChatPromptTemplate
@@ -48,6 +58,7 @@ def _qa_chain(
     return prompt | chat_model | StrOutputParser(), {
         "context": format_context(chunks),
         "tone": tone,
+        "language": language,
     }
 
 
@@ -65,21 +76,6 @@ def stream_answer(
     """Yield answer tokens for *question* and *chunks* as they are generated."""
     chain, base = _qa_chain(chat_model, chunks)
     yield from chain.stream({**base, "question": question})
-
-
-def _message_text(message: Any) -> str:
-    """Extract plain text from a chat message or streamed chunk's ``content``."""
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = [
-            part if isinstance(part, str) else str(part.get("text", ""))
-            for part in content
-            if isinstance(part, (str, dict))
-        ]
-        return "".join(parts)
-    return str(content)
 
 
 def _token_usage(message: Any) -> TokenUsage | None:
@@ -124,7 +120,7 @@ class PromptGeneration:
                     aggregate = aggregate + chunk
                 except TypeError:  # a chunk type that does not support merging
                     aggregate = chunk
-            piece = _message_text(chunk)
+            piece = message_text(chunk)
             if piece:
                 parts.append(piece)
                 yield piece
@@ -144,7 +140,7 @@ def generate_from_prompt(chat_model: BaseChatModel, prompt: str) -> tuple[str, T
 
     _logger.info("Running model on prompt (%d chars)", len(prompt))
     message = chat_model.invoke([HumanMessage(content=prompt)])
-    return _message_text(message), _token_usage(message)
+    return message_text(message), _token_usage(message)
 
 
 def answer_question(

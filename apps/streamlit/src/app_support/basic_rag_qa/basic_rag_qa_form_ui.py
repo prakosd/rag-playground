@@ -79,7 +79,7 @@ def basic_rag_qa_template_is_valid(template: str) -> bool:
     otherwise silently fall back to the default.
     """
     try:
-        template.format(question="", start="", knowledge="", end="", tone="")
+        template.format(question="", start="", knowledge="", end="", tone="", language="")
     except (KeyError, IndexError, ValueError):
         return False
     return True

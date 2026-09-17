@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rag_engine.chat import chat_answer, condense_question, generate_chat_answer
+from rag_engine.chat import (
+    chat_answer,
+    condense_question,
+    generate_chat_answer,
+    stream_chat_answer_with_usage,
+)
 from rag_engine.config import RagConfig
 from rag_engine.llm import ResolvedChatModel
 from rag_engine.llm.echo import build_echo_chat_model
@@ -59,6 +64,36 @@ def test_generate_chat_answer_uses_custom_system_prompt() -> None:
 
     assert answer == "ok"
     assert captured and captured[0].startswith("CUSTOM_SYS ")
+
+
+def test_generate_chat_answer_writes_requested_language() -> None:
+    from langchain_core.language_models import SimpleChatModel
+
+    captured: list[str] = []
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            captured.append(str(messages[0].content))  # the formatted system message
+            return "ok"
+
+    generate_chat_answer(_Capture(), "q", _CHUNKS, [], language="Indonesian")
+
+    assert captured and "Indonesian" in captured[0]
+
+
+def test_stream_chat_answer_with_usage_streams_and_collects_text() -> None:
+    stream = stream_chat_answer_with_usage(
+        build_echo_chat_model(), "What is its capital?", _CHUNKS, _HISTORY
+    )
+    tokens = list(stream)
+
+    assert tokens  # streamed at least one token
+    assert stream.text == "".join(tokens)
+    assert "What is its capital?" in stream.text  # the echo model reflects the question
 
 
 def test_generate_chat_answer_ignores_invalid_system_prompt() -> None:

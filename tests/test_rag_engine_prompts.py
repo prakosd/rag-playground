@@ -118,6 +118,18 @@ def test_build_rag_prompt_surfaces_supporting_source_url() -> None:
     assert "URL: https://example.com/paris" in prompt
 
 
+def test_build_rag_prompt_defaults_language_to_english() -> None:
+    prompt = build_rag_prompt("q", _CHUNKS, "Neutral")
+
+    assert "English" in prompt
+
+
+def test_build_rag_prompt_uses_requested_language() -> None:
+    prompt = build_rag_prompt("q", _CHUNKS, "Neutral", language="Indonesian")
+
+    assert "Indonesian" in prompt
+
+
 def test_default_rag_template_instructs_direct_answer_and_links() -> None:
     # Answer-directly guidance removes the "The retrieved knowledge..." meta-phrasing.
     assert 'refer to "the retrieved knowledge"' in RAG_PROMPT_TEMPLATE
@@ -136,6 +148,21 @@ def test_qa_system_prompt_instructs_direct_answer_and_links() -> None:
     assert "data only" in QA_SYSTEM_PROMPT
     # Tone slot lets callers request an answer tone.
     assert "{tone}" in QA_SYSTEM_PROMPT
+
+
+def test_answer_prompts_and_fields_carry_language() -> None:
+    # Both answer prompts expose a {language} slot, and it is a declared answer
+    # field so a custom override may use it.
+    assert "{language}" in QA_SYSTEM_PROMPT
+    assert "{language}" in RAG_PROMPT_TEMPLATE
+    assert "language" in CONVERSATIONAL_PROMPT_FIELDS["answer"]
+
+
+def test_followups_prompt_and_fields_carry_language() -> None:
+    # Suggested follow-ups must be written in the active language, so the template
+    # exposes a {language} slot and it is a declared followups field.
+    assert "{language}" in SUGGEST_FOLLOWUPS_TEMPLATE
+    assert "language" in CONVERSATIONAL_PROMPT_FIELDS["followups"]
 
 
 def test_build_rag_prompt_logs_construction(caplog: pytest.LogCaptureFixture) -> None:
