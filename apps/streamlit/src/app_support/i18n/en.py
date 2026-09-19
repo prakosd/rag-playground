@@ -264,9 +264,9 @@ STRINGS_EN: Strings = {
     "CHAT_NEW_CONVERSATION": "New conversation",
     "CHAT_CONVERSATION_SELECT": "Conversation",
     "CHAT_WELCOME_DEFAULT": (
-        "Hi! I'm here to help with the documents you've indexed. Ask me anything "
-        "about them — what a page covers, how something works, or where to find a "
-        "specific detail."
+        "Hi! I'm here to help with the documents you've indexed. Ask me anything about them.\n"
+        "Hello! Ask me anything about the documents you've indexed — I'll answer from them.\n"
+        "Hi there! I can help you explore the documents you've indexed. What would you like to know?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
@@ -309,9 +309,30 @@ STRINGS_EN: Strings = {
     "CONV_PROMPT_TAB_ANSWERABILITY": "Answerability check",
     "CONV_PROMPT_TAB_STATE": "Conversation state",
     "CONV_PROMPT_TAB_WELCOME": "Welcome message",
+    "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Follow-up intro",
+    "CONV_PROMPT_TAB_NO_FOLLOWUPS": "No-suggestions message",
     "CONV_PROMPT_FIELDS_CAPTION": "Required placeholders: {fields}",
     "CONV_PROMPT_WELCOME_CAPTION": (
-        "Shown as the assistant's greeting at the start of a new conversation."
+        "Shown as the assistant's greeting at the start of a new conversation. "
+        "One line per alternate — a random one appears."
+    ),
+    "CONV_PROMPT_FOLLOWUP_INTRO_CAPTION": (
+        "Shown above the suggested follow-ups. One line per alternate — a random "
+        "one appears each turn."
+    ),
+    "CONV_PROMPT_NO_FOLLOWUPS_CAPTION": (
+        "Shown when a turn has no follow-up suggestions. One line per alternate — a "
+        "random one appears each turn."
+    ),
+    "CONV_FOLLOWUP_INTRO_DEFAULT": (
+        "Would you like to know about…\n"
+        "You might also want to explore…\n"
+        "Here are a few things you could ask next…"
+    ),
+    "CONV_NO_FOLLOWUPS_DEFAULT": (
+        "What else would you like to know?\n"
+        "Is there anything else I can help you find?\n"
+        "Feel free to ask another question about your documents."
     ),
     "CONV_PROMPT_SAVE": "Save",
     "CONV_PROMPT_RESET": "Reset to default",
@@ -346,7 +367,6 @@ STRINGS_EN: Strings = {
     "CONV_META_ANSWER_MODEL": "Answer model",
     "CONV_META_AUX_MODEL": "Auxiliary model",
     "CONV_META_RERANKER": "Re-ranker",
-    "CONV_FOLLOWUPS_CAPTION": "You might also want to ask",
     "CONV_PROCESS_DECOMPOSITION": "Query decomposition",
     "CONV_PROCESS_RERANKING": "Re-ranking",
     "CONV_PROCESS_ANSWER": "Answer generation",

@@ -152,7 +152,17 @@ default stealth browser + retry rounds (all off by default):
   unavailable. No setting to toggle.
 - **Scraping-API fallback** — set `CRAWL_FALLBACK_API_URL` (and optional
   `CRAWL_FALLBACK_API_TOKEN`) to fetch the page from an external scraping service
-  as a last resort, after every browser + proxy attempt is still blocked.
+  as a last resort, after every browser + proxy attempt is still blocked. The
+  crawler calls `GET <CRAWL_FALLBACK_API_URL>?url=<page>` with an optional
+  `Authorization: Bearer <token>` header and uses the HTML it returns. This is a
+  generic **bring-your-own** endpoint, independent of your proxy vendor — e.g.
+  DataImpulse sells proxies (`CRAWL_PROXIES`) but no such fetch API. Any
+  scraping/unlocker service that returns the page HTML works; for vendors that
+  authenticate with a query-string key (ScraperAPI, ScrapingBee, ScrapingDog,
+  ScrapeOps, Crawlbase), put the key in the URL (e.g.
+  `https://api.example.com/?api_key=KEY`) and leave `CRAWL_FALLBACK_API_TOKEN`
+  blank — the crawler appends `&url=`. When the URL is unset or blank, the
+  fallback is silently skipped.
 
 Proxies and the fallback API are **secrets** (env / Cloud Secrets only — never in
 `.env.defaults` or logs). They are honest mitigations, not guarantees: a hard
@@ -192,6 +202,11 @@ git-ignored.
 > browser and `pip` use, so downloads succeed behind a corporate TLS-intercepting proxy
 > (httpx's default `certifi` bundle would raise `CERTIFICATE_VERIFY_FAILED`). Set `headers`
 > to override any of these defaults (e.g. a custom `User-Agent`).
+>
+> **Same-domain only.** The crawler follows links within the seed domain(s) (and their
+> subdomains), so a PDF/DOCX hosted on a **different** domain (e.g. a `cdn.…` host) is
+> skipped even when linked from a crawled page. To capture it, add that host to the seed
+> `urls` (or crawl the file URL directly). `.docx` is supported; legacy binary `.doc` is not.
 
 ## PageConfig
 

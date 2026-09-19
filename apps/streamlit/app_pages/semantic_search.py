@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
-from rag_engine import RagConfig, retrieve
+from rag_engine import RagConfig
 
 from app_support.focus import focus_widget
 from app_support.i18n import Strings, get_strings
@@ -28,6 +28,7 @@ from app_support.rag_shared.rag_ui import (
     select_index,
     stacked_label_value_html,
 )
+from app_support.rag_shared.resource_cache import cached_retriever
 from app_support.rag_shared.result_snapshot import stored_results
 from app_support.semantic_search.search_history import (
     SearchRecord,
@@ -137,7 +138,7 @@ def render_page(context: RagPageContext) -> None:
         ref, query_text, config = request
         with st.spinner(strings["SEARCH_SEARCHING"]):
             start = time.perf_counter()
-            result = retrieve(ref.run_dir, query_text, config)
+            result = cached_retriever(ref.run_dir, query_text, config)
             search_seconds = time.perf_counter() - start
         render_messages(strings, result.warnings, result.errors)
         scores = [chunk.score for chunk in result.chunks]

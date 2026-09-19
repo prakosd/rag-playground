@@ -269,9 +269,9 @@ STRINGS_ID: Strings = {
     "CHAT_NEW_CONVERSATION": "Percakapan baru",
     "CHAT_CONVERSATION_SELECT": "Percakapan",
     "CHAT_WELCOME_DEFAULT": (
-        "Hai! Saya siap membantu dengan dokumen yang sudah Anda indeks. Tanyakan "
-        "apa saja tentang dokumen itu — apa isi sebuah halaman, cara kerja sesuatu, "
-        "atau di mana menemukan detail tertentu."
+        "Hai! Saya siap membantu dengan dokumen yang sudah Anda indeks. Tanyakan apa saja.\n"
+        "Halo! Tanyakan apa saja tentang dokumen yang Anda indeks — saya menjawab dari sana.\n"
+        "Hai! Saya bisa membantu menjelajahi dokumen yang Anda indeks. Apa yang ingin Anda ketahui?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
@@ -314,8 +314,31 @@ STRINGS_ID: Strings = {
     "CONV_PROMPT_TAB_ANSWERABILITY": "Pemeriksaan keterjawaban",
     "CONV_PROMPT_TAB_STATE": "State percakapan",
     "CONV_PROMPT_TAB_WELCOME": "Pesan sambutan",
+    "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Pembuka lanjutan",
+    "CONV_PROMPT_TAB_NO_FOLLOWUPS": "Pesan tanpa saran",
     "CONV_PROMPT_FIELDS_CAPTION": "Placeholder wajib: {fields}",
-    "CONV_PROMPT_WELCOME_CAPTION": "Ditampilkan sebagai sapaan asisten di awal percakapan baru.",
+    "CONV_PROMPT_WELCOME_CAPTION": (
+        "Ditampilkan sebagai sapaan asisten di awal percakapan baru. "
+        "Satu baris per alternatif — satu dipilih acak."
+    ),
+    "CONV_PROMPT_FOLLOWUP_INTRO_CAPTION": (
+        "Ditampilkan di atas saran pertanyaan lanjutan. Satu baris per alternatif — "
+        "satu dipilih acak tiap giliran."
+    ),
+    "CONV_PROMPT_NO_FOLLOWUPS_CAPTION": (
+        "Ditampilkan saat sebuah giliran tak punya saran pertanyaan lanjutan. Satu "
+        "baris per alternatif — satu dipilih acak tiap giliran."
+    ),
+    "CONV_FOLLOWUP_INTRO_DEFAULT": (
+        "Ingin tahu tentang…\n"
+        "Anda mungkin juga ingin menjelajahi…\n"
+        "Berikut beberapa hal yang bisa Anda tanyakan berikutnya…"
+    ),
+    "CONV_NO_FOLLOWUPS_DEFAULT": (
+        "Apa lagi yang ingin Anda ketahui?\n"
+        "Ada lagi yang bisa saya bantu temukan?\n"
+        "Silakan ajukan pertanyaan lain tentang dokumen Anda."
+    ),
     "CONV_PROMPT_SAVE": "Simpan",
     "CONV_PROMPT_RESET": "Reset ke bawaan",
     "CONV_PROMPT_SAVED_TOAST": "Prompt disimpan.",
@@ -349,7 +372,6 @@ STRINGS_ID: Strings = {
     "CONV_META_ANSWER_MODEL": "Model jawaban",
     "CONV_META_AUX_MODEL": "Model bantu",
     "CONV_META_RERANKER": "Pemeringkat ulang",
-    "CONV_FOLLOWUPS_CAPTION": "Anda mungkin juga ingin menanyakan",
     "CONV_PROCESS_DECOMPOSITION": "Dekomposisi kueri",
     "CONV_PROCESS_RERANKING": "Pemeringkatan ulang",
     "CONV_PROCESS_ANSWER": "Pembuatan jawaban",

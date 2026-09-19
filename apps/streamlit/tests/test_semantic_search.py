@@ -153,7 +153,7 @@ def test_replay_prefills_query_and_reruns_without_warnings(
             session_root=lambda: root,
         )
         empty = SimpleNamespace(chunks=[], warnings=[], errors=[])
-        with patch.object(page, "retrieve", return_value=empty):
+        with patch.object(page, "cached_retriever", return_value=empty):
             page.render_page(context)
 
     app = AppTest.from_function(render, kwargs={"session_dir": str(tmp_path)})
@@ -219,7 +219,7 @@ def _render_index_page(session_dir: str, n_chunks: int = 0) -> None:
         for i in range(n_chunks)
     ]
     result = SimpleNamespace(chunks=chunks, warnings=[], errors=[])
-    with patch.object(page, "retrieve", return_value=result):
+    with patch.object(page, "cached_retriever", return_value=result):
         page.render_page(context)
 
 

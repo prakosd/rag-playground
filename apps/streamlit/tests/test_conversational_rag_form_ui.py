@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+from rag_engine import ValidatedFollowup
+
+import app_support.conversational_rag.conversational_rag_form_ui as form_ui
 from app_support.conversational_rag.conversational_rag_form_ui import (
     ConversationalControls,
+    _prompt_tab_visible,
     aux_model_choices,
     build_conversational_config,
 )
@@ -75,3 +81,43 @@ def test_build_config_populates_prompt_overrides() -> None:
 
     for key in ("answer", "decompose", "rerank", "followups", "answerability", "state"):
         assert getattr(config.prompts, key)
+
+
+def test_prompt_tab_visible_follows_toggles() -> None:
+    # A stage's prompt tab shows only when the feature that runs it is enabled.
+    def visible(key: str, **overrides: object) -> bool:
+        opts = {"decomposition": True, "followups": True, "reranker": "llm"}
+        opts.update(overrides)
+        return _prompt_tab_visible(key, **opts)  # type: ignore[arg-type]
+
+    assert visible("answer") and visible("state")  # always shown
+    assert visible("decompose") and not visible("decompose", decomposition=False)
+    assert visible("followups") and not visible("followups", followups=False)
+    assert visible("answerability") and not visible("answerability", followups=False)
+    assert visible("rerank")  # LLM re-ranker → its prompt is used
+    assert not visible("rerank", reranker="local") and not visible("rerank", reranker="off")
+
+
+def test_render_followup_bubble_lays_out_suggestions_inline(monkeypatch, tmp_path) -> None:
+    # The suggestions are wrapped in a horizontal container so they flow inline
+    # like a sentence (a wrapping row) instead of stacking vertically.
+    fake_st = MagicMock()
+    fake_st.button.return_value = False
+    monkeypatch.setattr(form_ui, "st", fake_st)
+
+    strings = {
+        "CONV_FOLLOWUP_INTRO_DEFAULT": "Want to explore further?",
+        "CONV_NO_FOLLOWUPS_DEFAULT": "No suggestions this time.",
+    }
+    follow_ups = [
+        ValidatedFollowup(question="How does X work?"),
+        ValidatedFollowup(question="Why Y?"),
+    ]
+
+    clicked = form_ui.render_followup_bubble(strings, tmp_path, follow_ups, 0)
+
+    assert clicked is None  # nothing clicked
+    assert fake_st.button.call_count == 2  # one clickable link per suggestion
+    assert any(
+        call.kwargs.get("horizontal") is True for call in fake_st.container.call_args_list
+    )  # suggestions flow inline inside a horizontal container

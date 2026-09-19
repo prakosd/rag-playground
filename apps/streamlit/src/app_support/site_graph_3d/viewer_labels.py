@@ -51,6 +51,7 @@ VIEWER_LABELS_EN: dict[str, str] = {
     "hud_pages": "Pages",
     "hud_depth": "Max depth",
     "legend_title": "Legend",
+    "size_label": "Scale",
 }
 
 VIEWER_LABELS_ID: dict[str, str] = {
@@ -91,6 +92,7 @@ VIEWER_LABELS_ID: dict[str, str] = {
     "hud_pages": "Halaman",
     "hud_depth": "Kedalaman maks",
     "legend_title": "Keterangan",
+    "size_label": "Skala",
 }
 
 _CATALOG: dict[str, dict[str, str]] = {"en": VIEWER_LABELS_EN, "id": VIEWER_LABELS_ID}

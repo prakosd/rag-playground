@@ -10,11 +10,15 @@ from rag_engine.prompts import QA_SYSTEM_PROMPT, STATE_UPDATE_TEMPLATE
 from app_support.conversational_rag import conversational_prompts as cp
 from app_support.conversational_rag.conversational_prompts import (
     CONVERSATIONAL_PROMPT_KEYS,
+    FOLLOWUP_INTRO_PROMPT_KEY,
+    NO_FOLLOWUPS_PROMPT_KEY,
     WELCOME_PROMPT_KEY,
     conversational_prompt_is_valid,
     editor_prompt_text,
     load_saved_conversational_prompt,
+    pick_random_line,
     reset_conversational_prompt,
+    resolve_app_message,
     resolve_conversational_prompt,
     resolve_conversational_prompts,
     resolve_welcome_message,
@@ -47,6 +51,28 @@ def test_resolve_welcome_message_prefers_saved_then_default(tmp_path: Path) -> N
     assert resolve_welcome_message(tmp_path, "hello") == "hello"
     save_conversational_prompt(tmp_path, WELCOME_PROMPT_KEY, "Custom greeting")
     assert resolve_welcome_message(tmp_path, "hello") == "Custom greeting"
+
+
+def test_resolve_app_message_prefers_saved_then_default(tmp_path: Path) -> None:
+    # Mirrors the welcome greeting: no session / nothing saved → the localized
+    # default; a saved edit wins; a save for one key doesn't affect another.
+    assert resolve_app_message(None, FOLLOWUP_INTRO_PROMPT_KEY, "d") == "d"
+    assert resolve_app_message(tmp_path, NO_FOLLOWUPS_PROMPT_KEY, "d") == "d"
+    save_conversational_prompt(tmp_path, FOLLOWUP_INTRO_PROMPT_KEY, "Custom intro")
+    assert resolve_app_message(tmp_path, FOLLOWUP_INTRO_PROMPT_KEY, "d") == "Custom intro"
+    assert resolve_app_message(tmp_path, NO_FOLLOWUPS_PROMPT_KEY, "d") == "d"
+
+
+def test_pick_random_line_is_stable_per_seed_and_varies() -> None:
+    # App messages hold one alternate per line; a seed picks one deterministically.
+    text = "one\ntwo\nthree"
+    first = pick_random_line(text, 0)
+    assert first in {"one", "two", "three"}
+    assert pick_random_line(text, 0) == first  # stable across reruns (same seed)
+    assert pick_random_line("  \n  ", 5) == ""  # blank degrades to empty
+    assert pick_random_line("only line", 9) == "only line"
+    seen = {pick_random_line(text, seed) for seed in range(20)}
+    assert len(seen) > 1  # rotates across turns
 
 
 def test_resolve_returns_config_file_contents(

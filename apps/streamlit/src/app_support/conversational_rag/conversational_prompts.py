@@ -11,6 +11,7 @@ unit-testable and the page module stays thin.
 
 from __future__ import annotations
 
+import zlib
 from pathlib import Path
 
 from rag_engine import CONVERSATIONAL_PROMPT_FIELDS, ConversationalPrompts, template_has_fields
@@ -29,12 +30,17 @@ from app_support.conversational_rag.conversational_rag_history import (
 from app_support.settings import get_settings
 
 __all__ = [
+    "APP_MESSAGE_PROMPT_KEYS",
     "CONVERSATIONAL_PROMPT_KEYS",
+    "FOLLOWUP_INTRO_PROMPT_KEY",
+    "NO_FOLLOWUPS_PROMPT_KEY",
     "WELCOME_PROMPT_KEY",
     "conversational_prompt_is_valid",
     "editor_prompt_text",
     "load_saved_conversational_prompt",
+    "pick_random_line",
     "reset_conversational_prompt",
+    "resolve_app_message",
     "resolve_conversational_prompt",
     "resolve_conversational_prompts",
     "resolve_welcome_message",
@@ -53,9 +59,18 @@ CONVERSATIONAL_PROMPT_KEYS: tuple[str, ...] = (
     "state",
 )
 
-# App-only greeting shown at the top of a fresh conversation. Not a model prompt
-# (no placeholders / library default), so it lives outside CONVERSATIONAL_PROMPT_KEYS.
+# App-only display messages (no placeholders / library default), so they live
+# outside CONVERSATIONAL_PROMPT_KEYS: the fresh-conversation greeting, the intro
+# above suggested follow-ups, and the nudge shown when a turn has none. Each holds
+# one alternate per non-empty line; the UI shows a random line (see pick_random_line).
 WELCOME_PROMPT_KEY = "welcome"
+FOLLOWUP_INTRO_PROMPT_KEY = "followup_intro"
+NO_FOLLOWUPS_PROMPT_KEY = "no_followups"
+APP_MESSAGE_PROMPT_KEYS: tuple[str, ...] = (
+    WELCOME_PROMPT_KEY,
+    FOLLOWUP_INTRO_PROMPT_KEY,
+    NO_FOLLOWUPS_PROMPT_KEY,
+)
 
 _PROMPT_FILENAMES = {
     "answer": "conversational_answer_prompt.txt",
@@ -154,15 +169,34 @@ def resolve_conversational_prompts(
     )
 
 
-def resolve_welcome_message(session_root: Path | str | None, default: str) -> str:
-    """Return the session's saved welcome greeting, or the localized *default*.
+def resolve_app_message(session_root: Path | str | None, key: str, default: str) -> str:
+    """Return the session's saved app-only message for *key*, or *default*.
 
-    The greeting is app-only display text, so it resolves from just the session's
-    saved edit falling back to the caller-supplied localized default (keeping this
-    module UI-agnostic). A blank saved file falls through to *default*.
+    App-only display text (welcome greeting, follow-up intro, no-suggestions nudge)
+    resolves from just the session's saved edit, falling back to the caller-supplied
+    localized *default* (keeping this module UI-agnostic). A blank saved file falls
+    through to *default*.
     """
     if session_root is not None:
-        saved = load_saved_conversational_prompt(session_root, WELCOME_PROMPT_KEY)
+        saved = load_saved_conversational_prompt(session_root, key)
         if saved is not None:
             return saved
     return default
+
+
+def resolve_welcome_message(session_root: Path | str | None, default: str) -> str:
+    """Return the session's saved welcome greeting, or the localized *default*."""
+    return resolve_app_message(session_root, WELCOME_PROMPT_KEY, default)
+
+
+def pick_random_line(text: str, seed: object) -> str:
+    """Return one non-empty line of *text*, chosen deterministically by *seed*.
+
+    App-only messages hold one alternate per line; the same *seed* (a turn id or
+    conversation id) yields the same choice across reruns but varies between turns,
+    so the wording rotates without flickering mid-turn.
+    """
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return (text or "").strip()
+    return lines[zlib.crc32(str(seed).encode("utf-8")) % len(lines)]

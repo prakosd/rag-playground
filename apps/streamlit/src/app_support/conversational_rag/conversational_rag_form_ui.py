@@ -28,12 +28,15 @@ from rag_engine import (
 from app_support.basic_rag_qa.basic_rag_qa_form_ui import tone_choices
 from app_support.conversational_rag.conversational_prompts import (
     CONVERSATIONAL_PROMPT_KEYS,
+    FOLLOWUP_INTRO_PROMPT_KEY,
+    NO_FOLLOWUPS_PROMPT_KEY,
     WELCOME_PROMPT_KEY,
     conversational_prompt_is_valid,
     editor_prompt_text,
+    pick_random_line,
     reset_conversational_prompt,
+    resolve_app_message,
     resolve_conversational_prompts,
-    resolve_welcome_message,
     save_conversational_prompt,
 )
 from app_support.i18n._types import Strings
@@ -50,10 +53,11 @@ from app_support.settings import get_settings
 
 __all__ = [
     "ConversationalControls",
+    "FOLLOWUP_BUBBLE_KEY_PREFIX",
     "aux_model_choices",
     "build_conversational_config",
     "render_advanced_controls",
-    "render_followup_buttons",
+    "render_followup_bubble",
     "render_turn_inspection",
     "render_turn_metadata",
 ]
@@ -72,6 +76,9 @@ _PROMPT_TAB_KEYS = {
     "answerability": "CONV_PROMPT_TAB_ANSWERABILITY",
     "state": "CONV_PROMPT_TAB_STATE",
 }
+# Suggested follow-ups render in their own keyed container so the page CSS can hide
+# the duplicate assistant avatar (they read as a continuation of the answer bubble).
+FOLLOWUP_BUBBLE_KEY_PREFIX = "conv-followup-"
 
 
 @dataclass(frozen=True)
@@ -253,7 +260,15 @@ def render_advanced_controls(
                 disabled=disabled,
                 key=f"{key_prefix}_inspect",
             )
-        _render_prompt_editor(strings, key_prefix, session_root, disabled=disabled)
+        _render_prompt_editor(
+            strings,
+            key_prefix,
+            session_root,
+            disabled=disabled,
+            decomposition=decomposition,
+            followups=followups,
+            reranker=reranker,
+        )
     return ConversationalControls(
         index=index,
         answer_model=answer_model,
@@ -269,20 +284,71 @@ def render_advanced_controls(
     )
 
 
+# App-only message tabs: (prompt key, tab-label key, caption key, default-text key).
+# The welcome greeting always shows; the follow-up ones follow the Follow-ups toggle.
+_WELCOME_TAB = (
+    WELCOME_PROMPT_KEY,
+    "CONV_PROMPT_TAB_WELCOME",
+    "CONV_PROMPT_WELCOME_CAPTION",
+    "CHAT_WELCOME_DEFAULT",
+)
+_FOLLOWUP_MESSAGE_TABS = (
+    (
+        FOLLOWUP_INTRO_PROMPT_KEY,
+        "CONV_PROMPT_TAB_FOLLOWUP_INTRO",
+        "CONV_PROMPT_FOLLOWUP_INTRO_CAPTION",
+        "CONV_FOLLOWUP_INTRO_DEFAULT",
+    ),
+    (
+        NO_FOLLOWUPS_PROMPT_KEY,
+        "CONV_PROMPT_TAB_NO_FOLLOWUPS",
+        "CONV_PROMPT_NO_FOLLOWUPS_CAPTION",
+        "CONV_NO_FOLLOWUPS_DEFAULT",
+    ),
+)
+
+
+def _prompt_tab_visible(key: str, *, decomposition: bool, followups: bool, reranker: str) -> bool:
+    """Whether a stage's prompt tab shows, given the toggles that gate that stage."""
+    if key == "decompose":
+        return decomposition
+    if key in ("followups", "answerability"):
+        return followups
+    if key == "rerank":
+        return reranker == "llm"
+    return True
+
+
 def _render_prompt_editor(
-    strings: Strings, key_prefix: str, session_root: Path, *, disabled: bool
+    strings: Strings,
+    key_prefix: str,
+    session_root: Path,
+    *,
+    disabled: bool,
+    decomposition: bool,
+    followups: bool,
+    reranker: str,
 ) -> None:
-    """Render the prompt-template editor (one tab per Step 5 LLM prompt + Welcome)."""
+    """Render the prompt-template editor, hiding tabs whose feature is turned off."""
     st.caption(strings["CONV_PROMPTS_LABEL"])
     st.caption(strings["CONV_PROMPTS_CAPTION"])
-    tab_labels = [strings[_PROMPT_TAB_KEYS[key]] for key in CONVERSATIONAL_PROMPT_KEYS]
-    tab_labels.append(strings["CONV_PROMPT_TAB_WELCOME"])
-    tabs = st.tabs(tab_labels)
-    for tab, prompt_key in zip(tabs[:-1], CONVERSATIONAL_PROMPT_KEYS, strict=True):
+    model_keys = [
+        key
+        for key in CONVERSATIONAL_PROMPT_KEYS
+        if _prompt_tab_visible(
+            key, decomposition=decomposition, followups=followups, reranker=reranker
+        )
+    ]
+    message_tabs = [_WELCOME_TAB, *(_FOLLOWUP_MESSAGE_TABS if followups else ())]
+    labels = [strings[_PROMPT_TAB_KEYS[key]] for key in model_keys]
+    labels += [strings[label_key] for _, label_key, _, _ in message_tabs]
+    tabs = st.tabs(labels)
+    for tab, prompt_key in zip(tabs[: len(model_keys)], model_keys, strict=True):
         with tab:
             _render_single_prompt(strings, key_prefix, session_root, prompt_key, disabled=disabled)
-    with tabs[-1]:
-        _render_welcome_prompt(strings, key_prefix, session_root, disabled=disabled)
+    for tab, spec in zip(tabs[len(model_keys) :], message_tabs, strict=True):
+        with tab:
+            _render_app_message_prompt(strings, key_prefix, session_root, spec, disabled=disabled)
 
 
 def _render_prompt_actions(
@@ -355,25 +421,35 @@ def _render_single_prompt(
     )
 
 
-def _render_welcome_prompt(
-    strings: Strings, key_prefix: str, session_root: Path, *, disabled: bool
+def _render_app_message_prompt(
+    strings: Strings,
+    key_prefix: str,
+    session_root: Path,
+    spec: tuple[str, str, str, str],
+    *,
+    disabled: bool,
 ) -> None:
-    """Render the editable new-conversation welcome greeting (app-only, no placeholders)."""
-    widget_key = f"{key_prefix}_prompt_{WELCOME_PROMPT_KEY}"
+    """Render one app-only message editor (welcome / follow-up intro / no-suggestions).
+
+    These carry no placeholders and hold one alternate per line; a random line is
+    shown at render (seeded per turn/conversation), so Save stores them verbatim.
+    """
+    prompt_key, label_key, caption_key, default_key = spec
+    widget_key = f"{key_prefix}_prompt_{prompt_key}"
     current = st.session_state.get(widget_key)
     if not (current and str(current).strip()):
-        st.session_state[widget_key] = resolve_welcome_message(
-            session_root, strings["CHAT_WELCOME_DEFAULT"]
+        st.session_state[widget_key] = resolve_app_message(
+            session_root, prompt_key, strings[default_key]
         )
     st.text_area(
-        strings["CONV_PROMPT_TAB_WELCOME"],
+        strings[label_key],
         height=_PROMPT_EDITOR_HEIGHT,
         label_visibility="collapsed",
         disabled=disabled,
         key=widget_key,
     )
-    st.caption(strings["CONV_PROMPT_WELCOME_CAPTION"])
-    _render_prompt_actions(strings, session_root, WELCOME_PROMPT_KEY, widget_key, disabled=disabled)
+    st.caption(strings[caption_key])
+    _render_prompt_actions(strings, session_root, prompt_key, widget_key, disabled=disabled)
 
 
 def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None:
@@ -426,19 +502,40 @@ def render_turn_inspection(
             _render_followups(strings, answer.follow_ups)
 
 
-def render_followup_buttons(
-    strings: Strings, follow_ups: Sequence[ValidatedFollowup], turn_id: int
+def render_followup_bubble(
+    strings: Strings,
+    session_root: Path,
+    follow_ups: Sequence[ValidatedFollowup],
+    turn_id: int,
 ) -> str | None:
-    """Render follow-up suggestion buttons; return the clicked question or None."""
-    if not follow_ups:
-        return None
-    st.caption(strings["CONV_FOLLOWUPS_CAPTION"])
-    clicked: str | None = None
-    with st.container(horizontal=True):
-        for index, item in enumerate(follow_ups):
-            if st.button(item.question, key=f"conversational_rag_sugg_{turn_id}_{index}"):
-                clicked = item.question
-    return clicked
+    """Render the follow-up suggestions as a continuation bubble under the answer.
+
+    Shows an editable intro line followed by the suggestions as inline text links
+    (tertiary buttons); when a turn produced none, a gentle nudge stands in. The
+    intro/nudge wording is a per-session template with one alternate per line, a
+    random one chosen per turn. Returns the clicked question, or None.
+    """
+    with st.container(key=f"{FOLLOWUP_BUBBLE_KEY_PREFIX}{turn_id}"), st.chat_message("assistant"):
+        if not follow_ups:
+            nudge = resolve_app_message(
+                session_root, NO_FOLLOWUPS_PROMPT_KEY, strings["CONV_NO_FOLLOWUPS_DEFAULT"]
+            )
+            st.markdown(pick_random_line(nudge, turn_id))
+            return None
+        intro = resolve_app_message(
+            session_root, FOLLOWUP_INTRO_PROMPT_KEY, strings["CONV_FOLLOWUP_INTRO_DEFAULT"]
+        )
+        st.markdown(pick_random_line(intro, turn_id))
+        clicked: str | None = None
+        with st.container(horizontal=True, gap="small"):
+            for index, item in enumerate(follow_ups):
+                if st.button(
+                    item.question,
+                    key=f"conversational_rag_sugg_{turn_id}_{index}",
+                    type="tertiary",
+                ):
+                    clicked = item.question
+        return clicked
 
 
 def _render_decomposition(strings: Strings, plan: QueryPlan) -> None:

@@ -37,9 +37,13 @@ const AUTO_ROTATE_SPEED = 0.2; // idle camera auto-revolve speed (OrbitControls 
 const SEG_PER_EDGE = 18; // samples per link (kept so the flow-pulse can run along it)
 const STAR_COUNT = 1600;
 const HOVER_MS = 33;
+const HOVER_EMPHASIS = 1.16; // a hovered body scales up by this factor
 const CLICK_DRAG_PX = 6;
 const KEY_PAN_SPEED = 0.9;
 const PREVIEW_TIMEOUT_MS = 6000;
+// Live scale multiplier driven by the HUD slider (1 = default). Applied to
+// every body mesh; the force layout keeps using base radii so orbits stay fixed.
+let sizeMultiplier = 1;
 
 const STATUS_CSS = {
   success: "#57d38c",
@@ -760,15 +764,22 @@ const SUN_BLOOM_FAR = 1.35;
 const edges = (Array.isArray(MODEL.edges) ? MODEL.edges : []).filter(
   (e) => planetById.has(e.source) && planetById.has(e.target),
 );
+// Indices of edges whose child page failed to crawl — painted a steady red so a
+// failed page reads as a red spoke to its parent from across the system.
+const failEdges = new Set(
+  edges.flatMap((e, i) => (nodeById.get(e.target)?.color_category === "fail" ? [i] : [])),
+);
 const LINE_DIM = new THREE.Color(0x191c22); // near-invisible while a planet is focused
+// Failed-page spoke colour (steady, LDR so it never blooms); matches the legend.
+const FAIL_LINK = new THREE.Color(0xff6b6b);
 // The focused chain renders as a "Petrova line" (Project Hail Mary): a steady
-// crimson thread carrying a hot, white-pink light knot that flows from the sun
+// emerald thread carrying a hot, green-white light knot that flows from the sun
 // outward. The crest is pushed HDR so the scene's bloom turns it into a glowing
 // beam and ACES tone-mapping renders the knot's core white-hot; a hovered chain
-// gets a calmer static crimson so it reads as secondary to the selection.
-const PETROVA_CORE = new THREE.Color(0xff1e3c); // steady crimson beam body
-const PETROVA_HOT = new THREE.Color(0xffdbe4); // hot pink-white crest core (blooms white)
-const PETROVA_HOVER = new THREE.Color(0xff2a44); // static soft crimson for a hovered chain
+// gets a static amber-yellow so it reads as secondary to the selection.
+const PETROVA_CORE = new THREE.Color(0x22c55e); // steady emerald beam body (selected chain)
+const PETROVA_HOT = new THREE.Color(0xd8f5e3); // light-green crest core (blooms white)
+const PETROVA_HOVER = new THREE.Color(0xffd23f); // static amber-yellow for a hovered chain
 const PULSE_SPEED = 2.6; // radians/sec of the light knot flowing along the chain
 const PULSE_WAVES = 1.5; // number of light knots travelling the chain at once
 const PETROVA_TROUGH = 0.9; // steady crimson brightness between knots
@@ -783,6 +794,15 @@ const ELECTRON_HOT = new THREE.Color(0xa6b2c2); // electron core (faint cool hig
 const FLOW_SPEED = 0.1; // base electron round-trips/sec (slow, calm drift)
 const FLOW_WIDTH = 0.12; // Gaussian half-width of the electron along the link
 const FLOW_CREST = 0.32; // mild brightening at the electron core (kept subtle)
+// Failed spokes keep their steady red line (FAIL_LINK) and the hovered chain its
+// amber line (PETROVA_HOVER), but each now carries a travelling lighter electron
+// like the idle flow — so a failed page reads as a live red spoke and a hovered
+// branch shimmers, instead of sitting flat.
+const FAIL_COOL = new THREE.Color(0xff9a9a); // failed-edge electron body (lighter red)
+const FAIL_HOT = new THREE.Color(0xffd0d0); // failed-edge electron core (near-white red)
+const HOVER_COOL = new THREE.Color(0xffe27a); // hovered-edge electron body (lighter amber)
+const HOVER_HOT = new THREE.Color(0xfff3c4); // hovered-edge electron core (near-white amber)
+const HILITE_CREST = 0.7; // brighter crest than idle so the moving light stands out
 const _pulse = new THREE.Color();
 const edgeFlow = []; // per-edge { phase, speed, dir } for the idle electron flow
 let linkMesh = null;
@@ -883,10 +903,10 @@ function orderedChain(nodeId) {
   return chain;
 }
 
-// Paint every link each frame: the focused chain flows the red "Petrova line"
-// pulse, a hovered chain stays static crimson, other edges dim while a planet is
-// focused, and — in the default view — each link carries a lone electron
-// drifting back and forth along a faint track.
+// Paint every link each frame: the focused chain flows a green "Petrova line"
+// pulse; a hovered chain (amber) and each failed spoke (red) carry a travelling
+// electron; other edges dim while a planet is focused; and in the default view
+// every link carries a lone cool electron drifting along a faint grey track.
 function paintLinks(elapsed) {
   if (!linkMesh) return;
   const perEdge = SEG_PER_EDGE * 2;
@@ -901,18 +921,18 @@ function paintLinks(elapsed) {
       continue;
     }
     if (hoverChain && hoverChain.has(i)) {
-      for (let v = 0; v < perEdge; v++) PETROVA_HOVER.toArray(linkColors, base + v * 3);
+      paintElectronEdge(base, edgeFlow[i], elapsed, PETROVA_HOVER, HOVER_COOL, HOVER_HOT, HILITE_CREST);
+      continue;
+    }
+    if (failEdges.has(i)) {
+      paintElectronEdge(base, edgeFlow[i], elapsed, FAIL_LINK, FAIL_COOL, FAIL_HOT, HILITE_CREST);
       continue;
     }
     if (focusChain) {
       for (let v = 0; v < perEdge; v++) LINE_DIM.toArray(linkColors, base + v * 3);
       continue;
     }
-    const flow = edgeFlow[i];
-    for (let seg = 0; seg < SEG_PER_EDGE; seg++) {
-      writeElectron(base + seg * 6, seg / SEG_PER_EDGE, elapsed, flow);
-      writeElectron(base + seg * 6 + 3, (seg + 1) / SEG_PER_EDGE, elapsed, flow);
-    }
+    paintElectronEdge(base, edgeFlow[i], elapsed, FLOW_BASE, ELECTRON_COOL, ELECTRON_HOT, FLOW_CREST);
   }
   linkMesh.geometry.attributes.color.needsUpdate = true;
 }
@@ -938,16 +958,25 @@ function flowSpark(s, elapsed, flow) {
   return Math.exp(-(d * d) / (2 * FLOW_WIDTH * FLOW_WIDTH));
 }
 
-// Colour one link vertex for the idle flow: the steady grey line plus a gentle
-// cool electron riding flowSpark.
-function writeElectron(offset, s, elapsed, flow) {
+// Colour one link vertex for a travelling electron: a steady base line plus a
+// brighter knot riding flowSpark. The palette + crest pick the flavour: idle
+// grey, failed red, or hovered amber.
+function writeFlow(offset, s, elapsed, flow, baseCol, cool, hot, crest) {
   const spark = flowSpark(s, elapsed, flow);
   _pulse
-    .copy(FLOW_BASE)
-    .lerp(ELECTRON_COOL, spark)
-    .lerp(ELECTRON_HOT, spark * spark)
-    .multiplyScalar(1 + FLOW_CREST * spark * spark);
+    .copy(baseCol)
+    .lerp(cool, spark)
+    .lerp(hot, spark * spark)
+    .multiplyScalar(1 + crest * spark * spark);
   _pulse.toArray(linkColors, offset);
+}
+
+// Paint one whole edge with a travelling electron in the given palette.
+function paintElectronEdge(off, flow, elapsed, baseCol, cool, hot, crest) {
+  for (let seg = 0; seg < SEG_PER_EDGE; seg++) {
+    writeFlow(off + seg * 6, seg / SEG_PER_EDGE, elapsed, flow, baseCol, cool, hot, crest);
+    writeFlow(off + seg * 6 + 3, (seg + 1) / SEG_PER_EDGE, elapsed, flow, baseCol, cool, hot, crest);
+  }
 }
 
 // ── Camera framing + reset ───────────────────────────────────────────────────
@@ -1031,10 +1060,10 @@ function onPointerMove(ev) {
   setPointer(ev);
   const mesh = pick();
   if (mesh !== hovered) {
-    if (hovered) hovered.scale.setScalar(1);
+    if (hovered) hovered.scale.setScalar(sizeMultiplier);
     hovered = mesh;
     if (hovered) {
-      hovered.scale.setScalar(1.16);
+      hovered.scale.setScalar(HOVER_EMPHASIS * sizeMultiplier);
       hoverChain = new Set(orderedChain(hovered.userData.node.id));
       showTooltip(hovered.userData.node);
     } else {
@@ -1224,6 +1253,30 @@ window.addEventListener("resize", onResize);
 renderer.domElement.addEventListener("pointermove", onPointerMove);
 renderer.domElement.addEventListener("pointerdown", onPointerDown);
 renderer.domElement.addEventListener("pointerup", onPointerUp);
+
+// ── Scale slider ─────────────────────────────────────────────────────────────
+// Scale every body's mesh (planets, asteroids, sun) live without touching the
+// force layout, so orbit spacing stays fixed while volumes grow or shrink.
+// Coronas, halos and rings are child objects, so they inherit the mesh scale.
+function applyBodyScale() {
+  for (const p of planets) {
+    const emphasis = p.mesh === hovered ? HOVER_EMPHASIS : 1;
+    p.mesh.scale.setScalar(sizeMultiplier * emphasis);
+  }
+}
+const sizeSlider = document.getElementById("sg-size");
+const sizeValEl = document.getElementById("sg-size-val");
+const sizeLabelEl = document.getElementById("sg-size-label");
+if (sizeLabelEl) sizeLabelEl.textContent = t("size_label", "Scale");
+if (sizeSlider) {
+  const syncSize = () => {
+    sizeMultiplier = Number(sizeSlider.value) || 1;
+    if (sizeValEl) sizeValEl.textContent = `${sizeMultiplier.toFixed(1)}\u00d7`;
+    applyBodyScale();
+  };
+  sizeSlider.addEventListener("input", syncSize);
+  syncSize();
+}
 
 // ── Animation loop ───────────────────────────────────────────────────────────
 const clock = new THREE.Clock();

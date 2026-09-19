@@ -296,7 +296,6 @@ def test_real_app_switching_session_clears_stale_view_state(
 
         assert app.selectbox[0].value == "other"
 
-        app.session_state["events"] = [{"event": "completed", "processed_pages": 3}]
         app.session_state["latest_event"] = {"event": "completed", "processed_pages": 3}
         app.session_state["active_output_dir"] = (
             "outputs/streamlit_sessions/session_other/crawl_abc"
@@ -313,7 +312,6 @@ def test_real_app_switching_session_clears_stale_view_state(
         app.run(timeout=10)
 
         assert app.selectbox[0].value == "active"
-        assert app.session_state["events"] == []
         assert app.session_state["latest_event"] == {}
         assert app.session_state["active_output_dir"] == ""
         assert app.session_state["activity_log_latest_line"] is None

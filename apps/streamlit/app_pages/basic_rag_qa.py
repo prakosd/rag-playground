@@ -23,8 +23,6 @@ from rag_engine import (
     RagConfig,
     build_rag_prompt,
     messages,
-    resolve_chat_model,
-    retrieve,
     stream_prompt,
 )
 from rag_engine.models import TokenUsage
@@ -74,6 +72,7 @@ from app_support.rag_shared.rag_ui import (
     select_index,
     stacked_label_value_html,
 )
+from app_support.rag_shared.resource_cache import cached_chat_resolver, cached_retriever
 from app_support.rag_shared.result_snapshot import StoredResult, stored_results
 from app_support.rag_shared.token_usage_ui import (
     TokenPanelData,
@@ -528,7 +527,7 @@ def _render_search_results(
     if do_generate and index is not None:
         with st.spinner(strings["BASIC_QA_SEARCHING"]):
             start = time.perf_counter()
-            result = retrieve(index.run_dir, question, RagConfig(top_k=top_results))
+            result = cached_retriever(index.run_dir, question, RagConfig(top_k=top_results))
             st.session_state[_QA_SEARCH_SECONDS_KEY] = time.perf_counter() - start
         render_messages(strings, result.warnings, result.errors)
         st.session_state[_QA_RESULTS_KEY] = list(result.chunks)
@@ -571,7 +570,7 @@ def _send_prompt(
     prompt_text: str,
 ) -> bool:
     """Stream the model's answer to *prompt_text* and record it; return success."""
-    resolved, warnings = resolve_chat_model(model)
+    resolved, warnings = cached_chat_resolver(model)
     render_messages(strings, warnings, [])
     with st.container(border=True):
         st.markdown(f"**{strings['BASIC_QA_ANSWER_HEADER']}**")

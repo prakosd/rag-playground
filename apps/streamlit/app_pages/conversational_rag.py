@@ -2,9 +2,10 @@
 
 The page is thin — it collects controls, calls ``rag_engine.conversational_answer``
 (planning → multi-query retrieval → re-ranking → answer → validated follow-ups →
-state), then renders each turn with a metadata strip, an optional per-turn
-inspection expander, and clickable follow-up buttons. All persistence and turn
-rendering reuse the pure ``conversational_rag`` helpers and shared rag_shared UI.
+state), then renders each turn as the user's question plus a compact answer bubble, an
+optional per-turn inspection expander, and inline link-styled follow-up suggestions. All
+persistence and turn rendering reuse the pure ``conversational_rag`` helpers and shared
+rag_shared UI.
 """
 
 from __future__ import annotations
@@ -32,11 +33,15 @@ from app_support.conversational_rag.conversation_manager import (
     new_transaction_id,
     trim_old_turn_payloads,
 )
-from app_support.conversational_rag.conversational_prompts import resolve_welcome_message
+from app_support.conversational_rag.conversational_prompts import (
+    pick_random_line,
+    resolve_welcome_message,
+)
 from app_support.conversational_rag.conversational_rag_form_ui import (
+    FOLLOWUP_BUBBLE_KEY_PREFIX,
     build_conversational_config,
     render_advanced_controls,
-    render_followup_buttons,
+    render_followup_bubble,
     render_turn_inspection,
 )
 from app_support.conversational_rag.conversational_rag_history import (
@@ -52,6 +57,11 @@ from app_support.conversational_rag.followup_cache import get_cached_chunks, rep
 from app_support.focus import entered_page, focus_chat_input, scroll_to_bottom
 from app_support.i18n import answer_language_name, get_strings, localize_message
 from app_support.rag_shared.rag_ui import RagPageContext, render_messages
+from app_support.rag_shared.resource_cache import (
+    cached_aux_resolver,
+    cached_chat_resolver,
+    cached_retriever,
+)
 from app_support.rag_shared.result_snapshot import stored_results
 from app_support.settings import get_settings
 
@@ -61,6 +71,7 @@ _CACHE_KEY = "conversational_rag_followup_cache"
 _PENDING_KEY = "conversational_rag_pending"
 _CONV_ID_KEY = "conversational_rag_current_id"
 _USER_TURN_KEY_PREFIX = "conv-user-"
+_ASSISTANT_TURN_KEY_PREFIX = "conv-assistant-"
 _CHAT_INPUT_KEY = "conversational_rag_input"
 _CHAT_PANEL_KEY = "conversational_rag_panel"
 _SCROLL_BOTTOM_KEY = "conversational_rag_scroll_bottom"
@@ -77,6 +88,31 @@ _CHAT_ALIGN_CSS = (
     "{text-align:right}"
     "</style>"
 )
+# Give the model answer the same rounded bubble as the user's, but left-aligned.
+# Scoped to the answer via the conv-assistant- container, so the streaming status
+# and the inspection panel (both rendered outside it) stay full-width.
+_ASSISTANT_BUBBLE_CSS = (
+    "<style>"
+    f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
+    "{width:fit-content;max-width:80%}"
+    "</style>"
+)
+# The follow-up suggestions render as a continuation bubble right under the answer.
+# The avatar is kept but hidden (visibility, not display) so the suggestions line
+# up with the answer text; they lay out inline like a sentence (a wrapping row of
+# tertiary buttons) and are styled as blue underlined links.
+_FOLLOWUP_BUBBLE_CSS = (
+    "<style>"
+    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] [data-testid^='stChatMessageAvatar']"
+    "{visibility:hidden}"
+    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
+    "{padding-top:0}"
+    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stHorizontalBlock']"
+    "{flex-wrap:wrap;gap:0.1rem 0.75rem}"
+    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stButton'] button"
+    "{padding:0;min-height:0;border:0;text-decoration:underline;color:#4a9eff}"
+    "</style>"
+)
 
 
 def render_page(context: RagPageContext) -> None:
@@ -86,6 +122,8 @@ def render_page(context: RagPageContext) -> None:
     st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
     st.caption(strings["CHAT_SECTION_CAPTION"])
     st.html(_CHAT_ALIGN_CSS)
+    st.html(_ASSISTANT_BUBBLE_CSS)
+    st.html(_FOLLOWUP_BUBBLE_CSS)
 
     controls = render_advanced_controls(
         strings, "conversational_rag", list(context.list_indexes()), context.session_root()
@@ -135,17 +173,20 @@ def render_page(context: RagPageContext) -> None:
                 _history_from_turns(turns),
                 get_cached_chunks(cache, question),
             )
+        elif turns and controls.followups:
+            # Suggested follow-ups read as a continuation of the latest answer, so
+            # they live inside the scroll panel right beneath it.
+            latest = turns[-1]
+            clicked = render_followup_bubble(
+                strings, context.session_root(), latest["answer"].follow_ups, latest["turn_id"]
+            )
+            if clicked:
+                st.session_state[_PENDING_KEY] = clicked
+                st.session_state[_SCROLL_BOTTOM_KEY] = True
+                st.rerun()
 
     if on_entry or st.session_state.pop(_SCROLL_BOTTOM_KEY, False):
         scroll_to_bottom(_CHAT_PANEL_KEY)
-
-    if turns:
-        latest = turns[-1]
-        clicked = render_followup_buttons(strings, latest["answer"].follow_ups, latest["turn_id"])
-        if clicked:
-            st.session_state[_PENDING_KEY] = clicked
-            st.session_state[_SCROLL_BOTTOM_KEY] = True
-            st.rerun()
 
     # Dock the input just under the panel + follow-ups. Wrapping it in a container
     # makes Streamlit render it inline (not viewport-pinned); a typed message queues
@@ -186,20 +227,25 @@ def render_page(context: RagPageContext) -> None:
 
 def _render_welcome_bubble(strings, session_root) -> None:
     """Show the editable assistant greeting at the start of a fresh conversation."""
+    greeting = pick_random_line(
+        resolve_welcome_message(session_root, strings["CHAT_WELCOME_DEFAULT"]),
+        st.session_state.get(_CONV_ID_KEY, ""),
+    )
     with st.chat_message("assistant"):
-        st.write(resolve_welcome_message(session_root, strings["CHAT_WELCOME_DEFAULT"]))
+        st.write(greeting)
 
 
 def _render_stored_turn(strings, turn: dict, *, inspect: bool, default_tab: str) -> None:
     """Render one persisted turn: the user bubble and the assistant's answer."""
     _render_user_message(turn["question"], turn["turn_id"])
-    with st.chat_message("assistant"):
-        answer: ConversationalAnswer = turn["answer"]
+    answer: ConversationalAnswer = turn["answer"]
+    key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn['turn_id']}"
+    with st.container(key=key), st.chat_message("assistant"):
         render_messages(strings, answer.warnings, answer.errors)
         if answer.answer:
             st.write(answer.answer)
-        if inspect:
-            render_turn_inspection(strings, answer, default_tab=default_tab)
+    if inspect:
+        render_turn_inspection(strings, answer, default_tab=default_tab)
 
 
 def _stream_pending_turn(strings, question, turn_id, run_dir, state, config, history, cached):
@@ -210,29 +256,33 @@ def _stream_pending_turn(strings, question, turn_id, run_dir, state, config, his
     when the turn completes.
     """
     _render_user_message(question, turn_id)
-    with st.chat_message("assistant"):
+    key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn_id}"
+    with st.container(key=key), st.chat_message("assistant"):
         answer_area = st.container()
-        status = st.status(strings["RAG_GENERATING"])
+    status = st.status(strings["RAG_GENERATING"])
 
-        def _report_progress(message: LibraryMessage) -> None:
-            status.update(label=localize_message(strings, message.as_dict()))
+    def _report_progress(message: LibraryMessage) -> None:
+        status.update(label=localize_message(strings, message.as_dict()))
 
-        start = perf_counter()
-        generation = conversational_answer_stream(
-            run_dir,
-            question,
-            state,
-            config,
-            history=history,
-            cached_chunks=cached,
-            progress_callback=_report_progress,
-        )
-        with answer_area:
-            st.write_stream(generation)
-            elapsed = perf_counter() - start
-            answer = generation.answer or ConversationalAnswer(answer="", state=state)
-            render_messages(strings, answer.warnings, answer.errors)
-        status.update(state="complete")
+    start = perf_counter()
+    generation = conversational_answer_stream(
+        run_dir,
+        question,
+        state,
+        config,
+        history=history,
+        cached_chunks=cached,
+        progress_callback=_report_progress,
+        retriever=cached_retriever,
+        chat_resolver=cached_chat_resolver,
+        aux_resolver=cached_aux_resolver,
+    )
+    with answer_area:
+        st.write_stream(generation)
+        elapsed = perf_counter() - start
+        answer = generation.answer or ConversationalAnswer(answer="", state=state)
+        render_messages(strings, answer.warnings, answer.errors)
+    status.update(state="complete")
     return answer, elapsed
 
 

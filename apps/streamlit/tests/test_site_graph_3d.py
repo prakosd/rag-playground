@@ -577,10 +577,12 @@ def test_build_viewer_html_has_no_black_hole_machinery() -> None:
     assert "ShaderPass" not in html  # lens pass import removed
 
 
-# Risk: a future change could re-introduce a coloured/glowing "failure" cue (a red
-# spoke or emissive) and re-tint the whole scene; failed pages must stay plain — lit
-# only by the suns and set apart solely by their asteroid shape. Type: unit.
-def test_build_viewer_html_failed_pages_are_plain_asteroids() -> None:
+# Risk: failed pages must be easy to spot when zoomed out. Each failed page (an
+# asteroid) keeps a red spoke to its parent that now carries a travelling red
+# electron (a moving light), so it reads as a live spoke; it stays colour-distinct
+# from the green focus pulse and amber hover flow, and retried nodes still don't
+# self-illuminate. Type: unit.
+def test_build_viewer_html_failed_pages_get_red_parent_link() -> None:
     html = build_viewer_html(
         _jsonl(
             {
@@ -595,10 +597,58 @@ def test_build_viewer_html_failed_pages_are_plain_asteroids() -> None:
         {},
     )
     assert 'color_category === "fail"' in html  # failed pages still route to makeAsteroid
-    assert "failEdges" not in html  # no special fail-edge set
-    assert "FAIL_FLOW_BASE" not in html  # no red spoke colour
-    assert "writeFailFlow" not in html  # no pulsing fail spoke
-    assert "RETRY_EMISSIVE" not in html  # retried nodes no longer self-illuminate
+    assert "failEdges" in html  # failed pages get a tracked parent edge
+    assert "FAIL_LINK" in html  # red spoke base colour
+    assert "FAIL_HOT" in html  # spoke now carries a travelling lighter-red electron
+    assert "paintElectronEdge" in html  # the red spoke animates like the idle flow
+    assert "writeFailFlow" not in html  # the old crimson pulsing flow stays gone
+    assert "RETRY_EMISSIVE" not in html  # retried nodes still don't self-illuminate
+
+
+# Risk: the interaction cues must read clearly — a hovered chain in amber-yellow
+# (with a travelling amber electron) and a selected chain in green, replacing the
+# previous crimson. Verify the new colours + hover motion are wired and the old
+# crimson ones are gone. Type: unit.
+def test_build_viewer_html_hover_is_yellow_and_select_is_green() -> None:
+    html = build_viewer_html(
+        _jsonl(
+            {
+                "url": "https://x.com",
+                "discovered_from": None,
+                "page_size_kb": 5.0,
+                "status": "success",
+                "depth": 0,
+                "round_num": 1,
+            }
+        ),
+        {},
+    )
+    assert "0xffd23f" in html  # hovered chain is amber-yellow
+    assert "0xffe27a" in html  # hovered chain carries a travelling amber electron
+    assert "0x22c55e" in html  # selected chain is green
+    assert "0xff2a44" not in html  # old crimson hover colour gone
+    assert "0xff1e3c" not in html  # old crimson select colour gone
+
+
+# Risk: the HUD size slider lets the viewer scale every body live; if the control
+# or its scale hook were dropped, resizing would silently stop working. Type: unit.
+def test_build_viewer_html_has_scale_slider() -> None:
+    html = build_viewer_html(
+        _jsonl(
+            {
+                "url": "https://x.com",
+                "discovered_from": None,
+                "page_size_kb": 5.0,
+                "status": "success",
+                "depth": 0,
+                "round_num": 1,
+            }
+        ),
+        {},
+    )
+    assert 'id="sg-size"' in html  # range control present in the shell
+    assert "sizeMultiplier" in html  # live scale hook wired
+    assert "applyBodyScale" in html  # bodies rescale on input
 
 
 # Risk: a crawled URL could contain "</script>"; injected verbatim it would break

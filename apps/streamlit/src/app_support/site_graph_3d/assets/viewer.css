@@ -163,6 +163,37 @@ body {
   box-shadow: 0 0 8px currentColor;
 }
 
+/* Scale slider, bottom-center */
+#sg-scale {
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+#sg-scale label {
+  font-weight: 600;
+  color: var(--sg-text);
+  white-space: nowrap;
+}
+
+#sg-scale input[type="range"] {
+  width: 160px;
+  accent-color: var(--sg-accent);
+  cursor: pointer;
+}
+
+#sg-scale #sg-size-val {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--sg-text);
+}
+
 /* Hover tooltip (follows cursor) */
 #sg-tooltip {
   position: fixed;

@@ -826,7 +826,6 @@ def _init_state() -> None:
     st.session_state.setdefault("job", None)
     st.session_state.setdefault("job_state", _STATE_IDLE)
     st.session_state.setdefault("crawl_id", "")
-    st.session_state.setdefault("events", [])
     st.session_state.setdefault("latest_event", {})
     st.session_state.setdefault("progress_chart_history", [])
     st.session_state.setdefault("active_output_dir", "")
@@ -1072,7 +1071,6 @@ def _select_session_id(session_id: str, *, restore_language: bool = True) -> Non
         return
     if st.session_state.session_id != session_id:
         st.session_state.preview_file_relative_path = ""
-        st.session_state.events = []
         st.session_state.latest_event = {}
         st.session_state.progress_chart_history = []
         st.session_state.active_output_dir = ""
@@ -1278,7 +1276,6 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
     state_changed = False
     for event in drain_events(job):
         event_name = str(event.get("event", ""))
-        st.session_state.events.append(event)
         st.session_state.latest_event.update(event)
         chart_history = st.session_state.get("progress_chart_history")
         if not isinstance(chart_history, list):
@@ -1404,7 +1401,6 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.job_state = _STATE_RUNNING
     st.session_state.started_at = datetime.now(timezone.utc)
     st.session_state.last_elapsed = ""
-    st.session_state.events = []
     st.session_state.latest_event = {"limit": crawler_config.limit}
     st.session_state.progress_chart_history = []
     st.session_state.prev_successful_pages = 0

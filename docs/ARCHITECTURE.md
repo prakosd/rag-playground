@@ -136,9 +136,17 @@ flowchart TD
   session load), a Token usage panel (a shared renderer also
   used by Step 4), and the standard Output Files section. Every stage's built-in prompt is
   overridable through `ConversationalConfig.prompts` (a `ConversationalPrompts` model), and
-  the Step 5 page exposes an editable prompt-template editor (plus an editable **Welcome message** greeting shown as the assistant's opening bubble on a fresh conversation); a malformed override falls
-  back to the built-in. Every stage degrades safely (offline model, missing re-rank
-  dependency, unparsable output) with a recorded warning, never an error.
+  the Step 5 page exposes an editable prompt-template editor whose stage tabs hide when their
+  feature is off (Query decomposition / Follow-ups / the LLM re-ranker), plus app-only message
+  tabs — an editable **Welcome message** greeting, a **Follow-up intro** line, and a
+  **No-suggestions** nudge, each holding one alternate per line and shown at random per turn;
+  validated follow-ups render inside the chat panel as an integrated continuation bubble with
+  inline, link-styled (blue, underlined) suggestions; a malformed override falls back to the built-in. Heavy chat/auxiliary
+  models and the vector searcher are cached app-side (`rag_shared/resource_cache.py`,
+  `@st.cache_resource`) and injected through `rag_engine`'s resolver/retriever hooks, so a chat
+  session reuses one client per model/index while the library stays fresh-per-call. Every stage
+  degrades safely (offline model, missing re-rank dependency, unparsable output) with a recorded
+  warning, never an error.
 
 Both Step 4 and Step 5 inject the active UI language (default English) into the answer
 prompt, so generated replies match the selected UI language.
