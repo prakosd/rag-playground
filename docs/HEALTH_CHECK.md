@@ -9,25 +9,62 @@ is down.
 
 ## The health endpoint
 
-Streamlit serves a health route at the app root. For the hosted demo:
+Streamlit serves a health route at the app root:
 
-| Endpoint | URL | Returns | Meaning |
+| Endpoint | Path | Returns | Meaning |
 |---|---|---|---|
-| Server health | `https://rag-playground-prakosd.streamlit.app/_stcore/health` | `200` body `ok` | The Streamlit **server** is up and accepting connections. |
-| Script health | `https://rag-playground-prakosd.streamlit.app/_stcore/script-health-check` | `200` `ok` / `503` `error` | Stricter — also verifies the app **script runs** without raising. |
+| Server health | `/_stcore/health` | `200` body `ok` | The Streamlit **server** is up and accepting connections. |
+| Script health | `/_stcore/script-health-check` | `200` `ok` / `503` `error` | Stricter — also verifies the app **script runs** without raising. |
 
-Running locally (or in the dev container) the same paths are available on
-`http://localhost:8501/_stcore/health`.
+**Locally** (or in the dev container) these return the plain text directly:
 
-Use `/_stcore/health` for a simple "is it reachable" check. Use
-`/_stcore/script-health-check` if you also want to catch a booting app that
-serves pages but errors while rendering.
+```bash
+curl -i http://localhost:8501/_stcore/health   # → HTTP/1.1 200 OK … ok
+```
 
-> **Community Cloud note:** the cloud host puts inactive apps to sleep. An hourly
-> probe will generally keep the app **awake**. While an app is asleep or waking,
-> the probe may be answered by the platform's wake-up page rather than the real
-> runtime — factor that into how many consecutive failures should trigger an
-> alert (see the retry setting below).
+Use `/_stcore/health` for a simple "is it reachable" check and
+`/_stcore/script-health-check` to also catch a booting app that serves pages but
+errors while rendering.
+
+### On Streamlit Community Cloud (important)
+
+The hosted app sits behind Community Cloud's **session/auth proxy**, which fronts
+*every* path — including `/_stcore/*`. A request without a session cookie is
+redirected (HTTP `303`) to bootstrap one, **even when the app is public**:
+
+```
+GET /_stcore/health
+ → 303  https://share.streamlit.io/-/auth/app?redirect_uri=…/_stcore/health
+ → 303  https://rag-playground-prakosd.streamlit.app/-/login?payload=…   (sets session cookie)
+ → 303  https://rag-playground-prakosd.streamlit.app/_stcore/health
+ → 200  <!doctype html> …   (the app shell, not `ok`)
+```
+
+So on Community Cloud:
+
+- A plain `curl` (no redirects) stops at the first **`303`** — this is *not* an
+  error; it is the proxy asking for a session. `303` ≠ unhealthy, but it also does
+  not confirm the app is up.
+- Making the app **public** only removes the *human* GitHub/Google sign-in; it does
+  **not** expose `/_stcore/health` as a bare `200 ok`. The clean `ok` body is only
+  reachable inside the sandbox (`localhost:8501`), never at the public URL. This is
+  a platform limitation with no per-path setting to change it.
+- To probe it, **follow redirects and keep cookies**, then check for HTTP `200`
+  (the body will be the app's HTML, not `ok`):
+
+  ```bash
+  curl -sSL -c cookies.txt -b cookies.txt \
+    -o /dev/null -w '%{http_code}\n' \
+    https://rag-playground-prakosd.streamlit.app/_stcore/health   # → 200
+  ```
+
+A reached `200` confirms the platform is serving your (awake) app. For a stricter
+"the script renders" guarantee, use a headless-browser canary (Option B) that loads
+the page and asserts expected content.
+
+> **Hibernation:** Community Cloud sleeps apps after 12 h without traffic; an hourly
+> probe keeps yours **awake**. While asleep or waking, the probe may hit the wake-up
+> page — allow a few consecutive failures before alerting (see the retry setting below).
 
 ## Option A — EventBridge Scheduler → Lambda → SNS email (recommended)
 
@@ -64,6 +101,7 @@ HTTPS `GET`; on failure it publishes to an SNS topic that emails you.
 4. Paste this handler (standard library only — no dependencies to package):
 
    ```python
+   import http.cookiejar
    import os
    import urllib.request
 
@@ -72,16 +110,22 @@ HTTPS `GET`; on failure it publishes to an SNS topic that emails you.
    HEALTH_URL = os.environ["HEALTH_URL"]
    SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
    TIMEOUT_SECONDS = 10
-   EXPECTED_BODY = "ok"
+
+   # Community Cloud fronts the app with a session proxy that answers a cookieless
+   # request with a 303 redirect chain (see above). Persisting cookies across the
+   # redirects lets the probe complete to a 200; the body is then the app HTML, so
+   # we check the status, not the body. Locally the same call returns 200 `ok`.
+   _opener = urllib.request.build_opener(
+       urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+   )
 
 
    def handler(event, context):
        try:
-           with urllib.request.urlopen(HEALTH_URL, timeout=TIMEOUT_SECONDS) as resp:
-               body = resp.read(64).decode("utf-8", "replace").strip().lower()
-               healthy = resp.status == 200 and body == EXPECTED_BODY
-               detail = f"HTTP {resp.status}, body={body!r}"
-       except Exception as exc:  # network error, timeout, non-2xx, DNS, etc.
+           with _opener.open(HEALTH_URL, timeout=TIMEOUT_SECONDS) as resp:
+               healthy = resp.status == 200
+               detail = f"HTTP {resp.status} at {resp.geturl()}"
+       except Exception as exc:  # network error, timeout, redirect loop, DNS, etc.
            healthy = False
            detail = f"{type(exc).__name__}: {exc}"
 
@@ -137,10 +181,22 @@ without writing the probe yourself.
 
 ## Verifying the endpoint by hand
 
+**Locally** the endpoint returns the plain body directly:
+
 ```bash
-curl -i https://rag-playground-prakosd.streamlit.app/_stcore/health
-# → HTTP/2 200 ... \n ok
+curl -i http://localhost:8501/_stcore/health
+# → HTTP/1.1 200 OK … ok
 ```
 
-A `200` with body `ok` means healthy; a timeout, connection error, or non-`200`
-means the alert should fire.
+**On Community Cloud**, follow redirects and keep cookies (a bare `curl` stops at
+the first `303` — see the note above), then check the status:
+
+```bash
+curl -sSL -c cookies.txt -b cookies.txt \
+  -o /dev/null -w '%{http_code}\n' \
+  https://rag-playground-prakosd.streamlit.app/_stcore/health
+# → 200   (the response body is the app HTML, not `ok`)
+```
+
+A reached `200` means the platform is serving the app; a timeout, connection
+error, or non-`200` means the alert should fire.

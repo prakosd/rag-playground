@@ -205,39 +205,52 @@ def render_advanced_controls(
         default_reranker = (
             settings.conv_rag_reranker if settings.conv_rag_reranker in _RERANKER_KEYS else "local"
         )
-        reranker = (
-            st.segmented_control(
-                strings["CONV_RERANKER_LABEL"],
-                options=list(_RERANKER_KEYS),
-                format_func=lambda key: reranker_labels[key],
-                default=default_reranker,
-                help=strings["CONV_RERANKER_HELP"],
-                disabled=disabled,
-                key=f"{key_prefix}_reranker",
-            )
-            or "off"
-        )
         aux_options, aux_default = aux_model_choices()
-        aux_model_id = st.selectbox(
-            strings["CONV_AUX_MODEL_LABEL"],
-            options=aux_options,
-            index=aux_default,
-            format_func=lambda model_id: chat_model_label(model_id, strings),
-            help=strings["CONV_AUX_MODEL_HELP"],
-            disabled=disabled,
-            key=f"{key_prefix}_aux_model",
+        # One row: reranking (compact) · auxiliary model (wide enough for the full
+        # label) · thresholds slider (the remaining space).
+        rerank_col, aux_col, threshold_col = st.columns(
+            [2.4, 4.3, 3.3], vertical_alignment="bottom"
         )
-        drop, keep = st.slider(
-            strings["CONV_THRESHOLD_LABEL"],
-            min_value=0.0,
-            max_value=1.0,
-            value=(settings.conv_rag_followup_drop_score, settings.conv_rag_followup_min_score),
-            step=0.05,
-            help=strings["CONV_THRESHOLD_HELP"],
-            disabled=disabled,
-            key=f"{key_prefix}_thresholds",
-        )
-        st.caption(strings["CONV_THRESHOLD_CAPTION"].format(drop=f"{drop:.2f}", keep=f"{keep:.2f}"))
+        with rerank_col:
+            reranker = (
+                st.segmented_control(
+                    strings["CONV_RERANKER_LABEL"],
+                    options=list(_RERANKER_KEYS),
+                    format_func=lambda key: reranker_labels[key],
+                    default=default_reranker,
+                    help=strings["CONV_RERANKER_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_reranker",
+                )
+                or "off"
+            )
+        with aux_col:
+            aux_model_id = st.selectbox(
+                strings["CONV_AUX_MODEL_LABEL"],
+                options=aux_options,
+                index=aux_default,
+                format_func=lambda model_id: chat_model_label(model_id, strings),
+                help=strings["CONV_AUX_MODEL_HELP"],
+                disabled=disabled,
+                key=f"{key_prefix}_aux_model",
+            )
+        with threshold_col:
+            drop, keep = st.slider(
+                strings["CONV_THRESHOLD_LABEL"],
+                min_value=0.0,
+                max_value=1.0,
+                value=(
+                    settings.conv_rag_followup_drop_score,
+                    settings.conv_rag_followup_min_score,
+                ),
+                step=0.05,
+                help=strings["CONV_THRESHOLD_HELP"],
+                disabled=disabled,
+                key=f"{key_prefix}_thresholds",
+            )
+            st.caption(
+                strings["CONV_THRESHOLD_CAPTION"].format(drop=f"{drop:.2f}", keep=f"{keep:.2f}")
+            )
         with st.container(horizontal=True):
             decomposition = st.toggle(
                 strings["CONV_DECOMPOSITION_LABEL"],
@@ -330,25 +343,29 @@ def _render_prompt_editor(
     reranker: str,
 ) -> None:
     """Render the prompt-template editor, hiding tabs whose feature is turned off."""
-    st.caption(strings["CONV_PROMPTS_LABEL"])
-    st.caption(strings["CONV_PROMPTS_CAPTION"])
-    model_keys = [
-        key
-        for key in CONVERSATIONAL_PROMPT_KEYS
-        if _prompt_tab_visible(
-            key, decomposition=decomposition, followups=followups, reranker=reranker
-        )
-    ]
-    message_tabs = [_WELCOME_TAB, *(_FOLLOWUP_MESSAGE_TABS if followups else ())]
-    labels = [strings[_PROMPT_TAB_KEYS[key]] for key in model_keys]
-    labels += [strings[label_key] for _, label_key, _, _ in message_tabs]
-    tabs = st.tabs(labels)
-    for tab, prompt_key in zip(tabs[: len(model_keys)], model_keys, strict=True):
-        with tab:
-            _render_single_prompt(strings, key_prefix, session_root, prompt_key, disabled=disabled)
-    for tab, spec in zip(tabs[len(model_keys) :], message_tabs, strict=True):
-        with tab:
-            _render_app_message_prompt(strings, key_prefix, session_root, spec, disabled=disabled)
+    with st.expander(strings["CONV_PROMPTS_LABEL"], expanded=False):
+        st.caption(strings["CONV_PROMPTS_CAPTION"])
+        model_keys = [
+            key
+            for key in CONVERSATIONAL_PROMPT_KEYS
+            if _prompt_tab_visible(
+                key, decomposition=decomposition, followups=followups, reranker=reranker
+            )
+        ]
+        message_tabs = [_WELCOME_TAB, *(_FOLLOWUP_MESSAGE_TABS if followups else ())]
+        labels = [strings[_PROMPT_TAB_KEYS[key]] for key in model_keys]
+        labels += [strings[label_key] for _, label_key, _, _ in message_tabs]
+        tabs = st.tabs(labels)
+        for tab, prompt_key in zip(tabs[: len(model_keys)], model_keys, strict=True):
+            with tab:
+                _render_single_prompt(
+                    strings, key_prefix, session_root, prompt_key, disabled=disabled
+                )
+        for tab, spec in zip(tabs[len(model_keys) :], message_tabs, strict=True):
+            with tab:
+                _render_app_message_prompt(
+                    strings, key_prefix, session_root, spec, disabled=disabled
+                )
 
 
 def _render_prompt_actions(
@@ -408,6 +425,7 @@ def _render_single_prompt(
     st.session_state[widget_key] = editor_prompt_text(
         st.session_state.get(widget_key), prompt_key, session_root
     )
+    st.caption(strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields))
     st.text_area(
         strings[_PROMPT_TAB_KEYS[prompt_key]],
         height=_PROMPT_EDITOR_HEIGHT,
@@ -415,7 +433,6 @@ def _render_single_prompt(
         disabled=disabled,
         key=widget_key,
     )
-    st.caption(strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields))
     _render_prompt_actions(
         strings, session_root, prompt_key, widget_key, disabled=disabled, fields=fields
     )

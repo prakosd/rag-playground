@@ -77,9 +77,10 @@ _CHAT_INPUT_KEY = "conversational_rag_input"
 _CHAT_PANEL_KEY = "conversational_rag_panel"
 _SCROLL_REQUESTED_KEY = "conversational_rag_scroll_bottom"
 _FOCUS_INPUT_KEY = "conversational_rag_focus_input"
+_INPUT_DOCK_KEY = "conversational_rag_input_dock"
 # Fixed-height scrollable chat panel so the conversation reads like a messenger
 # thread; follow-ups, token usage, and Output Files sit below it.
-_CHAT_PANEL_HEIGHT_PX = 460
+_CHAT_PANEL_HEIGHT_PX = 520
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
 _CHAT_ALIGN_CSS = (
     "<style>"
@@ -143,6 +144,8 @@ _FOLLOWUP_BUBBLE_CSS = (
     "{padding:0;min-height:0;border:0;text-decoration:underline;color:#4a9eff}"
     "</style>"
 )
+# Pull the chat input snug under the scroll panel by dropping the default block gap.
+_INPUT_DOCK_CSS = f"<style>.st-key-{_INPUT_DOCK_KEY}{{margin-top:-1rem}}</style>"
 
 
 def render_page(context: RagPageContext) -> None:
@@ -156,6 +159,7 @@ def render_page(context: RagPageContext) -> None:
     st.html(_assistant_bubble_css(bubble_fill))
     st.html(_STATUS_BUBBLE_CSS)
     st.html(_FOLLOWUP_BUBBLE_CSS)
+    st.html(_INPUT_DOCK_CSS)
 
     controls = render_advanced_controls(
         strings, "conversational_rag", list(context.list_indexes()), context.session_root()
@@ -182,6 +186,9 @@ def render_page(context: RagPageContext) -> None:
     answer: ConversationalAnswer | None = None
     elapsed = 0.0
     config = None
+    # Peek the scroll intent before the panel so a submitted turn can scroll to the
+    # new question *before* the blocking stream (pinning it to the top as it streams).
+    scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
     with st.container(height=_CHAT_PANEL_HEIGHT_PX, key=_CHAT_PANEL_KEY):
         if not turns and not submitting:
             _render_welcome_bubble(strings, context.session_root())
@@ -210,6 +217,7 @@ def render_page(context: RagPageContext) -> None:
                 config,
                 _history_from_turns(turns),
                 get_cached_chunks(cache, question),
+                scroll=scroll_requested,
             )
         elif turns and controls.followups:
             # Suggested follow-ups read as a continuation of the latest answer, so
@@ -223,18 +231,17 @@ def render_page(context: RagPageContext) -> None:
                 st.session_state[_SCROLL_REQUESTED_KEY] = True
                 st.rerun()
 
-    # Pin the newest question near the top of the panel (ChatGPT-style) so the
-    # question and the start of its answer stay visible, instead of jumping to the
-    # absolute bottom (which pushed the just-asked question above the panel).
-    scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
+    # A submitted turn already scrolled from inside _stream_pending_turn (before its
+    # blocking stream). Page entry, a follow-up click, and the post-answer rerun are
+    # not streaming, so they pin the newest question to the panel top here.
     newest_user_key = _newest_user_turn_key(turns, submitting)
-    if scroll_requested and newest_user_key:
+    if scroll_requested and not submitting and newest_user_key:
         scroll_message_into_view(_CHAT_PANEL_KEY, newest_user_key)
 
     # Dock the input just under the panel + follow-ups. Wrapping it in a container
     # makes Streamlit render it inline (not viewport-pinned); a typed message queues
     # via _PENDING_KEY and reruns so the next run streams it into the panel above.
-    with st.container():
+    with st.container(key=_INPUT_DOCK_KEY):
         typed = st.chat_input(
             strings["CHAT_INPUT_PLACEHOLDER"], disabled=index is None, key=_CHAT_INPUT_KEY
         )
@@ -291,14 +298,20 @@ def _render_stored_turn(strings, turn: dict, *, inspect: bool, default_tab: str)
         render_turn_inspection(strings, answer, default_tab=default_tab)
 
 
-def _stream_pending_turn(strings, question, turn_id, run_dir, state, config, history, cached):
+def _stream_pending_turn(
+    strings, question, turn_id, run_dir, state, config, history, cached, *, scroll=False
+):
     """Stream the pending turn's answer into the chat panel; return (answer, seconds).
 
     The grounded answer streams token-by-token at the top; a live ``st.status``
     footer below it narrates the plan/retrieve/re-rank/state stages and collapses
-    when the turn completes.
+    when the turn completes. When *scroll* is set, the new question is pinned to the
+    panel top before the blocking stream starts, so it stays visible as the answer
+    streams in — instead of only scrolling once the whole answer has finished.
     """
     _render_user_message(question, turn_id)
+    if scroll:
+        scroll_message_into_view(_CHAT_PANEL_KEY, f"{_USER_TURN_KEY_PREFIX}{turn_id}")
     key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn_id}"
     with st.container(key=key), st.chat_message("assistant"):
         answer_area = st.container()
@@ -388,7 +401,7 @@ def _render_conversation_controls(
         title = titles.get(conversation_id) or strings["CHAT_NEW_CONVERSATION"]
         return f"{conversation_id} · {title}" if conversation_id else title
 
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    with st.container(horizontal=True, vertical_alignment="center", gap=None):
         if st.button(
             "",
             width=_ICON_BUTTON_WIDTH_PX,
@@ -403,7 +416,8 @@ def _render_conversation_controls(
             options=option_ids,
             index=option_ids.index(current_id),
             format_func=_label,
-            width=360,
+            width="stretch",
+            label_visibility="collapsed",
         )
     if selected != current_id:
         _activate_conversation(selected, records)

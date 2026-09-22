@@ -148,6 +148,15 @@ flowchart TD
   degrades safely (offline model, missing re-rank dependency, unparsable output) with a recorded
   warning, never an error.
 
+**Why Steps 4 and 5 retrieve differently.** Step 4 keeps chunks in pure
+vector-similarity order — one question, one search, an editable prompt you can
+inspect — which is predictable and transparent for focused lookups. Step 5 targets
+exploratory, multi-turn use, so it decomposes complex or context-dependent questions,
+retrieves each sub-question in parallel, and re-ranks the merged pool to surface the
+most relevant chunks (a cross-encoder or LLM re-scores query↔chunk pairs more
+precisely than bi-encoder similarity alone). Setting Step 5's re-ranking to **off**
+falls back to Step 4's pure-similarity order.
+
 Both Step 4 and Step 5 inject the active UI language (default English) into the answer
 prompt, so generated replies match the selected UI language.
 
