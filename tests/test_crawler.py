@@ -1021,6 +1021,48 @@ class TestSiteCrawler:
         assert all(result.success for result in results)
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_multi_seed_fair_discovery_budget(self, mock_crawler_cls, tmp_path: Path):
+        """Each seed gets its own page-limit discovery budget.
+
+        A shared global limit lets a high-fan-out seed exhaust the budget and skip
+        the other seed's discovery entirely; a per-seed budget discovers both, so
+        neither seed starves.
+        """
+        url_a = "https://example.com/a"
+        url_b = "https://example.com/b"
+        a_children = [f"https://example.com/a{i}" for i in range(1, 4)]
+        b_children = [f"https://example.com/b{i}" for i in range(1, 4)]
+        pages = {
+            url_a: "".join(f'<a href="/a{i}">A{i}</a>' for i in range(1, 4)),
+            url_b: "".join(f'<a href="/b{i}">B{i}</a>' for i in range(1, 4)),
+        }
+
+        async def mock_arun(url, **kwargs):
+            _ = kwargs["config"]
+            return _make_mock_result(url, pages.get(url, "<p>child</p>"), "content")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(side_effect=mock_arun)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        # limit=4: a single shared budget would let A's 3 children fill it and skip
+        # B's discovery; the per-seed budget gives each seed its own limit.
+        config = CrawlerConfig(
+            urls=[url_a, url_b], limit=4, max_depth=2, max_concurrent=1, max_retries=0
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        results = crawler.crawl()
+
+        crawled = {result.url for result in results if result.success}
+        # Both seeds AND both seeds' children are crawled — B did not starve.
+        assert url_a in crawled
+        assert url_b in crawled
+        assert set(a_children) <= crawled
+        assert set(b_children) <= crawled
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_seed_url_excluded_by_include_only_not_in_discovered(
         self, mock_crawler_cls, tmp_path: Path
     ):

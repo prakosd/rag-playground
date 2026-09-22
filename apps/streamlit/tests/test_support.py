@@ -70,7 +70,7 @@ def _form_values(*, urls: str = "https://example.com", limit: int = 1) -> dict[s
         "max_concurrent": 1,
         "flush_interval": 1,
         "delay": 0,
-        "max_retries": 2,
+        "max_retries": 3,
         "exclude_tags": "nav",
         "include_only_tags": "",
         "wait_for": 0,

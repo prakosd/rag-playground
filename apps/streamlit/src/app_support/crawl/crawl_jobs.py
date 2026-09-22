@@ -6,13 +6,12 @@ import html
 import os
 import queue
 import threading
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-import httpx
 from crawl4md.config import CrawlerConfig, PageConfig
 from crawl4md.crawler import SiteCrawler
 from crawl4md.extractor import ContentExtractor
@@ -60,12 +59,9 @@ _STATUS_URL_LIST_STYLE = "min-width:0"
 _STATUS_URL_OVERFLOW_STYLE = "display:block;opacity:0.75"
 _STATUS_URL_RIGHT_STYLE = "white-space:nowrap;margin-left:1rem"
 
-# Optional anti-bot escalation read from the environment as deployment secrets.
-# Proxies and the scraping-API fallback never belong in .env.defaults or the UI.
+# Optional proxy escalation read from the environment as a deployment secret.
+# Proxies never belong in .env.defaults or the UI.
 _PROXIES_ENV = "CRAWL_PROXIES"
-_FALLBACK_API_URL_ENV = "CRAWL_FALLBACK_API_URL"
-_FALLBACK_API_TOKEN_ENV = "CRAWL_FALLBACK_API_TOKEN"
-_FALLBACK_FETCH_TIMEOUT = 60.0
 
 
 @dataclass(frozen=True)
@@ -168,7 +164,7 @@ def build_configs(values: Mapping[str, Any]) -> tuple[CrawlerConfig, PageConfig,
         max_concurrent=int(values.get("max_concurrent", DEFAULT_MAX_CONCURRENT)),
         flush_interval=int(values.get("flush_interval", 1)),
         delay=float(values.get("delay", 0)),
-        max_retries=int(values.get("max_retries", 2)),
+        max_retries=int(values.get("max_retries", 3)),
         proxies=os.environ.get(_PROXIES_ENV, ""),
         proxy_on_initial=get_settings().crawl_proxy_on_initial,
     )
@@ -319,30 +315,6 @@ def _cleared_concurrent_progress(crawler_config: CrawlerConfig) -> dict[str, obj
     }
 
 
-def _build_fallback_fetch_function() -> Callable[[str], Awaitable[str]] | None:
-    """Return an async last-resort fetcher backed by a scraping API, or None.
-
-    Reads the optional ``CRAWL_FALLBACK_API_URL`` (and ``CRAWL_FALLBACK_API_TOKEN``)
-    secrets from the environment. When unset, returns ``None`` so the crawler runs
-    without a fallback. The returned coroutine requests the configured endpoint with
-    the page URL and returns the HTML it serves — used only after every browser and
-    proxy attempt is still blocked.
-    """
-    api_url = os.environ.get(_FALLBACK_API_URL_ENV, "").strip()
-    if not api_url:
-        return None
-    token = os.environ.get(_FALLBACK_API_TOKEN_ENV, "").strip()
-
-    async def fetch(url: str) -> str:
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-        async with httpx.AsyncClient(timeout=_FALLBACK_FETCH_TIMEOUT) as client:
-            response = await client.get(api_url, params={"url": url}, headers=headers)
-            response.raise_for_status()
-            return response.text
-
-    return fetch
-
-
 def start_crawl_job(
     *,
     session_id: str,
@@ -405,7 +377,6 @@ def start_crawl_job(
                 activity_log_size=activity_log_size,
                 progress_callback=emit,
                 should_cancel=cancel_event.is_set,
-                fallback_fetch_function=_build_fallback_fetch_function(),
             )
             results = crawler.crawl()
             success_count = sum(1 for result in results if result.success)

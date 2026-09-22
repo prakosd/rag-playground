@@ -83,6 +83,8 @@ def test_apply_vector_index_event_terminal_builds_result(
 ) -> None:
     state = SimpleNamespace()
     monkeypatch.setattr(progress_ui.st, "session_state", state)
+    clear_caches = MagicMock()
+    monkeypatch.setattr(progress_ui, "_clear_generated_file_caches", clear_caches)
 
     progress_ui._apply_vector_index_event(
         {
@@ -98,5 +100,8 @@ def test_apply_vector_index_event_terminal_builds_result(
     assert state.vector_index_state == "completed"
     assert state.vector_index_result["state"] == "completed"
     assert state.vector_index_result["indexed_file_count"] == 2
+    # The terminal transition drops the stale file-listing cache so the new
+    # vector_<id> folder shows without a manual browser refresh.
+    clear_caches.assert_called_once()
     assert state.vector_index_result["indexed_chunk_count"] == 40
     assert state.vector_index_result["skipped_file_count"] == 1

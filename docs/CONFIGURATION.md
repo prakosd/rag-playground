@@ -38,7 +38,7 @@ crawl/index/RAG config models.
 | `CRAWL_MAX_CONCURRENT` | `5` | Default parallel page fetches |
 | `CRAWL_FLUSH_INTERVAL` | `5` | Pages buffered before each disk flush |
 | `CRAWL_DELAY` | `1.0` | Default polite delay (s) between fetches |
-| `CRAWL_MAX_RETRIES` | `2` | Default retry rounds (minimum 2) |
+| `CRAWL_MAX_RETRIES` | `3` | Default retry rounds (minimum 3) |
 | `CRAWL_WAIT_FOR` | `3.0` | Extra wait (s) for late content |
 | `CRAWL_TIMEOUT` | `60.0` | Per-page load timeout (s) |
 | `CRAWL_MAX_FILE_SIZE_MB` | `10.0` | Max size per output file (MB) |
@@ -112,8 +112,7 @@ environment variables read by their SDKs:
 |---|---|
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | Amazon Bedrock (Titan embeddings + Claude/Nova chat) |
 | `OPENAI_API_KEY` | OpenAI embeddings + chat |
-| `CRAWL_PROXIES` | Optional comma-separated proxy URLs (direct-first escalation) for Step 1 crawling; used on the first retry round only |
-| `CRAWL_FALLBACK_API_URL` / `CRAWL_FALLBACK_API_TOKEN` | Optional last-resort scraping API, fetched with the page URL; used on one retry round only (the second when proxies are also set) |
+| `CRAWL_PROXIES` | Optional comma-separated proxy URLs (direct-first escalation) for Step 1 crawling; used on every retry round (not the initial crawl) |
 
 Locally, copy `.env.example` to `.env` (git-ignored) and fill them in. Leave them
 blank to run fully offline (local embeddings + echo chat model).
@@ -131,41 +130,24 @@ and `RAG_DEFAULT_LLM_MODEL`.
 
 ### Anti-bot escalation (Step 1 crawling)
 
-For sites that block the crawler, three opt-in escalations layer on top of the
-default stealth browser + retry rounds (all off by default):
+For sites that block the crawler, two escalations layer on top of the default
+stealth browser + retry rounds:
 
 - **Proxies** — set the `CRAWL_PROXIES` secret (comma-separated URLs). They are
-  tried direct-first, then in order, on blocked requests. To cap cost, proxies and
-  the fallback API are each used at most **once per crawl**: the first retry round
-  uses the proxy, the second uses the fallback API, and later retries use neither
-  (the initial crawl uses neither). When only one is configured, the first retry
-  uses it. Set `CRAWL_PROXY_ON_INITIAL=true` to also proxy the **initial** crawl
-  (proxy rounds become the initial crawl + first retry, and the fallback API, if
-  set, moves to the second retry) for sites that block the very first unproxied
-  request. Every URL attempted in those rounds is logged to `logs/network_usage.csv`
-  (URL, method, round, status, size) so you can track spend — proxy credentials are
-  never written. Residential proxies are usually required for hard `403`s (e.g.
-  Akamai); data-center proxies are often blocked too.
+  tried direct-first, then in order, on blocked requests. By default the **initial**
+  crawl runs direct (no proxy) and **every retry round** routes through the proxies.
+  Set `CRAWL_PROXY_ON_INITIAL=true` to also proxy the initial crawl, for sites that
+  block the very first unproxied request. Every URL attempted in a proxied round is
+  logged to `logs/network_usage.csv` (URL, method, round, status, size) so you can
+  track spend — proxy credentials are never written. Residential proxies are usually
+  required for hard `403`s (e.g. Akamai); data-center proxies are often blocked too.
 - **Undetected browser** — retry rounds automatically escalate to Crawl4AI's
   undetected adapter; the **initial** crawl uses the standard stealth browser to
   focus on discovering pages, and it falls back to stealth if the adapter is
   unavailable. No setting to toggle.
-- **Scraping-API fallback** — set `CRAWL_FALLBACK_API_URL` (and optional
-  `CRAWL_FALLBACK_API_TOKEN`) to fetch the page from an external scraping service
-  as a last resort, after every browser + proxy attempt is still blocked. The
-  crawler calls `GET <CRAWL_FALLBACK_API_URL>?url=<page>` with an optional
-  `Authorization: Bearer <token>` header and uses the HTML it returns. This is a
-  generic **bring-your-own** endpoint, independent of your proxy vendor — e.g.
-  DataImpulse sells proxies (`CRAWL_PROXIES`) but no such fetch API. Any
-  scraping/unlocker service that returns the page HTML works; for vendors that
-  authenticate with a query-string key (ScraperAPI, ScrapingBee, ScrapingDog,
-  ScrapeOps, Crawlbase), put the key in the URL (e.g.
-  `https://api.example.com/?api_key=KEY`) and leave `CRAWL_FALLBACK_API_TOKEN`
-  blank — the crawler appends `&url=`. When the URL is unset or blank, the
-  fallback is silently skipped.
 
-Proxies and the fallback API are **secrets** (env / Cloud Secrets only — never in
-`.env.defaults` or logs). They are honest mitigations, not guarantees: a hard
+Proxies are a **secret** (env / Cloud Secrets only — never in `.env.defaults` or
+logs). They are honest mitigations, not guarantees: a hard
 Akamai/DataDome block may still fail. Always respect each site's robots.txt and
 terms of service.
 
@@ -184,7 +166,7 @@ git-ignored.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `urls` | `list[str]` | *(required)* | Seed URLs to crawl (comma-separated string also accepted) |
-| `limit` | `int` | `1` | Maximum pages to crawl |
+| `limit` | `int` | `1` | Maximum pages to crawl per seed URL (soft; discovery can overshoot and isn't trimmed) |
 | `max_depth` | `int` | `1` | How many clicks deep to follow links |
 | `max_concurrent` | `int` | `5` | Maximum simultaneous page fetches among URLs already discovered in the initial crawl. `5` is the default and can speed permissive sites; use `1` for strict or easily rate-limited sites. `delay` still spaces request starts. Retry rounds remain serial for WAF safety. |
 | `exclude_paths` | `list[str]` | `[]` | Regex patterns for URLs to skip |
@@ -192,7 +174,7 @@ git-ignored.
 | `delay` | `float` | `0` | Seconds to space page-fetch starts — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
 | `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser; they also override the browser-like defaults sent on direct PDF/DOCX downloads (see note below) |
-| `max_retries` | `int` | `2` | Retry rounds for WAF-blocked pages (minimum 2) |
+| `max_retries` | `int` | `3` | Retry rounds for WAF-blocked pages (minimum 3) |
 | `flush_interval` | `int` | `10` | Write generated files to disk every N pages |
 | `proxies` | `list[str]` | `[]` | Proxy URLs tried in order (direct first) when blocked; feeds Crawl4AI's `proxy_config` on the first retry round only. Set via the `CRAWL_PROXIES` secret in the app — never logged (`repr=False`). |
 
@@ -301,7 +283,7 @@ exceed `max_file_size_mb`, content splits into `001_of_003`, `002_of_003`, … f
 | Full site map (status + depth) | `logs/site_graph.jsonl` |
 | Timestamped crawl diary | `logs/activity_log.txt` / `logs/activity_log.csv` |
 | Chart-ready progress timeline | `logs/progress_history.jsonl` |
-| Proxy / fallback-API usage (cost) | `logs/network_usage.csv` (only when a proxy or fallback API runs) |
+| Proxy usage (cost) | `logs/network_usage.csv` (only when a proxied round runs) |
 
 **Why `round_N/` folders?** crawl4md retries failed pages in separate rounds
 (controlled by `max_retries`). Each round folder is an intermediate snapshot. The

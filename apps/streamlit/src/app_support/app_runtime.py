@@ -200,3 +200,15 @@ def _cached_list_generated_files(
 )
 def _cached_download_tree(files: tuple[GeneratedFile, ...]) -> dict[str, Any]:
     return build_download_tree(list(files))
+
+
+def _clear_generated_file_caches() -> None:
+    """Drop the cached file listing + tree so the next render re-scans disk.
+
+    The cache token is a shallow stat of the session root, which does not change
+    when a job writes its final ``initial/``/``final/`` folders two levels deeper.
+    Clearing on a job's terminal transition guarantees the completed outputs show
+    without a manual browser refresh.
+    """
+    _cached_list_generated_files.clear()
+    _cached_download_tree.clear()

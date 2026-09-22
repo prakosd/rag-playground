@@ -1,4 +1,4 @@
-"""Tests for proxy/fallback-API usage logging (network_usage.csv)."""
+"""Tests for proxy usage logging (network_usage.csv)."""
 
 from __future__ import annotations
 
@@ -50,18 +50,19 @@ def test_recorder_writes_header_and_rows(tmp_path: Path) -> None:
     recorder.record(
         method="proxy", round_num=2, url="https://e.com/a", status="success", size_kb=1.5
     )
-    recorder.record(method="api", round_num=3, url="https://e.com/b", status="fail", size_kb=None)
+    recorder.record(method="proxy", round_num=3, url="https://e.com/b", status="fail", size_kb=None)
 
     path = tmp_path / NETWORK_USAGE_FILE
     lines = path.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "timestamp,round,method,url,status,size_kb"
 
     rows = _read_rows(path)
-    assert [row["method"] for row in rows] == ["proxy", "api"]
+    assert [row["method"] for row in rows] == ["proxy", "proxy"]
     assert rows[0]["round"] == "2"
     assert rows[0]["url"] == "https://e.com/a"
     assert rows[0]["status"] == "success"
     assert rows[0]["size_kb"] == "1.50"
+    assert rows[1]["round"] == "3"
     assert rows[1]["status"] == "fail"
     assert rows[1]["size_kb"] == ""
 
@@ -118,7 +119,7 @@ def test_crawl_logs_proxy_usage_on_first_retry(
     assert crawler.output_dir is not None
     usage_path = crawler.output_dir / "logs" / NETWORK_USAGE_FILE
     rows = _read_rows(usage_path)
-    # Round 2 (first retry) is the proxy round; the initial round is not logged.
+    # Round 2 (first retry) routes through the proxies; the initial crawl is not logged.
     assert [row["round"] for row in rows] == ["2"]
     assert rows[0]["method"] == "proxy"
     assert rows[0]["url"] == "https://example.com"
@@ -147,3 +148,28 @@ def test_crawl_without_paid_resources_writes_no_usage_log(tmp_path: Path) -> Non
 
     assert crawler.output_dir is not None
     assert not (crawler.output_dir / "logs" / NETWORK_USAGE_FILE).exists()
+
+
+def test_crawl_logs_proxy_usage_on_every_retry_round(tmp_path: Path) -> None:
+    def _fail() -> object:
+        result = _make_mock_result("https://example.com", "<p>x</p>", "")
+        result.success = False
+        result.error = ""
+        result.markdown = ""
+        result.html = ""
+        return result
+
+    # Initial + 3 retries all fail (max_retries=3), so every retry round runs.
+    config = CrawlerConfig(
+        urls=["https://example.com"],
+        limit=1,
+        max_retries=3,
+        proxies=["http://proxy:8080"],
+    )
+    crawler = _run_crawler(tmp_path, config, [_fail(), _fail(), _fail(), _fail()])
+
+    assert crawler.output_dir is not None
+    rows = _read_rows(crawler.output_dir / "logs" / NETWORK_USAGE_FILE)
+    # Proxies route through every retry round (2, 3, 4); the initial crawl is direct.
+    assert [row["round"] for row in rows] == ["2", "3", "4"]
+    assert all(row["method"] == "proxy" for row in rows)

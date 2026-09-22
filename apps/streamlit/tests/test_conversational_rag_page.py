@@ -96,3 +96,18 @@ def test_ensure_active_conversation_preserves_live_turns(monkeypatch: MonkeyPatc
 
     assert page.st.session_state[page._CONV_ID_KEY] == "keep"  # a later rerun is a no-op
     assert page.st.session_state[page._TURNS_KEY] == ["live"]  # full-fidelity turns kept
+
+
+def test_newest_user_turn_key_prefers_pending_then_latest(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    prefix = page._USER_TURN_KEY_PREFIX
+
+    # Streaming a new turn: pin the pending question (turn_id == len(turns)).
+    assert page._newest_user_turn_key([{"turn_id": 0}], submitting=True) == f"{prefix}1"
+    # Idle with history: pin the latest stored turn by its own turn_id.
+    assert (
+        page._newest_user_turn_key([{"turn_id": 0}, {"turn_id": 1}], submitting=False)
+        == f"{prefix}1"
+    )
+    # Fresh, empty conversation: nothing to scroll to.
+    assert page._newest_user_turn_key([], submitting=False) is None

@@ -28,7 +28,7 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 - **PDF support** — detects and extracts PDF URLs via pymupdf4llm; scanned PDFs via OCR (requires [Tesseract](https://github.com/tesseract-ocr/tesseract))
 - **Word (.docx) support** — detects and extracts `.docx` URLs via mammoth, converting them to Markdown alongside crawled pages (legacy `.doc` is not supported)
 - **Smart content extraction** — trafilatura with markdownify fallback, plus supplementary recovery for FAQs, accordions, and product metadata
-- **WAF / bot-detection handling** — two-stage detection with automatic retry rounds and cooldown (round 1 uses the standard stealth browser; retries escalate to Crawl4AI's undetected browser), plus opt-in escalation: direct-first proxy rotation and a last-resort scraping-API fallback, each used at most once per crawl and logged to `logs/network_usage.csv` for cost tracking (see [Configuration](docs/CONFIGURATION.md))
+- **WAF / bot-detection handling** — two-stage detection with automatic retry rounds and cooldown (round 1 uses the standard stealth browser; retries escalate to Crawl4AI's undetected browser), plus opt-in direct-first proxy rotation on retry rounds, logged to `logs/network_usage.csv` for cost tracking (see [Configuration](docs/CONFIGURATION.md))
 - **Size-limited, sorted output** — pages are never split across files; final files are sorted by URL path
 - **Real-time progress** — browser charts in Streamlit, plain-text ETA in terminal
 - **Stop-safe output** — stopping a crawl still writes final output for completed pages
@@ -180,6 +180,7 @@ For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWrit
 | Configuration & output reference | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | Architecture & data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Development (tests, lint, conventions) | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Health check & uptime monitoring | [docs/HEALTH_CHECK.md](docs/HEALTH_CHECK.md) |
 | Building another UI over the libraries | [docs/BUILDING_ANOTHER_UI.md](docs/BUILDING_ANOTHER_UI.md) |
 | Core crawler | [src/crawl4md/README.md](src/crawl4md/README.md) |
 | Shared foundation | [src/artifact_store/README.md](src/artifact_store/README.md) |

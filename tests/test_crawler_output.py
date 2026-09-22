@@ -508,13 +508,14 @@ class TestPagesRegistry:
                 _make_mock_result(fail_url, blocked_html, "blocked"),
                 _make_mock_result(fail_url, blocked_html, "blocked"),
                 _make_mock_result(fail_url, blocked_html, "blocked"),
+                _make_mock_result(fail_url, blocked_html, "blocked"),
             ]
         )
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
         mock_instance.__aexit__ = AsyncMock(return_value=False)
         mock_crawler_cls.return_value = mock_instance
 
-        crawler = self._crawler(tmp_path, self._crawler_config([seed_url], max_retries=2))
+        crawler = self._crawler(tmp_path, self._crawler_config([seed_url], max_retries=3))
         crawler.crawl()
 
         assert crawler.output_dir is not None
@@ -524,7 +525,7 @@ class TestPagesRegistry:
         assert record["page_size_kb"] is None
         assert record["discovered_from"] == seed_url
         assert record["depth"] == 1
-        assert record["round_num"] == 3
+        assert record["round_num"] == 4
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_pages_registry_records_skipped_links(self, mock_crawler_cls, tmp_path: Path) -> None:

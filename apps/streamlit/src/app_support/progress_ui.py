@@ -45,6 +45,7 @@ from app_support.app_runtime import (
     _STATUS_ROW_STYLE,
     _active_file_root,
     _auto_refresh_fragment,
+    _clear_generated_file_caches,
     _crawl_job_active,
     _vector_job_active,
 )
@@ -112,6 +113,9 @@ def _apply_vector_index_event(event: Mapping[str, Any]) -> None:
             "warnings": list(event.get("warnings", [])),
             "errors": list(event.get("errors", [])),
         }
+        # The new vector_<id> folder was just written; drop the stale listing
+        # cache so this terminal rerun shows it without a manual browser refresh.
+        _clear_generated_file_caches()
 
 
 def _render_vector_index_timing(strings: Mapping[str, Any], processed: int, total: int) -> None:

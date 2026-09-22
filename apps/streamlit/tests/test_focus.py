@@ -6,7 +6,7 @@ from app_support.focus import (
     entered_page,
     focus_chat_input,
     focus_widget,
-    scroll_to_bottom,
+    scroll_message_into_view,
 )
 
 
@@ -68,7 +68,7 @@ def test_click_widget_targets_keyed_button(monkeypatch) -> None:
     assert "target.click()" in captured["html"]
 
 
-def test_scroll_to_bottom_targets_keyed_container(monkeypatch) -> None:
+def test_scroll_message_into_view_targets_panel_and_message(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_iframe(src: str, **kwargs: object) -> None:
@@ -77,9 +77,10 @@ def test_scroll_to_bottom_targets_keyed_container(monkeypatch) -> None:
 
     monkeypatch.setattr(focus_module.st, "iframe", fake_iframe)
 
-    scroll_to_bottom("conversational_rag_panel")
+    scroll_message_into_view("conversational_rag_panel", "conv-user-3")
 
-    assert ".st-key-conversational_rag_panel" in captured["html"]
-    assert "scrollTop" in captured["html"]  # nudges the panel to its bottom
-    assert captured["kwargs"]["height"] == 1
+    assert ".st-key-conversational_rag_panel" in captured["html"]  # the scroll panel
+    assert ".st-key-conv-user-3" in captured["html"]  # the message pinned to the top
+    assert "getBoundingClientRect" in captured["html"]  # aligns the message to the top
+    assert "scrollTop" in captured["html"]
     assert captured["kwargs"]["height"] == 1

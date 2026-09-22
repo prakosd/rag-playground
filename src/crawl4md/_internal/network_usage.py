@@ -1,12 +1,12 @@
-"""Proxy / fallback-API usage logging for crawl cost tracking.
+"""Proxy usage logging for crawl cost tracking.
 
-Proxies and the fallback scraping API are paid resources. To help a user track
-what a crawl may have cost, the crawler records one CSV row per URL attempted in
-a round that enabled a paid resource (see ``SiteCrawler._paid_resource_rounds``).
-Only those rounds are logged, so the file directly reflects potential spend.
+Proxies are a paid resource. To help a user track what a crawl may have cost, the
+crawler records one CSV row per URL attempted in a proxied round (see
+``SiteCrawler._paid_resource_rounds``). Only those rounds are logged, so the file
+directly reflects potential spend.
 
 Proxy credentials are never written here — only the neutral method label
-(``proxy`` / ``api``) is recorded.
+(``proxy``) is recorded.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ _NETWORK_USAGE_HEADER = ("timestamp", "round", "method", "url", "status", "size_
 
 
 class NetworkUsageRecorder:
-    """Append per-URL proxy/fallback-API usage rows to a CSV for cost tracking."""
+    """Append per-URL proxy usage rows to a CSV for cost tracking."""
 
     def __init__(self) -> None:
         self.path: Path | None = None

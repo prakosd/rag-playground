@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # of these per crawl in the UI. Changing them sets the deployed app's
     # out-of-the-box defaults.
     #
-    # Pages to crawl before stopping (the crawl breadth).
+    # Pages to crawl per seed URL before it stops discovering (the crawl breadth).
     crawl_limit: int
     # How many links deep to follow from each seed URL.
     crawl_max_depth: int

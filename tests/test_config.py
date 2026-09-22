@@ -136,19 +136,23 @@ class TestCrawlerConfig:
 
     def test_max_retries_default(self):
         cfg = CrawlerConfig(urls=["https://example.com"])
-        assert cfg.max_retries == 2
+        assert cfg.max_retries == 3
 
     def test_max_retries_zero_clamped(self):
         cfg = CrawlerConfig(urls=["https://example.com"], max_retries=0)
-        assert cfg.max_retries == 2
+        assert cfg.max_retries == 3
 
     def test_max_retries_one_clamped(self):
         cfg = CrawlerConfig(urls=["https://example.com"], max_retries=1)
-        assert cfg.max_retries == 2
+        assert cfg.max_retries == 3
+
+    def test_max_retries_two_clamped(self):
+        cfg = CrawlerConfig(urls=["https://example.com"], max_retries=2)
+        assert cfg.max_retries == 3
 
     def test_max_retries_negative_clamped(self):
         cfg = CrawlerConfig(urls=["https://example.com"], max_retries=-1)
-        assert cfg.max_retries == 2
+        assert cfg.max_retries == 3
 
     def test_max_retries_above_minimum_kept(self):
         cfg = CrawlerConfig(urls=["https://example.com"], max_retries=5)

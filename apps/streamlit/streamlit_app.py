@@ -50,6 +50,7 @@ from app_support.app_runtime import (
     _STATE_STOPPED,
     _TERMINAL_STATES,
     _auto_refresh_fragment,
+    _clear_generated_file_caches,
     _crawl_job_active,
     _current_crawl_runtime,
     _current_vector_runtime,
@@ -1307,6 +1308,9 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
                 st.session_state.last_elapsed = str(elapsed).split(".")[0]
             st.session_state.started_at = None
             st.session_state.job = None
+            # The final initial/ + final/ folders were just written; drop the
+            # stale listing cache so this terminal rerun shows them immediately.
+            _clear_generated_file_caches()
     return state_changed
 
 

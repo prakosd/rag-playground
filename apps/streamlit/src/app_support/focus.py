@@ -24,6 +24,9 @@ _FOCUS_COMPONENT_HEIGHT = 1
 # Give the parent DOM a few animation frames to mount the target widget before
 # giving up, so the action survives the render race after an st.rerun().
 _FOCUS_MAX_ATTEMPTS = 20
+# Breathing room (px) left above a message pinned to the top of the chat panel so
+# it is not flush with the panel's top edge.
+_SCROLL_TOP_MARGIN_PX = 8
 
 # Tracks which page last became active so a page can focus its primary field once
 # on entry (a fresh navigation) without stealing focus on every later rerun.
@@ -122,37 +125,43 @@ def click_widget(key: str) -> None:
     )
 
 
-def scroll_to_bottom(key: str) -> None:
-    """Scroll the keyed scrollable container (e.g. a chat panel) to its bottom.
+def scroll_message_into_view(panel_key: str, message_key: str) -> None:
+    """Scroll the keyed panel so the keyed message sits near the top of the view.
 
-    ``st.container(height=...)`` keeps its scroll position across reruns, so a chat
-    panel would not follow new turns; this nudges the container (or its scrollable
-    descendant) to the bottom. Best-effort — if the element is not found the scroll
-    is simply left where it was. Inject it only once (via a one-shot flag) so it
-    never fights the user scrolling up to read history.
+    ChatGPT-style: after a new turn, pin the just-asked question near the top of
+    the fixed-height chat panel so the question and the start of its (possibly
+    long) answer are both visible — instead of jumping to the absolute bottom,
+    which would push the question above the panel. Best-effort — if either element
+    is not found the scroll is left where it was. Inject it only once (via a
+    one-shot flag) so it never fights the user scrolling up to read history.
     """
-    selector = json.dumps(f".st-key-{key}")
+    panel_selector = json.dumps(f".st-key-{panel_key}")
+    message_selector = json.dumps(f".st-key-{message_key}")
     st.iframe(
         f"""
         <script>
         (function() {{
-            const selector = {selector};
+            const panelSelector = {panel_selector};
+            const messageSelector = {message_selector};
             const doc = window.parent.document;
             let attempts = 0;
-            function toBottom() {{
-                const root = doc.querySelector(selector);
-                if (root) {{
+            function intoView() {{
+                const root = doc.querySelector(panelSelector);
+                const target = doc.querySelector(messageSelector);
+                if (root && target) {{
                     const scrollable = [root, ...root.querySelectorAll(":scope *")].find(
                         (el) => el.scrollHeight > el.clientHeight + 4
                     ) || root;
-                    scrollable.scrollTop = scrollable.scrollHeight;
+                    const delta = target.getBoundingClientRect().top
+                        - scrollable.getBoundingClientRect().top;
+                    scrollable.scrollTop += delta - {_SCROLL_TOP_MARGIN_PX};
                     return;
                 }}
                 if (attempts++ < {_FOCUS_MAX_ATTEMPTS}) {{
-                    window.requestAnimationFrame(toBottom);
+                    window.requestAnimationFrame(intoView);
                 }}
             }}
-            toBottom();
+            intoView();
         }})();
         </script>
         """,

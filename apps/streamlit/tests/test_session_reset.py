@@ -77,6 +77,6 @@ def test_conversational_rag_keys_match_page_module(monkeypatch: MonkeyPatch) -> 
         page._PENDING_KEY,
         page._CONV_ID_KEY,
         page._CHAT_INPUT_KEY,
-        page._SCROLL_BOTTOM_KEY,
+        page._SCROLL_REQUESTED_KEY,
         page._FOCUS_INPUT_KEY,
     }

@@ -46,6 +46,28 @@ def test_suggest_followups_parses_candidates() -> None:
     assert result == ["What is X?", "How about Y?"]
 
 
+def test_suggest_followups_prompt_carries_tone() -> None:
+    captured: dict[str, str] = {}
+
+    class _CapturingModel(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capturing"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            captured["prompt"] = "\n".join(str(getattr(m, "content", m)) for m in messages)
+            return '["q1"]'
+
+    suggest_followups(
+        _CapturingModel(),
+        [_chunk("t", 0.9)],
+        QueryPlan(sub_questions=["orig"]),
+        ConversationalConfig(tone="Funny"),
+    )
+
+    assert "Funny" in captured["prompt"]
+
+
 def test_answerability_check_reads_yes_no() -> None:
     yes = answerability_check(_ScriptedModel(reply="YES, definitely"), "q", [_chunk("t", 0.9)], 2)
     no = answerability_check(_ScriptedModel(reply="NO"), "q", [_chunk("t", 0.9)], 2)

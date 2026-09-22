@@ -75,6 +75,7 @@ def suggest_followups(
         count=config.followup_candidate_count,
         asked=_format_questions(asked_questions),
         language=config.language,
+        tone=config.tone,
     )
     reply, usage = invoke_text_with_usage(model, prompt)
     if record_usage is not None:

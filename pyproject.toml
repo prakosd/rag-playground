@@ -30,8 +30,11 @@ dependencies = []
 # crawl4md — crawl websites and extract Markdown (Step 1).
 crawl = [
     "crawl4ai>=0.8.6",
-    # Capped below 2.1: trafilatura 2.1+ stopped emitting inline links with
-    # output_format="markdown" (include_links=True), which the extractor relies on.
+    # Capped below 2.1: trafilatura 2.1.0 (lxml bump) + 2.2.0 (extraction revamp)
+    # regressed inline <ref>→Markdown links with output_format="markdown"
+    # (include_links=True) — href dropped, anchor text kept — which the extractor
+    # relies on. Still broken on 2.2.0 (2026-09). See docs/DEVELOPMENT.md
+    # "Dependency pins" for the re-verify recipe before raising the cap.
     "trafilatura>=1.6.0,<2.1",
     "markdownify>=0.11.0",
     "beautifulsoup4>=4.12.0",

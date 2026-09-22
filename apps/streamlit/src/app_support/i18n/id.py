@@ -406,9 +406,10 @@ STRINGS_ID: Strings = {
     "FORM_EXCLUDE_PATHS_HELP": "Halaman yang cocok dengan pola regex ini akan dilewati.",
     "FORM_LIMIT_LABEL": "Batas halaman",
     "FORM_LIMIT_HELP": (
-        "Batas penemuan: setelah sejumlah halaman ditemukan, "
-        "perayap berhenti menemukan tautan baru tetapi tetap menyelesaikan "
-        "semua halaman yang sudah ditemukan."
+        "Anggaran penemuan per-URL: setiap URL situs menemukan hingga sejumlah "
+        "halaman ini sebelum berhenti mencari tautan baru, sehingga situs dengan "
+        "banyak tautan tidak menghambat yang lain. Halaman yang sudah ditemukan "
+        "tetap diselesaikan, jadi totalnya bisa melebihi ini saat merayapi beberapa URL."
     ),
     "FORM_DELAY_LABEL": "Jeda antar halaman",
     "FORM_DELAY_HELP": "Memberi jarak awal halaman untuk mengurangi pemblokiran oleh situs web.",

@@ -54,7 +54,7 @@ from app_support.conversational_rag.conversational_token_ui import (
     render_conversational_token_panel,
 )
 from app_support.conversational_rag.followup_cache import get_cached_chunks, replace_followups
-from app_support.focus import entered_page, focus_chat_input, scroll_to_bottom
+from app_support.focus import entered_page, focus_chat_input, scroll_message_into_view
 from app_support.i18n import answer_language_name, get_strings, localize_message
 from app_support.rag_shared.rag_ui import RagPageContext, render_messages
 from app_support.rag_shared.resource_cache import (
@@ -72,9 +72,10 @@ _PENDING_KEY = "conversational_rag_pending"
 _CONV_ID_KEY = "conversational_rag_current_id"
 _USER_TURN_KEY_PREFIX = "conv-user-"
 _ASSISTANT_TURN_KEY_PREFIX = "conv-assistant-"
+_STATUS_TURN_KEY_PREFIX = "conv-status-"
 _CHAT_INPUT_KEY = "conversational_rag_input"
 _CHAT_PANEL_KEY = "conversational_rag_panel"
-_SCROLL_BOTTOM_KEY = "conversational_rag_scroll_bottom"
+_SCROLL_REQUESTED_KEY = "conversational_rag_scroll_bottom"
 _FOCUS_INPUT_KEY = "conversational_rag_focus_input"
 # Fixed-height scrollable chat panel so the conversation reads like a messenger
 # thread; follow-ups, token usage, and Output Files sit below it.
@@ -88,13 +89,42 @@ _CHAT_ALIGN_CSS = (
     "{text-align:right}"
     "</style>"
 )
-# Give the model answer the same rounded bubble as the user's, but left-aligned.
+# Give the model answer the same grey rounded bubble as the user's, but left-aligned.
+# The fill matches Streamlit's own user-bubble colour (its secondary background,
+# transparentized), which differs by theme — so it is chosen at render time.
 # Scoped to the answer via the conv-assistant- container, so the streaming status
-# and the inspection panel (both rendered outside it) stay full-width.
-_ASSISTANT_BUBBLE_CSS = (
+# and the inspection panel (both rendered outside it) stay unstyled.
+_BUBBLE_FILL_DARK = "rgba(38, 39, 48, 0.5)"
+_BUBBLE_FILL_LIGHT = "rgba(240, 242, 246, 0.5)"
+
+
+def _assistant_bubble_css(fill: str) -> str:
+    """Grey rounded bubble for the model answer, matching the user's bubble."""
+    return (
+        "<style>"
+        f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
+        f"{{width:fit-content;max-width:80%;background-color:{fill};"
+        "padding-right:1rem;padding-bottom:0.5rem}"
+        "</style>"
+    )
+
+
+# The streaming status ("Generating…"/"Finalizing…") renders as a hidden-avatar
+# assistant message just under the answer, so its text lines up with the answer text.
+# Strip the expander frame and vertical padding so it hugs the answer instead of
+# boxing itself in a rounded rectangle.
+_STATUS_BUBBLE_CSS = (
     "<style>"
-    f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
-    "{width:fit-content;max-width:80%}"
+    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] [data-testid^='stChatMessageAvatar']"
+    "{visibility:hidden}"
+    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
+    "{padding-top:0;padding-bottom:0}"
+    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stExpander']"
+    "{border:0;background:transparent;box-shadow:none}"
+    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] details"
+    "{border:0;background:transparent}"
+    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] summary"
+    "{padding:0}"
     "</style>"
 )
 # The follow-up suggestions render as a continuation bubble right under the answer.
@@ -122,7 +152,9 @@ def render_page(context: RagPageContext) -> None:
     st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
     st.caption(strings["CHAT_SECTION_CAPTION"])
     st.html(_CHAT_ALIGN_CSS)
-    st.html(_ASSISTANT_BUBBLE_CSS)
+    bubble_fill = _BUBBLE_FILL_DARK if st.context.theme.type == "dark" else _BUBBLE_FILL_LIGHT
+    st.html(_assistant_bubble_css(bubble_fill))
+    st.html(_STATUS_BUBBLE_CSS)
     st.html(_FOLLOWUP_BUBBLE_CSS)
 
     controls = render_advanced_controls(
@@ -163,6 +195,12 @@ def render_page(context: RagPageContext) -> None:
                     st.session_state.get("language", context.default_language)
                 ),
             )
+            # Clear the previous turn's follow-up chips before streaming. Streamlit
+            # removes stale elements only when a script run ends, but st.write_stream
+            # blocks the run for the whole answer — without this, the old chips linger
+            # beside the just-asked question until the answer finishes.
+            if turns:
+                st.container(key=f"{FOLLOWUP_BUBBLE_KEY_PREFIX}{turns[-1]['turn_id']}")
             answer, elapsed = _stream_pending_turn(
                 strings,
                 question,
@@ -182,11 +220,16 @@ def render_page(context: RagPageContext) -> None:
             )
             if clicked:
                 st.session_state[_PENDING_KEY] = clicked
-                st.session_state[_SCROLL_BOTTOM_KEY] = True
+                st.session_state[_SCROLL_REQUESTED_KEY] = True
                 st.rerun()
 
-    if on_entry or st.session_state.pop(_SCROLL_BOTTOM_KEY, False):
-        scroll_to_bottom(_CHAT_PANEL_KEY)
+    # Pin the newest question near the top of the panel (ChatGPT-style) so the
+    # question and the start of its answer stay visible, instead of jumping to the
+    # absolute bottom (which pushed the just-asked question above the panel).
+    scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
+    newest_user_key = _newest_user_turn_key(turns, submitting)
+    if scroll_requested and newest_user_key:
+        scroll_message_into_view(_CHAT_PANEL_KEY, newest_user_key)
 
     # Dock the input just under the panel + follow-ups. Wrapping it in a container
     # makes Streamlit render it inline (not viewport-pinned); a typed message queues
@@ -197,7 +240,7 @@ def render_page(context: RagPageContext) -> None:
         )
     if typed and index is not None:
         st.session_state[_PENDING_KEY] = typed.strip()
-        st.session_state[_SCROLL_BOTTOM_KEY] = True
+        st.session_state[_SCROLL_REQUESTED_KEY] = True
         st.rerun()
 
     render_conversational_token_panel(strings, records)
@@ -220,7 +263,7 @@ def render_page(context: RagPageContext) -> None:
             answer,
             elapsed,
         )
-        st.session_state[_SCROLL_BOTTOM_KEY] = True
+        st.session_state[_SCROLL_REQUESTED_KEY] = True
         st.session_state[_FOCUS_INPUT_KEY] = True
         st.rerun()
 
@@ -259,7 +302,8 @@ def _stream_pending_turn(strings, question, turn_id, run_dir, state, config, his
     key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn_id}"
     with st.container(key=key), st.chat_message("assistant"):
         answer_area = st.container()
-    status = st.status(strings["RAG_GENERATING"])
+    with st.container(key=f"{_STATUS_TURN_KEY_PREFIX}{turn_id}"), st.chat_message("assistant"):
+        status = st.status(strings["RAG_GENERATING"])
 
     def _report_progress(message: LibraryMessage) -> None:
         status.update(label=localize_message(strings, message.as_dict()))
@@ -370,6 +414,20 @@ def _render_user_message(question: str, turn_id: int) -> None:
     """Render the user's turn as a right-aligned (messenger-style) chat bubble."""
     with st.container(key=f"{_USER_TURN_KEY_PREFIX}{turn_id}"), st.chat_message("user"):
         st.write(question)
+
+
+def _newest_user_turn_key(turns: list[dict], submitting: bool) -> str | None:
+    """Container key of the most recent user bubble to pin to the top of the panel.
+
+    While streaming, the pending turn's bubble uses ``turn_id == len(turns)``;
+    otherwise the latest stored turn's own ``turn_id`` is used. ``None`` when there
+    is nothing to scroll to (a fresh, empty conversation).
+    """
+    if submitting:
+        return f"{_USER_TURN_KEY_PREFIX}{len(turns)}"
+    if turns:
+        return f"{_USER_TURN_KEY_PREFIX}{turns[-1]['turn_id']}"
+    return None
 
 
 def _history_from_turns(turns: list[dict]) -> list[ChatTurn]:

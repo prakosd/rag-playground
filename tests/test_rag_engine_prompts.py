@@ -165,6 +165,13 @@ def test_followups_prompt_and_fields_carry_language() -> None:
     assert "language" in CONVERSATIONAL_PROMPT_FIELDS["followups"]
 
 
+def test_followups_prompt_and_fields_carry_tone() -> None:
+    # Suggested follow-ups must match the selected tone, so the template exposes a
+    # {tone} slot and it is a declared followups field.
+    assert "{tone}" in SUGGEST_FOLLOWUPS_TEMPLATE
+    assert "tone" in CONVERSATIONAL_PROMPT_FIELDS["followups"]
+
+
 def test_build_rag_prompt_logs_construction(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.INFO, logger="rag_engine"):
         build_rag_prompt("What is the capital?", _CHUNKS, "Formal")

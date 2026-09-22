@@ -13,8 +13,8 @@ _VALID_URL_SCHEMES = ("http://", "https://")
 _DEFAULT_EXCLUDE_TAGS: list[str] = ["nav", "script", "form", "style"]
 # Whether to strip the "www." prefix during URL normalization.
 _DEFAULT_STRIP_WWW: bool = False
-# Minimum retry rounds — ensures at least 3 total attempts (1 initial + 2 retries).
-_MIN_RETRIES = 2
+# Minimum retry rounds — ensures at least 4 total attempts (1 initial + 3 retries).
+_MIN_RETRIES = 3
 
 
 class CrawlerConfig(BaseModel):
@@ -36,7 +36,7 @@ class CrawlerConfig(BaseModel):
     stealth: bool = True
     strip_www: bool = _DEFAULT_STRIP_WWW
     headers: dict[str, str] = {}
-    max_retries: int = 2
+    max_retries: int = 3
     # Optional proxy URLs tried in order (direct first) when the site blocks the
     # crawler. exclude=True (+ repr=False) keeps any embedded credentials out of
     # serialized output (the run-metadata front matter), logs, and tracebacks.

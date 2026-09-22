@@ -8,6 +8,7 @@ import random
 import re
 import sys
 import time
+from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
 from importlib import import_module
@@ -442,7 +443,6 @@ class SiteCrawler:
         activity_log_size: int = 10,
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
-        fallback_fetch_function: Callable[[str], Awaitable[str]] | None = None,
     ) -> None:
         self.config = config
         self.page_config = page_config or PageConfig()
@@ -457,7 +457,6 @@ class SiteCrawler:
         self._activity_log_size = activity_log_size
         self._progress_callback = progress_callback
         self._should_cancel = should_cancel
-        self._fallback_fetch_function = fallback_fetch_function
         self.content_files: list[Path] = []
         # Set to the error text when an unexpected error stops the crawl mid-run;
         # the crawl still finalizes its partial output and the caller (e.g. the
@@ -716,6 +715,9 @@ class SiteCrawler:
         succeeded_urls: set[str] = set()
         all_generated: set[str] = set()
         url_depths: dict[str, int] = {}
+        # Maps each URL to the index of the seed whose subtree discovered it, so
+        # each seed gets a fair, independent discovery budget across all rounds.
+        url_seed: dict[str, int] = {}
         total_rounds = 1 + self.config.max_retries
 
         browser_kwargs: dict = {
@@ -783,6 +785,7 @@ class SiteCrawler:
                         round_label="Initial crawl" if total_rounds > 1 else "",
                         all_generated=all_generated,
                         url_depths=url_depths,
+                        url_seed=url_seed,
                         round_num=1,
                     )
                     success, fail = self._split_results(round_results)
@@ -855,6 +858,7 @@ class SiteCrawler:
                             round_label=f"Retry {round_num - 1} of {total_rounds - 1}",
                             all_generated=all_generated,
                             url_depths=url_depths,
+                            url_seed=url_seed,
                             round_num=round_num,
                         )
                         success, fail = self._split_results(round_results)
@@ -1099,14 +1103,10 @@ class SiteCrawler:
         page: ExtractedPage | None,
         round_num: int,
     ) -> None:
-        """Log proxy/API usage for this URL when the round enabled a paid resource."""
-        proxy_rounds, api_round = self._paid_resource_rounds()
-        if round_num in proxy_rounds:
-            method = "proxy"
-        elif round_num == api_round:
-            method = "api"
-        else:
+        """Log proxy usage for this URL when the round routed through the proxies."""
+        if round_num not in self._paid_resource_rounds():
             return
+        method = "proxy"
         markdown = page.markdown if page is not None else crawl_result.markdown
         size_kb = (
             round(len(markdown.encode("utf-8")) / 1024, 2)
@@ -1333,6 +1333,7 @@ class SiteCrawler:
         round_label: str = "",
         all_generated: set[str] | None = None,
         url_depths: dict[str, int] | None = None,
+        url_seed: dict[str, int] | None = None,
         round_num: int = 1,
     ) -> list[CrawlResult]:
         """Crawl a list of URLs and return per-page results.
@@ -1348,15 +1349,18 @@ class SiteCrawler:
         that persist across rounds.  ``all_generated`` tracks every URL
         ever queued (for dedup and limit enforcement); ``url_depths``
         maps each URL to its crawl depth so retried pages and their
-        discovered links use the correct depth.
+        discovered links use the correct depth.  ``url_seed`` maps each URL
+        to its originating seed index so each seed gets a fair, independent
+        discovery budget (the page limit applies per seed).
         """
         results: list[CrawlResult] = []
         _sw = self.config.strip_www
         visited: set[str] = set(self._normalize_url(u, strip_www=_sw) for u in skip_urls)
         generated: set[str] = all_generated if all_generated is not None else set()
         depths: dict[str, int] = url_depths if url_depths is not None else {}
+        seed_of: dict[str, int] = url_seed if url_seed is not None else {}
         queue: list[tuple[str, int]] = []
-        for seed_url in urls:
+        for seed_idx, seed_url in enumerate(urls):
             norm_seed = self._normalize_url(seed_url, strip_www=_sw)
             if norm_seed not in generated:
                 if len(generated) >= self.config.limit:
@@ -1370,8 +1374,13 @@ class SiteCrawler:
                     crawl_depth=depths.get(norm_seed, 1),
                 )
             generated.add(norm_seed)
+            seed_of.setdefault(norm_seed, seed_idx)
             queue.append((seed_url, depths.get(norm_seed, 1)))
         await self._flush_site_graph_async()
+        # Per-seed discovered-page counts drive a FAIR discovery budget: each seed
+        # gets its own page limit so a high-fan-out seed cannot starve the others
+        # (the limit is a soft, per-seed guide, so total pages scale with seed count).
+        seed_counts: Counter[int] = Counter(seed_of.values())
         progress = ProgressReporter(
             max(len(queue), 1),
             prior_success=prior_success,
@@ -1381,7 +1390,6 @@ class SiteCrawler:
             log_dir=self._logs_dir,
         )
         try:
-            discovery_limit_reached = len(generated) >= self.config.limit
             prefetched_results: dict[str, Any] = {}
             next_fetch_start_at = 0.0
 
@@ -1774,19 +1782,25 @@ class SiteCrawler:
                         progress.set_activity(f"Pausing to avoid blocks ({jitter:.1f}s)")
                     await self._sleep_with_cancel(jitter)
 
-                # Discover links for deeper crawling
+                # Discover links for deeper crawling. Each seed gets its own page
+                # limit, so a high-fan-out seed cannot exhaust the budget before the
+                # others discover (a soft, per-seed guide — see seed_counts).
+                page_seed = seed_of.get(norm_url, 0)
                 if (
                     discover_links
                     and depth < self.config.max_depth
                     and crawl_result.success
-                    and not discovery_limit_reached
+                    and seed_counts[page_seed] < self.config.limit
                 ):
-                    discovery_limit_reached = self._discover_links_from_result(
+                    self._discover_links_from_result(
                         url=url,
                         depth=depth,
                         crawl_result=crawl_result,
                         generated=generated,
                         depths=depths,
+                        seed_of=seed_of,
+                        page_seed=page_seed,
+                        seed_counts=seed_counts,
                         queue=queue,
                         progress=progress,
                         round_num=round_num,
@@ -2174,10 +2188,13 @@ class SiteCrawler:
         crawl_result: CrawlResult,
         generated: set[str],
         depths: dict[str, int],
+        seed_of: dict[str, int],
+        page_seed: int,
+        seed_counts: Counter[int],
         queue: list[tuple[str, int]],
         progress: ProgressReporter,
         round_num: int,
-    ) -> bool:
+    ) -> None:
         progress.set_activity(f"Finding more pages on {_shorten_url(url)}")
         next_depth = depth + 1
         new_links = self._extract_links(
@@ -2206,6 +2223,8 @@ class SiteCrawler:
                 continue
             generated.add(norm_link)
             depths[norm_link] = next_depth
+            seed_of[norm_link] = page_seed
+            seed_counts[page_seed] += 1
             self._record_page_discovered(
                 normalized_url=norm_link,
                 url=link,
@@ -2224,7 +2243,6 @@ class SiteCrawler:
             }
         )
         progress.total = max(len(generated), 1)
-        return len(generated) >= self.config.limit
 
     # ------------------------------------------------------------------
     # Block detection
@@ -2543,11 +2561,10 @@ class SiteCrawler:
             kwargs["override_navigator"] = True
             kwargs["magic"] = True
 
-        # The initial crawl (round 1) routes through the proxy only when
-        # proxy_on_initial is set; the fallback API is never used on the initial
-        # crawl. Both are paid resources reserved per _paid_resource_rounds.
-        proxy_rounds, _ = self._paid_resource_rounds()
-        self._apply_anti_bot_run_options(kwargs, use_proxy=1 in proxy_rounds)
+        # The initial crawl (round 1) routes through the proxies only when
+        # proxy_on_initial is set (a paid resource reserved per
+        # _paid_resource_rounds); otherwise it runs direct.
+        self._apply_anti_bot_run_options(kwargs, use_proxy=1 in self._paid_resource_rounds())
         return run_config_cls(**kwargs)
 
     def _build_fallback_run_config(self, run_config_cls: type, round_num: int) -> object:
@@ -2560,8 +2577,8 @@ class SiteCrawler:
         ``domcontentloaded`` to avoid repeated timeouts on
         analytics-heavy sites where ``networkidle`` never resolves.
 
-        Proxies and the fallback API are paid resources, so each is applied to at
-        most one retry round (see ``_paid_resource_rounds``) to cap per-crawl cost.
+        Proxies are a paid resource applied to every retry round (see
+        ``_paid_resource_rounds``); the initial crawl runs direct by default.
         """
         kwargs: dict = {}
 
@@ -2584,55 +2601,35 @@ class SiteCrawler:
 
         # scan_full_page and stealth run-flags intentionally omitted
 
-        proxy_rounds, api_round = self._paid_resource_rounds()
         self._apply_anti_bot_run_options(
-            kwargs,
-            use_proxy=round_num in proxy_rounds,
-            use_fallback_api=round_num == api_round,
+            kwargs, use_proxy=round_num in self._paid_resource_rounds()
         )
 
         return run_config_cls(**kwargs)
 
-    def _paid_resource_rounds(self) -> tuple[frozenset[int], int | None]:
-        """Return the rounds that use the proxy and the round that uses the API.
+    def _paid_resource_rounds(self) -> frozenset[int]:
+        """Return the retry rounds that route through the configured proxies.
 
-        Both are paid resources, so each is used sparingly to cap cost. Round 1 is
-        the initial crawl; retries start at round 2. By default the initial crawl
-        uses neither: the first retry uses the proxy and the second uses the API
-        (each at most one round). When ``config.proxy_on_initial`` is set and
-        proxies are configured, the proxy is applied to the initial crawl and the
-        first retry (rounds 1 and 2) and the API (if any) moves to the second
-        retry (round 3). Returns ``(proxy_rounds, api_round)``; ``proxy_rounds``
-        may be empty and ``api_round`` may be ``None``.
+        Proxies are a paid resource. Round 1 is the initial crawl; retries start at
+        round 2. By default the initial crawl runs direct and every retry round
+        uses the proxies; setting ``config.proxy_on_initial`` proxies the initial
+        crawl too. Returns an empty set when no proxies are configured.
         """
-        has_proxy = bool(self.config.proxies)
-        has_api = self._fallback_fetch_function is not None
-        if has_proxy and self.config.proxy_on_initial:
-            return frozenset({1, 2}), (3 if has_api else None)
-        if has_proxy and has_api:
-            return frozenset({2}), 3
-        if has_proxy:
-            return frozenset({2}), None
-        if has_api:
-            return frozenset(), 2
-        return frozenset(), None
+        if not self.config.proxies:
+            return frozenset()
+        first_round = 1 if self.config.proxy_on_initial else 2
+        return frozenset(range(first_round, self.config.max_retries + 2))
 
-    def _apply_anti_bot_run_options(
-        self, kwargs: dict, *, use_proxy: bool = False, use_fallback_api: bool = False
-    ) -> None:
-        """Add proxy escalation and/or the fallback fetch hook to a run-config dict.
+    def _apply_anti_bot_run_options(self, kwargs: dict, *, use_proxy: bool = False) -> None:
+        """Add direct-first proxy escalation to a run-config dict.
 
-        Proxies and the fallback scraping API are paid resources applied per
-        ``_paid_resource_rounds``: the proxy runs only on the round(s) it assigns
-        (the initial crawl only when ``proxy_on_initial`` is set) and the fallback
-        API on at most one retry round.
+        Proxies are a paid resource applied per ``_paid_resource_rounds``: every
+        retry round, plus the initial crawl only when ``proxy_on_initial`` is set.
         """
         if use_proxy:
             proxy_config = self._build_proxy_config()
             if proxy_config is not None:
                 kwargs["proxy_config"] = proxy_config
-        if use_fallback_api and self._fallback_fetch_function is not None:
-            kwargs["fallback_fetch_function"] = self._fallback_fetch_function
 
     def _build_proxy_config(self) -> list[Any] | None:
         """Build a direct-first proxy escalation list for Crawl4AI, or None.

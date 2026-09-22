@@ -96,7 +96,7 @@ def render_crawl_form(
             )
             max_retries = st.number_input(
                 strings["FORM_RETRIES_LABEL"],
-                min_value=2,
+                min_value=3,
                 value=int(defaults.get("max_retries", DEFAULT_MAX_RETRIES)),
                 help=strings["FORM_RETRIES_HELP"],
                 disabled=fields_disabled,

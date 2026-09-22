@@ -400,9 +400,10 @@ STRINGS_EN: Strings = {
     "FORM_EXCLUDE_PATHS_HELP": "Pages matching these regex patterns will be skipped.",
     "FORM_LIMIT_LABEL": "Page limit",
     "FORM_LIMIT_HELP": (
-        "Discovery cutoff: once this many pages are discovered, "
-        "the crawler stops discovering new links but still finishes "
-        "all already discovered pages."
+        "Per-URL discovery budget: each website URL discovers up to this many "
+        "pages before it stops finding new links, so a link-heavy site can't "
+        "starve the others. Already-discovered pages still finish, so the total "
+        "can exceed this when you crawl several URLs."
     ),
     "FORM_DELAY_LABEL": "Delay between pages",
     "FORM_DELAY_HELP": "Spaces out page starts to reduce blocking by websites.",

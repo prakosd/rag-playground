@@ -63,6 +63,41 @@ python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app
   use Pylint. `.vscode/` disables the Pylint extension and recommends the Ruff
   extension so editor diagnostics match the CI gate.
 
+## Dependency pins
+
+A few third-party pins are deliberate. Re-verify the noted behavior before raising them.
+
+### `trafilatura>=1.6.0,<2.1` (`[crawl]` extra)
+
+`ContentExtractor` calls trafilatura **directly** (crawl4ai only supplies raw HTML,
+so the crawl4ai version is unrelated), using `output_format="markdown"` with
+`include_links=True` so inline `[anchor](href)` links survive into the Markdown.
+
+- **Root cause of the cap:** trafilatura **2.1.0** updated its dependencies (lxml in
+  particular) and **2.2.0** revamped the extraction sequence. Together these regressed
+  how inline `<ref>` link elements serialize to Markdown — the `href` is dropped and
+  only the anchor text remains (no `](url)`). Upstream has patched several *related*
+  link cases (adbar/trafilatura #841, #858, #867, #877, #511), but the plain
+  inline-paragraph-link case still reproduces on 2.2.0 (re-confirmed 2026-09).
+- **Verified-good baseline:** 2.0.0 (works with lxml 5.x / 6.x).
+- **Impact if uncapped:** `tests/test_extractor_links.py::test_trafilatura_path_contains_link`
+  and `TestResolveFragmentLinks::test_integration_trafilatura_path` fail; no `extract()`
+  option restores the links.
+- **Re-verify recipe** before raising the cap:
+
+  ```bash
+  python -m venv /tmp/traf && /tmp/traf/bin/pip install -U trafilatura
+  /tmp/traf/bin/python - <<'PY'
+  import trafilatura
+  html = '<p>See <a href="https://example.com">the docs</a> now.</p>'
+  md = trafilatura.extract(html, output_format="markdown", include_links=True)
+  print("HAS_INLINE_LINK=", "](" in (md or ""), "\n", md)
+  PY
+  python -m pytest tests/test_extractor_links.py tests/test_extractor.py -q
+  ```
+
+  Only raise the cap if `HAS_INLINE_LINK= True` **and** the extractor tests pass.
+
 ## Component guides
 
 | Component | Guide |

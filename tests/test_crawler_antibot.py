@@ -1,4 +1,4 @@
-"""Tests for SiteCrawler anti-bot escalation (proxies, undetected browser, fallback)."""
+"""Tests for SiteCrawler anti-bot escalation (proxies, undetected browser)."""
 
 from __future__ import annotations
 
@@ -58,42 +58,22 @@ def test_apply_anti_bot_run_options_noop_by_default() -> None:
     assert kwargs == {}
 
 
-def test_apply_anti_bot_run_options_adds_proxy_and_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_apply_anti_bot_run_options_adds_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("crawl4md.crawler._load_proxy_config_cls", lambda: _FakeProxyConfig)
-
-    async def fallback(url: str) -> str:
-        return "<html></html>"
-
-    crawler = SiteCrawler(
-        CrawlerConfig(urls=["https://example.com"], proxies=["http://p:8080"]),
-        fallback_fetch_function=fallback,
-    )
+    crawler = _crawler(proxies=["http://p:8080"])
     kwargs: dict = {}
-    crawler._apply_anti_bot_run_options(kwargs, use_proxy=True, use_fallback_api=True)
+    crawler._apply_anti_bot_run_options(kwargs, use_proxy=True)
 
     assert kwargs["proxy_config"][0] is _FakeProxyConfig.DIRECT
-    assert kwargs["fallback_fetch_function"] is fallback
 
 
-def test_apply_anti_bot_run_options_skips_proxy_but_keeps_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_apply_anti_bot_run_options_skips_proxy_when_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("crawl4md.crawler._load_proxy_config_cls", lambda: _FakeProxyConfig)
-
-    async def fallback(url: str) -> str:
-        return "<html></html>"
-
-    crawler = SiteCrawler(
-        CrawlerConfig(urls=["https://example.com"], proxies=["http://p:8080"]),
-        fallback_fetch_function=fallback,
-    )
+    crawler = _crawler(proxies=["http://p:8080"])
     kwargs: dict = {}
-    crawler._apply_anti_bot_run_options(kwargs, use_proxy=False, use_fallback_api=True)
+    crawler._apply_anti_bot_run_options(kwargs, use_proxy=False)
 
     assert "proxy_config" not in kwargs
-    assert kwargs["fallback_fetch_function"] is fallback
 
 
 def test_build_run_config_skips_proxies_on_initial_crawl(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -113,25 +93,21 @@ def test_build_run_config_skips_proxies_on_initial_crawl(monkeypatch: pytest.Mon
     assert "proxy_config" in captured
 
 
-def _paid_resource_crawler(
+def _proxy_crawler(
     monkeypatch: pytest.MonkeyPatch,
     *,
     proxies: list[str] | None = None,
-    api: bool = False,
     proxy_on_initial: bool = False,
+    max_retries: int = 3,
 ) -> SiteCrawler:
     monkeypatch.setattr("crawl4md.crawler._load_proxy_config_cls", lambda: _FakeProxyConfig)
-
-    async def fallback(url: str) -> str:
-        return "<html></html>"
-
     return SiteCrawler(
         CrawlerConfig(
             urls=["https://example.com"],
             proxies=proxies or [],
             proxy_on_initial=proxy_on_initial,
-        ),
-        fallback_fetch_function=fallback if api else None,
+            max_retries=max_retries,
+        )
     )
 
 
@@ -146,37 +122,22 @@ def _captured_fallback_run_config(crawler: SiteCrawler, round_num: int) -> dict:
     return captured
 
 
-def test_paid_resource_rounds_none_when_unset() -> None:
-    assert _crawler()._paid_resource_rounds() == (frozenset(), None)
+def test_paid_resource_rounds_empty_without_proxies() -> None:
+    assert _crawler()._paid_resource_rounds() == frozenset()
 
 
-def test_paid_resource_rounds_proxy_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"])
-    assert crawler._paid_resource_rounds() == (frozenset({2}), None)
-
-
-def test_paid_resource_rounds_api_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(monkeypatch, api=True)
-    assert crawler._paid_resource_rounds() == (frozenset(), 2)
-
-
-def test_paid_resource_rounds_both(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], api=True)
-    assert crawler._paid_resource_rounds() == (frozenset({2}), 3)
+def test_paid_resource_rounds_covers_every_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _proxy_crawler(monkeypatch, proxies=["http://p:8080"], max_retries=3)
+    # The initial crawl (round 1) runs direct; every retry round uses the proxies.
+    assert crawler._paid_resource_rounds() == frozenset({2, 3, 4})
 
 
 def test_paid_resource_rounds_proxy_on_initial(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], proxy_on_initial=True)
-    # Proxy on the initial crawl (round 1) and the first retry (round 2).
-    assert crawler._paid_resource_rounds() == (frozenset({1, 2}), None)
-
-
-def test_paid_resource_rounds_proxy_on_initial_with_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(
-        monkeypatch, proxies=["http://p:8080"], api=True, proxy_on_initial=True
+    crawler = _proxy_crawler(
+        monkeypatch, proxies=["http://p:8080"], proxy_on_initial=True, max_retries=3
     )
-    # Proxy on rounds 1-2, API shifts to the second retry (round 3).
-    assert crawler._paid_resource_rounds() == (frozenset({1, 2}), 3)
+    # proxy_on_initial adds the initial crawl (round 1) to the proxied retry rounds.
+    assert crawler._paid_resource_rounds() == frozenset({1, 2, 3, 4})
 
 
 def test_build_run_config_uses_proxy_on_initial_when_enabled(
@@ -194,34 +155,15 @@ def test_build_run_config_uses_proxy_on_initial_when_enabled(
     assert "proxy_config" in captured
 
 
-def test_retry_rounds_use_proxy_then_api_when_both_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], api=True)
+def test_every_retry_round_uses_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _proxy_crawler(monkeypatch, proxies=["http://p:8080"], max_retries=3)
 
-    round2 = _captured_fallback_run_config(crawler, 2)
-    assert "proxy_config" in round2
-    assert "fallback_fetch_function" not in round2
-
-    round3 = _captured_fallback_run_config(crawler, 3)
-    assert "proxy_config" not in round3
-    assert "fallback_fetch_function" in round3
-
-    round4 = _captured_fallback_run_config(crawler, 4)
-    assert "proxy_config" not in round4
-    assert "fallback_fetch_function" not in round4
+    for round_num in (2, 3, 4):
+        assert "proxy_config" in _captured_fallback_run_config(crawler, round_num), round_num
 
 
-def test_retry_uses_api_on_first_retry_when_only_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(monkeypatch, api=True)
-
-    round2 = _captured_fallback_run_config(crawler, 2)
-    assert "fallback_fetch_function" in round2
-    assert "proxy_config" not in round2
-
-    assert "fallback_fetch_function" not in _captured_fallback_run_config(crawler, 3)
-
-
-def test_initial_crawl_uses_no_fallback_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    crawler = _paid_resource_crawler(monkeypatch, proxies=["http://p:8080"], api=True)
+def test_initial_crawl_uses_no_proxy_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    crawler = _proxy_crawler(monkeypatch, proxies=["http://p:8080"])
     captured: dict = {}
 
     def fake_run_config_cls(**kwargs: object) -> object:
@@ -230,17 +172,6 @@ def test_initial_crawl_uses_no_fallback_api(monkeypatch: pytest.MonkeyPatch) -> 
 
     crawler._build_run_config(fake_run_config_cls)
     assert "proxy_config" not in captured
-    assert "fallback_fetch_function" not in captured
-
-
-def test_fallback_fetch_function_is_stored() -> None:
-    async def fallback(url: str) -> str:
-        return ""
-
-    crawler = SiteCrawler(
-        CrawlerConfig(urls=["https://example.com"]), fallback_fetch_function=fallback
-    )
-    assert crawler._fallback_fetch_function is fallback
 
 
 def test_build_undetected_strategy_builds_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
