@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rag_engine import ConversationalAnswer, RetrievedChunk, ValidatedFollowup
+from rag_engine import ConversationalAnswer, RetrievedChunk, StagePromptTrace, ValidatedFollowup
 
 from app_support.conversational_rag.conversation_manager import (
     asked_questions_from_records,
@@ -14,7 +14,11 @@ from app_support.conversational_rag.conversation_manager import (
     trim_old_turn_payloads,
     turn_from_record,
 )
-from app_support.conversational_rag.conversational_rag_history import ConversationalTurnRecord
+from app_support.conversational_rag.conversational_rag_history import (
+    ConversationalPromptTrace,
+    ConversationalStageUsage,
+    ConversationalTurnRecord,
+)
 from app_support.rag_shared.result_snapshot import StoredResult
 
 _ID_ALPHABET = set("abcdefghijklmnopqrstuvwxyz0123456789")
@@ -30,6 +34,8 @@ def _record(
     sub_questions: tuple[str, ...] = (),
     follow_ups: tuple[str, ...] = (),
     results: tuple[StoredResult, ...] = (),
+    token_usage: tuple[ConversationalStageUsage, ...] = (),
+    prompt_traces: tuple[ConversationalPromptTrace, ...] = (),
 ) -> ConversationalTurnRecord:
     return ConversationalTurnRecord(
         timestamp_utc=timestamp,
@@ -44,6 +50,8 @@ def _record(
         answer=answer,
         follow_ups_shown=follow_ups,
         results=results,
+        token_usage=token_usage,
+        prompt_traces=prompt_traces,
         conversation_id=conversation_id,
         state_summary=state_summary,
     )
@@ -90,6 +98,40 @@ def test_turn_from_record_rebuilds_display_adequate_answer() -> None:
     assert answer.model_used == "main"
     assert [chunk.source for chunk in answer.sources] == ["doc.md"]
     assert answer.sources[0].score == 0.9
+
+
+def test_turn_from_record_maps_token_usage() -> None:
+    record = _record(
+        "2026-09-01T10:00:00.000+00:00",
+        token_usage=(
+            ConversationalStageUsage("answer", "main", 100, 40, 140),
+            ConversationalStageUsage("decomposition", "aux", 20, 5, 25),
+        ),
+    )
+
+    stages = turn_from_record(record)["answer"].token_usage
+
+    # Persisted per-stage tokens rehydrate so a reloaded turn's Inspect shows them.
+    assert [(stage.process, stage.model_id, stage.usage.total_tokens) for stage in stages] == [
+        ("answer", "main", 140),
+        ("decomposition", "aux", 25),
+    ]
+
+
+def test_turn_from_record_maps_prompt_traces() -> None:
+    record = _record(
+        "2026-09-01T10:00:00.000+00:00",
+        prompt_traces=(
+            ConversationalPromptTrace(process="decomposition", prompt="P", response="R"),
+        ),
+    )
+
+    traces = turn_from_record(record)["answer"].prompt_traces
+
+    # Persisted prompt/reply rehydrate so a reloaded turn's Inspect can show them.
+    assert [(trace.process, trace.prompt, trace.response) for trace in traces] == [
+        ("decomposition", "P", "R")
+    ]
 
 
 def test_conversation_turns_orders_oldest_first_with_sequential_ids() -> None:
@@ -170,6 +212,7 @@ def _live_turn(index: int) -> dict:
         answer=f"a{index}",
         sources=[chunk],
         follow_ups=[ValidatedFollowup(question="f?", chunks=[chunk])],
+        prompt_traces=[StagePromptTrace(process="reranking", prompt="P", response="R")],
     )
     return {"question": f"q{index}", "answer": answer, "turn_id": index}
 
@@ -180,9 +223,11 @@ def test_trim_old_turn_payloads_frees_old_chunks_keeps_text() -> None:
     trim_old_turn_payloads(turns, keep_recent=1)
 
     assert turns[0]["answer"].sources == []
+    assert turns[0]["answer"].prompt_traces == []
     assert turns[0]["answer"].follow_ups[0].chunks == []
     assert turns[0]["answer"].answer == "a0"  # transcript text preserved
     assert turns[-1]["answer"].sources  # newest turn kept intact
+    assert turns[-1]["answer"].prompt_traces  # newest turn's prompts kept
     assert turns[-1]["answer"].follow_ups[0].chunks
 
 

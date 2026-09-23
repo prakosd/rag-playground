@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import streamlit as st
+from artifact_store import LibraryMessage
 from rag_engine import (
     CHAT_MODEL_OPTIONS,
     CONVERSATIONAL_PROMPT_FIELDS,
@@ -22,8 +23,11 @@ from rag_engine import (
     ConversationState,
     QueryPlan,
     RagConfig,
+    StagePromptTrace,
+    StageTokenUsage,
     ValidatedFollowup,
 )
+from rag_engine.messages import CODE_FOLLOWUPS_NONE_VALID, CODE_RERANK_UNAVAILABLE
 
 from app_support.basic_rag_qa.basic_rag_qa_form_ui import tone_choices
 from app_support.conversational_rag.conversational_prompts import (
@@ -39,6 +43,7 @@ from app_support.conversational_rag.conversational_prompts import (
     resolve_conversational_prompts,
     save_conversational_prompt,
 )
+from app_support.i18n import localize_message
 from app_support.i18n._types import Strings
 from app_support.model_pricing import load_pricing_catalog
 from app_support.rag_shared.index_catalog import IndexRef
@@ -248,10 +253,8 @@ def render_advanced_controls(
                 disabled=disabled,
                 key=f"{key_prefix}_thresholds",
             )
-            st.caption(
-                strings["CONV_THRESHOLD_CAPTION"].format(drop=f"{drop:.2f}", keep=f"{keep:.2f}")
-            )
-        with st.container(horizontal=True):
+        toggles_left, toggles_right = st.columns([3, 1], vertical_alignment="center")
+        with toggles_left, st.container(horizontal=True):
             decomposition = st.toggle(
                 strings["CONV_DECOMPOSITION_LABEL"],
                 value=settings.conv_rag_decomposition_enabled,
@@ -266,6 +269,7 @@ def render_advanced_controls(
                 disabled=disabled,
                 key=f"{key_prefix}_followups",
             )
+        with toggles_right, st.container(horizontal_alignment="right"):
             inspect = st.toggle(
                 strings["CONV_INSPECT_LABEL"],
                 value=False,
@@ -344,7 +348,6 @@ def _render_prompt_editor(
 ) -> None:
     """Render the prompt-template editor, hiding tabs whose feature is turned off."""
     with st.expander(strings["CONV_PROMPTS_LABEL"], expanded=False):
-        st.caption(strings["CONV_PROMPTS_CAPTION"])
         model_keys = [
             key
             for key in CONVERSATIONAL_PROMPT_KEYS
@@ -425,7 +428,11 @@ def _render_single_prompt(
     st.session_state[widget_key] = editor_prompt_text(
         st.session_state.get(widget_key), prompt_key, session_root
     )
-    st.caption(strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields))
+    st.markdown(
+        f"<div style='margin:-0.5rem 0 0.25rem;opacity:0.6;font-size:0.875rem'>"
+        f"{html.escape(strings['CONV_PROMPT_FIELDS_CAPTION'].format(fields=fields))}</div>",
+        unsafe_allow_html=True,
+    )
     st.text_area(
         strings[_PROMPT_TAB_KEYS[prompt_key]],
         height=_PROMPT_EDITOR_HEIGHT,
@@ -469,21 +476,60 @@ def _render_app_message_prompt(
     _render_prompt_actions(strings, session_root, prompt_key, widget_key, disabled=disabled)
 
 
+# Per-turn timing stages in execution order: (timings key, i18n label key).
+_TIMING_STAGES = (
+    ("plan", "CONV_META_PLAN"),
+    ("retrieve", "CONV_META_RETRIEVE"),
+    ("rerank", "CONV_META_RERANK"),
+    ("answer", "CONV_META_ANSWER"),
+    ("followups", "CONV_META_FOLLOWUPS"),
+    ("state", "CONV_META_STATE"),
+)
+# Token-usage process key → display stage; the answerability probe folds into
+# follow-ups. Display stages render in execution order (retrieval spends no tokens).
+_TOKEN_PROCESS_STAGE = {
+    "decomposition": "plan",
+    "reranking": "rerank",
+    "answer": "answer",
+    "followups": "followups",
+    "answerability": "followups",
+    "state": "state",
+}
+
+
+def _compact_tokens(count: int) -> str:
+    """Short token count, e.g. 320 or 1.4k."""
+    return f"{count / 1000:.1f}k" if count >= 1000 else str(count)
+
+
+def _stage_tokens(token_usage: Sequence[StageTokenUsage]) -> dict[str, int]:
+    """Total tokens per display stage (the answerability probe folds into follow-ups)."""
+    totals: dict[str, int] = {}
+    for stage in token_usage:
+        display = _TOKEN_PROCESS_STAGE.get(stage.process)
+        if display is None or stage.usage.total_tokens is None:
+            continue
+        totals[display] = totals.get(display, 0) + stage.usage.total_tokens
+    return totals
+
+
 def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None:
-    """Render the compact per-turn metadata strip (timings + models)."""
+    """Render per-turn metadata: a Process | Time·Tokens grid (2 stages/row), then models."""
     timings = answer.timings
-    rows = [
-        (strings["CONV_META_PLAN"], f"{timings.get('plan', 0.0):.2f}s"),
-        (strings["CONV_META_RETRIEVE"], f"{timings.get('retrieve', 0.0):.2f}s"),
-        (strings["CONV_META_RERANK"], f"{timings.get('rerank', 0.0):.2f}s"),
-        (strings["CONV_META_ANSWER"], f"{timings.get('answer', 0.0):.2f}s"),
-        (strings["CONV_META_FOLLOWUPS"], f"{timings.get('followups', 0.0):.2f}s"),
-        (strings["CONV_META_STATE"], f"{timings.get('state', 0.0):.2f}s"),
+    tokens = _stage_tokens(answer.token_usage)
+    rows: list[tuple[str, str]] = []
+    for key, label in _TIMING_STAGES:
+        value = f"{timings.get(key, 0.0):.2f}s"
+        if key in tokens:
+            value += f" · {_compact_tokens(tokens[key])}"
+        rows.append((strings[label], value))
+    st.markdown(kv_grid_html(rows, columns=4), unsafe_allow_html=True)
+    model_rows = [
         (strings["CONV_META_ANSWER_MODEL"], answer.model_used or "—"),
         (strings["CONV_META_AUX_MODEL"], answer.aux_model_used or "—"),
         (strings["CONV_META_RERANKER"], answer.reranker_used or "—"),
     ]
-    st.markdown(kv_grid_html(rows, columns=4, margin_top=True), unsafe_allow_html=True)
+    st.markdown(kv_grid_html(model_rows, columns=2, margin_top=True), unsafe_allow_html=True)
 
 
 def render_turn_inspection(
@@ -503,6 +549,7 @@ def render_turn_inspection(
         )
         with tabs[0]:
             _render_decomposition(strings, answer.plan)
+            _render_stage_prompt(strings, answer, "decomposition")
         with tabs[1]:
             if answer.sources:
                 render_result_cards(strings, answer.sources, default_tab=default_tab)
@@ -512,11 +559,50 @@ def render_turn_inspection(
             st.caption(
                 strings["CONV_INSPECT_RERANKER_USED"].format(reranker=answer.reranker_used or "—")
             )
+            rerank_note = _inspect_note(strings, answer.warnings, CODE_RERANK_UNAVAILABLE)
+            if rerank_note:
+                st.caption(rerank_note)
             _render_ranked_sources(answer.sources)
+            _render_stage_prompt(strings, answer, "reranking")
         with tabs[3]:
             _render_state(strings, answer.state)
+            _render_stage_prompt(strings, answer, "state")
         with tabs[4]:
-            _render_followups(strings, answer.follow_ups)
+            _render_followups(
+                strings,
+                answer.follow_ups,
+                none_valid_note=_inspect_note(strings, answer.warnings, CODE_FOLLOWUPS_NONE_VALID),
+            )
+            _render_followups_prompts(strings, answer)
+
+
+def _render_prompt_trace(strings: Strings, trace: StagePromptTrace) -> None:
+    """Show one stage's rendered prompt and raw reply in Prompt/Response sub-tabs."""
+    prompt_tab, response_tab = st.tabs(
+        [strings["CONV_INSPECT_PROMPT_LABEL"], strings["CONV_INSPECT_RESPONSE_LABEL"]]
+    )
+    with prompt_tab:
+        st.code(trace.prompt or "—", language=None, wrap_lines=True)
+    with response_tab:
+        st.code(trace.response or "—", language=None, wrap_lines=True)
+
+
+def _render_stage_prompt(strings: Strings, answer: ConversationalAnswer, process: str) -> None:
+    """Show the captured prompt/reply for *process*, or a note when none was sent."""
+    trace = next((item for item in answer.prompt_traces if item.process == process), None)
+    if trace is None:
+        st.caption(strings["CONV_INSPECT_NO_PROMPT"])
+        return
+    _render_prompt_trace(strings, trace)
+
+
+def _render_followups_prompts(strings: Strings, answer: ConversationalAnswer) -> None:
+    """Follow-up generation prompt in sub-tabs, then each answerability probe below."""
+    _render_stage_prompt(strings, answer, "followups")
+    probes = [item for item in answer.prompt_traces if item.process == "answerability"]
+    for index, probe in enumerate(probes, start=1):
+        with st.expander(strings["CONV_INSPECT_ANSWERABILITY_PROBE"].format(n=index)):
+            _render_prompt_trace(strings, probe)
 
 
 def render_followup_bubble(
@@ -593,9 +679,22 @@ def _render_state(strings: Strings, state: ConversationState) -> None:
             st.markdown(f"- {thread}")
 
 
-def _render_followups(strings: Strings, follow_ups: Sequence[ValidatedFollowup]) -> None:
+def _inspect_note(strings: Strings, warnings: Sequence[LibraryMessage], code: str) -> str | None:
+    """Localized text of the first warning matching *code* (relocated into Inspect)."""
+    for message in warnings:
+        if message.code == code:
+            return localize_message(strings, message.as_dict())
+    return None
+
+
+def _render_followups(
+    strings: Strings,
+    follow_ups: Sequence[ValidatedFollowup],
+    *,
+    none_valid_note: str | None = None,
+) -> None:
     if not follow_ups:
-        st.caption(strings["CONV_INSPECT_FOLLOWUPS_NONE"])
+        st.caption(none_valid_note or strings["CONV_INSPECT_FOLLOWUPS_NONE"])
         return
     rows = [
         (html.unescape(item.question), f"{round(max(0.0, min(1.0, item.score)) * 100)}%")

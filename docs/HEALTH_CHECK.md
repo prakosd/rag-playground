@@ -62,6 +62,22 @@ A reached `200` confirms the platform is serving your (awake) app. For a stricte
 "the script renders" guarantee, use a headless-browser canary (Option B) that loads
 the page and asserts expected content.
 
+**Seeing `curl: (47) Maximum (50) redirects followed`?** That is the expected result of a
+plain `curl -L` (no cookie jar): curl's **cookie engine is off by default**, so it never
+sends back the session cookie the proxy sets, and the `303` handshake loops until curl's
+50-redirect cap. It means the cookie engine is off — **not** that the app is down (the TLS
+connection and server are fine, they answered every redirect). Turn the cookie engine on
+(even an empty in-memory jar works) and the probe completes to `200`. Run it in a plain
+terminal (the `\` is just a line-continuation; don't copy any leading `>` prompt markers):
+
+```bash
+curl -L -b "" -o /dev/null -w '%{http_code}\n' \
+  https://rag-playground-prakosd.streamlit.app/_stcore/health   # → 200
+```
+
+`%{http_code}` prints the final HTTP status code: `200` = the app is up; `000` = a
+connection/timeout failure (treat as down); other codes signal a server problem.
+
 > **Hibernation:** Community Cloud sleeps apps after 12 h without traffic; an hourly
 > probe keeps yours **awake**. While asleep or waking, the probe may hit the wake-up
 > page — allow a few consecutive failures before alerting (see the retry setting below).

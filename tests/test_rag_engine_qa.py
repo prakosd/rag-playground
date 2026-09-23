@@ -7,7 +7,7 @@ from rag_engine.config import RagConfig
 from rag_engine.llm import ResolvedChatModel
 from rag_engine.llm.echo import build_echo_chat_model
 from rag_engine.models import RetrievedChunk
-from rag_engine.qa import answer_question, generate_answer
+from rag_engine.qa import answer_question, generate_answer, generate_from_prompt, stream_prompt
 from rag_engine.retrieval import RetrievalResult
 
 _CHUNKS = [
@@ -36,6 +36,51 @@ def _boom_resolver(model_id: str, *, temperature: float = 0.0, max_tokens: int =
             raise RuntimeError("kaboom")
 
     return ResolvedChatModel(model=_Boom(), model_id="boom"), []
+
+
+def _capture_model(sink: list):
+    """A chat model that records the messages it is asked to answer."""
+    from langchain_core.language_models import SimpleChatModel
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            sink.append(list(messages))
+            return "reply"
+
+    return _Capture()
+
+
+def test_stream_prompt_leads_with_no_think_system_message() -> None:
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    sink: list = []
+    list(stream_prompt(_capture_model(sink), "hello", system_directive="/no_think"))
+
+    sent = sink[0]
+    assert isinstance(sent[0], SystemMessage) and sent[0].content == "/no_think"
+    assert isinstance(sent[1], HumanMessage) and sent[1].content == "hello"
+
+
+def test_stream_prompt_without_directive_sends_only_the_prompt() -> None:
+    from langchain_core.messages import HumanMessage
+
+    sink: list = []
+    list(stream_prompt(_capture_model(sink), "hello"))
+
+    assert len(sink[0]) == 1 and isinstance(sink[0][0], HumanMessage)
+
+
+def test_generate_from_prompt_leads_with_no_think_system_message() -> None:
+    from langchain_core.messages import SystemMessage
+
+    sink: list = []
+    generate_from_prompt(_capture_model(sink), "hello", system_directive="/no_think")
+
+    assert isinstance(sink[0][0], SystemMessage) and sink[0][0].content == "/no_think"
 
 
 def test_generate_answer_with_echo_includes_question() -> None:

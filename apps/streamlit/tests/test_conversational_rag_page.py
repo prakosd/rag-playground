@@ -6,6 +6,7 @@ import importlib
 from pathlib import Path
 
 from pytest import MonkeyPatch
+from rag_engine import messages as rag_messages
 
 from app_support.conversational_rag.conversational_rag_history import ConversationalTurnRecord
 
@@ -111,3 +112,19 @@ def test_newest_user_turn_key_prefers_pending_then_latest(monkeypatch: MonkeyPat
     )
     # Fresh, empty conversation: nothing to scroll to.
     assert page._newest_user_turn_key([], submitting=False) is None
+
+
+def test_inline_warnings_drops_inspect_only_codes(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    kept = rag_messages.plan_unparsable()
+    filtered = page._inline_warnings(
+        [
+            kept,
+            rag_messages.rerank_unavailable("llm", "unparsable ranking"),
+            rag_messages.followups_none_valid(),
+        ]
+    )
+
+    # The re-rank and follow-up notices move to the Inspect panel, so only the
+    # unrelated planning warning stays in the answer bubble.
+    assert filtered == [kept]

@@ -34,15 +34,21 @@ __all__ = [
     "resolve_auxiliary_model",
     "resolve_chat_model",
     "thinking_disabled_model_kwargs",
+    "thinking_disabled_system_directive",
 ]
 
 _BEDROCK_PROVIDER = "bedrock_converse"
 _OPENAI_PROVIDER = "openai"
-_QWEN_MODEL_MARKER = "qwen"
-# Best-effort per-provider request fields that suppress a model's chain-of-thought
-# / "thinking" output. Qwen3 on Bedrock thinks unless told not to; the switch is a
-# chat-template flag passed through Converse's additional model request fields.
-_QWEN_DISABLE_THINKING_FIELDS = {"chat_template_kwargs": {"enable_thinking": False}}
+# Bedrock reasoning models whose "thinking" is suppressed by a vLLM chat-template
+# flag passed through Converse's additional model request fields (Qwen3 and GLM
+# share this convention). The switch is best-effort and narrow — passing unknown
+# request fields can make a provider reject the call.
+_THINKING_FLAG_MARKERS = ("qwen", "glm")
+_DISABLE_THINKING_FIELDS = {"chat_template_kwargs": {"enable_thinking": False}}
+# NVIDIA Nemotron on Bedrock has no request-field switch: its chat template turns
+# reasoning off only when a `/no_think` token appears in the system/user message.
+_NEMOTRON_MODEL_MARKER = "nemotron"
+_NO_THINK_DIRECTIVE = "/no_think"
 
 _logger = get_logger(__name__)
 
@@ -72,15 +78,33 @@ def _has_aws_credentials() -> bool:
 def thinking_disabled_model_kwargs(model_id: str, provider: str) -> dict[str, Any]:
     """Return extra ``init_chat_model`` kwargs that disable a model's thinking.
 
-    Reasoning/thinking is off by default for the models shipped here, so this is a
-    no-op for most of them. Qwen3 on Bedrock is the documented exception: it thinks
-    unless a chat-template flag says otherwise. The map is intentionally narrow —
-    passing unknown request fields can make a provider reject the call — so
-    unrecognised models get an empty dict.
+    Reasoning/thinking is off by default for most models shipped here, so this is a
+    no-op for them. Qwen3 and GLM on Bedrock are the documented exceptions: they
+    think unless a chat-template flag says otherwise. Nemotron uses a prompt
+    directive instead (``thinking_disabled_system_directive``) and gpt-oss cannot
+    disable it, so both get an empty dict here. Unrecognised models get an empty
+    dict too — passing unknown request fields can make a provider reject the call.
     """
-    if provider == _BEDROCK_PROVIDER and _QWEN_MODEL_MARKER in model_id.lower():
-        return {"additional_model_request_fields": {**_QWEN_DISABLE_THINKING_FIELDS}}
+    if provider == _BEDROCK_PROVIDER and any(
+        marker in model_id.lower() for marker in _THINKING_FLAG_MARKERS
+    ):
+        return {"additional_model_request_fields": {**_DISABLE_THINKING_FIELDS}}
     return {}
+
+
+def thinking_disabled_system_directive(model_id: str) -> str:
+    """Return a system-prompt token that disables a model's thinking, or ``""``.
+
+    NVIDIA Nemotron on Bedrock reasons unless a ``/no_think`` token appears in its
+    system or user message — its chat template has no request-field switch (unlike
+    Qwen/GLM, handled by ``thinking_disabled_model_kwargs``). Callers add the token
+    to the system message they send. The map is narrow, so every other model
+    (including gpt-oss, whose reasoning cannot be turned off) yields ``""``.
+    """
+    info = get_chat_model_info(model_id)
+    if info and info.provider == _BEDROCK_PROVIDER and _NEMOTRON_MODEL_MARKER in model_id.lower():
+        return _NO_THINK_DIRECTIVE
+    return ""
 
 
 def build_chat_model(

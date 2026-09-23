@@ -32,6 +32,7 @@ from rag_engine.llm import (
     ResolvedChatModel,
     resolve_auxiliary_model,
     resolve_chat_model,
+    thinking_disabled_system_directive,
 )
 from rag_engine.models import (
     ChatTurn,
@@ -40,6 +41,7 @@ from rag_engine.models import (
     QueryPlan,
     RagAnswer,
     RetrievedChunk,
+    StagePromptTrace,
     StageTokenUsage,
     TokenUsage,
     ValidatedFollowup,
@@ -84,6 +86,7 @@ __all__ = [
     "RetrievalResult",
     "RetrievedChunk",
     "SearchHit",
+    "StagePromptTrace",
     "StageTokenUsage",
     "TokenUsage",
     "ValidatedFollowup",
@@ -110,4 +113,5 @@ __all__ = [
     "stream_chat_answer",
     "stream_prompt",
     "template_has_fields",
+    "thinking_disabled_system_directive",
 ]

@@ -29,6 +29,43 @@ _CHUNKS = [
     RetrievedChunk(text="Berlin is in Germany.", source="b.md", score=0.8, metadata={}),
 ]
 
+
+def _capture_model(sink: list):
+    """A chat model that records the messages it is asked to answer."""
+    from langchain_core.language_models import SimpleChatModel
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            sink.append(list(messages))
+            return "reply"
+
+    return _Capture()
+
+
+def test_invoke_text_with_usage_leads_with_system_directive() -> None:
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    sink: list = []
+    invoke_text_with_usage(_capture_model(sink), "rank this", system_directive="/no_think")
+
+    sent = sink[0]
+    assert isinstance(sent[0], SystemMessage) and sent[0].content == "/no_think"
+    assert isinstance(sent[1], HumanMessage)
+
+
+def test_invoke_text_with_usage_without_directive_omits_system() -> None:
+    from langchain_core.messages import HumanMessage
+
+    sink: list = []
+    invoke_text_with_usage(_capture_model(sink), "rank this")
+
+    assert len(sink[0]) == 1 and isinstance(sink[0][0], HumanMessage)
+
+
 _CHUNK_WITH_URL = RetrievedChunk(
     text="Paris is the capital.",
     source="a.md",

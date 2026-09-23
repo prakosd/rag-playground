@@ -57,6 +57,8 @@ def suggest_followups(
     *,
     asked_questions: Sequence[str] = (),
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    record_prompt: Callable[[str, str, str], None] | None = None,
+    system_directive: str = "",
 ) -> list[str]:
     """Generate candidate follow-up questions from the retrieved topics.
 
@@ -77,9 +79,11 @@ def suggest_followups(
         language=config.language,
         tone=config.tone,
     )
-    reply, usage = invoke_text_with_usage(model, prompt)
+    reply, usage = invoke_text_with_usage(model, prompt, system_directive=system_directive)
     if record_usage is not None:
         record_usage("followups", usage)
+    if record_prompt is not None:
+        record_prompt("followups", prompt, reply)
     return parse_json_array(reply) or []
 
 
@@ -91,6 +95,8 @@ def answerability_check(
     *,
     template: str | None = None,
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    record_prompt: Callable[[str, str, str], None] | None = None,
+    system_directive: str = "",
 ) -> bool:
     """Return whether the top *limit* *chunks* can answer *question* (YES/NO)."""
     context = "\n\n".join(chunk.text for chunk in list(chunks)[:limit])
@@ -98,12 +104,14 @@ def answerability_check(
         template, ANSWERABILITY_TEMPLATE, context=context, question=question
     )
     try:
-        reply, usage = invoke_text_with_usage(model, prompt)
+        reply, usage = invoke_text_with_usage(model, prompt, system_directive=system_directive)
     except Exception as exc:  # noqa: BLE001 - the check is best-effort
         _logger.warning("Answerability check failed: %s", exc)
         return False
     if record_usage is not None:
         record_usage("answerability", usage)
+    if record_prompt is not None:
+        record_prompt("answerability", prompt, reply)
     return reply.strip().lower().startswith(_YES)
 
 
@@ -116,6 +124,8 @@ def validate_followups(
     retriever: Callable[..., RetrievalResult] = retrieve,
     asked_questions: Sequence[str] = (),
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    record_prompt: Callable[[str, str, str], None] | None = None,
+    system_directive: str = "",
 ) -> list[ValidatedFollowup]:
     """Keep only candidates the corpus can answer, carrying their probe chunks.
 
@@ -165,6 +175,8 @@ def validate_followups(
                 config.answerability_chunks,
                 template=config.prompts.answerability,
                 record_usage=record_usage,
+                record_prompt=record_prompt,
+                system_directive=system_directive,
             )
         else:
             keep = False

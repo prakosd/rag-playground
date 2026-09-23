@@ -22,6 +22,7 @@ from rag_engine.prompts import (
     _DEFAULT_TONE,
     DEFAULT_ANSWER_LANGUAGE,
     QA_SYSTEM_PROMPT,
+    _directive_messages,
     format_context,
     message_text,
 )
@@ -100,19 +101,21 @@ class PromptGeneration:
     human message, so what the user sees is exactly what the model receives.
     """
 
-    def __init__(self, chat_model: BaseChatModel, prompt: str) -> None:
+    def __init__(
+        self, chat_model: BaseChatModel, prompt: str, *, system_directive: str = ""
+    ) -> None:
         self._chat_model = chat_model
         self._prompt = prompt
+        self._system_directive = system_directive
         self.text = ""
         self.usage: TokenUsage | None = None
 
     def __iter__(self) -> Iterator[str]:
-        from langchain_core.messages import HumanMessage
-
         _logger.info("Running model on prompt (%d chars, streaming)", len(self._prompt))
+        request = _directive_messages(self._prompt, self._system_directive)
         aggregate: Any = None
         parts: list[str] = []
-        for chunk in self._chat_model.stream([HumanMessage(content=self._prompt)]):
+        for chunk in self._chat_model.stream(request):
             if aggregate is None:
                 aggregate = chunk
             else:
@@ -129,17 +132,27 @@ class PromptGeneration:
         _logger.info("Model response complete (%d chars, tokens=%s)", len(self.text), self.usage)
 
 
-def stream_prompt(chat_model: BaseChatModel, prompt: str) -> PromptGeneration:
-    """Return a :class:`PromptGeneration` that streams *prompt* to *chat_model*."""
-    return PromptGeneration(chat_model, prompt)
+def stream_prompt(
+    chat_model: BaseChatModel, prompt: str, *, system_directive: str = ""
+) -> PromptGeneration:
+    """Return a :class:`PromptGeneration` that streams *prompt* to *chat_model*.
+
+    A non-empty *system_directive* (e.g. Nemotron's ``/no_think``) is sent as a
+    leading system message so it never alters the user-visible prompt text.
+    """
+    return PromptGeneration(chat_model, prompt, system_directive=system_directive)
 
 
-def generate_from_prompt(chat_model: BaseChatModel, prompt: str) -> tuple[str, TokenUsage | None]:
-    """Send *prompt* verbatim and return the full answer text and token usage."""
-    from langchain_core.messages import HumanMessage
+def generate_from_prompt(
+    chat_model: BaseChatModel, prompt: str, *, system_directive: str = ""
+) -> tuple[str, TokenUsage | None]:
+    """Send *prompt* verbatim and return the full answer text and token usage.
 
+    A non-empty *system_directive* (e.g. Nemotron's ``/no_think``) leads the request
+    as a system message.
+    """
     _logger.info("Running model on prompt (%d chars)", len(prompt))
-    message = chat_model.invoke([HumanMessage(content=prompt)])
+    message = chat_model.invoke(_directive_messages(prompt, system_directive))
     return message_text(message), _token_usage(message)
 
 

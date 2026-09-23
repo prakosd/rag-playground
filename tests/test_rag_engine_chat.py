@@ -32,6 +32,35 @@ def _echo_resolver(model_id: str, *, temperature: float = 0.0, max_tokens: int =
     return ResolvedChatModel(model=build_echo_chat_model(), model_id="echo"), []
 
 
+def _capture_model(sink: list):
+    """A chat model that records the messages it is asked to answer."""
+    from langchain_core.language_models import SimpleChatModel
+
+    class _Capture(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            sink.append(list(messages))
+            return "reply"
+
+    return _Capture()
+
+
+def test_chat_answer_appends_no_think_to_system_message() -> None:
+    from langchain_core.messages import SystemMessage
+
+    sink: list = []
+    generate_chat_answer(
+        _capture_model(sink), "What is the capital?", _CHUNKS, [], system_directive="/no_think"
+    )
+
+    system = sink[0][0]
+    assert isinstance(system, SystemMessage)
+    assert system.content.endswith("/no_think")
+
+
 def test_condense_question_without_history_returns_trimmed_question() -> None:
     assert condense_question(build_echo_chat_model(), [], "  hello  ") == "hello"
 

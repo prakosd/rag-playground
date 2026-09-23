@@ -134,6 +134,65 @@ def test_conversational_answer_basic_flow(tmp_path: Path) -> None:
     assert result.plan.degraded is True
 
 
+def test_conversational_answer_runs_llm_rerank_for_single_query(tmp_path: Path) -> None:
+    chunks = [
+        RetrievedChunk(text="a", source="a.md", score=0.9, metadata={}),
+        RetrievedChunk(text="b", source="b.md", score=0.8, metadata={}),
+    ]
+
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(chunks))
+
+    def aux_resolver(config):
+        # The LLM re-ranker orders b before a and reports usage.
+        return ResolvedChatModel(model=_UsageModel(reply="[1, 0]"), model_id="aux"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="llm", plan_enabled=False, followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    # Even a single sub-question runs the LLM re-ranker: it reorders (b before a)
+    # and records reranking tokens.
+    assert [chunk.text for chunk in result.sources] == ["b", "a"]
+    assert any(usage.process == "reranking" for usage in result.token_usage)
+    assert result.reranker_used == "llm"
+
+
+def test_conversational_answer_captures_prompt_traces(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    def aux_resolver(config):
+        return (
+            ResolvedChatModel(
+                model=_ScriptedModel(reply='["What is X?", "What is Y?"]'), model_id="aux"
+            ),
+            [],
+        )
+
+    result = conversational_answer(
+        tmp_path,
+        "What is X and what is Y?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    # The decomposition stage's rendered prompt and raw reply are captured for Inspect.
+    traces = {trace.process: trace for trace in result.prompt_traces}
+    assert "decomposition" in traces
+    assert traces["decomposition"].prompt  # the rendered prompt text
+    assert traces["decomposition"].response == '["What is X?", "What is Y?"]'
+
+
 def test_conversational_answer_records_individual_asked_questions(tmp_path: Path) -> None:
     # The live pipeline must fold the plan's *individual* sub-questions into
     # asked_questions (matching disk rehydration), not the joined resolved string,

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app_support.conversational_rag.conversational_rag_history import (
     CONVERSATIONAL_RAG_HISTORY_DIRNAME,
+    ConversationalPromptTrace,
     ConversationalStageUsage,
     ConversationalTurnRecord,
     append_conversational_rag_record,
@@ -54,6 +55,31 @@ def test_results_and_followups_persist(tmp_path: Path) -> None:
     assert record.results[0].text == "c"
     assert record.follow_ups_shown == ("f1",)
     assert record.follow_ups_dropped == ("f2",)
+
+
+def test_prompt_traces_persist(tmp_path: Path) -> None:
+    record = ConversationalTurnRecord(
+        timestamp_utc="t1",
+        index_folder="v",
+        index_run="r",
+        embedding_model="e",
+        llm_model="nova",
+        aux_model="micro",
+        reranker="off",
+        raw_question="q",
+        sub_questions=(),
+        answer="A",
+        prompt_traces=(
+            ConversationalPromptTrace(process="decomposition", prompt="PROMPT", response="REPLY"),
+        ),
+    )
+    append_conversational_rag_record(tmp_path, record)
+
+    loaded = load_conversational_rag_history(tmp_path)[0]
+
+    assert loaded.prompt_traces == (
+        ConversationalPromptTrace(process="decomposition", prompt="PROMPT", response="REPLY"),
+    )
 
 
 def test_conversation_and_transaction_ids_round_trip(tmp_path: Path) -> None:

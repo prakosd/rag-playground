@@ -401,17 +401,32 @@ def _loads(span: str) -> object | None:
         return None
 
 
-def invoke_text_with_usage(model: BaseChatModel, prompt: str) -> tuple[str, TokenUsage | None]:
+def _directive_messages(prompt: str, system_directive: str = "") -> list:
+    """Wrap *prompt* as a human message, led by *system_directive* when non-empty.
+
+    A per-model directive (e.g. Nemotron's ``/no_think``) rides in a leading system
+    message so it never alters the user-visible prompt. The ``langchain_core``
+    import stays lazy so importing this module never pulls it.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    if system_directive:
+        return [SystemMessage(content=system_directive), HumanMessage(content=prompt)]
+    return [HumanMessage(content=prompt)]
+
+
+def invoke_text_with_usage(
+    model: BaseChatModel, prompt: str, *, system_directive: str = ""
+) -> tuple[str, TokenUsage | None]:
     """Send *prompt* as a single human message; return (reply text, token usage).
 
     Shared by the Step 5 auxiliary-model callers (planning, re-ranking, follow-ups,
     answerability, state) so each stage can record its token cost. Usage is
-    ``None`` when the provider reports none (e.g. the offline echo model). The
-    ``langchain_core`` import stays lazy so importing this module never pulls it.
+    ``None`` when the provider reports none (e.g. the offline echo model). A
+    non-empty *system_directive* (e.g. Nemotron's ``/no_think``) leads the request
+    as a system message.
     """
-    from langchain_core.messages import HumanMessage
-
-    reply = model.invoke([HumanMessage(content=prompt)])
+    reply = model.invoke(_directive_messages(prompt, system_directive))
     content = getattr(reply, "content", reply)
     text = content if isinstance(content, str) else str(content)
     return text, extract_token_usage(reply)

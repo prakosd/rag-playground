@@ -22,6 +22,7 @@ from rag_engine import (
     ConversationState,
     conversational_answer_stream,
 )
+from rag_engine.messages import CODE_FOLLOWUPS_NONE_VALID, CODE_RERANK_UNAVAILABLE
 
 from app_support.app_runtime import _ICON_BUTTON_WIDTH_PX
 from app_support.conversational_rag.conversation_manager import (
@@ -45,6 +46,7 @@ from app_support.conversational_rag.conversational_rag_form_ui import (
     render_turn_inspection,
 )
 from app_support.conversational_rag.conversational_rag_history import (
+    ConversationalPromptTrace,
     ConversationalStageUsage,
     ConversationalTurnRecord,
     append_conversational_rag_record,
@@ -80,7 +82,7 @@ _FOCUS_INPUT_KEY = "conversational_rag_focus_input"
 _INPUT_DOCK_KEY = "conversational_rag_input_dock"
 # Fixed-height scrollable chat panel so the conversation reads like a messenger
 # thread; follow-ups, token usage, and Output Files sit below it.
-_CHAT_PANEL_HEIGHT_PX = 520
+_CHAT_PANEL_HEIGHT_PX = 600
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
 _CHAT_ALIGN_CSS = (
     "<style>"
@@ -146,6 +148,14 @@ _FOLLOWUP_BUBBLE_CSS = (
 )
 # Pull the chat input snug under the scroll panel by dropping the default block gap.
 _INPUT_DOCK_CSS = f"<style>.st-key-{_INPUT_DOCK_KEY}{{margin-top:-1rem}}</style>"
+# These benign fallback notes are relocated into the Inspect panel (Re-ranking /
+# Follow-ups tabs), so they are dropped from the inline answer-bubble messages.
+_INSPECT_ONLY_WARNING_CODES = frozenset({CODE_RERANK_UNAVAILABLE, CODE_FOLLOWUPS_NONE_VALID})
+
+
+def _inline_warnings(warnings: list[LibraryMessage]) -> list[LibraryMessage]:
+    """Warnings shown in the answer bubble (Inspect-only notes are filtered out)."""
+    return [message for message in warnings if message.code not in _INSPECT_ONLY_WARNING_CODES]
 
 
 def render_page(context: RagPageContext) -> None:
@@ -230,13 +240,15 @@ def render_page(context: RagPageContext) -> None:
                 st.session_state[_PENDING_KEY] = clicked
                 st.session_state[_SCROLL_REQUESTED_KEY] = True
                 st.rerun()
-
-    # A submitted turn already scrolled from inside _stream_pending_turn (before its
-    # blocking stream). Page entry, a follow-up click, and the post-answer rerun are
-    # not streaming, so they pin the newest question to the panel top here.
-    newest_user_key = _newest_user_turn_key(turns, submitting)
-    if scroll_requested and not submitting and newest_user_key:
-        scroll_message_into_view(_CHAT_PANEL_KEY, newest_user_key)
+        # A submitted turn already scrolled from inside _stream_pending_turn (before
+        # its blocking stream). Page entry, a follow-up click, and the post-answer
+        # rerun are not streaming, so pin the newest question to the panel top from
+        # INSIDE the panel: keeping this 1px scroll helper within the height-capped
+        # panel avoids adding a flow element between the panel and the docked input,
+        # which was reintroducing the gap above the chat input after a turn.
+        newest_user_key = _newest_user_turn_key(turns, submitting)
+        if scroll_requested and not submitting and newest_user_key:
+            scroll_message_into_view(_CHAT_PANEL_KEY, newest_user_key)
 
     # Dock the input just under the panel + follow-ups. Wrapping it in a container
     # makes Streamlit render it inline (not viewport-pinned); a typed message queues
@@ -291,7 +303,7 @@ def _render_stored_turn(strings, turn: dict, *, inspect: bool, default_tab: str)
     answer: ConversationalAnswer = turn["answer"]
     key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn['turn_id']}"
     with st.container(key=key), st.chat_message("assistant"):
-        render_messages(strings, answer.warnings, answer.errors)
+        render_messages(strings, _inline_warnings(answer.warnings), answer.errors)
         if answer.answer:
             st.write(answer.answer)
     if inspect:
@@ -338,7 +350,7 @@ def _stream_pending_turn(
         st.write_stream(generation)
         elapsed = perf_counter() - start
         answer = generation.answer or ConversationalAnswer(answer="", state=state)
-        render_messages(strings, answer.warnings, answer.errors)
+        render_messages(strings, _inline_warnings(answer.warnings), answer.errors)
     status.update(state="complete")
     return answer, elapsed
 
@@ -401,7 +413,7 @@ def _render_conversation_controls(
         title = titles.get(conversation_id) or strings["CHAT_NEW_CONVERSATION"]
         return f"{conversation_id} · {title}" if conversation_id else title
 
-    with st.container(horizontal=True, vertical_alignment="center", gap=None):
+    with st.container(horizontal=True, vertical_alignment="center", gap="xxsmall"):
         if st.button(
             "",
             width=_ICON_BUTTON_WIDTH_PX,
@@ -496,6 +508,14 @@ def _append_history(
                 total_tokens=stage.usage.total_tokens,
             )
             for stage in answer.token_usage
+        ),
+        prompt_traces=tuple(
+            ConversationalPromptTrace(
+                process=trace.process,
+                prompt=trace.prompt,
+                response=trace.response,
+            )
+            for trace in answer.prompt_traces
         ),
         follow_ups_shown=tuple(item.question for item in answer.follow_ups),
         conversation_id=conversation_id,

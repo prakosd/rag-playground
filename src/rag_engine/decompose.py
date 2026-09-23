@@ -20,6 +20,7 @@ from log4py import get_logger
 from rag_engine import messages
 from rag_engine.catalog import ECHO_MODEL
 from rag_engine.config import ConversationalConfig
+from rag_engine.llm import thinking_disabled_system_directive
 from rag_engine.models import ConversationState, QueryPlan, TokenUsage
 from rag_engine.prompts import (
     PLAN_QUERIES_TEMPLATE,
@@ -71,6 +72,7 @@ def plan_queries(
     *,
     model_id: str,
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    record_prompt: Callable[[str, str, str], None] | None = None,
 ) -> QueryPlan:
     """Resolve references and split *raw_question* into standalone sub-questions.
 
@@ -98,7 +100,9 @@ def plan_queries(
         question=raw_question,
     )
     try:
-        reply, usage = invoke_text_with_usage(model, prompt)
+        reply, usage = invoke_text_with_usage(
+            model, prompt, system_directive=thinking_disabled_system_directive(model_id)
+        )
     except Exception as exc:  # noqa: BLE001 - planning is best-effort
         _logger.warning("Query planning failed: %s", exc)
         return QueryPlan(
@@ -107,6 +111,8 @@ def plan_queries(
 
     if record_usage is not None:
         record_usage("decomposition", usage)
+    if record_prompt is not None:
+        record_prompt("decomposition", prompt, reply)
     parsed = parse_json_array(reply)
     if not parsed:
         return QueryPlan(
@@ -149,6 +155,7 @@ def update_state(
     turn_index: int,
     asked_this_turn: Sequence[str] = (),
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    record_prompt: Callable[[str, str, str], None] | None = None,
 ) -> ConversationState:
     """Return the next conversation state after a turn.
 
@@ -178,13 +185,17 @@ def update_state(
         max_words=config.state_summary_max_words,
     )
     try:
-        reply, usage = invoke_text_with_usage(model, prompt)
+        reply, usage = invoke_text_with_usage(
+            model, prompt, system_directive=thinking_disabled_system_directive(model_id)
+        )
     except Exception as exc:  # noqa: BLE001 - state update is best-effort
         _logger.warning("Conversation-state update failed: %s", exc)
         return replace(state, recent_resolved=recent, asked_questions=asked)
 
     if record_usage is not None:
         record_usage("state", usage)
+    if record_prompt is not None:
+        record_prompt("state", prompt, reply)
     parsed = parse_json_object(reply)
     if parsed is None:
         return replace(state, recent_resolved=recent, asked_questions=asked)

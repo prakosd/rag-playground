@@ -299,14 +299,7 @@ STRINGS_ID: Strings = {
         "Pertanyaan lanjutan disimpan di atas ambang atas, dibuang di bawah ambang "
         "bawah, dan diperiksa model di antaranya."
     ),
-    "CONV_THRESHOLD_CAPTION": (
-        ":red-badge[Buang ≤ {drop}] :orange-badge[Periksa] :green-badge[Simpan ≥ {keep}]"
-    ),
     "CONV_PROMPTS_LABEL": ":material/edit_note: Templat prompt",
-    "CONV_PROMPTS_CAPTION": (
-        "Ubah kata-kata prompt yang dikirim tiap tahap ke modelnya. Disimpan untuk sesi "
-        "ini; Reset mengembalikan ke bawaan."
-    ),
     "CONV_PROMPT_TAB_ANSWER": "Jawaban",
     "CONV_PROMPT_TAB_DECOMPOSE": "Dekomposisi kueri",
     "CONV_PROMPT_TAB_RERANK": "Pemeringkatan ulang",
@@ -346,7 +339,7 @@ STRINGS_ID: Strings = {
     "CONV_PROMPT_INVALID": (
         "Pertahankan placeholder wajib ({fields}) dan hapus kurung kurawal lainnya, lalu simpan lagi."
     ),
-    "CONV_INSPECT_EXPANDER": "🔎 Inspeksi giliran ini",
+    "CONV_INSPECT_EXPANDER": ":material/search: Inspeksi",
     "CONV_TAB_DECOMPOSITION": "Dekomposisi",
     "CONV_TAB_RETRIEVAL": "Retrieval",
     "CONV_TAB_RERANKING": "Pemeringkatan ulang",
@@ -362,7 +355,10 @@ STRINGS_ID: Strings = {
     "CONV_INSPECT_STATE_RECENT": "Pertanyaan terbaru",
     "CONV_INSPECT_STATE_EMPTY": "Belum ada memory percakapan.",
     "CONV_INSPECT_FOLLOWUPS_NONE": "Tidak ada saran pertanyaan lanjutan untuk giliran ini.",
-    "CONV_META_TIMINGS": "Waktu (d)",
+    "CONV_INSPECT_PROMPT_LABEL": "Prompt",
+    "CONV_INSPECT_RESPONSE_LABEL": "Respons",
+    "CONV_INSPECT_NO_PROMPT": "Tidak ada prompt yang dikirim untuk tahap ini.",
+    "CONV_INSPECT_ANSWERABILITY_PROBE": "Pemeriksaan keterjawaban {n}",
     "CONV_META_PLAN": "Rencana",
     "CONV_META_RETRIEVE": "Retrieval",
     "CONV_META_RERANK": "Pemeringkatan ulang",

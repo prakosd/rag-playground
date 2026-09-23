@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from rag_engine import ValidatedFollowup
+from rag_engine import StageTokenUsage, TokenUsage, ValidatedFollowup
+from rag_engine import messages as rag_messages
+from rag_engine.messages import CODE_FOLLOWUPS_NONE_VALID, CODE_RERANK_UNAVAILABLE
 
 import app_support.conversational_rag.conversational_rag_form_ui as form_ui
 from app_support.conversational_rag.conversational_rag_form_ui import (
@@ -11,6 +13,7 @@ from app_support.conversational_rag.conversational_rag_form_ui import (
     aux_model_choices,
     build_conversational_config,
 )
+from app_support.i18n import STRINGS_EN
 
 
 def _controls(**overrides) -> ConversationalControls:
@@ -96,6 +99,35 @@ def test_prompt_tab_visible_follows_toggles() -> None:
     assert visible("answerability") and not visible("answerability", followups=False)
     assert visible("rerank")  # LLM re-ranker → its prompt is used
     assert not visible("rerank", reranker="local") and not visible("rerank", reranker="off")
+
+
+def test_inspect_note_returns_localized_text_for_matching_code() -> None:
+    warnings = [rag_messages.rerank_unavailable("llm", "unparsable ranking")]
+
+    note = form_ui._inspect_note(STRINGS_EN, warnings, CODE_RERANK_UNAVAILABLE)
+
+    assert isinstance(note, str) and note  # the relocated warning is localized
+    # A code with no matching warning yields nothing to show in that tab.
+    assert form_ui._inspect_note(STRINGS_EN, warnings, CODE_FOLLOWUPS_NONE_VALID) is None
+
+
+def test_compact_tokens_shortens_thousands() -> None:
+    assert form_ui._compact_tokens(320) == "320"
+    assert form_ui._compact_tokens(1400) == "1.4k"
+
+
+def test_stage_tokens_sums_and_folds_answerability() -> None:
+    usage = [
+        StageTokenUsage("answer", "main", TokenUsage(500, 900, 1400)),
+        StageTokenUsage("decomposition", "aux", TokenUsage(10, 10, 20)),
+        StageTokenUsage("followups", "aux", TokenUsage(30, 30, 60)),
+        StageTokenUsage("answerability", "aux", TokenUsage(40, 40, 80)),
+    ]
+
+    totals = form_ui._stage_tokens(usage)
+
+    # Mapped to display-stage keys; the answerability probe folds into follow-ups (60 + 80).
+    assert totals == {"answer": 1400, "plan": 20, "followups": 140}
 
 
 def test_render_followup_bubble_lays_out_suggestions_inline(monkeypatch, tmp_path) -> None:

@@ -49,7 +49,9 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
     # apps/streamlit/config/model_pricing.yaml (keep model_id in sync). Bedrock
     # Nova/Claude use the `apac.` cross-Region inference-profile IDs required in
     # ap-southeast-2; in-Region models (Qwen3, Gemma, Mistral, NVIDIA, gpt-oss,
-    # GLM) use plain IDs, and Qwen3 `thinking` is suppressed in rag_engine.llm.
+    # GLM) use plain IDs. rag_engine.llm suppresses reasoning best-effort: Qwen3 +
+    # GLM via a request-field flag, Nemotron via a `/no_think` system directive;
+    # gpt-oss always reasons and cannot be disabled.
     # Per-account model access must be confirmed on each model card; an
     # unavailable model resolves to the offline echo model with a warning.
     # ── Amazon Bedrock ──

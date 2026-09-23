@@ -24,6 +24,7 @@ from rag_engine import (
     build_rag_prompt,
     messages,
     stream_prompt,
+    thinking_disabled_system_directive,
 )
 from rag_engine.models import TokenUsage
 
@@ -574,7 +575,11 @@ def _send_prompt(
     render_messages(strings, warnings, [])
     with st.container(border=True):
         st.markdown(f"**{strings['BASIC_QA_ANSWER_HEADER']}**")
-        generation = stream_prompt(resolved.model, prompt_text)
+        generation = stream_prompt(
+            resolved.model,
+            prompt_text,
+            system_directive=thinking_disabled_system_directive(resolved.model_id),
+        )
         start = time.perf_counter()
         try:
             st.write_stream(generation)

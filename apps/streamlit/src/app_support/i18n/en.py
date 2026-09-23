@@ -294,14 +294,7 @@ STRINGS_EN: Strings = {
         "A follow-up is kept above the upper mark, dropped below the lower mark, "
         "and checked by the model in between."
     ),
-    "CONV_THRESHOLD_CAPTION": (
-        ":red-badge[Drop ≤ {drop}] :orange-badge[Check] :green-badge[Keep ≥ {keep}]"
-    ),
     "CONV_PROMPTS_LABEL": ":material/edit_note: Prompt templates",
-    "CONV_PROMPTS_CAPTION": (
-        "Reword the prompt each stage sends to its model. Saved for this session; "
-        "Reset restores the default."
-    ),
     "CONV_PROMPT_TAB_ANSWER": "Answer",
     "CONV_PROMPT_TAB_DECOMPOSE": "Query decomposition",
     "CONV_PROMPT_TAB_RERANK": "Re-ranking",
@@ -341,7 +334,7 @@ STRINGS_EN: Strings = {
     "CONV_PROMPT_INVALID": (
         "Keep the required placeholders ({fields}) and remove any other braces, then save again."
     ),
-    "CONV_INSPECT_EXPANDER": "🔎 Inspect this turn",
+    "CONV_INSPECT_EXPANDER": ":material/search: Inspect",
     "CONV_TAB_DECOMPOSITION": "Decomposition",
     "CONV_TAB_RETRIEVAL": "Retrieval",
     "CONV_TAB_RERANKING": "Re-ranking",
@@ -357,7 +350,10 @@ STRINGS_EN: Strings = {
     "CONV_INSPECT_STATE_RECENT": "Recent questions",
     "CONV_INSPECT_STATE_EMPTY": "No conversation memory yet.",
     "CONV_INSPECT_FOLLOWUPS_NONE": "No follow-up suggestions for this turn.",
-    "CONV_META_TIMINGS": "Timings (s)",
+    "CONV_INSPECT_PROMPT_LABEL": "Prompt",
+    "CONV_INSPECT_RESPONSE_LABEL": "Response",
+    "CONV_INSPECT_NO_PROMPT": "No prompt was sent for this stage.",
+    "CONV_INSPECT_ANSWERABILITY_PROBE": "Answerability probe {n}",
     "CONV_META_PLAN": "Plan",
     "CONV_META_RETRIEVE": "Retrieval",
     "CONV_META_RERANK": "Re-ranking",

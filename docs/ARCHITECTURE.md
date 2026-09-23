@@ -130,7 +130,7 @@ flowchart TD
   the answer is generated (the Streamlit page streams it token-by-token via the `conversational_answer_stream` variant, which returns a `ConversationalGeneration` and shares `_prepare_turn`/`_finalize_turn` with the blocking call, while follow-ups run concurrently), then `suggest_followups` + `validate_followups` propose only
   corpus-answerable follow-ups (written in the configured language) and `update_state` rolls conversation memory forward. It
   returns a `ConversationalAnswer` (answer + `QueryPlan` + sources + `ValidatedFollowup`s
-  + next `ConversationState` + per-stage `timings` + per-process `token_usage`) that the
+  + next `ConversationState` + per-stage `timings` + per-process `token_usage` + per-stage `prompt_traces`) that the
   UI renders as a per-turn inspection panel, disk-persisted per-session conversations (a
   New button + picker; a selected conversation's turns are replayed from the history log on
   session load), a Token usage panel (a shared renderer also

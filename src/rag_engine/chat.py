@@ -23,7 +23,12 @@ from rag_engine.catalog import ECHO_MODEL
 from rag_engine.config import ConversationalConfig, RagConfig
 from rag_engine.decompose import plan_queries, update_state
 from rag_engine.followups import suggest_followups, validate_followups
-from rag_engine.llm import ResolvedChatModel, resolve_auxiliary_model, resolve_chat_model
+from rag_engine.llm import (
+    ResolvedChatModel,
+    resolve_auxiliary_model,
+    resolve_chat_model,
+    thinking_disabled_system_directive,
+)
 from rag_engine.models import (
     ChatTurn,
     ConversationalAnswer,
@@ -31,6 +36,7 @@ from rag_engine.models import (
     QueryPlan,
     RagAnswer,
     RetrievedChunk,
+    StagePromptTrace,
     StageTokenUsage,
     TokenUsage,
     ValidatedFollowup,
@@ -104,6 +110,23 @@ class _UsageLedger:
         ]
 
 
+class _PromptLedger:
+    """Collects each aux stage's rendered prompt and raw reply across one turn.
+
+    Mirrors :class:`_UsageLedger`: ``record`` is passed to a stage as a callback and
+    ``stage_traces`` returns the ordered :class:`StagePromptTrace` list for the answer.
+    """
+
+    def __init__(self) -> None:
+        self.entries: list[StagePromptTrace] = []
+
+    def record(self, process: str, prompt: str, response: str) -> None:
+        self.entries.append(StagePromptTrace(process=process, prompt=prompt, response=response))
+
+    def stage_traces(self) -> list[StagePromptTrace]:
+        return list(self.entries)
+
+
 def condense_question(chat_model: BaseChatModel, history: Sequence[ChatTurn], question: str) -> str:
     """Rewrite a follow-up *question* into a standalone search query."""
     question = question.strip()
@@ -127,6 +150,7 @@ def _chat_prompt(
     tone: str,
     language: str,
     system_prompt: str | None,
+    system_directive: str = "",
 ) -> tuple[Any, dict]:
     from langchain_core.prompts import ChatPromptTemplate
 
@@ -138,6 +162,10 @@ def _chat_prompt(
         if system_prompt and template_has_fields(system_prompt, ("context", "tone", "language"))
         else QA_SYSTEM_PROMPT
     )
+    # A best-effort per-model directive (e.g. Nemotron's /no_think) rides in the
+    # system message; Bedrock's chat template reads it and strips the token.
+    if system_directive:
+        system = f"{system} {system_directive}"
     prompt = ChatPromptTemplate.from_messages(
         [("system", system), *_history_messages(history), ("human", "{question}")]
     )
@@ -153,6 +181,7 @@ def generate_chat_answer(
     tone: str = _DEFAULT_TONE,
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
+    system_directive: str = "",
 ) -> str:
     """Generate a conversational answer string."""
     text, _ = generate_chat_answer_with_usage(
@@ -163,6 +192,7 @@ def generate_chat_answer(
         tone=tone,
         language=language,
         system_prompt=system_prompt,
+        system_directive=system_directive,
     )
     return text
 
@@ -176,12 +206,18 @@ def generate_chat_answer_with_usage(
     tone: str = _DEFAULT_TONE,
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
+    system_directive: str = "",
 ) -> tuple[str, TokenUsage | None]:
     """Generate a conversational answer with the token usage it reported."""
     from langchain_core.output_parsers import StrOutputParser
 
     prompt, values = _chat_prompt(
-        chunks, history, tone=tone, language=language, system_prompt=system_prompt
+        chunks,
+        history,
+        tone=tone,
+        language=language,
+        system_prompt=system_prompt,
+        system_directive=system_directive,
     )
     message = (prompt | chat_model).invoke({**values, "question": question})
     return StrOutputParser().invoke(message), extract_token_usage(message)
@@ -196,12 +232,18 @@ def stream_chat_answer(
     tone: str = _DEFAULT_TONE,
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
+    system_directive: str = "",
 ) -> Iterator[str]:
     """Yield conversational answer tokens as they are generated."""
     from langchain_core.output_parsers import StrOutputParser
 
     prompt, values = _chat_prompt(
-        chunks, history, tone=tone, language=language, system_prompt=system_prompt
+        chunks,
+        history,
+        tone=tone,
+        language=language,
+        system_prompt=system_prompt,
+        system_directive=system_directive,
     )
     yield from (prompt | chat_model | StrOutputParser()).stream({**values, "question": question})
 
@@ -225,11 +267,17 @@ class ChatAnswerStream:
         tone: str,
         language: str,
         system_prompt: str | None,
+        system_directive: str = "",
     ) -> None:
         self._chat_model = chat_model
         self._question = question
         self._prompt, self._values = _chat_prompt(
-            chunks, history, tone=tone, language=language, system_prompt=system_prompt
+            chunks,
+            history,
+            tone=tone,
+            language=language,
+            system_prompt=system_prompt,
+            system_directive=system_directive,
         )
         self.text = ""
         self.usage: TokenUsage | None = None
@@ -264,6 +312,7 @@ def stream_chat_answer_with_usage(
     tone: str = _DEFAULT_TONE,
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
+    system_directive: str = "",
 ) -> ChatAnswerStream:
     """Return a :class:`ChatAnswerStream` that streams the answer and captures usage."""
     return ChatAnswerStream(
@@ -274,6 +323,7 @@ def stream_chat_answer_with_usage(
         tone=tone,
         language=language,
         system_prompt=system_prompt,
+        system_directive=system_directive,
     )
 
 
@@ -355,6 +405,7 @@ class _PreparedTurn:
     timings: dict[str, float]
     turn_index: int
     ledger: _UsageLedger
+    prompt_ledger: _PromptLedger
 
 
 def _prepare_turn(
@@ -384,6 +435,7 @@ def _prepare_turn(
     timings: dict[str, float] = {}
     warnings: list[LibraryMessage] = []
     ledger = _UsageLedger()
+    prompt_ledger = _PromptLedger()
 
     resolved, chat_warnings = chat_resolver(
         config.rag.llm_model,
@@ -410,6 +462,7 @@ def _prepare_turn(
             timings=timings,
             turn_index=turn_index,
             ledger=ledger,
+            prompt_ledger=prompt_ledger,
         )
 
     _logger.info(
@@ -428,6 +481,7 @@ def _prepare_turn(
         config,
         model_id=aux_resolved.model_id,
         record_usage=ledger.record,
+        record_prompt=prompt_ledger.record,
     )
     timings["plan"] = perf_counter() - start
     warnings.extend(plan.warnings)
@@ -454,6 +508,7 @@ def _prepare_turn(
             aux_model_used=aux_resolved.model_id,
             timings=timings,
             token_usage=ledger.stage_usages(resolved.model_id, aux_resolved.model_id),
+            prompt_traces=prompt_ledger.stage_traces(),
             warnings=warnings,
             errors=retrieval.errors,
         )
@@ -467,6 +522,8 @@ def _prepare_turn(
         config,
         chat_model=aux_resolved.model if aux_resolved.model_id != ECHO_MODEL else None,
         record_usage=ledger.record,
+        record_prompt=prompt_ledger.record,
+        system_directive=thinking_disabled_system_directive(aux_resolved.model_id),
     )
     timings["rerank"] = perf_counter() - start
     warnings.extend(rerank_warnings)
@@ -483,6 +540,7 @@ def _prepare_turn(
         timings=timings,
         turn_index=turn_index,
         ledger=ledger,
+        prompt_ledger=prompt_ledger,
     )
 
 
@@ -542,6 +600,7 @@ def conversational_answer(
         turn_index=prepared.turn_index,
         reranker_used=prepared.reranker_used,
         ledger=prepared.ledger,
+        prompt_ledger=prepared.prompt_ledger,
         progress_callback=progress_callback,
     )
 
@@ -625,6 +684,7 @@ def _answer_stage(
             tone=tone,
             language=language,
             system_prompt=system_prompt,
+            system_directive=thinking_disabled_system_directive(resolved.model_id),
         )
         if record_usage is not None:
             record_usage("answer", usage)
@@ -642,12 +702,14 @@ def _followups_stage(
     config: ConversationalConfig,
     retriever: Callable[..., RetrievalResult],
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    record_prompt: Callable[[str, str, str], None] | None = None,
     asked_questions: Sequence[str] = (),
 ) -> tuple[list[ValidatedFollowup], list[LibraryMessage], float]:
     """Suggest and validate follow-ups, returning (follow_ups, warnings, elapsed seconds)."""
     warnings: list[LibraryMessage] = []
     follow_ups: list[ValidatedFollowup] = []
     start = perf_counter()
+    directive = thinking_disabled_system_directive(aux.model_id)
     try:
         candidates = suggest_followups(
             aux.model,
@@ -656,6 +718,8 @@ def _followups_stage(
             config,
             asked_questions=asked_questions,
             record_usage=record_usage,
+            record_prompt=record_prompt,
+            system_directive=directive,
         )
         follow_ups = validate_followups(
             run_dir,
@@ -665,6 +729,8 @@ def _followups_stage(
             retriever=retriever,
             asked_questions=asked_questions,
             record_usage=record_usage,
+            record_prompt=record_prompt,
+            system_directive=directive,
         )
         if candidates and not follow_ups:
             warnings.append(messages.followups_none_valid())
@@ -683,6 +749,7 @@ def _submit_followups(
     config: ConversationalConfig,
     retriever: Callable[..., RetrievalResult],
     record_usage: Callable[[str, TokenUsage | None], None],
+    record_prompt: Callable[[str, str, str], None],
     *,
     asked_questions: Sequence[str],
 ) -> Future | None:
@@ -698,6 +765,7 @@ def _submit_followups(
         config,
         retriever,
         record_usage,
+        record_prompt,
         asked_questions=asked_questions,
     )
 
@@ -719,6 +787,7 @@ def _finalize_turn(
     turn_index: int,
     reranker_used: str | None,
     ledger: _UsageLedger,
+    prompt_ledger: _PromptLedger,
     progress_callback: Callable[[LibraryMessage], None] | None,
 ) -> ConversationalAnswer:
     """Roll conversation state forward and assemble the ``ConversationalAnswer``.
@@ -739,6 +808,7 @@ def _finalize_turn(
         turn_index=turn_index,
         asked_this_turn=plan.sub_questions,
         record_usage=ledger.record,
+        record_prompt=prompt_ledger.record,
     )
     timings["state"] = perf_counter() - start
 
@@ -753,6 +823,7 @@ def _finalize_turn(
         reranker_used=reranker_used,
         timings=timings,
         token_usage=ledger.stage_usages(resolved.model_id, aux.model_id),
+        prompt_traces=prompt_ledger.stage_traces(),
         warnings=warnings,
         errors=errors,
     )
@@ -775,6 +846,7 @@ def _compose_turn(
     turn_index: int,
     reranker_used: str | None,
     ledger: _UsageLedger,
+    prompt_ledger: _PromptLedger,
     progress_callback: Callable[[LibraryMessage], None] | None = None,
 ) -> ConversationalAnswer:
     """Generate the answer and follow-ups concurrently, then roll state forward.
@@ -806,6 +878,7 @@ def _compose_turn(
             config,
             retriever,
             ledger.record,
+            prompt_ledger.record,
             asked_questions=state.asked_questions,
         )
         answer_text, errors, timings["answer"] = answer_future.result()
@@ -829,6 +902,7 @@ def _compose_turn(
         turn_index=turn_index,
         reranker_used=reranker_used,
         ledger=ledger,
+        prompt_ledger=prompt_ledger,
         progress_callback=progress_callback,
     )
 
@@ -881,6 +955,7 @@ class ConversationalGeneration:
                 config,
                 self._retriever,
                 prepared.ledger.record,
+                prepared.prompt_ledger.record,
                 asked_questions=self._state.asked_questions,
             )
             start = perf_counter()
@@ -894,6 +969,7 @@ class ConversationalGeneration:
                     tone=config.tone,
                     language=config.language,
                     system_prompt=config.prompts.answer,
+                    system_directive=thinking_disabled_system_directive(prepared.resolved.model_id),
                 )
                 for piece in answer_stream:
                     parts.append(piece)
@@ -926,5 +1002,6 @@ class ConversationalGeneration:
             turn_index=prepared.turn_index,
             reranker_used=prepared.reranker_used,
             ledger=prepared.ledger,
+            prompt_ledger=prepared.prompt_ledger,
             progress_callback=self._progress,
         )

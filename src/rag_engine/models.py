@@ -89,6 +89,21 @@ class StageTokenUsage:
     usage: TokenUsage
 
 
+@dataclass(frozen=True)
+class StagePromptTrace:
+    """The prompt sent to the auxiliary model for one stage and its raw reply.
+
+    ``process`` is a stable stage key (``decomposition``/``reranking``/``followups``/
+    ``answerability``/``state``); ``prompt`` is the rendered text sent to the model and
+    ``response`` its verbatim reply, so a UI can show them side by side. The grounded
+    answer stage is excluded (its prompt is a chat template, shown in Step 4).
+    """
+
+    process: str
+    prompt: str
+    response: str
+
+
 @dataclass
 class QueryPlan:
     """How a raw question was resolved and split into standalone sub-questions.
@@ -142,8 +157,9 @@ class ConversationalAnswer:
 
     Extends the single-turn answer with the query plan, validated follow-ups, the
     next conversation state, per-stage ``timings`` (plan/retrieve/rerank/answer/
-    followups seconds), and per-stage ``token_usage`` so a UI can render an
-    inspection view and a token panel.
+    followups seconds), per-stage ``token_usage``, and per-stage ``prompt_traces``
+    (each aux stage's prompt + raw reply) so a UI can render an inspection view and a
+    token panel.
     """
 
     answer: str
@@ -156,5 +172,6 @@ class ConversationalAnswer:
     reranker_used: str | None = None
     timings: dict[str, float] = field(default_factory=dict)
     token_usage: list[StageTokenUsage] = field(default_factory=list)
+    prompt_traces: list[StagePromptTrace] = field(default_factory=list)
     warnings: list[LibraryMessage] = field(default_factory=list)
     errors: list[LibraryMessage] = field(default_factory=list)

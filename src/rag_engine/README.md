@@ -35,7 +35,7 @@ conversational_answer(run_dir, question, state, config)  # Step 5 (advanced pipe
   ├─ generate_chat_answer(...)               → grounded answer
   ├─ suggest_followups / validate_followups  → ValidatedFollowup[] (answerable · not already asked)
   └─ update_state(...)                       → next ConversationState
-                                             → ConversationalAnswer (+ plan, timings, token_usage)
+                                             → ConversationalAnswer (+ plan, timings, token_usage, prompt_traces)
 
 conversational_answer_stream(run_dir, q, state, config, *, history, …)  # Step 5 streaming
   ├─ _prepare_turn(...)                        → plan → retrieve_multi → rerank (shared internals)
@@ -164,7 +164,7 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | `search.py` | `VectorSearcher` interface (+ `ensure_ready` warm hook) + `ChromaSearcher` (thread-safe lazy open behind a module lock) + backend-neutral `SearchHit` |
 | `prompts.py` | QA + condense-question prompts, context formatting; `build_rag_prompt` / `format_knowledge` (Step 4); Step 5 auxiliary templates + tolerant JSON parsers; overridable conversational prompts (`CONVERSATIONAL_PROMPT_FIELDS`, `template_has_fields`, `render_conversational_template`) + token capture (`invoke_text_with_usage`, `extract_token_usage`, shared `message_text`) |
 | `qa.py` | `answer_question` / `generate_answer` / `stream_answer`; `stream_prompt` / `generate_from_prompt` (raw editable prompt, Step 4) |
-| `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (+ `generate_chat_answer_with_usage` / streaming `stream_chat_answer_with_usage` → `ChatAnswerStream`); `conversational_answer` + streaming `conversational_answer_stream` → `ConversationalGeneration` (advanced Step 5 pipeline, per-stage `token_usage`) |
+| `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (+ `generate_chat_answer_with_usage` / streaming `stream_chat_answer_with_usage` → `ChatAnswerStream`); `conversational_answer` + streaming `conversational_answer_stream` → `ConversationalGeneration` (advanced Step 5 pipeline, per-stage `token_usage` + `prompt_traces`) |
 | `decompose.py` | `plan_queries` (reference resolution + decomposition) + `update_state` (rolling conversation state + capped `asked_questions` history) |
 | `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM), lazy `load_cross_encoder` |
 | `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate + drop already-asked questions) + `answerability_check` |

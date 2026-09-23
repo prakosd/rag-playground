@@ -21,6 +21,7 @@ from app_support.rag_shared.result_snapshot import StoredResult, stored_results_
 
 __all__ = [
     "CONVERSATIONAL_RAG_HISTORY_DIRNAME",
+    "ConversationalPromptTrace",
     "ConversationalStageUsage",
     "ConversationalTurnRecord",
     "append_conversational_rag_record",
@@ -74,6 +75,15 @@ class ConversationalStageUsage:
 
 
 @dataclass(frozen=True)
+class ConversationalPromptTrace:
+    """One aux stage's rendered prompt and raw reply, persisted for the inspector."""
+
+    process: str
+    prompt: str
+    response: str
+
+
+@dataclass(frozen=True)
 class ConversationalTurnRecord:
     """One Step 5 turn: the question, how it was planned/ranked, and its answer."""
 
@@ -96,6 +106,7 @@ class ConversationalTurnRecord:
     total_seconds: float = 0.0
     results: tuple[StoredResult, ...] = ()
     token_usage: tuple[ConversationalStageUsage, ...] = ()
+    prompt_traces: tuple[ConversationalPromptTrace, ...] = ()
     follow_ups_shown: tuple[str, ...] = ()
     follow_ups_dropped: tuple[str, ...] = ()
     pinned: bool = False
@@ -243,6 +254,23 @@ def _stage_usages_from_payload(value: object) -> tuple[ConversationalStageUsage,
     return tuple(usages)
 
 
+def _prompt_traces_from_payload(value: object) -> tuple[ConversationalPromptTrace, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    traces: list[ConversationalPromptTrace] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        traces.append(
+            ConversationalPromptTrace(
+                process=str(item.get("process", "")),
+                prompt=str(item.get("prompt", "")),
+                response=str(item.get("response", "")),
+            )
+        )
+    return tuple(traces)
+
+
 def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
     if not isinstance(payload, dict):
         return None
@@ -267,6 +295,7 @@ def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
             total_seconds=float(payload.get("total_seconds", 0.0)),
             results=stored_results_from_payload(payload.get("results")),
             token_usage=_stage_usages_from_payload(payload.get("token_usage")),
+            prompt_traces=_prompt_traces_from_payload(payload.get("prompt_traces")),
             follow_ups_shown=_str_tuple(payload.get("follow_ups_shown")),
             follow_ups_dropped=_str_tuple(payload.get("follow_ups_dropped")),
             pinned=bool(payload.get("pinned", False)),

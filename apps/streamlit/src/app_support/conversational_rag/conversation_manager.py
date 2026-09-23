@@ -20,6 +20,9 @@ from rag_engine import (
     ConversationState,
     QueryPlan,
     RetrievedChunk,
+    StagePromptTrace,
+    StageTokenUsage,
+    TokenUsage,
     ValidatedFollowup,
 )
 
@@ -106,9 +109,10 @@ def turn_from_record(record: ConversationalTurnRecord) -> dict:
     """Rebuild a display-adequate ``{question, answer}`` turn from a stored record.
 
     The answer carries the persisted text, sources, sub-questions, follow-ups,
-    per-stage timings, models, and the rolling summary — enough to re-render the
-    turn and its inspector. Un-persisted fields (live retrieval cache, entities,
-    warnings/errors) are left empty; the turn id is assigned by the caller.
+    per-stage timings, token usage, and prompt traces, models, and the rolling
+    summary — enough to re-render the turn and its inspector. Un-persisted fields
+    (live retrieval cache, entities, warnings/errors) are left empty; the turn id
+    is assigned by the caller.
     """
     answer = ConversationalAnswer(
         answer=record.answer,
@@ -127,6 +131,22 @@ def turn_from_record(record: ConversationalTurnRecord) -> dict:
             "followups": record.followups_seconds,
             "state": record.state_seconds,
         },
+        token_usage=[
+            StageTokenUsage(
+                process=stage.process,
+                model_id=stage.model,
+                usage=TokenUsage(
+                    input_tokens=stage.input_tokens,
+                    output_tokens=stage.output_tokens,
+                    total_tokens=stage.total_tokens,
+                ),
+            )
+            for stage in record.token_usage
+        ],
+        prompt_traces=[
+            StagePromptTrace(process=trace.process, prompt=trace.prompt, response=trace.response)
+            for trace in record.prompt_traces
+        ],
     )
     return {"question": record.raw_question, "answer": answer}
 
@@ -173,16 +193,17 @@ def asked_questions_from_records(
 def trim_old_turn_payloads(turns: list[dict], keep_recent: int) -> None:
     """Shed heavy chunk payloads from turns older than the *keep_recent* newest.
 
-    Frees each old turn's retrieved ``sources`` and follow-up ``chunks`` (the bulk
-    of a turn's memory) in place while keeping its question/answer text so the
-    transcript still renders. The newest ``keep_recent`` turns stay intact so the
-    follow-up buttons and per-turn inspector keep working.
+    Frees each old turn's retrieved ``sources``, captured ``prompt_traces``, and
+    follow-up ``chunks`` (the bulk of a turn's memory) in place while keeping its
+    question/answer text so the transcript still renders. The newest ``keep_recent``
+    turns stay intact so the follow-up buttons and per-turn inspector keep working.
     """
     if keep_recent <= 0 or len(turns) <= keep_recent:
         return
     for turn in turns[:-keep_recent]:
         answer = turn["answer"]
         answer.sources = []
+        answer.prompt_traces = []
         answer.follow_ups = [replace(followup, chunks=[]) for followup in answer.follow_ups]
 
 
