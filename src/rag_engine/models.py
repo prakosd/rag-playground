@@ -91,12 +91,11 @@ class StageTokenUsage:
 
 @dataclass(frozen=True)
 class StagePromptTrace:
-    """The prompt sent to the auxiliary model for one stage and its raw reply.
+    """The prompt sent to a model for one stage and its raw reply.
 
-    ``process`` is a stable stage key (``decomposition``/``reranking``/``followups``/
-    ``answerability``/``state``); ``prompt`` is the rendered text sent to the model and
-    ``response`` its verbatim reply, so a UI can show them side by side. The grounded
-    answer stage is excluded (its prompt is a chat template, shown in Step 4).
+    ``process`` is a stable stage key (``answer``/``decomposition``/``reranking``/
+    ``followups``/``answerability``/``state``); ``prompt`` is the rendered text sent to
+    the model and ``response`` its verbatim reply, so a UI can show them side by side.
     """
 
     process: str
@@ -158,7 +157,7 @@ class ConversationalAnswer:
     Extends the single-turn answer with the query plan, validated follow-ups, the
     next conversation state, per-stage ``timings`` (plan/retrieve/rerank/answer/
     followups seconds), per-stage ``token_usage``, and per-stage ``prompt_traces``
-    (each aux stage's prompt + raw reply) so a UI can render an inspection view and a
+    (each stage's prompt + raw reply) so a UI can render an inspection view and a
     token panel.
     """
 

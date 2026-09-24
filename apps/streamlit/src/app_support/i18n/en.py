@@ -296,10 +296,10 @@ STRINGS_EN: Strings = {
     ),
     "CONV_PROMPTS_LABEL": ":material/edit_note: Prompt templates",
     "CONV_PROMPT_TAB_ANSWER": "Answer",
-    "CONV_PROMPT_TAB_DECOMPOSE": "Query decomposition",
+    "CONV_PROMPT_TAB_DECOMPOSE": "Decomposition",
     "CONV_PROMPT_TAB_RERANK": "Re-ranking",
-    "CONV_PROMPT_TAB_FOLLOWUPS": "Follow-up suggestions",
-    "CONV_PROMPT_TAB_ANSWERABILITY": "Answerability check",
+    "CONV_PROMPT_TAB_FOLLOWUPS": "Follow-ups",
+    "CONV_PROMPT_TAB_ANSWERABILITY": "Answerability",
     "CONV_PROMPT_TAB_STATE": "Conversation state",
     "CONV_PROMPT_TAB_WELCOME": "Welcome message",
     "CONV_PROMPT_TAB_ERROR_REPLY": "Error message",
@@ -345,9 +345,9 @@ STRINGS_EN: Strings = {
         "Keep the required placeholders ({fields}) and remove any other braces, then save again."
     ),
     "CONV_INSPECT_EXPANDER": ":material/search: Inspect",
+    "CONV_TAB_ANSWER": "Answer",
     "CONV_TAB_DECOMPOSITION": "Decomposition",
     "CONV_TAB_RETRIEVAL": "Retrieval",
-    "CONV_TAB_RERANKING": "Re-ranking",
     "CONV_TAB_STATE": "Conversation state",
     "CONV_TAB_FOLLOWUPS": "Follow-ups",
     "CONV_TAB_DIAGNOSTICS": "Diagnostics",
@@ -356,12 +356,26 @@ STRINGS_EN: Strings = {
     "CONV_INSPECT_SUBQUESTIONS": "Sub-questions",
     "CONV_INSPECT_DEGRADED": "Planning was skipped or fell back to the original question.",
     "CONV_INSPECT_RERANKER_USED": "Re-ranker: {reranker}",
+    "CONV_INSPECT_RETRIEVAL_HELP": (
+        "The top passages used to answer — merged and de-duplicated across all "
+        "sub-questions, then ordered by the re-ranker (so the % similarity may not "
+        "strictly decrease)."
+    ),
+    "CONV_INSPECT_RETRIEVAL_BYQUERY": "Retrieved per sub-question",
     "CONV_INSPECT_STATE_SUMMARY": "Summary",
     "CONV_INSPECT_STATE_ENTITIES": "Entities",
     "CONV_INSPECT_STATE_THREADS": "Open threads",
     "CONV_INSPECT_STATE_RECENT": "Recent questions",
     "CONV_INSPECT_STATE_EMPTY": "No conversation memory yet.",
+    "CONV_INSPECT_STATE_HELP": (
+        "A model summarises memory only after the first few turns; earlier turns just "
+        "track recent questions, so no prompt is sent yet."
+    ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "No follow-up suggestions for this turn.",
+    "CONV_INSPECT_FOLLOWUPS_HELP": (
+        "Each percentage is how confidently your documents can answer that follow-up — "
+        "its best match when searched against your collection."
+    ),
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
     "CONV_INSPECT_RESPONSE_LABEL": "Response",
     "CONV_INSPECT_NO_PROMPT": "No prompt was sent for this stage.",

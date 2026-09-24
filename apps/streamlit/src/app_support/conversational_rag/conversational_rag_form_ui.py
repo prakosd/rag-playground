@@ -23,6 +23,7 @@ from rag_engine import (
     ConversationState,
     QueryPlan,
     RagConfig,
+    RetrievedChunk,
     StagePromptTrace,
     StageTokenUsage,
     ValidatedFollowup,
@@ -563,41 +564,32 @@ def render_turn_inspection(
         render_turn_metadata(strings, answer)
         tabs = st.tabs(
             [
+                strings["CONV_TAB_ANSWER"],
                 strings["CONV_TAB_DECOMPOSITION"],
                 strings["CONV_TAB_RETRIEVAL"],
-                strings["CONV_TAB_RERANKING"],
-                strings["CONV_TAB_STATE"],
                 strings["CONV_TAB_FOLLOWUPS"],
+                strings["CONV_TAB_STATE"],
                 strings["CONV_TAB_DIAGNOSTICS"],
             ]
         )
         with tabs[0]:
+            _render_stage_prompt(strings, answer, "answer")
+        with tabs[1]:
             _render_decomposition(strings, answer.plan)
             _render_stage_prompt(strings, answer, "decomposition")
-        with tabs[1]:
-            if answer.sources:
-                render_result_cards(strings, answer.sources, default_tab=default_tab)
-            else:
-                st.caption(strings["RAG_NO_INDEX_HINT"])
         with tabs[2]:
-            st.caption(
-                strings["CONV_INSPECT_RERANKER_USED"].format(reranker=answer.reranker_used or "—")
-            )
-            rerank_note = _inspect_note(strings, answer.warnings, CODE_RERANK_UNAVAILABLE)
-            if rerank_note:
-                st.caption(rerank_note)
-            _render_ranked_sources(answer.sources)
-            _render_stage_prompt(strings, answer, "reranking")
+            _render_retrieval(strings, answer, default_tab=default_tab)
         with tabs[3]:
-            _render_state(strings, answer.state)
-            _render_stage_prompt(strings, answer, "state")
-        with tabs[4]:
             _render_followups(
                 strings,
                 answer.follow_ups,
                 none_valid_note=_inspect_note(strings, answer.warnings, CODE_FOLLOWUPS_NONE_VALID),
             )
             _render_followups_prompts(strings, answer)
+        with tabs[4]:
+            _render_state(strings, answer.state)
+            st.caption(strings["CONV_INSPECT_STATE_HELP"])
+            _render_stage_prompt(strings, answer, "state")
         with tabs[5]:
             _render_diagnostics(strings, answer)
 
@@ -675,13 +667,42 @@ def _render_decomposition(strings: Strings, plan: QueryPlan) -> None:
         st.caption(strings["CONV_INSPECT_DEGRADED"])
 
 
-def _render_ranked_sources(sources: Sequence) -> None:
-    rows = [
-        (f"{index}. {chunk.source or '?'}", f"{round(max(0.0, min(1.0, chunk.score)) * 100)}%")
-        for index, chunk in enumerate(sources, start=1)
-    ]
+def subquestion_provenance_rows(
+    sources: Sequence[RetrievedChunk], plan: QueryPlan
+) -> list[tuple[str, str]]:
+    """Map each sub-question to the result ranks (#N) it retrieved.
+
+    Lets the merged Retrieval tab show which sub-question each result came from.
+    Returns [] when planning produced a single sub-question (no per-query provenance
+    is recorded) or when no chunk carries matched-query provenance.
+    """
+    if len(plan.sub_questions) <= 1:
+        return []
+    ranks: dict[str, list[str]] = {question: [] for question in plan.sub_questions}
+    for rank, chunk in enumerate(sources, start=1):
+        for question in chunk.matched_queries:
+            if question in ranks:
+                ranks[question].append(f"#{rank}")
+    return [(question, ", ".join(hits)) for question, hits in ranks.items() if hits]
+
+
+def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default_tab: str) -> None:
+    """Merged Retrieval + re-ranking view: explain, group by sub-question, then cards."""
+    if not answer.sources:
+        st.caption(strings["RAG_NO_INDEX_HINT"])
+        return
+    st.caption(strings["CONV_INSPECT_RETRIEVAL_HELP"])
+    st.caption(strings["CONV_INSPECT_RERANKER_USED"].format(reranker=answer.reranker_used or "—"))
+    rerank_note = _inspect_note(strings, answer.warnings, CODE_RERANK_UNAVAILABLE)
+    if rerank_note:
+        st.caption(rerank_note)
+    rows = subquestion_provenance_rows(answer.sources, answer.plan)
     if rows:
-        st.markdown(kv_grid_html(rows, columns=2), unsafe_allow_html=True)
+        st.markdown(f"**{strings['CONV_INSPECT_RETRIEVAL_BYQUERY']}**")
+        for question, hits in rows:
+            st.markdown(f"- {question} → {hits}")
+    render_result_cards(strings, answer.sources, default_tab=default_tab, preserve_order=True)
+    _render_stage_prompt(strings, answer, "reranking")
 
 
 def _render_state(strings: Strings, state: ConversationState) -> None:
@@ -727,3 +748,4 @@ def _render_followups(
         for item in follow_ups
     ]
     st.markdown(kv_grid_html(rows, columns=2), unsafe_allow_html=True)
+    st.caption(strings["CONV_INSPECT_FOLLOWUPS_HELP"])

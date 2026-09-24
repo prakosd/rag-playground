@@ -301,10 +301,10 @@ STRINGS_ID: Strings = {
     ),
     "CONV_PROMPTS_LABEL": ":material/edit_note: Templat prompt",
     "CONV_PROMPT_TAB_ANSWER": "Jawaban",
-    "CONV_PROMPT_TAB_DECOMPOSE": "Dekomposisi kueri",
+    "CONV_PROMPT_TAB_DECOMPOSE": "Dekomposisi",
     "CONV_PROMPT_TAB_RERANK": "Pemeringkatan ulang",
-    "CONV_PROMPT_TAB_FOLLOWUPS": "Saran pertanyaan lanjutan",
-    "CONV_PROMPT_TAB_ANSWERABILITY": "Pemeriksaan keterjawaban",
+    "CONV_PROMPT_TAB_FOLLOWUPS": "Pertanyaan lanjutan",
+    "CONV_PROMPT_TAB_ANSWERABILITY": "Keterjawaban",
     "CONV_PROMPT_TAB_STATE": "State percakapan",
     "CONV_PROMPT_TAB_WELCOME": "Pesan sambutan",
     "CONV_PROMPT_TAB_ERROR_REPLY": "Pesan kesalahan",
@@ -350,9 +350,9 @@ STRINGS_ID: Strings = {
         "Pertahankan placeholder wajib ({fields}) dan hapus kurung kurawal lainnya, lalu simpan lagi."
     ),
     "CONV_INSPECT_EXPANDER": ":material/search: Inspeksi",
+    "CONV_TAB_ANSWER": "Jawaban",
     "CONV_TAB_DECOMPOSITION": "Dekomposisi",
     "CONV_TAB_RETRIEVAL": "Retrieval",
-    "CONV_TAB_RERANKING": "Pemeringkatan ulang",
     "CONV_TAB_STATE": "State percakapan",
     "CONV_TAB_FOLLOWUPS": "Pertanyaan lanjutan",
     "CONV_TAB_DIAGNOSTICS": "Diagnostik",
@@ -361,12 +361,26 @@ STRINGS_ID: Strings = {
     "CONV_INSPECT_SUBQUESTIONS": "Sub-pertanyaan",
     "CONV_INSPECT_DEGRADED": "Perencanaan dilewati atau kembali ke pertanyaan asli.",
     "CONV_INSPECT_RERANKER_USED": "Pemeringkat ulang: {reranker}",
+    "CONV_INSPECT_RETRIEVAL_HELP": (
+        "Bagian teks teratas yang dipakai untuk menjawab — digabung dan dihilangkan "
+        "duplikatnya dari semua sub-pertanyaan, lalu diurutkan oleh pemeringkat ulang "
+        "(jadi persentase kemiripan bisa tidak menurun berurutan)."
+    ),
+    "CONV_INSPECT_RETRIEVAL_BYQUERY": "Diambil per sub-pertanyaan",
     "CONV_INSPECT_STATE_SUMMARY": "Ringkasan",
     "CONV_INSPECT_STATE_ENTITIES": "Entitas",
     "CONV_INSPECT_STATE_THREADS": "Utas terbuka",
     "CONV_INSPECT_STATE_RECENT": "Pertanyaan terbaru",
     "CONV_INSPECT_STATE_EMPTY": "Belum ada memory percakapan.",
+    "CONV_INSPECT_STATE_HELP": (
+        "Model hanya meringkas memory setelah beberapa giliran pertama; giliran awal "
+        "hanya mencatat pertanyaan terbaru, jadi belum ada prompt yang dikirim."
+    ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "Tidak ada saran pertanyaan lanjutan untuk giliran ini.",
+    "CONV_INSPECT_FOLLOWUPS_HELP": (
+        "Persentase menunjukkan seberapa yakin dokumen Anda dapat menjawab pertanyaan "
+        "lanjutan itu (kecocokan terbaik saat dicari)."
+    ),
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
     "CONV_INSPECT_RESPONSE_LABEL": "Respons",
     "CONV_INSPECT_NO_PROMPT": "Tidak ada prompt yang dikirim untuk tahap ini.",

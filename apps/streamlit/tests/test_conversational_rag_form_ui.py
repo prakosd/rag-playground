@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from rag_engine import ConversationalAnswer, StageTokenUsage, TokenUsage, ValidatedFollowup
+from rag_engine import (
+    ConversationalAnswer,
+    QueryPlan,
+    RetrievedChunk,
+    StageTokenUsage,
+    TokenUsage,
+    ValidatedFollowup,
+)
 from rag_engine import messages as rag_messages
 from rag_engine.messages import CODE_FOLLOWUPS_NONE_VALID, CODE_RERANK_UNAVAILABLE
 
@@ -182,3 +189,38 @@ def test_render_diagnostics_notes_a_clean_turn(monkeypatch) -> None:
     fake_st.caption.assert_called_once()  # a clean turn shows the empty-state note
     fake_st.warning.assert_not_called()
     fake_st.error.assert_not_called()
+
+
+def _prov_chunk(matched: tuple[str, ...]) -> RetrievedChunk:
+    return RetrievedChunk(text="t", source="a.md", score=0.9, metadata={}, matched_queries=matched)
+
+
+def test_subquestion_provenance_rows_maps_ranks_by_query() -> None:
+    # Each merged result is tagged (via matched_queries) with the sub-question(s)
+    # that retrieved it; the helper inverts that into query -> result ranks.
+    plan = QueryPlan(sub_questions=["What is A?", "What is B?"])
+    sources = [
+        _prov_chunk(("What is A?",)),
+        _prov_chunk(("What is B?", "What is A?")),
+        _prov_chunk(("What is B?",)),
+    ]
+
+    rows = form_ui.subquestion_provenance_rows(sources, plan)
+
+    assert rows == [("What is A?", "#1, #2"), ("What is B?", "#2, #3")]
+
+
+def test_subquestion_provenance_rows_empty_for_single_subquestion() -> None:
+    # A single sub-question bypasses the merge, so no per-query provenance exists.
+    plan = QueryPlan(sub_questions=["only one"])
+
+    assert form_ui.subquestion_provenance_rows([_prov_chunk(())], plan) == []
+
+
+def test_subquestion_provenance_rows_skips_queries_without_hits() -> None:
+    # A sub-question that retrieved nothing is omitted rather than shown empty.
+    plan = QueryPlan(sub_questions=["hit me", "no hits"])
+
+    rows = form_ui.subquestion_provenance_rows([_prov_chunk(("hit me",))], plan)
+
+    assert rows == [("hit me", "#1")]

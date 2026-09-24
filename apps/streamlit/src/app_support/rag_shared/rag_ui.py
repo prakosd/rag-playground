@@ -303,20 +303,24 @@ def render_result_cards(
     chunks: Sequence[RetrievedChunk],
     *,
     default_tab: str = _RESULT_TAB_RAW,
+    preserve_order: bool = False,
 ) -> None:
-    """Render ranked result cards (sorted highest-first) as collapsed panels.
+    """Render ranked result cards as collapsed panels.
 
     Shared by Steps 3-5 so every page shows identical hit cards. Each card is a
     collapsed expander titled with its rank, chunk id, and similarity; expanding it
     reveals the chunk's id/size/language line then the chunk text in Raw/Preview
-    tabs (the configured *default_tab* first).
+    tabs (the configured *default_tab* first). Cards are sorted highest-similarity
+    first unless *preserve_order* is set, which keeps the given order (e.g. a
+    re-ranked list whose order carries more meaning than the raw similarity).
     """
     tab_order = ordered_result_tabs(default_tab)
     tab_labels = {
         _RESULT_TAB_RAW: strings["SEARCH_RESULT_TAB_RAW"],
         _RESULT_TAB_PREVIEW: strings["SEARCH_RESULT_TAB_PREVIEW"],
     }
-    for rank, chunk in enumerate(sort_results_by_score(chunks), start=1):
+    ordered = list(chunks) if preserve_order else sort_results_by_score(chunks)
+    for rank, chunk in enumerate(ordered, start=1):
         with st.expander(
             result_panel_title(strings, rank, chunk), icon=_RESULT_CARD_ICON, expanded=False
         ):

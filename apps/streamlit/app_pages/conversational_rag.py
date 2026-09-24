@@ -108,7 +108,7 @@ def _assistant_bubble_css(fill: str) -> str:
         "<style>"
         f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
         f"{{width:fit-content;max-width:80%;background-color:{fill};"
-        "padding-right:1rem;padding-bottom:0.5rem}"
+        "padding-right:1rem;padding-top:1rem;padding-bottom:1rem}"
         "</style>"
     )
 
@@ -131,24 +131,50 @@ _STATUS_BUBBLE_CSS = (
     "{padding:0}"
     "</style>"
 )
-# The follow-up suggestions render as a continuation bubble right under the answer.
-# The avatar is kept but hidden (visibility, not display) so the suggestions line
-# up with the answer text; they lay out inline like a sentence (a wrapping row of
-# tertiary buttons) and are styled as blue underlined links.
-_FOLLOWUP_BUBBLE_CSS = (
-    "<style>"
-    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] [data-testid^='stChatMessageAvatar']"
-    "{visibility:hidden}"
-    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
-    "{padding-top:0}"
-    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stHorizontalBlock']"
-    "{flex-wrap:wrap;gap:0.1rem 0.75rem}"
-    f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stButton'] button"
-    "{padding:0;min-height:0;border:0;text-decoration:underline;color:#4a9eff}"
-    "</style>"
-)
+
+
+# The follow-up suggestions render as a continuation of the answer bubble: same grey
+# fill, pulled up to close the block gap and squared at the top so it welds onto the
+# answer above as one message. The avatar is kept but hidden (visibility, not display)
+# so the suggestions line up with the answer text; they lay out inline like a sentence
+# (a wrapping row of tertiary buttons) styled as blue underlined links.
+def _followup_bubble_css(fill: str) -> str:
+    """Weld the follow-up suggestions onto the answer bubble as one seamless message."""
+    return (
+        "<style>"
+        f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] [data-testid^='stChatMessageAvatar']"
+        "{visibility:hidden}"
+        f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
+        f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-1rem;"
+        "padding-top:0.5rem;border-top-left-radius:0;border-top-right-radius:0}"
+        f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stHorizontalBlock']"
+        "{flex-wrap:wrap;gap:0.1rem 0.75rem}"
+        f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stButton'] button"
+        "{padding:0;min-height:0;border:0;text-decoration:underline;color:#4a9eff}"
+        "</style>"
+    )
+
+
 # Pull the chat input snug under the scroll panel by dropping the default block gap.
 _INPUT_DOCK_CSS = f"<style>.st-key-{_INPUT_DOCK_KEY}{{margin-top:-1rem}}</style>"
+# Weld the scroll panel to the composer below it: square the panel's bottom corners and
+# the chat input's top corners so the history + input read as one continuous surface.
+_WELD_CSS = (
+    "<style>"
+    f".st-key-{_CHAT_PANEL_KEY}{{border-bottom-left-radius:0;border-bottom-right-radius:0}}"
+    f".st-key-{_INPUT_DOCK_KEY} [data-testid='stChatInput']>div"
+    "{border-top-left-radius:0;border-top-right-radius:0}"
+    "</style>"
+)
+# Trim the default expander top padding when its content leads straight with tabs (the
+# Prompt templates editor), so the tab row sits snug under the expander header.
+_TABS_EXPANDER_TIGHTEN_CSS = (
+    "<style>"
+    "[data-testid='stExpanderDetails']"
+    ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
+    "{padding-top:0.25rem}"
+    "</style>"
+)
 
 
 def _turn_failed(answer: ConversationalAnswer) -> bool:
@@ -181,8 +207,10 @@ def render_page(context: RagPageContext) -> None:
     bubble_fill = _BUBBLE_FILL_DARK if st.context.theme.type == "dark" else _BUBBLE_FILL_LIGHT
     st.html(_assistant_bubble_css(bubble_fill))
     st.html(_STATUS_BUBBLE_CSS)
-    st.html(_FOLLOWUP_BUBBLE_CSS)
+    st.html(_followup_bubble_css(bubble_fill))
     st.html(_INPUT_DOCK_CSS)
+    st.html(_WELD_CSS)
+    st.html(_TABS_EXPANDER_TIGHTEN_CSS)
 
     controls = render_advanced_controls(
         strings, "conversational_rag", list(context.list_indexes()), context.session_root()

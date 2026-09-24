@@ -111,7 +111,7 @@ class _UsageLedger:
 
 
 class _PromptLedger:
-    """Collects each aux stage's rendered prompt and raw reply across one turn.
+    """Collects each stage's rendered prompt and raw reply across one turn.
 
     Mirrors :class:`_UsageLedger`: ``record`` is passed to a stage as a callback and
     ``stage_traces`` returns the ordered :class:`StagePromptTrace` list for the answer.
@@ -170,6 +170,33 @@ def _chat_prompt(
         [("system", system), *_history_messages(history), ("human", "{question}")]
     )
     return prompt, {"context": format_context(chunks), "tone": tone, "language": language}
+
+
+def _render_chat_prompt(
+    chunks: Sequence[RetrievedChunk],
+    history: Sequence[ChatTurn],
+    question: str,
+    *,
+    tone: str = _DEFAULT_TONE,
+    language: str = DEFAULT_ANSWER_LANGUAGE,
+    system_prompt: str | None = None,
+    system_directive: str = "",
+) -> str:
+    """Render the grounded-answer prompt (system + history + question) as plain text.
+
+    Mirrors exactly what ``generate_chat_answer``/``ChatAnswerStream`` send the model,
+    so the Inspect panel can show the answer-generation prompt without re-running it.
+    """
+    prompt, values = _chat_prompt(
+        chunks,
+        history,
+        tone=tone,
+        language=language,
+        system_prompt=system_prompt,
+        system_directive=system_directive,
+    )
+    formatted = prompt.format_messages(**values, question=question)
+    return "\n\n".join(f"[{message.type}]\n{message_text(message)}" for message in formatted)
 
 
 def generate_chat_answer(
@@ -661,6 +688,40 @@ def conversational_answer_stream(
     )
 
 
+def _capture_answer_prompt(
+    record_prompt: Callable[[str, str, str], None] | None,
+    chunks: Sequence[RetrievedChunk],
+    history: Sequence[ChatTurn],
+    question: str,
+    *,
+    tone: str,
+    language: str,
+    system_prompt: str | None,
+    system_directive: str,
+    answer_text: str,
+) -> None:
+    """Record the grounded-answer prompt/reply as an ``answer`` trace, best-effort.
+
+    Capturing the trace must never disturb a successful answer, so any rendering
+    failure (e.g. history text the chat template cannot format) is swallowed.
+    """
+    if record_prompt is None:
+        return
+    try:
+        rendered = _render_chat_prompt(
+            chunks,
+            history,
+            question,
+            tone=tone,
+            language=language,
+            system_prompt=system_prompt,
+            system_directive=system_directive,
+        )
+        record_prompt("answer", rendered, answer_text)
+    except Exception:  # noqa: BLE001 - trace capture is best-effort
+        _logger.debug("Answer prompt capture failed", exc_info=True)
+
+
 def _answer_stage(
     resolved: ResolvedChatModel,
     raw_question: str,
@@ -670,11 +731,13 @@ def _answer_stage(
     language: str,
     system_prompt: str | None = None,
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
+    record_prompt: Callable[[str, str, str], None] | None = None,
 ) -> tuple[str, list[LibraryMessage], float]:
     """Generate the grounded answer, returning (text, errors, elapsed seconds)."""
     errors: list[LibraryMessage] = []
     start = perf_counter()
     answer_text = ""
+    directive = thinking_disabled_system_directive(resolved.model_id)
     try:
         answer_text, usage = generate_chat_answer_with_usage(
             resolved.model,
@@ -684,10 +747,21 @@ def _answer_stage(
             tone=tone,
             language=language,
             system_prompt=system_prompt,
-            system_directive=thinking_disabled_system_directive(resolved.model_id),
+            system_directive=directive,
         )
         if record_usage is not None:
             record_usage("answer", usage)
+        _capture_answer_prompt(
+            record_prompt,
+            chunks,
+            history,
+            raw_question,
+            tone=tone,
+            language=language,
+            system_prompt=system_prompt,
+            system_directive=directive,
+            answer_text=answer_text,
+        )
     except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
         _logger.warning("Conversational RAG generation failed: %s", exc)
         errors.append(messages.classify_generation_failure(str(exc)))
@@ -868,6 +942,7 @@ def _compose_turn(
             config.language,
             config.prompts.answer,
             ledger.record,
+            prompt_ledger.record,
         )
         followups_future = _submit_followups(
             executor,
@@ -975,6 +1050,17 @@ class ConversationalGeneration:
                     parts.append(piece)
                     yield piece
                 prepared.ledger.record("answer", answer_stream.usage)
+                _capture_answer_prompt(
+                    prepared.prompt_ledger.record,
+                    prepared.chunks,
+                    prepared.recent,
+                    prepared.raw_question,
+                    tone=config.tone,
+                    language=config.language,
+                    system_prompt=config.prompts.answer,
+                    system_directive=thinking_disabled_system_directive(prepared.resolved.model_id),
+                    answer_text=answer_stream.text,
+                )
             except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
                 _logger.warning("Conversational RAG generation failed: %s", exc)
                 errors.append(messages.classify_generation_failure(str(exc)))

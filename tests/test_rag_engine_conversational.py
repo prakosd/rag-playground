@@ -193,6 +193,81 @@ def test_conversational_answer_captures_prompt_traces(tmp_path: Path) -> None:
     assert traces["decomposition"].response == '["What is X?", "What is Y?"]'
 
 
+def test_conversational_answer_captures_answer_prompt_trace(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    result = conversational_answer(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+
+    # The grounded-answer stage records its rendered prompt + reply so Inspect can
+    # show the exact prompt that produced the answer (previously omitted).
+    traces = {trace.process: trace for trace in result.prompt_traces}
+    assert "answer" in traces
+    assert "What is the capital of France?" in traces["answer"].prompt  # the question
+    assert _CHUNKS[0].text in traces["answer"].prompt  # the retrieved context
+    assert traces["answer"].response == "ANSWER"
+
+
+def test_conversational_answer_stream_captures_answer_prompt_trace(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        return ResolvedChatModel(model=_StreamingUsageModel(), model_id="main"), []
+
+    generation = conversational_answer_stream(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+    list(generation)  # drain the stream
+
+    # The streaming path also captures the answer prompt, after the stream drains.
+    traces = {trace.process: trace for trace in generation.answer.prompt_traces}
+    assert "answer" in traces
+    assert traces["answer"].prompt  # the rendered prompt text
+    assert traces["answer"].response == "ANSWER"  # AN + SWER
+
+
+def test_conversational_answer_prompt_capture_failure_preserves_answer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(_CHUNKS))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("render failed")
+
+    monkeypatch.setattr("rag_engine.chat._render_chat_prompt", boom)
+
+    result = conversational_answer(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_enabled=False),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=_echo_aux_resolver,
+    )
+
+    # A failure while capturing the answer trace must never break the answer.
+    assert result.answer == "ANSWER"
+    assert not result.errors
+    assert all(trace.process != "answer" for trace in result.prompt_traces)
+
+
 def test_conversational_answer_records_individual_asked_questions(tmp_path: Path) -> None:
     # The live pipeline must fold the plan's *individual* sub-questions into
     # asked_questions (matching disk rehydration), not the joined resolved string,

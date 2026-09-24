@@ -76,7 +76,7 @@ class ConversationalStageUsage:
 
 @dataclass(frozen=True)
 class ConversationalPromptTrace:
-    """One aux stage's rendered prompt and raw reply, persisted for the inspector."""
+    """One stage's rendered prompt and raw reply, persisted for the inspector."""
 
     process: str
     prompt: str
