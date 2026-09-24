@@ -81,6 +81,7 @@ crawl/index/RAG config models.
 | `CONV_RAG_PROMPT_TEMPLATE_DIR` | `apps/streamlit/config` | Directory (relative to the repo root) holding the six Step 5 default prompt files (`conversational_{answer,decompose,rerank,followups,answerability,state}_prompt.txt`). Edit them to reword a default without a code change; a per-session edit from the app's prompt editor takes precedence, and a missing/empty/invalid file falls back to the built-in library template |
 | `CONV_RAG_SESSION_TOKEN_QUOTA` | `5700000` | Per-session token budget shown on the Step 5 Token usage panel (its % Usage). Display-only; never blocks a send |
 | `CONV_RAG_SESSION_COST_QUOTA` | `1.0` | Per-session USD cost budget shown beside the Step 5 token quota. Display-only; overridable per deploy |
+| `SESSIONS_ROOT` | `outputs/streamlit_sessions` | Filesystem root for all per-session files (crawls, indexes, histories, logs). Relative paths resolve against the app's working directory; set an absolute path (e.g. a mounted volume) for a containerized/cloud deployment — see [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |
 | `UI_PREVIEW_LIMIT_KB` | `256` | Largest inline text preview |

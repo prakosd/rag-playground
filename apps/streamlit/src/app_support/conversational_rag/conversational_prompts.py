@@ -32,6 +32,7 @@ from app_support.settings import get_settings
 __all__ = [
     "APP_MESSAGE_PROMPT_KEYS",
     "CONVERSATIONAL_PROMPT_KEYS",
+    "ERROR_REPLY_PROMPT_KEY",
     "FOLLOWUP_INTRO_PROMPT_KEY",
     "NO_FOLLOWUPS_PROMPT_KEY",
     "WELCOME_PROMPT_KEY",
@@ -60,14 +61,17 @@ CONVERSATIONAL_PROMPT_KEYS: tuple[str, ...] = (
 )
 
 # App-only display messages (no placeholders / library default), so they live
-# outside CONVERSATIONAL_PROMPT_KEYS: the fresh-conversation greeting, the intro
-# above suggested follow-ups, and the nudge shown when a turn has none. Each holds
-# one alternate per non-empty line; the UI shows a random line (see pick_random_line).
+# outside CONVERSATIONAL_PROMPT_KEYS: the fresh-conversation greeting, the natural
+# reply shown when a turn fails, the intro above suggested follow-ups, and the nudge
+# shown when a turn has none. Each holds one alternate per non-empty line; the UI
+# shows a random line (see pick_random_line).
 WELCOME_PROMPT_KEY = "welcome"
+ERROR_REPLY_PROMPT_KEY = "error_reply"
 FOLLOWUP_INTRO_PROMPT_KEY = "followup_intro"
 NO_FOLLOWUPS_PROMPT_KEY = "no_followups"
 APP_MESSAGE_PROMPT_KEYS: tuple[str, ...] = (
     WELCOME_PROMPT_KEY,
+    ERROR_REPLY_PROMPT_KEY,
     FOLLOWUP_INTRO_PROMPT_KEY,
     NO_FOLLOWUPS_PROMPT_KEY,
 )

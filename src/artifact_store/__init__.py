@@ -43,6 +43,7 @@ from artifact_store.naming import (
     sequence_sort_key,
 )
 from artifact_store.paths import ensure_within_root
+from artifact_store.storage import LocalStorageBackend, StorageBackend
 
 __all__ = [
     "CRAWL_FOLDER_PREFIX",
@@ -58,6 +59,8 @@ __all__ = [
     "VECTOR_FOLDER_PREFIX",
     "CrawlResultFile",
     "LibraryMessage",
+    "LocalStorageBackend",
+    "StorageBackend",
     "ensure_within_root",
     "extract_all_members",
     "extract_text_members",

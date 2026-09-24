@@ -32,6 +32,7 @@ from vector_indexer.embeddings import (
 from vector_indexer.manifest import (
     CHROMA_SUBDIR,
     DEFAULT_COLLECTION_NAME,
+    DEFAULT_STORE_BACKEND,
     write_manifest,
 )
 from vector_indexer.models import Chunk, IndexingResult
@@ -99,16 +100,26 @@ class VectorIndexer:
         resolved = self._resolve_embeddings(config, result)
         if resolved is None:
             return self._finalize(
-                run_dir, config, result, model_id=None, collection_name=collection_name
+                run_dir,
+                config,
+                result,
+                model_id=None,
+                collection_name=collection_name,
+                store_backend=DEFAULT_STORE_BACKEND,
             )
 
         chunks = self._prepare_chunks(config, inputs, result, should_cancel, progress_callback)
         if chunks is None:
             return self._finalize(
-                run_dir, config, result, model_id=resolved.model_id, collection_name=collection_name
+                run_dir,
+                config,
+                result,
+                model_id=resolved.model_id,
+                collection_name=collection_name,
+                store_backend=DEFAULT_STORE_BACKEND,
             )
 
-        self._embed_and_store(
+        store_backend = self._embed_and_store(
             chunks,
             resolved,
             run_dir,
@@ -119,7 +130,12 @@ class VectorIndexer:
             workers=_worker_count(config.index_workers, resolved.model_id),
         )
         return self._finalize(
-            run_dir, config, result, model_id=resolved.model_id, collection_name=collection_name
+            run_dir,
+            config,
+            result,
+            model_id=resolved.model_id,
+            collection_name=collection_name,
+            store_backend=store_backend,
         )
 
     def _resolve_embeddings(
@@ -188,8 +204,9 @@ class VectorIndexer:
         should_cancel: CancelCheck | None,
         *,
         workers: int,
-    ) -> None:
+    ) -> str:
         store = self._store_factory(run_dir / CHROMA_SUBDIR, collection_name, resolved.embeddings)
+        backend = store.backend_name
         indexed_sources: set[str] = set()
         total = len(chunks)
         batches = list(_batched(chunks, _EMBED_BATCH_SIZE))
@@ -249,7 +266,7 @@ class VectorIndexer:
         except Exception as exc:  # noqa: BLE001 - boundary around the embedding backend
             _logger.error("Embedding/storage failed: %s", exc)
             result.errors.append(messages.classify_embedding_failure(str(exc)))
-            return
+            return backend
         result.indexed_file_count = len(indexed_sources)
         result.indexed_sources = sorted(indexed_sources)
         _logger.info(
@@ -257,6 +274,7 @@ class VectorIndexer:
             result.indexed_chunk_count,
             result.indexed_file_count,
         )
+        return backend
 
     def _finalize(
         self,
@@ -266,9 +284,17 @@ class VectorIndexer:
         *,
         model_id: str | None,
         collection_name: str,
+        store_backend: str,
     ) -> IndexingResult:
         result.success = result.indexed_chunk_count > 0 and not result.errors
-        _write_manifest(run_dir, config, result, model_id=model_id, collection_name=collection_name)
+        _write_manifest(
+            run_dir,
+            config,
+            result,
+            model_id=model_id,
+            collection_name=collection_name,
+            store_backend=store_backend,
+        )
         _logger.info(
             "Indexing complete: success=%s files=%d chunks=%d skipped=%d",
             result.success,
@@ -320,6 +346,7 @@ def _write_manifest(
     *,
     model_id: str | None,
     collection_name: str,
+    store_backend: str,
 ) -> None:
     write_manifest(
         run_dir,
@@ -329,6 +356,7 @@ def _write_manifest(
             "embedding_model_used": model_id,
             "embedding_dimension": config.embedding_dimension,
             "collection_name": collection_name,
+            "store_backend": store_backend,
             "chunk_size": config.chunk_size,
             "chunk_overlap": config.chunk_overlap,
             "language": config.language,

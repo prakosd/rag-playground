@@ -9,7 +9,9 @@ from rag_engine.prompts import QA_SYSTEM_PROMPT, STATE_UPDATE_TEMPLATE
 
 from app_support.conversational_rag import conversational_prompts as cp
 from app_support.conversational_rag.conversational_prompts import (
+    APP_MESSAGE_PROMPT_KEYS,
     CONVERSATIONAL_PROMPT_KEYS,
+    ERROR_REPLY_PROMPT_KEY,
     FOLLOWUP_INTRO_PROMPT_KEY,
     NO_FOLLOWUPS_PROMPT_KEY,
     WELCOME_PROMPT_KEY,
@@ -61,6 +63,15 @@ def test_resolve_app_message_prefers_saved_then_default(tmp_path: Path) -> None:
     save_conversational_prompt(tmp_path, FOLLOWUP_INTRO_PROMPT_KEY, "Custom intro")
     assert resolve_app_message(tmp_path, FOLLOWUP_INTRO_PROMPT_KEY, "d") == "Custom intro"
     assert resolve_app_message(tmp_path, NO_FOLLOWUPS_PROMPT_KEY, "d") == "d"
+
+
+def test_error_reply_is_an_editable_app_message(tmp_path: Path) -> None:
+    # The failed-turn reply follows the welcome / no-suggestions pattern: an app-only
+    # message (no placeholders) that a session can override.
+    assert ERROR_REPLY_PROMPT_KEY in APP_MESSAGE_PROMPT_KEYS
+    assert resolve_app_message(tmp_path, ERROR_REPLY_PROMPT_KEY, "d") == "d"
+    save_conversational_prompt(tmp_path, ERROR_REPLY_PROMPT_KEY, "So sorry, try later.")
+    assert resolve_app_message(tmp_path, ERROR_REPLY_PROMPT_KEY, "d") == "So sorry, try later."
 
 
 def test_pick_random_line_is_stable_per_seed_and_varies() -> None:

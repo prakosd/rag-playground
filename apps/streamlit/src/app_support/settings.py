@@ -187,9 +187,26 @@ class Settings(BaseSettings):
     conv_rag_max_live_turns: int
 
     # ── Session lifecycle ────────────────────────────────────────────────────
+    # Filesystem root under which every browser session's files (crawls, indexes,
+    # histories, logs) are written. Relative paths resolve against the app's working
+    # directory; set an absolute path (e.g. a mounted volume) for a containerized or
+    # cloud deployment.
+    sessions_root: str
     # Days an inactive browser session's files are kept before the startup
     # cleanup deletes them. Loading or crawling in a session resets its clock.
     session_retention_days: int
+    # Storage backend for session artifacts: "local" (the default filesystem,
+    # unchanged) or "s3" (Amazon S3 via the [s3] extra). Currently only session
+    # cleanup consults it; library writes remain local (see docs/CLOUD_DEPLOYMENT.md).
+    storage_backend: str
+    # Target bucket and key prefix used only when STORAGE_BACKEND=s3.
+    storage_s3_bucket: str
+    storage_s3_prefix: str
+    # How the app runs RAG compute: "inprocess" (default, libraries in-process) or
+    # "http" (offload retrieval to the FastAPI backend at BACKEND_URL). See
+    # docs/CLOUD_DEPLOYMENT.md.
+    backend_mode: str
+    backend_url: str
 
     # ── App UI limits ────────────────────────────────────────────────────────
     # Largest file (MB) the app will serve as a download (above this it is

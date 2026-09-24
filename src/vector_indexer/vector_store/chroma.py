@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from vector_indexer.manifest import DEFAULT_STORE_BACKEND
 from vector_indexer.vector_store.base import VectorStore
 
 if TYPE_CHECKING:
@@ -24,6 +25,8 @@ __all__ = ["ChromaVectorStore"]
 
 class ChromaVectorStore(VectorStore):
     """Persists embedded chunks to an on-disk ChromaDB collection."""
+
+    backend_name = DEFAULT_STORE_BACKEND
 
     def __init__(
         self,

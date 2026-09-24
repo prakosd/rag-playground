@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import secrets
-import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,6 +19,7 @@ from artifact_store.naming import (
     parse_folder_sequence,
 )
 from artifact_store.paths import ensure_within_root as ensure_within_root
+from artifact_store.storage import LocalStorageBackend, StorageBackend
 from crawl4md.naming import (
     CRAWL_FOLDER_PREFIX,
     crawl_folder_name,
@@ -28,13 +28,15 @@ from crawl4md.naming import (
 )
 from log4py import get_logger
 
+from app_support.settings import get_settings
+
 _logger = get_logger(__name__)
 
 _CLEANUP_LOCK_FILE = ".cleanup.lock"
 _CLEANUP_LOG_FILE = "cleanup.log"
 _CRAWL_PREFIX = CRAWL_FOLDER_PREFIX
 _DEFAULT_RETENTION_DAYS = 7
-_DEFAULT_SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
+_DEFAULT_SESSIONS_ROOT = Path(get_settings().sessions_root)
 _ID_BYTES = 9
 _READABLE_CRAWL_WORD_COUNT = 1
 # --- Readable session ID pattern (edit these two to change the format) ---
@@ -447,16 +449,18 @@ def cleanup_old_sessions(
     active_session_ids: Iterable[str] = (),
     retention_days: int = _DEFAULT_RETENTION_DAYS,
     now: datetime | None = None,
+    backend: StorageBackend | None = None,
 ) -> list[Path]:
     """Delete inactive session folders older than the retention period."""
+    store = backend or LocalStorageBackend()
     root = Path(sessions_root)
-    if not root.exists():
+    if not store.exists(root):
         return []
     active_ids = {validate_safe_id(session_id) for session_id in active_session_ids}
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=retention_days)
     removed: list[Path] = []
-    for path in sorted(root.iterdir()):
-        if not path.is_dir() or not path.name.startswith(_SESSION_PREFIX):
+    for path in store.iterdir(root):
+        if not store.is_dir(path) or not path.name.startswith(_SESSION_PREFIX):
             continue
         session_id = path.name.removeprefix(_SESSION_PREFIX)
         try:
@@ -465,10 +469,10 @@ def cleanup_old_sessions(
             continue
         if session_id in active_ids:
             continue
-        modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        modified_at = datetime.fromtimestamp(store.mtime(path), tz=timezone.utc)
         if modified_at >= cutoff:
             continue
-        shutil.rmtree(path)
+        store.remove_tree(path)
         removed.append(path)
     if removed:
         log_path = root / _CLEANUP_LOG_FILE
@@ -485,6 +489,7 @@ def cleanup_old_sessions_with_lock(
     *,
     active_session_ids: Iterable[str] = (),
     retention_days: int = _DEFAULT_RETENTION_DAYS,
+    backend: StorageBackend | None = None,
 ) -> list[Path]:
     """Run cleanup under a lightweight lock file."""
     root = Path(sessions_root)
@@ -505,6 +510,7 @@ def cleanup_old_sessions_with_lock(
             root,
             active_session_ids=active_session_ids,
             retention_days=retention_days,
+            backend=backend,
         )
     finally:
         lock_path.unlink(missing_ok=True)

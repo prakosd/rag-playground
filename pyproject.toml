@@ -74,8 +74,14 @@ rag = [
 # pulls torch via sentence-transformers. The "llm" and "off" re-rankers need it
 # not, and CONV_RAG_RERANKER can disable local re-ranking where it is unwanted.
 rerank = ["sentence-transformers>=3.0"]
+# artifact_store_s3 — object-storage StorageBackend over Amazon S3. Opt-in so the
+# pure artifact_store foundation never pulls boto3; only cloud deployments need it.
+s3 = ["boto3>=1.34"]
+# FastAPI backend service (apps/backend) — HTTP transport over the libraries. Pair
+# with the library extras it serves, e.g. rag-playground[api,rag,vector,bedrock].
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
 # Convenience meta-extra: every library and backend (no dev tools).
-all = ["rag-playground[crawl,vector,bedrock,openai,rag,rerank]"]
+all = ["rag-playground[crawl,vector,bedrock,openai,rag,rerank,s3]"]
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.21",

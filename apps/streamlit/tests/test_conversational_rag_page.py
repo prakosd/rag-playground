@@ -6,6 +6,7 @@ import importlib
 from pathlib import Path
 
 from pytest import MonkeyPatch
+from rag_engine import ConversationalAnswer
 from rag_engine import messages as rag_messages
 
 from app_support.conversational_rag.conversational_rag_history import ConversationalTurnRecord
@@ -114,17 +115,21 @@ def test_newest_user_turn_key_prefers_pending_then_latest(monkeypatch: MonkeyPat
     assert page._newest_user_turn_key([], submitting=False) is None
 
 
-def test_inline_warnings_drops_inspect_only_codes(monkeypatch: MonkeyPatch) -> None:
+def test_turn_failed_flags_errors_or_empty_answer(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
-    kept = rag_messages.plan_unparsable()
-    filtered = page._inline_warnings(
-        [
-            kept,
-            rag_messages.rerank_unavailable("llm", "unparsable ranking"),
-            rag_messages.followups_none_valid(),
-        ]
-    )
+    # Errors mean the turn could not be answered → show the natural reply instead.
+    failed = ConversationalAnswer(answer="", errors=[rag_messages.retrieval_failed("ssl boom")])
+    assert page._turn_failed(failed) is True
+    # A replayed failure reloads with no answer and no errors (history drops them).
+    assert page._turn_failed(ConversationalAnswer(answer="")) is True
+    # A plain answer, or one carrying only warnings, is not a failure.
+    assert page._turn_failed(ConversationalAnswer(answer="ok")) is False
+    only_warn = ConversationalAnswer(answer="ok", warnings=[rag_messages.no_context()])
+    assert page._turn_failed(only_warn) is False
 
-    # The re-rank and follow-up notices move to the Inspect panel, so only the
-    # unrelated planning warning stays in the answer bubble.
-    assert filtered == [kept]
+
+def test_error_reply_picks_an_editable_alternate(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    strings = {"CONV_ERROR_REPLY_DEFAULT": "one\ntwo\nthree"}
+    # No session override → one of the built-in alternates, chosen per turn.
+    assert page._error_reply(strings, None, 0) in {"one", "two", "three"}

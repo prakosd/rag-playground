@@ -78,3 +78,24 @@ def test_cached_aux_resolver_threads_cached_chat_resolver(monkeypatch: pytest.Mo
     assert rc.cached_aux_resolver("CFG") == ("aux", [])
     assert captured["config"] == "CFG"
     assert captured["resolver"] is rc.cached_chat_resolver
+
+
+def test_cached_retriever_offloads_to_backend_when_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(rc, "get_settings", lambda: SimpleNamespace(backend_mode="http"))
+    seen: dict = {}
+
+    def fake_http(run_dir, query, config):
+        seen.update(run_dir=run_dir, query=query)
+        return "HTTP_RESULT"
+
+    monkeypatch.setattr(rc, "http_search", fake_http)
+
+    def no_local(*args, **kwargs):
+        raise AssertionError("local retrieve must not run in http mode")
+
+    monkeypatch.setattr(rc, "retrieve", no_local)
+
+    assert rc.cached_retriever("/idx", "q", "cfg") == "HTTP_RESULT"
+    assert seen["query"] == "q"  # request offloaded to the backend client

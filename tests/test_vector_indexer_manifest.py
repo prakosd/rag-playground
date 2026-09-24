@@ -29,6 +29,7 @@ def test_write_then_load_round_trip(tmp_path: Path) -> None:
         "skipped_file_count": 1,
         "created_at": "2026-06-22T10:30:00+00:00",
         "indexed_sources": ["guide.md", "intro.md"],
+        "store_backend": "pgvector",
     }
     write_manifest(tmp_path, payload)
 
@@ -41,6 +42,7 @@ def test_write_then_load_round_trip(tmp_path: Path) -> None:
     assert manifest.indexed_chunk_count == 10
     assert manifest.created_at == "2026-06-22T10:30:00+00:00"
     assert manifest.indexed_sources == ("guide.md", "intro.md")
+    assert manifest.store_backend == "pgvector"  # any backend id round-trips
 
 
 def test_load_manifest_defaults_collection_when_missing(tmp_path: Path) -> None:
@@ -53,6 +55,7 @@ def test_load_manifest_defaults_collection_when_missing(tmp_path: Path) -> None:
     assert manifest.embedding_model_used is None
     assert manifest.created_at is None
     assert manifest.indexed_sources == ()
+    assert manifest.store_backend == "chroma"  # defaults for old manifests without it
 
 
 def test_load_manifest_missing_file_raises(tmp_path: Path) -> None:

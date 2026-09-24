@@ -56,7 +56,7 @@ _PREVIEW_DIALOG_CONTENT_KEY = "preview_dialog_content"
 _PREVIEW_LIMIT_BYTES = get_settings().ui_preview_limit_kb * 1024
 _PREVIEW_LIMIT_KIB = _PREVIEW_LIMIT_BYTES // 1024
 _UTC_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
-_SESSIONS_ROOT = Path("outputs") / "streamlit_sessions"
+_SESSIONS_ROOT = Path(get_settings().sessions_root)
 _DEFAULT_LANGUAGE = DEFAULT_SESSION_LANGUAGE
 # Shared status-row style used by both the progress panels and the file-preview
 # dialog caption (two spans pushed to opposite edges of the row).

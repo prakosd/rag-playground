@@ -17,6 +17,7 @@ from typing import Any
 __all__ = [
     "CHROMA_SUBDIR",
     "DEFAULT_COLLECTION_NAME",
+    "DEFAULT_STORE_BACKEND",
     "MANIFEST_NAME",
     "IndexManifest",
     "load_manifest",
@@ -28,6 +29,9 @@ __all__ = [
 DEFAULT_COLLECTION_NAME = "crawl4md_documents"
 CHROMA_SUBDIR = "chroma"
 MANIFEST_NAME = "manifest.json"
+# Identifier of the vector-store backend that built an index; the reader selects
+# the matching VectorSearcher from it. "chroma" is the only backend today.
+DEFAULT_STORE_BACKEND = "chroma"
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,7 @@ class IndexManifest:
     created_at: str | None = None
     indexed_sources: tuple[str, ...] = ()
     index_workers: int | None = None
+    store_backend: str = DEFAULT_STORE_BACKEND
 
 
 def write_manifest(run_dir: Path | str, payload: dict[str, Any]) -> None:
@@ -84,4 +89,5 @@ def load_manifest(run_dir: Path | str) -> IndexManifest:
         created_at=data.get("created_at"),
         indexed_sources=tuple(data.get("indexed_sources") or ()),
         index_workers=data.get("index_workers"),
+        store_backend=data.get("store_backend") or DEFAULT_STORE_BACKEND,
     )

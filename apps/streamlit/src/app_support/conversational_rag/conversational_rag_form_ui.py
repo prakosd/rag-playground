@@ -32,6 +32,7 @@ from rag_engine.messages import CODE_FOLLOWUPS_NONE_VALID, CODE_RERANK_UNAVAILAB
 from app_support.basic_rag_qa.basic_rag_qa_form_ui import tone_choices
 from app_support.conversational_rag.conversational_prompts import (
     CONVERSATIONAL_PROMPT_KEYS,
+    ERROR_REPLY_PROMPT_KEY,
     FOLLOWUP_INTRO_PROMPT_KEY,
     NO_FOLLOWUPS_PROMPT_KEY,
     WELCOME_PROMPT_KEY,
@@ -302,12 +303,19 @@ def render_advanced_controls(
 
 
 # App-only message tabs: (prompt key, tab-label key, caption key, default-text key).
-# The welcome greeting always shows; the follow-up ones follow the Follow-ups toggle.
+# The welcome greeting and error reply always show; the follow-up ones follow the
+# Follow-ups toggle.
 _WELCOME_TAB = (
     WELCOME_PROMPT_KEY,
     "CONV_PROMPT_TAB_WELCOME",
     "CONV_PROMPT_WELCOME_CAPTION",
     "CHAT_WELCOME_DEFAULT",
+)
+_ERROR_REPLY_TAB = (
+    ERROR_REPLY_PROMPT_KEY,
+    "CONV_PROMPT_TAB_ERROR_REPLY",
+    "CONV_PROMPT_ERROR_REPLY_CAPTION",
+    "CONV_ERROR_REPLY_DEFAULT",
 )
 _FOLLOWUP_MESSAGE_TABS = (
     (
@@ -355,7 +363,11 @@ def _render_prompt_editor(
                 key, decomposition=decomposition, followups=followups, reranker=reranker
             )
         ]
-        message_tabs = [_WELCOME_TAB, *(_FOLLOWUP_MESSAGE_TABS if followups else ())]
+        message_tabs = [
+            _WELCOME_TAB,
+            _ERROR_REPLY_TAB,
+            *(_FOLLOWUP_MESSAGE_TABS if followups else ()),
+        ]
         labels = [strings[_PROMPT_TAB_KEYS[key]] for key in model_keys]
         labels += [strings[label_key] for _, label_key, _, _ in message_tabs]
         tabs = st.tabs(labels)
@@ -532,6 +544,17 @@ def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None
     st.markdown(kv_grid_html(model_rows, columns=2, margin_top=True), unsafe_allow_html=True)
 
 
+def _render_diagnostics(strings: Strings, answer: ConversationalAnswer) -> None:
+    """List this turn's raw warnings and errors, kept out of the chat for a clean flow."""
+    if not answer.warnings and not answer.errors:
+        st.caption(strings["CONV_DIAGNOSTICS_EMPTY"])
+        return
+    for warning in answer.warnings:
+        st.warning(localize_message(strings, warning.as_dict()))
+    for error in answer.errors:
+        st.error(localize_message(strings, error.as_dict()))
+
+
 def render_turn_inspection(
     strings: Strings, answer: ConversationalAnswer, *, default_tab: str = "raw"
 ) -> None:
@@ -545,6 +568,7 @@ def render_turn_inspection(
                 strings["CONV_TAB_RERANKING"],
                 strings["CONV_TAB_STATE"],
                 strings["CONV_TAB_FOLLOWUPS"],
+                strings["CONV_TAB_DIAGNOSTICS"],
             ]
         )
         with tabs[0]:
@@ -574,6 +598,8 @@ def render_turn_inspection(
                 none_valid_note=_inspect_note(strings, answer.warnings, CODE_FOLLOWUPS_NONE_VALID),
             )
             _render_followups_prompts(strings, answer)
+        with tabs[5]:
+            _render_diagnostics(strings, answer)
 
 
 def _render_prompt_trace(strings: Strings, trace: StagePromptTrace) -> None:

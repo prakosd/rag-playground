@@ -11,7 +11,7 @@ import pytest
 from rag_engine import messages
 from rag_engine.config import RagConfig
 from rag_engine.retrieval import retrieve
-from rag_engine.search import ChromaSearcher, SearchHit, VectorSearcher
+from rag_engine.search import ChromaSearcher, SearchHit, VectorSearcher, open_searcher
 from vector_indexer import EmbeddingProviderUnavailable, ResolvedEmbedding
 
 
@@ -308,3 +308,58 @@ def test_chroma_client_construction_is_serialized(monkeypatch: pytest.MonkeyPatc
         thread.join()
 
     assert max_active == 1  # the module-level lock made client construction single-flight
+
+
+def test_open_searcher_selects_chroma_for_a_chroma_index(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import rag_engine.search as search_mod
+
+    monkeypatch.setattr(
+        search_mod, "load_manifest", lambda run_dir: SimpleNamespace(store_backend="chroma")
+    )
+    assert isinstance(open_searcher(tmp_path, object()), ChromaSearcher)
+
+
+def test_open_searcher_defaults_to_chroma_when_manifest_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import rag_engine.search as search_mod
+
+    def _missing(run_dir: object) -> object:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(search_mod, "load_manifest", _missing)
+    assert isinstance(open_searcher(tmp_path, object()), ChromaSearcher)
+
+
+def test_open_searcher_uses_the_registered_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import rag_engine.search as search_mod
+
+    class _FakeBackendSearcher(VectorSearcher):
+        def __init__(self, run_dir: object, embeddings: object) -> None:
+            self.run_dir = run_dir
+
+        def search(self, query, k, **kwargs):
+            return []
+
+    monkeypatch.setattr(
+        search_mod, "load_manifest", lambda run_dir: SimpleNamespace(store_backend="fake")
+    )
+    monkeypatch.setitem(search_mod._SEARCHER_BACKENDS, "fake", _FakeBackendSearcher)
+
+    assert isinstance(open_searcher(tmp_path, object()), _FakeBackendSearcher)
+
+
+def test_open_searcher_raises_for_an_unknown_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import rag_engine.search as search_mod
+
+    monkeypatch.setattr(
+        search_mod, "load_manifest", lambda run_dir: SimpleNamespace(store_backend="pinecone")
+    )
+    with pytest.raises(ValueError, match="pinecone"):
+        open_searcher(tmp_path, object())

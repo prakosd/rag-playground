@@ -1,0 +1,23 @@
+# FastAPI backend — query-only (retrieval + answering). No browser/OCR, so it stays
+# small. If you later expose crawl/index endpoints, add Chromium + Tesseract like the
+# frontend image.
+#   docker build -f Dockerfile.backend -t rag-playground-backend .
+#   docker run -p 8000:8000 -v app-data:/data/sessions \
+#     -e ARTIFACTS_ROOT=/data/sessions rag-playground-backend
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ANONYMIZED_TELEMETRY=False \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+COPY . .
+
+# The API serves retrieval + answering, so it needs the rag + vector libraries, a
+# model provider (bedrock/openai), and the [s3] backend for shared object storage.
+RUN pip install --upgrade pip \
+    && pip install -e '.[rag,vector,bedrock,openai,s3]' -e 'apps/backend'
+
+EXPOSE 8000
+CMD ["uvicorn", "app_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

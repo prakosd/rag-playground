@@ -101,7 +101,7 @@ module-level lock serializes chromadb client construction (its Rust backend is
 not thread-safe on a cold start), and `ensure_ready()` lets
 `retrieve_multi`/`validate_followups` warm one shared searcher before fanning
 out. Swapping vector backends later means writing one new `VectorSearcher`, not touching the
-pipeline. The embedding loader and `searcher_factory` are injectable so the flow
+pipeline; `open_searcher` picks it from the index manifest's `store_backend`. The embedding loader and `searcher_factory` are injectable so the flow
 can be tested without ChromaDB or network access.
 
 ### Prompts — injection-defensive

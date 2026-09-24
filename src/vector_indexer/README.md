@@ -142,12 +142,15 @@ environment secrets/variables.
 
 ## Vector store
 
-`VectorStore` (an ABC with `add_texts` / `persist`) hides the database.
+`VectorStore` (an ABC with `add_embeddings` / `persist` and a `backend_name`) hides the database.
 `ChromaVectorStore` is the default implementation; it wraps `langchain_chroma.Chroma`
 with an explicit `embedding_function`, so each batch is embedded by the resolved
 model and written to a persistent ChromaDB collection under `<run>/chroma/`. The
 same `Chroma` class reopens the collection for retrieval (see **Reading an index
-back**), which guarantees the on-disk format matches.
+back**), which guarantees the on-disk format matches. Each store's `backend_name` is recorded in
+`manifest.json` as `store_backend`, so `rag_engine` reopens the index with the matching
+`VectorSearcher`; adding a backend means a new `VectorStore` here plus a `VectorSearcher`
+in `rag_engine`.
 
 ## Reading an index back
 

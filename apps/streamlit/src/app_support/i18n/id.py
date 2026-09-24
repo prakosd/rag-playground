@@ -307,12 +307,17 @@ STRINGS_ID: Strings = {
     "CONV_PROMPT_TAB_ANSWERABILITY": "Pemeriksaan keterjawaban",
     "CONV_PROMPT_TAB_STATE": "State percakapan",
     "CONV_PROMPT_TAB_WELCOME": "Pesan sambutan",
+    "CONV_PROMPT_TAB_ERROR_REPLY": "Pesan kesalahan",
     "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Pembuka lanjutan",
     "CONV_PROMPT_TAB_NO_FOLLOWUPS": "Pesan tanpa saran",
     "CONV_PROMPT_FIELDS_CAPTION": "Placeholder wajib: {fields}",
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Ditampilkan sebagai sapaan asisten di awal percakapan baru. "
         "Satu baris per alternatif — satu dipilih acak."
+    ),
+    "CONV_PROMPT_ERROR_REPLY_CAPTION": (
+        "Ditampilkan di obrolan saat sebuah giliran tak bisa dijawab karena kesalahan. "
+        "Satu baris per alternatif — satu dipilih acak. Detail teknis masuk ke Inspeksi."
     ),
     "CONV_PROMPT_FOLLOWUP_INTRO_CAPTION": (
         "Ditampilkan di atas saran pertanyaan lanjutan. Satu baris per alternatif — "
@@ -321,6 +326,11 @@ STRINGS_ID: Strings = {
     "CONV_PROMPT_NO_FOLLOWUPS_CAPTION": (
         "Ditampilkan saat sebuah giliran tak punya saran pertanyaan lanjutan. Satu "
         "baris per alternatif — satu dipilih acak tiap giliran."
+    ),
+    "CONV_ERROR_REPLY_DEFAULT": (
+        "Maaf — saya belum bisa menyusun jawaban saat ini. Silakan coba lagi sebentar.\n"
+        "Ada gangguan di sisi saya, jadi saya belum bisa menjawab saat ini. Silakan coba lagi nanti.\n"
+        "Saya kesulitan mengakses yang saya butuhkan untuk menjawabnya. Silakan coba lagi beberapa saat lagi."
     ),
     "CONV_FOLLOWUP_INTRO_DEFAULT": (
         "Ingin tahu tentang…\n"
@@ -345,6 +355,8 @@ STRINGS_ID: Strings = {
     "CONV_TAB_RERANKING": "Pemeringkatan ulang",
     "CONV_TAB_STATE": "State percakapan",
     "CONV_TAB_FOLLOWUPS": "Pertanyaan lanjutan",
+    "CONV_TAB_DIAGNOSTICS": "Diagnostik",
+    "CONV_DIAGNOSTICS_EMPTY": "Tidak ada peringatan atau kesalahan untuk giliran ini.",
     "CONV_INSPECT_QUESTION": "Pertanyaan Anda",
     "CONV_INSPECT_SUBQUESTIONS": "Sub-pertanyaan",
     "CONV_INSPECT_DEGRADED": "Perencanaan dilewati atau kembali ke pertanyaan asli.",

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from vector_indexer import messages
+from vector_indexer import DEFAULT_STORE_BACKEND, ChromaVectorStore, messages
 from vector_indexer.config import IndexingConfig
 from vector_indexer.embeddings import EmbeddingProviderUnavailable, ResolvedEmbedding
 from vector_indexer.indexer import (
@@ -30,6 +30,8 @@ class _FakeEmbeddings:
 
 
 class _FakeStore(VectorStore):
+    backend_name = "fake"
+
     def __init__(self, persist_dir: Path) -> None:
         self.persist_dir = Path(persist_dir)
         self.ids: list[str] = []
@@ -86,12 +88,18 @@ def test_run_indexes_inputs_and_writes_manifest(tmp_path: Path) -> None:
     assert len(store.ids) == len(set(store.ids))
     manifest = load_manifest(result.output_dir)
     assert manifest.embedding_model_used == "fake"
+    assert manifest.store_backend == "fake"  # the store's backend flows to the manifest
     assert manifest.collection_name == created["collection_name"]
     # The run directory is a UTC timestamp slug, so created_at is recoverable.
     assert manifest.created_at is not None
     # Distinct indexed sources are recorded and round-trip through the manifest.
     assert result.indexed_sources
     assert manifest.indexed_sources == tuple(result.indexed_sources)
+
+
+def test_chroma_vector_store_reports_its_backend() -> None:
+    # The default store self-identifies as "chroma", which the manifest records.
+    assert ChromaVectorStore.backend_name == DEFAULT_STORE_BACKEND == "chroma"
 
 
 def test_run_emits_lifecycle_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

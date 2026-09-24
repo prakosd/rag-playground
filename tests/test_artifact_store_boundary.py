@@ -12,6 +12,8 @@ _FORBIDDEN_IMPORT_PREFIXES = (
     "crawl4md",
     "crawl4ai",
     "pymupdf",
+    "boto3",
+    "botocore",
 )
 
 

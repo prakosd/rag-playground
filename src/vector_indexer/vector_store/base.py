@@ -11,12 +11,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import ClassVar
 
 __all__ = ["VectorStore"]
 
 
 class VectorStore(ABC):
     """Stores embedded text chunks and persists them for later retrieval."""
+
+    # Backend identifier recorded in the index manifest so the reader can reopen
+    # with the matching VectorSearcher; each implementation sets its own.
+    backend_name: ClassVar[str]
 
     @abstractmethod
     def add_embeddings(

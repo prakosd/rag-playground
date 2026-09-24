@@ -1,0 +1,58 @@
+# Local three-tier stack for the cloud split (see docs/CLOUD_DEPLOYMENT.md):
+#   frontend (Streamlit) + backend (FastAPI) + MinIO (S3-compatible object store).
+#
+# For the simplest Tier-1 deploy, run only the `frontend` service with a mounted
+# volume — that is the whole app in one container. Bring up the `backend` + `minio`
+# services to exercise the split, and uncomment the S3 env on `frontend` below to use
+# the `minio` object store instead of AWS.
+#
+# Secrets (AWS_*, OPENAI_API_KEY, ZIP_SIGNING_SECRET) are NOT set here — inject them
+# from your shell/CI or a secrets manager, e.g. `AWS_REGION=... docker compose up`.
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    shm_size: "2gb" # Chromium crashes on Docker's default 64 MB /dev/shm
+    environment:
+      SESSIONS_ROOT: /data/sessions
+      # To exercise the [s3] storage backend against the minio service below, create a
+      # bucket in the MinIO console (http://localhost:9001, minioadmin/minioadmin) and
+      # uncomment these (boto3 reads AWS_ENDPOINT_URL_S3 natively):
+      # STORAGE_BACKEND: s3
+      # STORAGE_S3_BUCKET: rag-playground
+      # AWS_ENDPOINT_URL_S3: http://minio:9000
+      # AWS_ACCESS_KEY_ID: minioadmin
+      # AWS_SECRET_ACCESS_KEY: minioadmin
+      # AWS_REGION: us-east-1
+    volumes:
+      - app-data:/data/sessions
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      ARTIFACTS_ROOT: /data/sessions
+    volumes:
+      - app-data:/data/sessions
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+
+volumes:
+  app-data:
+  minio-data:

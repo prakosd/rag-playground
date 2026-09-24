@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from vector_indexer import CHROMA_SUBDIR, load_manifest
+from vector_indexer import CHROMA_SUBDIR, DEFAULT_STORE_BACKEND, load_manifest
 
 if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
@@ -131,9 +131,29 @@ class ChromaSearcher(VectorSearcher):
         return self._store
 
 
+def _index_store_backend(run_dir: Path | str) -> str:
+    """The index's recorded store backend, or chroma when the manifest is unavailable."""
+    try:
+        return load_manifest(run_dir).store_backend
+    except (FileNotFoundError, ValueError):
+        return DEFAULT_STORE_BACKEND
+
+
+# Maps a manifest's store_backend to its searcher. Add an entry here (plus a
+# vector_indexer.VectorStore) to support another backend; chroma is the only one today.
+_SEARCHER_BACKENDS: dict[str, type[VectorSearcher]] = {DEFAULT_STORE_BACKEND: ChromaSearcher}
+
+
 def open_searcher(run_dir: Path | str, embeddings: Embeddings) -> VectorSearcher:
-    """Return the default :class:`VectorSearcher` (ChromaDB) for *run_dir*."""
-    return ChromaSearcher(run_dir, embeddings)
+    """Return the :class:`VectorSearcher` matching the index's recorded store backend."""
+    backend = _index_store_backend(run_dir)
+    try:
+        searcher_cls = _SEARCHER_BACKENDS[backend]
+    except KeyError:
+        raise ValueError(
+            f"No VectorSearcher is registered for vector-store backend {backend!r}."
+        ) from None
+    return searcher_cls(run_dir, embeddings)
 
 
 def _build_source_filter(source_filter: Sequence[str]) -> dict[str, Any] | None:

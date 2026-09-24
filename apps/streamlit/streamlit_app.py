@@ -87,6 +87,7 @@ from app_support.session_manager import (
 from app_support.session_reset import clear_transient_result_state
 from app_support.settings import get_settings
 from app_support.site_graph_3d.static_publish import remove_orrery_static
+from app_support.storage import resolve_storage_backend
 from app_support.support import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     CrawlJob,
@@ -806,6 +807,7 @@ def _run_startup_cleanup(active_session_ids: tuple[str, ...]) -> None:
         _SESSIONS_ROOT,
         active_session_ids=active_session_ids,
         retention_days=get_settings().session_retention_days,
+        backend=resolve_storage_backend(),
     )
     # Prune each removed session's published 3D viewers from the static dir.
     remove_orrery_static(

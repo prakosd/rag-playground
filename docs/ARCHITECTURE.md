@@ -7,7 +7,9 @@ sits beneath a shared foundation (`artifact_store`), which in turn sits under th
 independent libraries: `crawl4md` (crawling), `vector_indexer` (indexing), and
 `rag_engine` (retrieval + answering, building on `vector_indexer`). The Streamlit
 app is a UI adapter over those libraries and owns only rendering, session/browser
-state, background jobs, and downloads.
+state, background jobs, and downloads. For running the project as a three-tier
+cloud deployment (frontend / backend / storage), see
+[CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md).
 
 ```mermaid
 flowchart TD
@@ -84,14 +86,17 @@ flowchart TD
   Store --> Result["IndexingResult + manifest.json"]
 ```
 
-Embeddings are LangChain `Embeddings` objects and the store is langchain-chroma, so
-a backend can change without touching the application layer. Before chunking, the
+The vector store sits behind a two-facet abstraction so a backend can change without
+touching the application layer: the write facet is `vector_indexer.VectorStore` (default
+`ChromaVectorStore`), the read facet is `rag_engine.VectorSearcher` (default
+`ChromaSearcher`), and the manifest's `store_backend` lets `open_searcher` reopen an index
+with the matching searcher. Embeddings are LangChain `Embeddings` objects. Before chunking, the
 indexer strips each file's leading crawl run metadata (the YAML front matter) and
 splits the body on the render-invisible page markers crawl4md emits, so run metadata
 never reaches a chunk and every chunk is stamped with its page's
 `Source: [title](url)` line (also carried as `source_title` / `source_url`
 metadata). Files without markers degrade to a single untitled page. The `manifest.json`
-records the embedding model, dimension, collection name, the run's `created_at`
+records the embedding model, dimension, collection name, `store_backend`, the run's `created_at`
 timestamp, and the distinct `indexed_sources` (for the Step 3 source filter) so an index
 can be reopened later. See
 [src/vector_indexer/README.md](../src/vector_indexer/README.md).

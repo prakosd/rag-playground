@@ -22,7 +22,6 @@ from rag_engine import (
     ConversationState,
     conversational_answer_stream,
 )
-from rag_engine.messages import CODE_FOLLOWUPS_NONE_VALID, CODE_RERANK_UNAVAILABLE
 
 from app_support.app_runtime import _ICON_BUTTON_WIDTH_PX
 from app_support.conversational_rag.conversation_manager import (
@@ -35,7 +34,9 @@ from app_support.conversational_rag.conversation_manager import (
     trim_old_turn_payloads,
 )
 from app_support.conversational_rag.conversational_prompts import (
+    ERROR_REPLY_PROMPT_KEY,
     pick_random_line,
+    resolve_app_message,
     resolve_welcome_message,
 )
 from app_support.conversational_rag.conversational_rag_form_ui import (
@@ -58,7 +59,7 @@ from app_support.conversational_rag.conversational_token_ui import (
 from app_support.conversational_rag.followup_cache import get_cached_chunks, replace_followups
 from app_support.focus import entered_page, focus_chat_input, scroll_message_into_view
 from app_support.i18n import answer_language_name, get_strings, localize_message
-from app_support.rag_shared.rag_ui import RagPageContext, render_messages
+from app_support.rag_shared.rag_ui import RagPageContext
 from app_support.rag_shared.resource_cache import (
     cached_aux_resolver,
     cached_chat_resolver,
@@ -148,14 +149,26 @@ _FOLLOWUP_BUBBLE_CSS = (
 )
 # Pull the chat input snug under the scroll panel by dropping the default block gap.
 _INPUT_DOCK_CSS = f"<style>.st-key-{_INPUT_DOCK_KEY}{{margin-top:-1rem}}</style>"
-# These benign fallback notes are relocated into the Inspect panel (Re-ranking /
-# Follow-ups tabs), so they are dropped from the inline answer-bubble messages.
-_INSPECT_ONLY_WARNING_CODES = frozenset({CODE_RERANK_UNAVAILABLE, CODE_FOLLOWUPS_NONE_VALID})
 
 
-def _inline_warnings(warnings: list[LibraryMessage]) -> list[LibraryMessage]:
-    """Warnings shown in the answer bubble (Inspect-only notes are filtered out)."""
-    return [message for message in warnings if message.code not in _INSPECT_ONLY_WARNING_CODES]
+def _turn_failed(answer: ConversationalAnswer) -> bool:
+    """True when a turn reported errors or produced no answer text — show a natural reply.
+
+    Persisted turns drop their warnings/errors on replay, so a previously failed turn
+    reloads with an empty answer and no errors; treating "nothing to show" as a failure
+    keeps the friendly reply after a refresh or a conversation switch.
+    """
+    return bool(answer.errors) or not answer.answer.strip()
+
+
+def _error_reply(strings, session_root, turn_id: int) -> str:
+    """One natural, non-technical reply for a failed turn; varies per turn, editable."""
+    return pick_random_line(
+        resolve_app_message(
+            session_root, ERROR_REPLY_PROMPT_KEY, strings["CONV_ERROR_REPLY_DEFAULT"]
+        ),
+        turn_id,
+    )
 
 
 def render_page(context: RagPageContext) -> None:
@@ -203,7 +216,13 @@ def render_page(context: RagPageContext) -> None:
         if not turns and not submitting:
             _render_welcome_bubble(strings, context.session_root())
         for turn in turns:
-            _render_stored_turn(strings, turn, inspect=controls.inspect, default_tab=default_tab)
+            _render_stored_turn(
+                strings,
+                context.session_root(),
+                turn,
+                inspect=controls.inspect,
+                default_tab=default_tab,
+            )
         if submitting:
             config = build_conversational_config(
                 controls,
@@ -220,6 +239,7 @@ def render_page(context: RagPageContext) -> None:
                 st.container(key=f"{FOLLOWUP_BUBBLE_KEY_PREFIX}{turns[-1]['turn_id']}")
             answer, elapsed = _stream_pending_turn(
                 strings,
+                context.session_root(),
                 question,
                 len(turns),
                 index.run_dir,
@@ -297,21 +317,34 @@ def _render_welcome_bubble(strings, session_root) -> None:
         st.write(greeting)
 
 
-def _render_stored_turn(strings, turn: dict, *, inspect: bool, default_tab: str) -> None:
+def _render_stored_turn(
+    strings, session_root, turn: dict, *, inspect: bool, default_tab: str
+) -> None:
     """Render one persisted turn: the user bubble and the assistant's answer."""
     _render_user_message(turn["question"], turn["turn_id"])
     answer: ConversationalAnswer = turn["answer"]
     key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn['turn_id']}"
     with st.container(key=key), st.chat_message("assistant"):
-        render_messages(strings, _inline_warnings(answer.warnings), answer.errors)
-        if answer.answer:
+        if _turn_failed(answer):
+            st.write(_error_reply(strings, session_root, turn["turn_id"]))
+        else:
             st.write(answer.answer)
     if inspect:
         render_turn_inspection(strings, answer, default_tab=default_tab)
 
 
 def _stream_pending_turn(
-    strings, question, turn_id, run_dir, state, config, history, cached, *, scroll=False
+    strings,
+    session_root,
+    question,
+    turn_id,
+    run_dir,
+    state,
+    config,
+    history,
+    cached,
+    *,
+    scroll=False,
 ):
     """Stream the pending turn's answer into the chat panel; return (answer, seconds).
 
@@ -350,7 +383,8 @@ def _stream_pending_turn(
         st.write_stream(generation)
         elapsed = perf_counter() - start
         answer = generation.answer or ConversationalAnswer(answer="", state=state)
-        render_messages(strings, _inline_warnings(answer.warnings), answer.errors)
+        if _turn_failed(answer):
+            st.write(_error_reply(strings, session_root, turn_id))
     status.update(state="complete")
     return answer, elapsed
 

@@ -38,7 +38,13 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.crawl_timeout == 60.0
     assert settings.crawl_max_file_size_mb == 10.0
     assert settings.ui_download_limit_mb == 500
+    assert settings.sessions_root == "outputs/streamlit_sessions"
     assert settings.session_retention_days == 7
+    assert settings.storage_backend == "local"
+    assert settings.storage_s3_bucket == ""
+    assert settings.storage_s3_prefix == ""
+    assert settings.backend_mode == "inprocess"
+    assert settings.backend_url == "http://localhost:8000"
     assert settings.log_level == "INFO"
     assert settings.log_file == "logs/app.log"
     assert settings.crawl_default_urls == "https://www.ato.gov.au/"
@@ -54,6 +60,7 @@ def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("VECTOR_CHUNK_SIZE", "900")
     monkeypatch.setenv("UI_PREVIEW_LIMIT_KB", "512")
     monkeypatch.setenv("SESSION_RETENTION_DAYS", "30")
+    monkeypatch.setenv("SESSIONS_ROOT", "/data/sessions")
     monkeypatch.setenv("SEMANTIC_SEARCH_DEFAULT_TAB", "preview")
 
     # The process environment takes precedence over the .env.defaults file.
@@ -63,7 +70,20 @@ def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatc
     assert settings.vector_chunk_size == 900
     assert settings.ui_preview_limit_kb == 512
     assert settings.session_retention_days == 30
+    assert settings.sessions_root == "/data/sessions"
     assert settings.semantic_search_default_tab == "preview"
+
+
+def test_sessions_root_setting_drives_default_root() -> None:
+    # The per-session file root is env-driven; its default matches the historical
+    # local path, so the seam changes nothing until an operator overrides it.
+    from pathlib import Path
+
+    from app_support import session_manager
+
+    assert get_settings().sessions_root == "outputs/streamlit_sessions"
+    assert Path("outputs") / "streamlit_sessions" == session_manager.DEFAULT_SESSIONS_ROOT
+    assert Path(get_settings().sessions_root) == session_manager.DEFAULT_SESSIONS_ROOT
 
 
 def test_settings_ignore_unrelated_secret_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:

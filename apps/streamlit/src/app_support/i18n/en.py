@@ -302,12 +302,17 @@ STRINGS_EN: Strings = {
     "CONV_PROMPT_TAB_ANSWERABILITY": "Answerability check",
     "CONV_PROMPT_TAB_STATE": "Conversation state",
     "CONV_PROMPT_TAB_WELCOME": "Welcome message",
+    "CONV_PROMPT_TAB_ERROR_REPLY": "Error message",
     "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Follow-up intro",
     "CONV_PROMPT_TAB_NO_FOLLOWUPS": "No-suggestions message",
     "CONV_PROMPT_FIELDS_CAPTION": "Required placeholders: {fields}",
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Shown as the assistant's greeting at the start of a new conversation. "
         "One line per alternate — a random one appears."
+    ),
+    "CONV_PROMPT_ERROR_REPLY_CAPTION": (
+        "Shown in the chat when a turn can't be answered because of an error. One "
+        "line per alternate — a random one appears. Technical details go to Inspect."
     ),
     "CONV_PROMPT_FOLLOWUP_INTRO_CAPTION": (
         "Shown above the suggested follow-ups. One line per alternate — a random "
@@ -316,6 +321,11 @@ STRINGS_EN: Strings = {
     "CONV_PROMPT_NO_FOLLOWUPS_CAPTION": (
         "Shown when a turn has no follow-up suggestions. One line per alternate — a "
         "random one appears each turn."
+    ),
+    "CONV_ERROR_REPLY_DEFAULT": (
+        "Sorry — I couldn't put together an answer just now. Please try again in a moment.\n"
+        "Something went wrong on my end, so I can't answer that right now. Please try again shortly.\n"
+        "I'm having trouble reaching what I need to answer that. Please try again in a little while."
     ),
     "CONV_FOLLOWUP_INTRO_DEFAULT": (
         "Would you like to know about…\n"
@@ -340,6 +350,8 @@ STRINGS_EN: Strings = {
     "CONV_TAB_RERANKING": "Re-ranking",
     "CONV_TAB_STATE": "Conversation state",
     "CONV_TAB_FOLLOWUPS": "Follow-ups",
+    "CONV_TAB_DIAGNOSTICS": "Diagnostics",
+    "CONV_DIAGNOSTICS_EMPTY": "No warnings or errors for this turn.",
     "CONV_INSPECT_QUESTION": "Your question",
     "CONV_INSPECT_SUBQUESTIONS": "Sub-questions",
     "CONV_INSPECT_DEGRADED": "Planning was skipped or fell back to the original question.",

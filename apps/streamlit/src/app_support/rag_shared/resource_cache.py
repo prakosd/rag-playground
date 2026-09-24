@@ -30,6 +30,9 @@ from rag_engine import (
 )
 from rag_engine.retrieval import load_index_embeddings
 
+from app_support.backend_client import http_search
+from app_support.settings import get_settings
+
 if TYPE_CHECKING:
     from artifact_store import LibraryMessage
     from rag_engine import ResolvedChatModel
@@ -70,7 +73,13 @@ def _open_cached_searcher(run_dir_str: str) -> VectorSearcher:
 def cached_retriever(
     run_dir: Path | str, query: str, config: Any, **kwargs: Any
 ) -> RetrievalResult:
-    """``retrieve`` reusing a cached searcher; on failure the library rebuilds + reports."""
+    """``retrieve`` reusing a cached searcher; on failure the library rebuilds + reports.
+
+    When ``BACKEND_MODE=http`` the retrieval is offloaded to the FastAPI backend
+    instead of opening the index locally; the in-process default is unchanged.
+    """
+    if get_settings().backend_mode == "http":
+        return http_search(run_dir, query, config)
     if kwargs.get("searcher") is None:
         try:
             kwargs["searcher"] = _open_cached_searcher(str(run_dir))

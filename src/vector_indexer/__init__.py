@@ -28,10 +28,12 @@ from vector_indexer.languages import DEFAULT_LANGUAGE, LUCENE_LANGUAGES
 from vector_indexer.manifest import (
     CHROMA_SUBDIR,
     DEFAULT_COLLECTION_NAME,
+    DEFAULT_STORE_BACKEND,
     IndexManifest,
     load_manifest,
 )
 from vector_indexer.models import IndexingResult
+from vector_indexer.vector_store import ChromaVectorStore, VectorStore
 
 __all__ = [
     "CHROMA_SUBDIR",
@@ -39,9 +41,11 @@ __all__ = [
     "DEFAULT_EMBEDDING_MODEL",
     "DEFAULT_LANGUAGE",
     "DEFAULT_LOCAL_MODEL",
+    "DEFAULT_STORE_BACKEND",
     "EMBEDDING_MODEL_INFOS",
     "EMBEDDING_MODEL_OPTIONS",
     "LUCENE_LANGUAGES",
+    "ChromaVectorStore",
     "EmbeddingModelInfo",
     "EmbeddingProviderUnavailable",
     "IndexManifest",
@@ -49,6 +53,7 @@ __all__ = [
     "IndexingResult",
     "ResolvedEmbedding",
     "VectorIndexer",
+    "VectorStore",
     "build_embeddings",
     "get_embedding_model_info",
     "load_manifest",

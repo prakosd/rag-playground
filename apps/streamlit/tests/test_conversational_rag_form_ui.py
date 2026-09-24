@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from rag_engine import StageTokenUsage, TokenUsage, ValidatedFollowup
+from rag_engine import ConversationalAnswer, StageTokenUsage, TokenUsage, ValidatedFollowup
 from rag_engine import messages as rag_messages
 from rag_engine.messages import CODE_FOLLOWUPS_NONE_VALID, CODE_RERANK_UNAVAILABLE
 
@@ -153,3 +153,32 @@ def test_render_followup_bubble_lays_out_suggestions_inline(monkeypatch, tmp_pat
     assert any(
         call.kwargs.get("horizontal") is True for call in fake_st.container.call_args_list
     )  # suggestions flow inline inside a horizontal container
+
+
+def test_render_diagnostics_surfaces_all_messages(monkeypatch) -> None:
+    # Every warning and error moves to the Inspect Diagnostics tab, so none is lost
+    # when they are kept out of the chat bubble.
+    fake_st = MagicMock()
+    monkeypatch.setattr(form_ui, "st", fake_st)
+    answer = ConversationalAnswer(
+        answer="",
+        warnings=[rag_messages.no_context(), rag_messages.plan_unparsable()],
+        errors=[rag_messages.retrieval_failed("ssl boom")],
+    )
+
+    form_ui._render_diagnostics(STRINGS_EN, answer)
+
+    assert fake_st.warning.call_count == 2  # both warnings shown
+    assert fake_st.error.call_count == 1  # the error shown
+    fake_st.caption.assert_not_called()
+
+
+def test_render_diagnostics_notes_a_clean_turn(monkeypatch) -> None:
+    fake_st = MagicMock()
+    monkeypatch.setattr(form_ui, "st", fake_st)
+
+    form_ui._render_diagnostics(STRINGS_EN, ConversationalAnswer(answer="ok"))
+
+    fake_st.caption.assert_called_once()  # a clean turn shows the empty-state note
+    fake_st.warning.assert_not_called()
+    fake_st.error.assert_not_called()

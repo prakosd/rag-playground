@@ -1,0 +1,33 @@
+# Version control / IDE
+.git
+.gitignore
+.vscode
+.devcontainer
+
+# Python caches / build artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+build
+dist
+
+# Virtual envs
+.venv
+venv
+env
+
+# Local runtime data + secrets (never bake into an image)
+outputs
+logs
+.env
+.streamlit/secrets.toml
+
+# Vendored agent-skill templates
+.agents
+
+# Node (if any UI tooling is added later)
+node_modules

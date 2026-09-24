@@ -179,6 +179,7 @@ For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWrit
 | Install & environments | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
 | Configuration & output reference | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | Architecture & data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Cloud deployment & readiness | [docs/CLOUD_DEPLOYMENT.md](docs/CLOUD_DEPLOYMENT.md) |
 | Development (tests, lint, conventions) | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Health check & uptime monitoring | [docs/HEALTH_CHECK.md](docs/HEALTH_CHECK.md) |
 | Building another UI over the libraries | [docs/BUILDING_ANOTHER_UI.md](docs/BUILDING_ANOTHER_UI.md) |
