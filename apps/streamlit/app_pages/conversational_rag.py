@@ -139,24 +139,29 @@ _STATUS_BUBBLE_CSS = (
 )
 
 
-# The follow-up suggestions render as a continuation of the answer bubble: same grey
-# fill, pulled up to close the block gap and squared at the top so it welds onto the
-# answer above as one message. The avatar is kept but hidden (visibility, not display)
-# so the suggestions line up with the answer text; they lay out inline like a sentence
-# (a wrapping row of tertiary buttons) styled as blue underlined links.
+# The follow-up suggestions render as a compact bubble just under the answer. It keeps
+# its OWN rounded bubble (rather than welding into the answer) so the two fit-content
+# bubbles' differing widths can't leave an empty stepped notch beside it; a small
+# negative top margin keeps it close so it still reads as a continuation. The avatar is
+# kept but hidden (visibility, not display) so the suggestions line up with the answer
+# text; they lay out inline like a sentence (a wrapping row of tertiary buttons) styled
+# as blue underlined links.
 def _followup_bubble_css(fill: str) -> str:
-    """Weld the follow-up suggestions onto the answer bubble as one seamless message."""
+    """Render the follow-up suggestions as a compact bubble just under the answer."""
     return (
         "<style>"
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] [data-testid^='stChatMessageAvatar']"
         "{visibility:hidden}"
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
-        f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-1rem;"
-        "padding-top:0.5rem;border-top-left-radius:0;border-top-right-radius:0}"
-        # Pull the chips snug under the intro line and lay them left-to-right so long,
-        # wrapping suggestions read naturally instead of centring on their own row.
+        f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-0.5rem;"
+        "padding-top:0.5rem}"
+        # Tighten the intro line's own bottom margin so the chips sit close under it.
+        f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessageContent'] p"
+        "{margin-bottom:0.25rem}"
+        # Lay the chips out left-to-right so long, wrapping suggestions read naturally
+        # instead of centring on their own row.
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stHorizontalBlock']"
-        "{flex-wrap:wrap;gap:0.1rem 0.75rem;justify-content:flex-start;margin-top:-0.5rem}"
+        "{flex-wrap:wrap;gap:0.1rem 0.75rem;justify-content:flex-start;margin-top:-0.25rem}"
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stButton'] button"
         "{padding:0;min-height:0;border:0;text-decoration:underline;color:#4a9eff;"
         "justify-content:flex-start;text-align:left}"
@@ -184,16 +189,23 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
     "{padding-top:0.25rem}"
     "</style>"
 )
-# Pull the nested Prompt/Response tabs inside each Inspect tab up snug under the tab
-# row, and trim each tab panel's default 16px top padding so the first section label
-# sits snug under the stage tab row (labels already hug their content via the caption's
-# negative bottom margin). Scoped to the per-turn Inspect containers by their key prefix.
-_INSPECT_TABS_TIGHTEN_CSS = (
+# Consistent rhythm inside each per-turn Inspect panel: a small, even space above the
+# first element of every tab (the section label, or the Answer tab's Prompt/Response
+# tabs) and above the nested Prompt/Response tabs wherever they appear — trimmed from
+# Streamlit's default 16px slack but not welded shut. The section-label caption's own
+# `<p>` carries a 16px bottom margin that its container only half-compensates, leaving a
+# visible gap under the label; zero it (and trim list bottoms) so content hugs its label.
+# Scoped to the per-turn Inspect containers by their key prefix.
+_INSPECT_TABS_RHYTHM_CSS = (
     "<style>"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [data-testid='stTabs']"
-    "{margin-top:-0.75rem}"
+    "{margin-top:-0.25rem}"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [role='tabpanel']"
-    "{padding-top:0.25rem}"
+    "{padding-top:0.5rem}"
+    f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"
+    " [data-testid='stCaptionContainer'] p{margin-bottom:0}"
+    f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"
+    " [data-testid='stMarkdownContainer'] ul{margin-bottom:0.5rem}"
     "</style>"
 )
 
@@ -266,7 +278,7 @@ def render_page(context: RagPageContext) -> None:
     st.html(_WELD_CSS)
     st.html(_idle_input_border_css(panel_border))
     st.html(_TABS_EXPANDER_TIGHTEN_CSS)
-    st.html(_INSPECT_TABS_TIGHTEN_CSS)
+    st.html(_INSPECT_TABS_RHYTHM_CSS)
 
     # Peek the queued question (a typed message or a follow-up click) before the
     # controls so every input can be locked while its answer streams — a mid-stream
