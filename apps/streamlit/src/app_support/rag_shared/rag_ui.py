@@ -78,7 +78,9 @@ def index_option_label(strings: Strings, ref: IndexRef) -> str:
     )
 
 
-def select_index(strings: Strings, indexes: Sequence[IndexRef], *, key: str) -> IndexRef | None:
+def select_index(
+    strings: Strings, indexes: Sequence[IndexRef], *, key: str, disabled: bool = False
+) -> IndexRef | None:
     """Render the index picker; return the chosen index or ``None`` when empty."""
     if not indexes:
         st.info(strings["RAG_NO_INDEX_HINT"])
@@ -89,6 +91,7 @@ def select_index(strings: Strings, indexes: Sequence[IndexRef], *, key: str) -> 
         options=list(labels),
         help=strings["RAG_INDEX_HELP"],
         key=key,
+        disabled=disabled,
     )
     return labels.get(chosen)
 

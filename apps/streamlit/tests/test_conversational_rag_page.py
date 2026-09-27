@@ -133,3 +133,14 @@ def test_error_reply_picks_an_editable_alternate(monkeypatch: MonkeyPatch) -> No
     strings = {"CONV_ERROR_REPLY_DEFAULT": "one\ntwo\nthree"}
     # No session override → one of the built-in alternates, chosen per turn.
     assert page._error_reply(strings, None, 0) in {"one", "two", "three"}
+
+
+def test_turn_in_flight_detects_queued_question(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    # A queued question means a turn is about to stream → inputs lock so a mid-stream
+    # widget change can't interrupt the run and drop the just-streamed turn.
+    assert page._turn_in_flight({page._PENDING_KEY: "What is CTP?"}) is True
+    # No pending, or a blank/None one, leaves the controls live.
+    assert page._turn_in_flight({}) is False
+    assert page._turn_in_flight({page._PENDING_KEY: "   "}) is False
+    assert page._turn_in_flight({page._PENDING_KEY: None}) is False

@@ -381,6 +381,7 @@ STRINGS_ID: Strings = {
         "Persentase menunjukkan seberapa yakin dokumen Anda dapat menjawab pertanyaan "
         "lanjutan itu (kecocokan terbaik saat dicari)."
     ),
+    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Keyakinan %",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
     "CONV_INSPECT_RESPONSE_LABEL": "Respons",
     "CONV_INSPECT_NO_PROMPT": "Tidak ada prompt yang dikirim untuk tahap ini.",

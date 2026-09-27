@@ -61,6 +61,7 @@ from app_support.settings import get_settings
 __all__ = [
     "ConversationalControls",
     "FOLLOWUP_BUBBLE_KEY_PREFIX",
+    "INSPECT_BUBBLE_KEY_PREFIX",
     "aux_model_choices",
     "build_conversational_config",
     "render_advanced_controls",
@@ -86,6 +87,9 @@ _PROMPT_TAB_KEYS = {
 # Suggested follow-ups render in their own keyed container so the page CSS can hide
 # the duplicate assistant avatar (they read as a continuation of the answer bubble).
 FOLLOWUP_BUBBLE_KEY_PREFIX = "conv-followup-"
+# Each per-turn Inspect panel renders inside its own keyed container so page CSS can
+# scope the nested Prompt/Response tab tightening to just these panels.
+INSPECT_BUBBLE_KEY_PREFIX = "conv-inspect-"
 
 
 @dataclass(frozen=True)
@@ -159,17 +163,26 @@ def build_conversational_config(
 
 
 def render_advanced_controls(
-    strings: Strings, key_prefix: str, indexes: Sequence[IndexRef], session_root: Path
+    strings: Strings,
+    key_prefix: str,
+    indexes: Sequence[IndexRef],
+    session_root: Path,
+    *,
+    disabled: bool = False,
 ) -> ConversationalControls:
-    """Render the index / chunks / model / tone panel and the advanced options."""
+    """Render the index / chunks / model / tone panel and the advanced options.
+
+    *disabled* locks every control while a turn is streaming, so a mid-stream change
+    cannot interrupt the run and drop the just-streamed turn.
+    """
     settings = get_settings()
     model_options, model_default = chat_model_choices()
     tones, tone_default = tone_choices()
     with st.container(border=True):
         index_col, chunks_col = st.columns(_PANEL_COLUMN_WIDTHS, vertical_alignment="center")
         with index_col:
-            index = select_index(strings, indexes, key=f"{key_prefix}_index")
-        disabled = index is None
+            index = select_index(strings, indexes, key=f"{key_prefix}_index", disabled=disabled)
+        disabled = index is None or disabled
         with chunks_col:
             top_k = int(
                 st.number_input(
@@ -557,10 +570,21 @@ def _render_diagnostics(strings: Strings, answer: ConversationalAnswer) -> None:
 
 
 def render_turn_inspection(
-    strings: Strings, answer: ConversationalAnswer, *, default_tab: str = "raw"
+    strings: Strings,
+    answer: ConversationalAnswer,
+    *,
+    default_tab: str = "raw",
+    turn_id: int = 0,
 ) -> None:
-    """Render the 'Inspect this turn' expander: metadata strip + a tab per stage."""
-    with st.expander(strings["CONV_INSPECT_EXPANDER"], expanded=False):
+    """Render the 'Inspect this turn' expander: metadata strip + a tab per stage.
+
+    The expander lives in a per-turn keyed container so page CSS can tighten the
+    nested Prompt/Response tabs to just these panels.
+    """
+    with (
+        st.container(key=f"{INSPECT_BUBBLE_KEY_PREFIX}{turn_id}"),
+        st.expander(strings["CONV_INSPECT_EXPANDER"], expanded=False),
+    ):
         render_turn_metadata(strings, answer)
         tabs = st.tabs(
             [
@@ -588,8 +612,9 @@ def render_turn_inspection(
             _render_followups_prompts(strings, answer)
         with tabs[4]:
             _render_state(strings, answer.state)
-            st.caption(strings["CONV_INSPECT_STATE_HELP"])
-            _render_stage_prompt(strings, answer, "state")
+            _render_stage_prompt(
+                strings, answer, "state", help_text=strings["CONV_INSPECT_STATE_HELP"]
+            )
         with tabs[5]:
             _render_diagnostics(strings, answer)
 
@@ -605,11 +630,21 @@ def _render_prompt_trace(strings: Strings, trace: StagePromptTrace) -> None:
         st.code(trace.response or "—", language=None, wrap_lines=True)
 
 
-def _render_stage_prompt(strings: Strings, answer: ConversationalAnswer, process: str) -> None:
-    """Show the captured prompt/reply for *process*, or a note when none was sent."""
+def _render_stage_prompt(
+    strings: Strings,
+    answer: ConversationalAnswer,
+    process: str,
+    *,
+    help_text: str | None = None,
+) -> None:
+    """Show the captured prompt/reply for *process*, or a note when none was sent.
+
+    *help_text* adds a hover hint to the "no prompt" note — used by the state tab to
+    explain why early turns send no prompt without spending a caption line.
+    """
     trace = next((item for item in answer.prompt_traces if item.process == process), None)
     if trace is None:
-        st.caption(strings["CONV_INSPECT_NO_PROMPT"])
+        st.caption(strings["CONV_INSPECT_NO_PROMPT"], help=help_text)
         return
     _render_prompt_trace(strings, trace)
 
@@ -662,7 +697,7 @@ def render_followup_bubble(
 def _render_decomposition(strings: Strings, plan: QueryPlan) -> None:
     st.markdown(f"**{strings['CONV_INSPECT_SUBQUESTIONS']}**")
     for question in plan.sub_questions:
-        st.markdown(f"- {question}")
+        st.caption(question)
     if plan.degraded:
         st.caption(strings["CONV_INSPECT_DEGRADED"])
 
@@ -691,8 +726,10 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
     if not answer.sources:
         st.caption(strings["RAG_NO_INDEX_HINT"])
         return
-    st.caption(strings["CONV_INSPECT_RETRIEVAL_HELP"])
-    st.caption(strings["CONV_INSPECT_RERANKER_USED"].format(reranker=answer.reranker_used or "—"))
+    st.caption(
+        strings["CONV_INSPECT_RERANKER_USED"].format(reranker=answer.reranker_used or "—"),
+        help=strings["CONV_INSPECT_RETRIEVAL_HELP"],
+    )
     rerank_note = _inspect_note(strings, answer.warnings, CODE_RERANK_UNAVAILABLE)
     if rerank_note:
         st.caption(rerank_note)
@@ -747,5 +784,8 @@ def _render_followups(
         (html.unescape(item.question), f"{round(max(0.0, min(1.0, item.score)) * 100)}%")
         for item in follow_ups
     ]
+    st.caption(
+        strings["CONV_INSPECT_FOLLOWUPS_SCORE_HEADER"],
+        help=strings["CONV_INSPECT_FOLLOWUPS_HELP"],
+    )
     st.markdown(kv_grid_html(rows, columns=2), unsafe_allow_html=True)
-    st.caption(strings["CONV_INSPECT_FOLLOWUPS_HELP"])

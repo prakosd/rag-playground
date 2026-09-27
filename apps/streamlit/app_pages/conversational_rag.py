@@ -41,6 +41,7 @@ from app_support.conversational_rag.conversational_prompts import (
 )
 from app_support.conversational_rag.conversational_rag_form_ui import (
     FOLLOWUP_BUBBLE_KEY_PREFIX,
+    INSPECT_BUBBLE_KEY_PREFIX,
     build_conversational_config,
     render_advanced_controls,
     render_followup_bubble,
@@ -75,7 +76,6 @@ _PENDING_KEY = "conversational_rag_pending"
 _CONV_ID_KEY = "conversational_rag_current_id"
 _USER_TURN_KEY_PREFIX = "conv-user-"
 _ASSISTANT_TURN_KEY_PREFIX = "conv-assistant-"
-_STATUS_TURN_KEY_PREFIX = "conv-status-"
 _CHAT_INPUT_KEY = "conversational_rag_input"
 _CHAT_PANEL_KEY = "conversational_rag_panel"
 _SCROLL_REQUESTED_KEY = "conversational_rag_scroll_bottom"
@@ -96,10 +96,15 @@ _CHAT_ALIGN_CSS = (
 # Give the model answer the same grey rounded bubble as the user's, but left-aligned.
 # The fill matches Streamlit's own user-bubble colour (its secondary background,
 # transparentized), which differs by theme — so it is chosen at render time.
-# Scoped to the answer via the conv-assistant- container, so the streaming status
-# and the inspection panel (both rendered outside it) stay unstyled.
+# Scoped to the answer via the conv-assistant- container; the inspection panel
+# (rendered outside it) stays unstyled, and the streaming status inside is de-framed
+# by _STATUS_BUBBLE_CSS.
 _BUBBLE_FILL_DARK = "rgba(38, 39, 48, 0.5)"
 _BUBBLE_FILL_LIGHT = "rgba(240, 242, 246, 0.5)"
+# The panel/container border colour Streamlit draws per theme; reused for the docked
+# chat input's idle border so it matches the conversation panel above it.
+_PANEL_BORDER_DARK = "rgba(250, 250, 250, 0.2)"
+_PANEL_BORDER_LIGHT = "rgba(49, 51, 63, 0.2)"
 
 
 def _assistant_bubble_css(fill: str) -> str:
@@ -109,25 +114,24 @@ def _assistant_bubble_css(fill: str) -> str:
         f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
         f"{{width:fit-content;max-width:80%;background-color:{fill};"
         "padding-right:1rem;padding-top:1rem;padding-bottom:1rem}"
+        # Match the user bubble's default 0.2rem content nudge so the first answer
+        # line lines up with the avatar the same way the user's question does.
+        f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stChatMessageContent']"
+        "{margin-top:0.2rem}"
         "</style>"
     )
 
 
-# The streaming status ("Generating…"/"Finalizing…") renders as a hidden-avatar
-# assistant message just under the answer, so its text lines up with the answer text.
-# Strip the expander frame and vertical padding so it hugs the answer instead of
-# boxing itself in a rounded rectangle.
+# The live status ("Generating…"/"Finalizing…") streams inside the answer bubble,
+# just under the answer text. Strip its expander frame and padding so it reads as a
+# plain spinner + label line hugging the answer instead of a boxed rectangle.
 _STATUS_BUBBLE_CSS = (
     "<style>"
-    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] [data-testid^='stChatMessageAvatar']"
-    "{visibility:hidden}"
-    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
-    "{padding-top:0;padding-bottom:0}"
-    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stExpander']"
+    f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander']"
     "{border:0;background:transparent;box-shadow:none}"
-    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] details"
+    f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] details"
     "{border:0;background:transparent}"
-    f"div[class*='st-key-{_STATUS_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] summary"
+    f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] summary"
     "{padding:0}"
     "</style>"
 )
@@ -175,6 +179,29 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
     "{padding-top:0.25rem}"
     "</style>"
 )
+# Pull the nested Prompt/Response tabs inside each Inspect tab up snug under the tab
+# row (scoped to the per-turn Inspect containers by their key prefix).
+_INSPECT_TABS_TIGHTEN_CSS = (
+    "<style>"
+    f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [data-testid='stTabs']"
+    "{margin-top:-0.75rem}"
+    "</style>"
+)
+
+
+def _idle_input_border_css(border_color: str) -> str:
+    """Border the docked chat input on its free sides when unfocused, matching the panel.
+
+    The panel already draws the shared top edge (welded), so only the left, right, and
+    bottom are coloured; a focused input keeps Streamlit's accent border.
+    """
+    return (
+        "<style>"
+        f".st-key-{_INPUT_DOCK_KEY} [data-testid='stChatInput']>div:not(:focus-within)"
+        f"{{border-left-color:{border_color};border-right-color:{border_color};"
+        f"border-bottom-color:{border_color}}}"
+        "</style>"
+    )
 
 
 def _turn_failed(answer: ConversationalAnswer) -> bool:
@@ -197,41 +224,59 @@ def _error_reply(strings, session_root, turn_id: int) -> str:
     )
 
 
+def _turn_in_flight(session_state) -> bool:
+    """True when a queued question is waiting to stream — used to lock inputs mid-turn."""
+    return bool((session_state.get(_PENDING_KEY) or "").strip())
+
+
 def render_page(context: RagPageContext) -> None:
     """Render the conversational RAG page content area."""
     strings = get_strings(st.session_state.get("language", context.default_language))
     on_entry = entered_page("conversational_rag")
     st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
     st.caption(strings["CHAT_SECTION_CAPTION"])
+    theme_dark = st.context.theme.type == "dark"
+    bubble_fill = _BUBBLE_FILL_DARK if theme_dark else _BUBBLE_FILL_LIGHT
+    panel_border = _PANEL_BORDER_DARK if theme_dark else _PANEL_BORDER_LIGHT
     st.html(_CHAT_ALIGN_CSS)
-    bubble_fill = _BUBBLE_FILL_DARK if st.context.theme.type == "dark" else _BUBBLE_FILL_LIGHT
     st.html(_assistant_bubble_css(bubble_fill))
     st.html(_STATUS_BUBBLE_CSS)
     st.html(_followup_bubble_css(bubble_fill))
     st.html(_INPUT_DOCK_CSS)
     st.html(_WELD_CSS)
+    st.html(_idle_input_border_css(panel_border))
     st.html(_TABS_EXPANDER_TIGHTEN_CSS)
+    st.html(_INSPECT_TABS_TIGHTEN_CSS)
+
+    # Peek the queued question (a typed message or a follow-up click) before the
+    # controls so every input can be locked while its answer streams — a mid-stream
+    # widget change would otherwise interrupt the run and drop the just-streamed turn.
+    pending = st.session_state.get(_PENDING_KEY)
+    in_flight = _turn_in_flight(st.session_state)
 
     controls = render_advanced_controls(
-        strings, "conversational_rag", list(context.list_indexes()), context.session_root()
+        strings,
+        "conversational_rag",
+        list(context.list_indexes()),
+        context.session_root(),
+        disabled=in_flight,
     )
     index = controls.index
 
     records = load_conversational_rag_history(context.session_root())
     summaries = conversation_summaries(records)
     _ensure_active_conversation(records, summaries)
-    _render_conversation_controls(strings, records, summaries)
+    _render_conversation_controls(strings, records, summaries, disabled=in_flight)
 
     turns: list[dict] = st.session_state[_TURNS_KEY]
     state: ConversationState = st.session_state[_STATE_KEY]
     cache: dict = st.session_state[_CACHE_KEY]
 
-    # The chat input renders inline under the panel + follow-ups (see below), so a
-    # typed message arrives via _PENDING_KEY + a rerun (like a follow-up click). This
-    # run only needs the pending question so the panel can stream its answer in place.
-    pending = st.session_state.pop(_PENDING_KEY, None)
     question = (pending or "").strip()
     submitting = bool(question and index is not None)
+    # A queued question with no usable index can't stream; drop it so it doesn't wedge.
+    if pending is not None and not submitting:
+        st.session_state.pop(_PENDING_KEY, None)
 
     default_tab = get_settings().semantic_search_default_tab
     answer: ConversationalAnswer | None = None
@@ -243,12 +288,17 @@ def render_page(context: RagPageContext) -> None:
     with st.container(height=_CHAT_PANEL_HEIGHT_PX, key=_CHAT_PANEL_KEY):
         if not turns and not submitting:
             _render_welcome_bubble(strings, context.session_root())
-        for turn in turns:
+        for position, turn in enumerate(turns):
+            is_latest = position == len(turns) - 1
+            # The latest turn's Inspect panel renders below its follow-ups (see the
+            # follow-ups branch) so the answer↔follow-up bubbles stay welded and the
+            # full-width panel drops to the very bottom of the turn.
+            defer_inspect = is_latest and not submitting and controls.followups
             _render_stored_turn(
                 strings,
                 context.session_root(),
                 turn,
-                inspect=controls.inspect,
+                inspect=controls.inspect and not defer_inspect,
                 default_tab=default_tab,
             )
         if submitting:
@@ -279,11 +329,19 @@ def render_page(context: RagPageContext) -> None:
             )
         elif turns and controls.followups:
             # Suggested follow-ups read as a continuation of the latest answer, so
-            # they live inside the scroll panel right beneath it.
+            # they live inside the scroll panel right beneath it; the Inspect panel
+            # then sits below them at the bottom of the turn.
             latest = turns[-1]
             clicked = render_followup_bubble(
                 strings, context.session_root(), latest["answer"].follow_ups, latest["turn_id"]
             )
+            if controls.inspect:
+                render_turn_inspection(
+                    strings,
+                    latest["answer"],
+                    default_tab=default_tab,
+                    turn_id=latest["turn_id"],
+                )
             if clicked:
                 st.session_state[_PENDING_KEY] = clicked
                 st.session_state[_SCROLL_REQUESTED_KEY] = True
@@ -303,7 +361,9 @@ def render_page(context: RagPageContext) -> None:
     # via _PENDING_KEY and reruns so the next run streams it into the panel above.
     with st.container(key=_INPUT_DOCK_KEY):
         typed = st.chat_input(
-            strings["CHAT_INPUT_PLACEHOLDER"], disabled=index is None, key=_CHAT_INPUT_KEY
+            strings["CHAT_INPUT_PLACEHOLDER"],
+            disabled=index is None or in_flight,
+            key=_CHAT_INPUT_KEY,
         )
     if typed and index is not None:
         st.session_state[_PENDING_KEY] = typed.strip()
@@ -330,6 +390,9 @@ def render_page(context: RagPageContext) -> None:
             answer,
             elapsed,
         )
+        # Consume the queued question only after the turn is safely committed, so an
+        # interrupted stream keeps it and re-streams instead of losing the turn.
+        st.session_state.pop(_PENDING_KEY, None)
         st.session_state[_SCROLL_REQUESTED_KEY] = True
         st.session_state[_FOCUS_INPUT_KEY] = True
         st.rerun()
@@ -358,7 +421,7 @@ def _render_stored_turn(
         else:
             st.write(answer.answer)
     if inspect:
-        render_turn_inspection(strings, answer, default_tab=default_tab)
+        render_turn_inspection(strings, answer, default_tab=default_tab, turn_id=turn["turn_id"])
 
 
 def _stream_pending_turn(
@@ -376,11 +439,12 @@ def _stream_pending_turn(
 ):
     """Stream the pending turn's answer into the chat panel; return (answer, seconds).
 
-    The grounded answer streams token-by-token at the top; a live ``st.status``
-    footer below it narrates the plan/retrieve/re-rank/state stages and collapses
-    when the turn completes. When *scroll* is set, the new question is pinned to the
-    panel top before the blocking stream starts, so it stays visible as the answer
-    streams in — instead of only scrolling once the whole answer has finished.
+    The grounded answer streams token-by-token inside the answer bubble; a live
+    ``st.status`` under it (same bubble) narrates the plan/retrieve/re-rank/state
+    stages and collapses when the turn completes. When *scroll* is set, the new
+    question is pinned to the panel top before the blocking stream starts, so it
+    stays visible as the answer streams in — instead of only scrolling once the
+    whole answer has finished.
     """
     _render_user_message(question, turn_id)
     if scroll:
@@ -388,7 +452,7 @@ def _stream_pending_turn(
     key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn_id}"
     with st.container(key=key), st.chat_message("assistant"):
         answer_area = st.container()
-    with st.container(key=f"{_STATUS_TURN_KEY_PREFIX}{turn_id}"), st.chat_message("assistant"):
+        # The live status sits inside the answer bubble, just under the streamed text.
         status = st.status(strings["RAG_GENERATING"])
 
     def _report_progress(message: LibraryMessage) -> None:
@@ -463,6 +527,8 @@ def _render_conversation_controls(
     strings,
     records: list[ConversationalTurnRecord],
     summaries: list[ConversationSummary],
+    *,
+    disabled: bool = False,
 ) -> None:
     """Render the New-conversation button and a picker over saved conversations."""
     current_id = st.session_state[_CONV_ID_KEY]
@@ -482,6 +548,7 @@ def _render_conversation_controls(
             icon=":material/add:",
             help=strings["CHAT_NEW_CONVERSATION"],
             key="conversational_rag_new",
+            disabled=disabled,
         ):
             _start_new_conversation()
             st.rerun()
@@ -492,6 +559,7 @@ def _render_conversation_controls(
             format_func=_label,
             width="stretch",
             label_visibility="collapsed",
+            disabled=disabled,
         )
     if selected != current_id:
         _activate_conversation(selected, records)

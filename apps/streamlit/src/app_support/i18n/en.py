@@ -376,6 +376,7 @@ STRINGS_EN: Strings = {
         "Each percentage is how confidently your documents can answer that follow-up — "
         "its best match when searched against your collection."
     ),
+    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Confidence %",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
     "CONV_INSPECT_RESPONSE_LABEL": "Response",
     "CONV_INSPECT_NO_PROMPT": "No prompt was sent for this stage.",
