@@ -144,3 +144,14 @@ def test_turn_in_flight_detects_queued_question(monkeypatch: MonkeyPatch) -> Non
     assert page._turn_in_flight({}) is False
     assert page._turn_in_flight({page._PENDING_KEY: "   "}) is False
     assert page._turn_in_flight({page._PENDING_KEY: None}) is False
+
+
+def test_inspect_deferred_only_for_latest_with_followups(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    # The latest turn defers its Inspect panel below the follow-ups only when follow-ups
+    # show; deferring regardless of streaming keeps the panel in one stable position so a
+    # mid-stream re-render can't leave a duplicate copy behind.
+    assert page._inspect_deferred(is_latest=True, followups_enabled=True) is True
+    assert page._inspect_deferred(is_latest=True, followups_enabled=False) is False
+    assert page._inspect_deferred(is_latest=False, followups_enabled=True) is False
+    assert page._inspect_deferred(is_latest=False, followups_enabled=False) is False

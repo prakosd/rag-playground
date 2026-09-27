@@ -89,8 +89,10 @@ _CHAT_ALIGN_CSS = (
     "<style>"
     f"div[class*='st-key-{_USER_TURN_KEY_PREFIX}'] div[data-testid='stChatMessage']"
     "{flex-direction:row-reverse;width:fit-content;max-width:80%;margin-left:auto}"
+    # Force the 0.2rem nudge Streamlit only applies to single-line bubbles, so a
+    # multi-line question's first line lines up with the avatar like the assistant's.
     f"div[class*='st-key-{_USER_TURN_KEY_PREFIX}'] div[data-testid='stChatMessageContent']"
-    "{text-align:right}"
+    "{text-align:right;margin-top:0.2rem}"
     "</style>"
 )
 # Give the model answer the same grey rounded bubble as the user's, but left-aligned.
@@ -151,10 +153,13 @@ def _followup_bubble_css(fill: str) -> str:
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
         f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-1rem;"
         "padding-top:0.5rem;border-top-left-radius:0;border-top-right-radius:0}"
+        # Pull the chips snug under the intro line and lay them left-to-right so long,
+        # wrapping suggestions read naturally instead of centring on their own row.
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stHorizontalBlock']"
-        "{flex-wrap:wrap;gap:0.1rem 0.75rem}"
+        "{flex-wrap:wrap;gap:0.1rem 0.75rem;justify-content:flex-start;margin-top:-0.5rem}"
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stButton'] button"
-        "{padding:0;min-height:0;border:0;text-decoration:underline;color:#4a9eff}"
+        "{padding:0;min-height:0;border:0;text-decoration:underline;color:#4a9eff;"
+        "justify-content:flex-start;text-align:left}"
         "</style>"
     )
 
@@ -180,11 +185,15 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
     "</style>"
 )
 # Pull the nested Prompt/Response tabs inside each Inspect tab up snug under the tab
-# row (scoped to the per-turn Inspect containers by their key prefix).
+# row, and trim each tab panel's default 16px top padding so the first section label
+# sits snug under the stage tab row (labels already hug their content via the caption's
+# negative bottom margin). Scoped to the per-turn Inspect containers by their key prefix.
 _INSPECT_TABS_TIGHTEN_CSS = (
     "<style>"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [data-testid='stTabs']"
     "{margin-top:-0.75rem}"
+    f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [role='tabpanel']"
+    "{padding-top:0.25rem}"
     "</style>"
 )
 
@@ -227,6 +236,17 @@ def _error_reply(strings, session_root, turn_id: int) -> str:
 def _turn_in_flight(session_state) -> bool:
     """True when a queued question is waiting to stream — used to lock inputs mid-turn."""
     return bool((session_state.get(_PENDING_KEY) or "").strip())
+
+
+def _inspect_deferred(is_latest: bool, followups_enabled: bool) -> bool:
+    """Whether a turn's Inspect panel renders below its follow-ups instead of inline.
+
+    The latest turn defers so its answer↔follow-up bubbles stay welded and the
+    full-width panel drops to the turn's bottom. Deferring regardless of streaming
+    keeps the panel in one stable position, so a mid-stream re-render can't leave a
+    duplicate copy behind while ``st.write_stream`` blocks the run.
+    """
+    return is_latest and followups_enabled
 
 
 def render_page(context: RagPageContext) -> None:
@@ -293,7 +313,7 @@ def render_page(context: RagPageContext) -> None:
             # The latest turn's Inspect panel renders below its follow-ups (see the
             # follow-ups branch) so the answer↔follow-up bubbles stay welded and the
             # full-width panel drops to the very bottom of the turn.
-            defer_inspect = is_latest and not submitting and controls.followups
+            defer_inspect = _inspect_deferred(is_latest, controls.followups)
             _render_stored_turn(
                 strings,
                 context.session_root(),
@@ -315,6 +335,13 @@ def render_page(context: RagPageContext) -> None:
             # beside the just-asked question until the answer finishes.
             if turns:
                 st.container(key=f"{FOLLOWUP_BUBBLE_KEY_PREFIX}{turns[-1]['turn_id']}")
+                # The prior turn's deferred Inspect panel is skipped in the loop while
+                # streaming; empty its keyed container so the stale copy doesn't linger
+                # (a duplicate panel) beside the new inline copy during the blocked run.
+                if controls.inspect and _inspect_deferred(
+                    is_latest=True, followups_enabled=controls.followups
+                ):
+                    st.container(key=f"{INSPECT_BUBBLE_KEY_PREFIX}{turns[-1]['turn_id']}")
             answer, elapsed = _stream_pending_turn(
                 strings,
                 context.session_root(),

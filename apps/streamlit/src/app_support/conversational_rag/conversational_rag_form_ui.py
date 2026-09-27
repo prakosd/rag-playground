@@ -694,10 +694,25 @@ def render_followup_bubble(
         return clicked
 
 
+def _section_label(text: str, *, help_text: str | None = None) -> None:
+    """Compact bold section label with an optional hover hint.
+
+    Shared by every Inspect tab so section headers (Sub-questions, Re-ranker,
+    Confidence %, conversation-state groups) read the same and stay tight.
+    """
+    st.caption(f"**{text}**", help=help_text)
+
+
+def _bullet_list(items: Sequence[str]) -> None:
+    """Render *items* as one tight bulleted markdown block (no per-item block gaps)."""
+    st.markdown("\n".join(f"- {item}" for item in items))
+
+
 def _render_decomposition(strings: Strings, plan: QueryPlan) -> None:
-    st.markdown(f"**{strings['CONV_INSPECT_SUBQUESTIONS']}**")
-    for question in plan.sub_questions:
-        st.caption(question)
+    _section_label(
+        strings["CONV_INSPECT_SUBQUESTIONS"], help_text=strings["CONV_INSPECT_SUBQUESTIONS_HELP"]
+    )
+    _bullet_list(plan.sub_questions)
     if plan.degraded:
         st.caption(strings["CONV_INSPECT_DEGRADED"])
 
@@ -726,18 +741,20 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
     if not answer.sources:
         st.caption(strings["RAG_NO_INDEX_HINT"])
         return
-    st.caption(
+    _section_label(
         strings["CONV_INSPECT_RERANKER_USED"].format(reranker=answer.reranker_used or "—"),
-        help=strings["CONV_INSPECT_RETRIEVAL_HELP"],
+        help_text=strings["CONV_INSPECT_RETRIEVAL_HELP"],
     )
     rerank_note = _inspect_note(strings, answer.warnings, CODE_RERANK_UNAVAILABLE)
     if rerank_note:
         st.caption(rerank_note)
     rows = subquestion_provenance_rows(answer.sources, answer.plan)
     if rows:
-        st.markdown(f"**{strings['CONV_INSPECT_RETRIEVAL_BYQUERY']}**")
-        for question, hits in rows:
-            st.markdown(f"- {question} → {hits}")
+        _section_label(
+            strings["CONV_INSPECT_RETRIEVAL_BYQUERY"],
+            help_text=strings["CONV_INSPECT_RETRIEVAL_BYQUERY_HELP"],
+        )
+        _bullet_list([f"{question} → {hits}" for question, hits in rows])
     render_result_cards(strings, answer.sources, default_tab=default_tab, preserve_order=True)
     _render_stage_prompt(strings, answer, "reranking")
 
@@ -747,20 +764,18 @@ def _render_state(strings: Strings, state: ConversationState) -> None:
         st.caption(strings["CONV_INSPECT_STATE_EMPTY"])
         return
     if state.summary:
-        st.markdown(f"**{strings['CONV_INSPECT_STATE_SUMMARY']}**")
+        _section_label(strings["CONV_INSPECT_STATE_SUMMARY"])
         st.write(state.summary)
     rows: list[tuple[str, str]] = list(state.entities.items())
     if rows:
-        st.markdown(f"**{strings['CONV_INSPECT_STATE_ENTITIES']}**")
+        _section_label(strings["CONV_INSPECT_STATE_ENTITIES"])
         st.markdown(kv_grid_html(rows, columns=2), unsafe_allow_html=True)
     if state.recent_resolved:
-        st.markdown(f"**{strings['CONV_INSPECT_STATE_RECENT']}**")
-        for question in state.recent_resolved:
-            st.markdown(f"- {question}")
+        _section_label(strings["CONV_INSPECT_STATE_RECENT"])
+        _bullet_list(state.recent_resolved)
     if state.open_threads:
-        st.markdown(f"**{strings['CONV_INSPECT_STATE_THREADS']}**")
-        for thread in state.open_threads:
-            st.markdown(f"- {thread}")
+        _section_label(strings["CONV_INSPECT_STATE_THREADS"])
+        _bullet_list(state.open_threads)
 
 
 def _inspect_note(strings: Strings, warnings: Sequence[LibraryMessage], code: str) -> str | None:
@@ -784,8 +799,8 @@ def _render_followups(
         (html.unescape(item.question), f"{round(max(0.0, min(1.0, item.score)) * 100)}%")
         for item in follow_ups
     ]
-    st.caption(
+    _section_label(
         strings["CONV_INSPECT_FOLLOWUPS_SCORE_HEADER"],
-        help=strings["CONV_INSPECT_FOLLOWUPS_HELP"],
+        help_text=strings["CONV_INSPECT_FOLLOWUPS_HELP"],
     )
     st.markdown(kv_grid_html(rows, columns=2), unsafe_allow_html=True)

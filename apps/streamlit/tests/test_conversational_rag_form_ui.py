@@ -224,3 +224,36 @@ def test_subquestion_provenance_rows_skips_queries_without_hits() -> None:
     rows = form_ui.subquestion_provenance_rows([_prov_chunk(("hit me",))], plan)
 
     assert rows == [("hit me", "#1")]
+
+
+def test_bullet_list_joins_items_into_one_markdown_block(monkeypatch) -> None:
+    # A single markdown block keeps the items tight (no per-item block gap between them).
+    fake_st = MagicMock()
+    monkeypatch.setattr(form_ui, "st", fake_st)
+
+    form_ui._bullet_list(["first", "second", "third"])
+
+    fake_st.markdown.assert_called_once_with("- first\n- second\n- third")
+
+
+def test_section_label_renders_bold_caption_with_hint(monkeypatch) -> None:
+    # Section labels are bold captions; the optional hint drives the hover (?) icon.
+    fake_st = MagicMock()
+    monkeypatch.setattr(form_ui, "st", fake_st)
+
+    form_ui._section_label("Sub-questions", help_text="explain")
+
+    fake_st.caption.assert_called_once_with("**Sub-questions**", help="explain")
+
+
+def test_render_decomposition_lists_subquestions_as_one_bullet_block(monkeypatch) -> None:
+    # Sub-questions render as a single tight bulleted list under a hinted label, so the
+    # items stay compact and the tab is self-explanatory.
+    fake_st = MagicMock()
+    monkeypatch.setattr(form_ui, "st", fake_st)
+    plan = QueryPlan(sub_questions=["What is A?", "What is B?"])
+
+    form_ui._render_decomposition(STRINGS_EN, plan)
+
+    fake_st.markdown.assert_called_once_with("- What is A?\n- What is B?")
+    assert fake_st.caption.call_args.kwargs.get("help")  # the label carries a hover hint

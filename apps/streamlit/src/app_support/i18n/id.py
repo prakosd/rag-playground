@@ -359,6 +359,10 @@ STRINGS_ID: Strings = {
     "CONV_DIAGNOSTICS_EMPTY": "Tidak ada peringatan atau kesalahan untuk giliran ini.",
     "CONV_INSPECT_QUESTION": "Pertanyaan Anda",
     "CONV_INSPECT_SUBQUESTIONS": "Sub-pertanyaan",
+    "CONV_INSPECT_SUBQUESTIONS_HELP": (
+        "Pertanyaan pencarian mandiri hasil pemecahan pesan Anda — masing-masing dicari "
+        "terpisah, lalu hasilnya digabungkan."
+    ),
     "CONV_INSPECT_DEGRADED": "Perencanaan dilewati atau kembali ke pertanyaan asli.",
     "CONV_INSPECT_RERANKER_USED": "Pemeringkat ulang: {reranker}",
     "CONV_INSPECT_RETRIEVAL_HELP": (
@@ -367,6 +371,10 @@ STRINGS_ID: Strings = {
         "(jadi persentase kemiripan bisa tidak menurun berurutan)."
     ),
     "CONV_INSPECT_RETRIEVAL_BYQUERY": "Diambil per sub-pertanyaan",
+    "CONV_INSPECT_RETRIEVAL_BYQUERY_HELP": (
+        "Bagian teks yang ditemukan tiap sub-pertanyaan, ditampilkan menurut peringkatnya "
+        "(#1, #2, …); satu bagian teks bisa cocok untuk lebih dari satu sub-pertanyaan."
+    ),
     "CONV_INSPECT_STATE_SUMMARY": "Ringkasan",
     "CONV_INSPECT_STATE_ENTITIES": "Entitas",
     "CONV_INSPECT_STATE_THREADS": "Utas terbuka",

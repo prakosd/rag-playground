@@ -354,6 +354,10 @@ STRINGS_EN: Strings = {
     "CONV_DIAGNOSTICS_EMPTY": "No warnings or errors for this turn.",
     "CONV_INSPECT_QUESTION": "Your question",
     "CONV_INSPECT_SUBQUESTIONS": "Sub-questions",
+    "CONV_INSPECT_SUBQUESTIONS_HELP": (
+        "The standalone search questions your message was broken into — each is searched "
+        "separately, then the results are merged."
+    ),
     "CONV_INSPECT_DEGRADED": "Planning was skipped or fell back to the original question.",
     "CONV_INSPECT_RERANKER_USED": "Re-ranker: {reranker}",
     "CONV_INSPECT_RETRIEVAL_HELP": (
@@ -362,6 +366,10 @@ STRINGS_EN: Strings = {
         "strictly decrease)."
     ),
     "CONV_INSPECT_RETRIEVAL_BYQUERY": "Retrieved per sub-question",
+    "CONV_INSPECT_RETRIEVAL_BYQUERY_HELP": (
+        "Which retrieved passages each sub-question found, shown by their rank (#1, #2, …); "
+        "the same passage can match more than one sub-question."
+    ),
     "CONV_INSPECT_STATE_SUMMARY": "Summary",
     "CONV_INSPECT_STATE_ENTITIES": "Entities",
     "CONV_INSPECT_STATE_THREADS": "Open threads",
