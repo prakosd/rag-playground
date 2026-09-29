@@ -156,6 +156,31 @@ values to `streamlit_app.py`.
 `streamlit_app.py` still owns `st.session_state`; it passes the active strings, defaults, and
 disabled state into `render_crawl_form()`.
 
+### `auth/` — crawl authentication credentials
+
+Per-session HTTP (Basic/Bearer) credentials so the crawler can open protected pages. The
+**Authentication** panel (`auth/auth_ui.py`, a collapsed expander rendered below the crawl form)
+adds and deletes credentials (add and delete only — no view or edit). App-layer only; the
+libraries stay auth-agnostic and receive resolved headers through `CrawlerConfig.secret_headers`.
+
+- `auth/crypto.py` — `CredentialCipher` / `derive_credential_key`: Fernet encryption keyed by the
+  app's `ZIP_SIGNING_SECRET` joined with the session id, so each session's secrets encrypt under a
+  distinct key and a file lifted to another session is undecryptable.
+- `auth/credentials.py` — the pure Pydantic `HttpCredential` model plus `http_authorization_header`
+  and the longest-URL-prefix matcher `select_http_secret_headers`. `SECRET_FIELDS` lists what the
+  store encrypts.
+- `auth/store.py` — encrypted persistence under `<session>/authentication/credentials.json` (only
+  display metadata in clear text; sensitive fields in an encrypted `payload`). `list_credential_rows`
+  reads metadata without the cipher (rendering never decrypts); `load_credentials` decrypts at crawl
+  time; `resolve_http_secret_headers` matches a seed URL to an `Authorization` header;
+  `delete_credentials` removes selected ids.
+
+The shell's `_start_job` calls `resolve_http_secret_headers` and sets `CrawlerConfig.secret_headers`
+after `build_configs`, so auth reaches the browser but never the form values or the run-metadata
+front matter. The credential list renders as an `st.dataframe` with row-selection + a Delete selected
+confirm. The credential file surfaces in the Output Files tree, encrypted, so a preview or download
+never leaks a secret.
+
 ### Step 2 — Build Vector Index
 
 Step 2 mirrors Step 1's shell pattern and is backed by the UI-independent

@@ -411,6 +411,34 @@ class Strings(TypedDict):
     ERROR_CRAWL_FAILED_FALLBACK: str
     # ── Activity log ──────────────────────────────────────────────────────
     ACTIVITY_LOG_HEADER: str
+    # ── Authentication (crawl credentials) ────────────────────────────────
+    AUTH_PANEL_LABEL: str
+    AUTH_HTTP_TITLE: str
+    AUTH_HTTP_SUBTITLE: str
+    AUTH_HTTP_HINT: str
+    AUTH_ADD_BUTTON: str
+    AUTH_COL_NAME: str
+    AUTH_COL_TYPE: str
+    AUTH_COL_CREATED: str
+    AUTH_TABLE_EMPTY: str
+    AUTH_TYPE_BEARER: str
+    AUTH_TYPE_BASIC: str
+    AUTH_DIALOG_ADD_HTTP_TITLE: str
+    AUTH_FIELD_NAME: str
+    AUTH_FIELD_AUTH_TYPE: str
+    AUTH_FIELD_BEARER_TOKEN: str
+    AUTH_FIELD_BASIC_CREDS: str
+    AUTH_FIELD_BASIC_HELP: str
+    AUTH_FIELD_URL_PREFIXES: str
+    AUTH_FIELD_URL_PREFIXES_HELP: str
+    AUTH_CREATE_BUTTON: str
+    AUTH_ERR_REQUIRED: str
+    AUTH_ERR_INVALID: str
+    AUTH_DELETE_DIALOG_TITLE: str
+    AUTH_DELETE_DIALOG_BODY: str  # template: {count}
+    AUTH_DELETE_CONFIRM: str
+    AUTH_DELETE_CANCEL: str
+    AUTH_DELETE_SELECTED: str
     # ── Files section ─────────────────────────────────────────────────────
     FILES_HEADER: str
     FILES_CRAWL_RESULT_LABEL: str

@@ -49,9 +49,11 @@ Streamlit app dependencies, including `streamlit`, live in `apps/streamlit/pypro
 the app depends on `rag-playground[crawl,vector,bedrock,openai,rag,rerank]` so installing it pulls the
 crawler, indexing backends, the RAG engine, and the local cross-encoder re-ranker. It also pulls `python-dotenv` and
 `pydantic-settings` for the app's env-driven, non-secret settings layer
-(`app_support.settings`, loaded `.env.defaults` → `.env` → environment), and `PyYAML`
+(`app_support.settings`, loaded `.env.defaults` → `.env` → environment), `PyYAML`
 for the RAG model pricing/metadata catalog (`config/model_pricing.yaml`, read by
-`app_support.model_pricing`).
+`app_support.model_pricing`), and `cryptography` (Fernet) to encrypt session-scoped crawl
+auth credentials at rest (`app_support.auth`). A pure pip dependency, it installs automatically
+with the app — no `devcontainer.json` change is needed (unlike a system package such as Tesseract).
 
 The FastAPI backend (`apps/backend/pyproject.toml`, package `app-backend`) depends on
 `rag-playground[rag,vector,bedrock,openai]` plus `fastapi`/`uvicorn`; it is an additive HTTP

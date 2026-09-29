@@ -730,17 +730,18 @@ class SiteCrawler:
                 "platforms": list(_USER_AGENT_PLATFORMS),
                 "browsers": list(_USER_AGENT_BROWSERS),
             }
-        if self.config.headers:
-            browser_kwargs["headers"] = dict(self.config.headers)
+        request_headers = self.config.effective_headers
+        if request_headers:
+            browser_kwargs["headers"] = dict(request_headers)
         async_web_crawler_cls, browser_config_cls, crawler_run_config_cls = _load_crawl4ai_classes()
         browser_cfg = browser_config_cls(**browser_kwargs)
         run_cfg = self._build_run_config(crawler_run_config_cls)
         # Direct document (PDF/DOCX) downloads use a real browser User-Agent and a
         # same-origin Referer, and trust the OS certificate store (via truststore) so
         # a corporate TLS-intercepting proxy verifies just as the browser round does;
-        # CrawlerConfig.headers override these defaults.
+        # CrawlerConfig headers (including secret auth headers) override these defaults.
         seed_referer = referer_for_url(self.config.urls[0]) if self.config.urls else None
-        pdf_headers = merge_document_headers(self.config.headers, referer=seed_referer)
+        pdf_headers = merge_document_headers(request_headers, referer=seed_referer)
 
         # Round 1 uses the standard stealth browser; retry rounds always escalate to
         # the undetected browser. The rounds run in separate browser instances, so
@@ -1843,7 +1844,7 @@ class SiteCrawler:
     ) -> tuple[CrawlResult, ExtractedPage | None]:
         is_document = await detect(
             url,
-            dict(self.config.headers) if self.config.headers else None,
+            dict(self.config.effective_headers) if self.config.effective_headers else None,
             client=self._pdf_client,
         )
         if not is_document:
@@ -2297,7 +2298,7 @@ class SiteCrawler:
         was_warned = self._ocr_warned
         result, self._ocr_warned = await _download_pdf_impl(
             url,
-            headers=dict(self.config.headers) if self.config.headers else {},
+            headers=dict(self.config.effective_headers) if self.config.effective_headers else {},
             ocr_languages=self.page_config.ocr_languages,
             ocr_warned=self._ocr_warned,
             open_pdf=pymupdf.open,
@@ -2332,7 +2333,7 @@ class SiteCrawler:
         """Download a DOCX file and convert it to Markdown via mammoth + markdownify."""
         return await _download_docx_impl(
             url,
-            headers=dict(self.config.headers) if self.config.headers else {},
+            headers=dict(self.config.effective_headers) if self.config.effective_headers else {},
             convert_to_html=lambda fileobj: mammoth.convert_to_html(fileobj).value,
             to_markdown=lambda html: markdownify.markdownify(
                 html, heading_style=_DOCX_HEADING_STYLE, strip=list(_DOCX_STRIP_TAGS)

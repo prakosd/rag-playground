@@ -153,6 +153,23 @@ class TestSiteCrawler:
         assert parsed.tzinfo is not None
         assert parsed.utcoffset() == timezone.utc.utcoffset(parsed)
 
+    def test_secret_headers_absent_from_run_metadata(self, tmp_path: Path):
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            headers={"Accept-Language": "en"},
+            secret_headers={"Authorization": "Bearer super-secret"},
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.output_dir = crawler._create_output_dir()
+
+        serialized = str(crawler._build_run_metadata())
+
+        # Public headers still serialize into front matter, but the secret auth
+        # header must never reach the run metadata written to every output file.
+        assert "Accept-Language" in serialized
+        assert "super-secret" not in serialized
+        assert "Authorization" not in serialized
+
     def test_url_allowed_no_filters(self):
         config = CrawlerConfig(urls=["https://example.com"])
         crawler = SiteCrawler(config)
@@ -1178,6 +1195,28 @@ class TestSiteCrawler:
             mock_crawler_cls.call_args[1].get("config") or mock_crawler_cls.call_args[0][0]
         )
         assert browser_cfg.headers.get("Accept-Language") == "en"
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_secret_headers_passed_to_browser_config(self, mock_crawler_cls, tmp_path: Path):
+        """Secret auth headers are forwarded to BrowserConfig (merged over public headers)."""
+        mock_instance = AsyncMock()
+        mock_instance.arun = AsyncMock(return_value=_make_mock_result("https://example.com"))
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        config = CrawlerConfig(
+            urls=["https://example.com"],
+            limit=1,
+            secret_headers={"Authorization": "Bearer tok"},
+        )
+        crawler = SiteCrawler(config, output_base=tmp_path)
+        crawler.crawl()
+
+        browser_cfg = (
+            mock_crawler_cls.call_args[1].get("config") or mock_crawler_cls.call_args[0][0]
+        )
+        assert browser_cfg.headers.get("Authorization") == "Bearer tok"
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_one_browser_per_phase_round_one_and_retries(self, mock_crawler_cls, tmp_path: Path):

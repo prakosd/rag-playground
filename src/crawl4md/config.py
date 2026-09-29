@@ -36,6 +36,11 @@ class CrawlerConfig(BaseModel):
     stealth: bool = True
     strip_www: bool = _DEFAULT_STRIP_WWW
     headers: dict[str, str] = {}
+    # Sensitive request headers (e.g. Authorization) merged over `headers` when
+    # building outgoing requests via `effective_headers`. exclude=True (+ repr=False)
+    # keeps auth out of serialized output (the run-metadata front matter), logs, and
+    # tracebacks — never put credentials in `headers`, which IS serialized there.
+    secret_headers: dict[str, str] = Field(default_factory=dict, repr=False, exclude=True)
     max_retries: int = 3
     # Optional proxy URLs tried in order (direct first) when the site blocks the
     # crawler. exclude=True (+ repr=False) keeps any embedded credentials out of
@@ -94,6 +99,16 @@ class CrawlerConfig(BaseModel):
     def compile_path_patterns(self) -> CrawlerConfig:
         self._refresh_compiled_path_patterns()
         return self
+
+    @property
+    def effective_headers(self) -> dict[str, str]:
+        """Return request headers with secret headers merged over the public ones.
+
+        Secret headers (e.g. Authorization) win on conflict. Used when building
+        outgoing browser and document requests; excluded from `model_dump`, so auth
+        never reaches serialized run metadata or logs.
+        """
+        return {**self.headers, **self.secret_headers}
 
     @property
     def compiled_exclude_paths(self) -> tuple[re.Pattern[str], ...]:

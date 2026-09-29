@@ -587,6 +587,43 @@ STRINGS_ID: Strings = {
     "ERROR_CRAWL_FAILED_FALLBACK": "Crawl gagal.",
     # ── Activity log ──────────────────────────────────────────────────────
     "ACTIVITY_LOG_HEADER": "Log aktivitas",
+    # ── Authentication (crawl credentials) ────────────────────────────────
+    "AUTH_PANEL_LABEL": "Autentikasi",
+    "AUTH_HTTP_TITLE": "Autentikasi HTTP",
+    "AUTH_HTTP_SUBTITLE": "Tambahkan kredensial Basic atau Bearer untuk halaman HTTP yang dilindungi.",
+    "AUTH_HTTP_HINT": (
+        "Basic mengirim nama pengguna dan kata sandi; Bearer mengirim token. Prefiks URL "
+        "menentukan kredensial mana yang dipakai suatu crawl (dicocokkan dengan URL awal "
+        "Anda; prefiks paling spesifik menang). Kredensial terpilih lalu dikirim pada "
+        "setiap permintaan dalam crawl itu, jadi tambahkan kredensial hanya untuk situs "
+        "yang Anda percaya."
+    ),
+    "AUTH_ADD_BUTTON": "Tambah kredensial",
+    "AUTH_COL_NAME": "Nama",
+    "AUTH_COL_TYPE": "Jenis autentikasi",
+    "AUTH_COL_CREATED": "Dibuat pada",
+    "AUTH_TABLE_EMPTY": "Belum ada kredensial.",
+    "AUTH_TYPE_BEARER": "Bearer",
+    "AUTH_TYPE_BASIC": "Basic",
+    "AUTH_DIALOG_ADD_HTTP_TITLE": "Tambah kredensial HTTP",
+    "AUTH_FIELD_NAME": "Nama kredensial",
+    "AUTH_FIELD_AUTH_TYPE": "Jenis autentikasi",
+    "AUTH_FIELD_BEARER_TOKEN": "Token Bearer",
+    "AUTH_FIELD_BASIC_CREDS": "Kredensial (username:password)",
+    "AUTH_FIELD_BASIC_HELP": "Masukkan sebagai username:password.",
+    "AUTH_FIELD_URL_PREFIXES": "Prefiks URL",
+    "AUTH_FIELD_URL_PREFIXES_HELP": (
+        "Daftar prefiks alamat yang dipisahkan koma tempat kredensial ini berlaku, mis. "
+        "https://site.com/docs."
+    ),
+    "AUTH_CREATE_BUTTON": "Buat",
+    "AUTH_ERR_REQUIRED": "Harap isi semua kolom yang wajib.",
+    "AUTH_ERR_INVALID": "Harap periksa kolom lalu coba lagi.",
+    "AUTH_DELETE_DIALOG_TITLE": "Hapus kredensial",
+    "AUTH_DELETE_DIALOG_BODY": "Hapus {count} kredensial terpilih? Tindakan ini tidak dapat dibatalkan.",
+    "AUTH_DELETE_CONFIRM": "Hapus",
+    "AUTH_DELETE_CANCEL": "Simpan",
+    "AUTH_DELETE_SELECTED": "Hapus yang dipilih",
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "Detail File",
     "FILES_CRAWL_RESULT_LABEL": "📁 Berkas & folder",

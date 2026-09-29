@@ -175,6 +175,7 @@ git-ignored.
 | `delay` | `float` | `0` | Seconds to space page-fetch starts — paces your crawl to avoid triggering bot detection (round 1: jitter 0.1x–1.0x; retries: jitter 0.3x–3.0x). WAF back-off (3–15 s) always applies on block detection. |
 | `stealth` | `bool` | `True` | Enable bot-detection avoidance (random UA, stealth flags, full-page scan) |
 | `headers` | `dict[str, str]` | `{}` | Custom HTTP headers passed to the browser; they also override the browser-like defaults sent on direct PDF/DOCX downloads (see note below) |
+| `secret_headers` | `dict[str, str]` | `{}` | Sensitive headers (e.g. `Authorization`) merged over `headers` for outgoing browser and PDF/DOCX requests. Excluded from serialization (`exclude=True`, `repr=False`), so auth never lands in the output front matter, logs, or tracebacks. The Streamlit app sets this from stored HTTP credentials — never route credentials through `headers`. |
 | `max_retries` | `int` | `3` | Retry rounds for WAF-blocked pages (minimum 3) |
 | `flush_interval` | `int` | `10` | Write generated files to disk every N pages |
 | `proxies` | `list[str]` | `[]` | Proxy URLs tried in order (direct first) when blocked; feeds Crawl4AI's `proxy_config` on the first retry round only. Set via the `CRAWL_PROXIES` secret in the app — never logged (`repr=False`). |
@@ -190,6 +191,25 @@ git-ignored.
 > subdomains), so a PDF/DOCX hosted on a **different** domain (e.g. a `cdn.…` host) is
 > skipped even when linked from a crawled page. To capture it, add that host to the seed
 > `urls` (or crawl the file URL directly). `.docx` is supported; legacy binary `.doc` is not.
+
+### Authentication credentials (Streamlit app)
+
+The Crawl page has an **Authentication** panel (a collapsed expander below the crawl settings) for
+adding per-session **HTTP** sign-in credentials so the crawler can open protected pages — Basic
+(`username:password`) or Bearer (token), each with a list of URL prefixes. On crawl start the app
+picks the credential whose **longest** URL prefix matches a seed URL and sends it as an
+`Authorization` header (`CrawlerConfig.secret_headers`). Browser headers are global, so one
+credential applies per crawl (the most specific prefix wins).
+
+Credentials are tied to the browser session and saved under
+`<session>/authentication/credentials.json`, which appears in the **Output Files** tree.
+Sensitive values are encrypted at rest with Fernet — the key is derived from the app's
+`ZIP_SIGNING_SECRET` joined with the session id — so only display metadata (name, type, created
+time) is readable: previewing or downloading the file never reveals a secret, and a file lifted
+into another session cannot be decrypted. The credential list shows only that metadata, with
+row-selection + a **Delete selected** confirm; add and delete only (no view or edit) — to change a
+credential, delete it and add a new one. A new session starts empty, and switching sessions loads
+that session's list.
 
 ## PageConfig
 

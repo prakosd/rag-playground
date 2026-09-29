@@ -52,6 +52,35 @@ class TestCrawlerConfig:
         assert "user:pass" not in str(cfg.model_dump())
         assert "user:pass" not in cfg.model_dump_json()
 
+    def test_secret_headers_default_empty(self):
+        cfg = CrawlerConfig(urls=["https://example.com"])
+        assert cfg.secret_headers == {}
+        assert cfg.effective_headers == {}
+
+    def test_effective_headers_merges_secret_over_public(self):
+        cfg = CrawlerConfig(
+            urls=["https://example.com"],
+            headers={"Accept-Language": "en", "Authorization": "public"},
+            secret_headers={"Authorization": "Bearer tok"},
+        )
+        assert cfg.effective_headers == {
+            "Accept-Language": "en",
+            "Authorization": "Bearer tok",
+        }
+
+    def test_secret_headers_excluded_from_repr_and_serialization(self):
+        cfg = CrawlerConfig(
+            urls=["https://example.com"],
+            secret_headers={"Authorization": "Bearer super-secret"},
+        )
+        # Still applied in-process via effective_headers...
+        assert cfg.effective_headers["Authorization"] == "Bearer super-secret"
+        # ...but never leaked through repr or serialization (front matter / logs).
+        assert "super-secret" not in repr(cfg)
+        assert "secret_headers" not in repr(cfg)
+        assert "super-secret" not in str(cfg.model_dump())
+        assert "super-secret" not in cfg.model_dump_json()
+
     def test_defaults(self):
         cfg = CrawlerConfig(urls=["https://example.com"])
         assert cfg.limit == 100

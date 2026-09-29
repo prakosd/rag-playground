@@ -577,6 +577,41 @@ STRINGS_EN: Strings = {
     "ERROR_CRAWL_FAILED_FALLBACK": "The crawl failed.",
     # ── Activity log ──────────────────────────────────────────────────────
     "ACTIVITY_LOG_HEADER": "Activity log",
+    # ── Authentication (crawl credentials) ────────────────────────────────
+    "AUTH_PANEL_LABEL": "Authentication",
+    "AUTH_HTTP_TITLE": "HTTP authentication",
+    "AUTH_HTTP_SUBTITLE": "Add Basic or Bearer credentials for protected HTTP pages.",
+    "AUTH_HTTP_HINT": (
+        "Basic sends a username and password; Bearer sends a token. URL prefixes pick "
+        "which stored credential a crawl uses (matched against your start URLs; the most "
+        "specific prefix wins). The chosen credential is then sent with every request in "
+        "that crawl, so only add credentials for sites you trust."
+    ),
+    "AUTH_ADD_BUTTON": "Add credential",
+    "AUTH_COL_NAME": "Name",
+    "AUTH_COL_TYPE": "Auth type",
+    "AUTH_COL_CREATED": "Created at",
+    "AUTH_TABLE_EMPTY": "No credentials yet.",
+    "AUTH_TYPE_BEARER": "Bearer",
+    "AUTH_TYPE_BASIC": "Basic",
+    "AUTH_DIALOG_ADD_HTTP_TITLE": "Add HTTP credential",
+    "AUTH_FIELD_NAME": "Credential name",
+    "AUTH_FIELD_AUTH_TYPE": "Authentication type",
+    "AUTH_FIELD_BEARER_TOKEN": "Bearer token",
+    "AUTH_FIELD_BASIC_CREDS": "Credentials (username:password)",
+    "AUTH_FIELD_BASIC_HELP": "Enter as username:password.",
+    "AUTH_FIELD_URL_PREFIXES": "URL prefixes",
+    "AUTH_FIELD_URL_PREFIXES_HELP": (
+        "Comma-separated address prefixes this credential applies to, e.g. https://site.com/docs."
+    ),
+    "AUTH_CREATE_BUTTON": "Create",
+    "AUTH_ERR_REQUIRED": "Please fill in all required fields.",
+    "AUTH_ERR_INVALID": "Please check the fields and try again.",
+    "AUTH_DELETE_DIALOG_TITLE": "Delete credential",
+    "AUTH_DELETE_DIALOG_BODY": "Delete {count} selected credential(s)? This cannot be undone.",
+    "AUTH_DELETE_CONFIRM": "Delete",
+    "AUTH_DELETE_CANCEL": "Keep",
+    "AUTH_DELETE_SELECTED": "Delete selected",
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "File Details",
     "FILES_CRAWL_RESULT_LABEL": "📁 Files & folders",

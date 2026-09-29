@@ -8,6 +8,7 @@ from typing import Any
 
 import streamlit as st
 
+from app_support.auth.auth_ui import render_authentication_panel
 from app_support.crawl.form_ui import render_crawl_form
 from app_support.i18n import get_strings
 
@@ -39,6 +40,7 @@ def render_page(context: CrawlPageContext) -> None:
         defaults=st.session_state.form_defaults,
         activity_log_size=int(st.session_state.activity_log_size),
     )
+    render_authentication_panel(strings=strings, disabled=fields_disabled)
     if values["submitted"]:
         st.session_state.stop_confirmation_open = False
         if current_job is not None and current_job.thread.is_alive():

@@ -57,6 +57,7 @@ from app_support.app_runtime import (
     _session_log_path,
     _session_root,
 )
+from app_support.auth.store import resolve_http_secret_headers
 from app_support.crawl.form_defaults import default_form_values, form_state_from_submitted
 from app_support.dialog_ui import render_confirm_dialog
 from app_support.downloads_ui import _render_downloads, _render_ready_result_panel
@@ -1391,6 +1392,15 @@ def _start_job(values: dict[str, Any]) -> None:
     except (ValidationError, ValueError) as exc:
         st.error(str(exc))
         return
+    # Apply the best-matching stored HTTP credential as a secret Authorization
+    # header so protected pages can be crawled. It never enters the form values or
+    # the run metadata written to output files (CrawlerConfig.secret_headers).
+    crawler_config.secret_headers = resolve_http_secret_headers(
+        session_dir(_SESSIONS_ROOT, st.session_state.session_id),
+        get_settings().zip_signing_secret,
+        st.session_state.session_id,
+        crawler_config.urls,
+    )
     crawl_id = generate_crawl_id(
         seq=next_crawl_sequence(_SESSIONS_ROOT, st.session_state.session_id)
     )
