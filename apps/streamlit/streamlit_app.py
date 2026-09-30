@@ -1063,6 +1063,10 @@ def _sync_language_widget_state() -> str:
     widget_key = _language_widget_key()
     language = _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
     st.session_state.language = language
+    # Keep the selector pinned to a valid language so it never renders unselected
+    # (segmented_control is deselectable and can bootstrap empty on Streamlit Cloud).
+    if st.session_state.get(widget_key) not in CATALOG:
+        st.session_state[widget_key] = language
     return widget_key
 
 
@@ -1760,6 +1764,23 @@ def _render_shared_styles() -> None:
     )
 
 
+# The language selector's label sits small, dim, and right-docked just above the EN/ID
+# control (scoped to the keyed wrapper so only this widget's label is restyled).
+_LANGUAGE_SELECTOR_WRAP_KEY = "language_selector_wrap"
+_LANGUAGE_SELECTOR_CSS = f"""
+<style>
+.st-key-{_LANGUAGE_SELECTOR_WRAP_KEY} [data-testid="stWidgetLabel"] {{
+    justify-content: flex-end;
+    margin-bottom: -0.3rem;
+}}
+.st-key-{_LANGUAGE_SELECTOR_WRAP_KEY} [data-testid="stWidgetLabel"] p {{
+    font-size: 0.8rem;
+    opacity: 0.6;
+}}
+</style>
+"""
+
+
 def _render_session_controls(
     *,
     fields_disabled: bool,
@@ -1857,7 +1878,11 @@ def _render_session_controls(
         if selected_session != st.session_state.session_id:
             _select_session_id(str(selected_session))
             st.rerun()
-    with language_col, st.container(horizontal_alignment="right"):
+    with (
+        language_col,
+        st.container(horizontal_alignment="right", gap=None, key=_LANGUAGE_SELECTOR_WRAP_KEY),
+    ):
+        st.markdown(_LANGUAGE_SELECTOR_CSS, unsafe_allow_html=True)
         language_default = (
             _normalize_language(st.session_state.get("language", _DEFAULT_LANGUAGE))
             if language_widget_key not in st.session_state
@@ -1868,7 +1893,7 @@ def _render_session_controls(
             options=list(CATALOG.keys()),
             key=language_widget_key,
             default=language_default,
-            label_visibility="collapsed",
+            label_visibility="visible",
             disabled=fields_disabled,
             on_change=_on_language_change,
             args=(language_widget_key,),

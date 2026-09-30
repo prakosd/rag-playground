@@ -248,7 +248,7 @@ def _render_search_history(
         for position, record in enumerate(records):
             ref = find_index(indexes, record.index_folder, record.index_run)
             with st.container(border=True):
-                head, actions = st.columns([0.8, 0.2], vertical_alignment="center")
+                head, actions = st.columns([0.8, 0.2], vertical_alignment="top")
                 lead_html = stacked_label_value_html(
                     strings["SEARCH_HISTORY_LABEL_QUERY"], record.query
                 )

@@ -172,6 +172,28 @@ def test_real_app_new_session_defaults_to_en_after_storage_roundtrip(
         assert not (tmp_path / "outputs" / "streamlit_sessions").exists()
 
 
+def test_language_selector_recovers_to_en_when_deselected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A control left unselected (the Cloud bootstrap bug) is re-pinned to EN, never left empty."""
+    initial_records = serialize_session_records([SessionRecord("active", _FIXED_CREATED_AT, "EN")])
+    (tmp_path / "outputs" / "streamlit_sessions" / "session_active").mkdir(parents=True)
+    with _patched_app_test(
+        monkeypatch,
+        tmp_path,
+        component_factory=_storage_component_factory(initial_records=initial_records),
+    ) as app:
+        app.run(timeout=10)
+
+        assert app.button_group[0].value == "EN"
+
+        # Reproduce the unselected state the bug produced, then rerun.
+        app.session_state["language_selector_active"] = None
+        app.run(timeout=10)
+
+        assert app.button_group[0].value == "EN"
+
+
 def test_new_session_button_with_existing_session_defaults_to_en(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

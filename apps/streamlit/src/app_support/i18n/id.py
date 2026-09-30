@@ -31,7 +31,7 @@ STRINGS_ID: Strings = {
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
     "PROGRESS_EXPANDER_LABEL_ACTIVE": "Statistik langsung: {crawl_id}",
-    "LANG_SELECTOR_LABEL": "Bahasa",
+    "LANG_SELECTOR_LABEL": "Pilih bahasa",
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
@@ -607,11 +607,15 @@ STRINGS_ID: Strings = {
     "AUTH_TYPE_BASIC": "Basic",
     "AUTH_DIALOG_ADD_HTTP_TITLE": "Tambah kredensial HTTP",
     "AUTH_FIELD_NAME": "Nama kredensial",
+    "AUTH_FIELD_NAME_PLACEHOLDER": "mis. Token situs dokumentasi",
     "AUTH_FIELD_AUTH_TYPE": "Jenis autentikasi",
     "AUTH_FIELD_BEARER_TOKEN": "Token Bearer",
+    "AUTH_FIELD_BEARER_TOKEN_PLACEHOLDER": "Tempel token bearer",
     "AUTH_FIELD_BASIC_CREDS": "Kredensial (username:password)",
+    "AUTH_FIELD_BASIC_CREDS_PLACEHOLDER": "username:password",
     "AUTH_FIELD_BASIC_HELP": "Masukkan sebagai username:password.",
     "AUTH_FIELD_URL_PREFIXES": "Prefiks URL",
+    "AUTH_FIELD_URL_PREFIXES_PLACEHOLDER": "https://site.com/docs, https://site.com/api",
     "AUTH_FIELD_URL_PREFIXES_HELP": (
         "Daftar prefiks alamat yang dipisahkan koma tempat kredensial ini berlaku, mis. "
         "https://site.com/docs."
@@ -623,7 +627,7 @@ STRINGS_ID: Strings = {
     "AUTH_DELETE_DIALOG_BODY": "Hapus {count} kredensial terpilih? Tindakan ini tidak dapat dibatalkan.",
     "AUTH_DELETE_CONFIRM": "Hapus",
     "AUTH_DELETE_CANCEL": "Simpan",
-    "AUTH_DELETE_SELECTED": "Hapus yang dipilih",
+    "AUTH_DELETE_SELECTED": "Hapus kredensial terpilih",
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "Detail File",
     "FILES_CRAWL_RESULT_LABEL": "📁 Berkas & folder",

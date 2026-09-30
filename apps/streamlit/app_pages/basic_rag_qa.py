@@ -885,7 +885,7 @@ def _render_basic_rag_qa_history(
             return
         for position, record in enumerate(records):
             with st.container(border=True):
-                head, actions = st.columns([0.8, 0.2], vertical_alignment="center")
+                head, actions = st.columns([0.8, 0.2], vertical_alignment="top")
                 lead_html = stacked_label_value_html(
                     strings["BASIC_QA_HISTORY_LABEL_QUESTION"], record.question or "—"
                 )

@@ -90,7 +90,7 @@ Everything the user sees and interacts with. Responsibilities:
 - Preserves portfolio-modal localStorage timestamps so the personal intro prompt is not shown too often.
 - Builds the top navigation with `st.navigation` from pure page metadata in `pages.py`.
 - Renders the shared page shell: active page title/subtitle, session controls, language selector, selected `app_pages` content, footer, and portfolio modal.
-- Renders the selected session ID, searchable session selector, create-session button, and language selector.
+- Renders the selected session ID, searchable session selector, create-session button, and the EN/ID language selector (a `st.segmented_control` with a small, dim, right-docked "Select language" label that always defaults to EN and never renders unselected).
 - Supplies the crawler page with shell-owned callbacks for job start / stop, ready results, live progress, and downloads.
 - Runs the shell-level crawl event loop, drains background-thread events into UI state, and emits crawl progress toasts that remain visible while users navigate other workflow pages.
 - Wires the crawl + vector-index live areas — progress metrics, active/next URL previews, cumulative

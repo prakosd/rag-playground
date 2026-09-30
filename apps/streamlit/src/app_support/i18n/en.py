@@ -30,7 +30,7 @@ STRINGS_EN: Strings = {
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
     "PROGRESS_EXPANDER_LABEL_ACTIVE": "Live statistics: {crawl_id}",
-    "LANG_SELECTOR_LABEL": "Language",
+    "LANG_SELECTOR_LABEL": "Select language",
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
@@ -596,11 +596,15 @@ STRINGS_EN: Strings = {
     "AUTH_TYPE_BASIC": "Basic",
     "AUTH_DIALOG_ADD_HTTP_TITLE": "Add HTTP credential",
     "AUTH_FIELD_NAME": "Credential name",
+    "AUTH_FIELD_NAME_PLACEHOLDER": "e.g. Docs site token",
     "AUTH_FIELD_AUTH_TYPE": "Authentication type",
     "AUTH_FIELD_BEARER_TOKEN": "Bearer token",
+    "AUTH_FIELD_BEARER_TOKEN_PLACEHOLDER": "Paste the bearer token",
     "AUTH_FIELD_BASIC_CREDS": "Credentials (username:password)",
+    "AUTH_FIELD_BASIC_CREDS_PLACEHOLDER": "username:password",
     "AUTH_FIELD_BASIC_HELP": "Enter as username:password.",
     "AUTH_FIELD_URL_PREFIXES": "URL prefixes",
+    "AUTH_FIELD_URL_PREFIXES_PLACEHOLDER": "https://site.com/docs, https://site.com/api",
     "AUTH_FIELD_URL_PREFIXES_HELP": (
         "Comma-separated address prefixes this credential applies to, e.g. https://site.com/docs."
     ),
@@ -611,7 +615,7 @@ STRINGS_EN: Strings = {
     "AUTH_DELETE_DIALOG_BODY": "Delete {count} selected credential(s)? This cannot be undone.",
     "AUTH_DELETE_CONFIRM": "Delete",
     "AUTH_DELETE_CANCEL": "Keep",
-    "AUTH_DELETE_SELECTED": "Delete selected",
+    "AUTH_DELETE_SELECTED": "Delete selected credential",
     # ── Files section ─────────────────────────────────────────────────────
     "FILES_HEADER": "File Details",
     "FILES_CRAWL_RESULT_LABEL": "📁 Files & folders",

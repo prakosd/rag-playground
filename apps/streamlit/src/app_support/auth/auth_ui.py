@@ -39,6 +39,21 @@ __all__ = ["render_authentication_panel"]
 _ADD_OPEN_KEY = "auth_add_open"
 _DELETE_IDS_KEY = "auth_delete_ids"
 _TABLE_KEY = "auth_credentials_table"
+# Keys the HTTP header's content-width title container: scopes the "?" hint beside the
+# title and anchors the subtitle's pull-up CSS (both must reference the same key).
+_HTTP_TITLE_KEY = "auth_http_title"
+
+# Scoped to the Add-credential dialog: the Create button is the only action, so hide
+# each field's "Press Enter to apply" instruction (Enter does nothing in this modal).
+_ADD_DIALOG_SCOPE_CLASS = "auth-add-credential-scope"
+_ADD_DIALOG_CSS = f"""
+<div class="{_ADD_DIALOG_SCOPE_CLASS}" style="display:none"></div>
+<style>
+div[data-testid="stDialog"]:has(.{_ADD_DIALOG_SCOPE_CLASS}) [data-testid="InputInstructions"] {{
+    display: none;
+}}
+</style>
+"""
 
 
 def render_authentication_panel(*, strings: Strings, disabled: bool) -> None:
@@ -87,14 +102,12 @@ def selected_credential_ids(positions: list[int], rows: list[CredentialRow]) -> 
     return [rows[position].id for position in positions if 0 <= position < len(rows)]
 
 
-def _http_header_html(strings: Strings) -> str:
-    """Build the stacked HTTP header: bold title over a dim, one-line subtitle."""
+def _http_subtitle_html(strings: Strings) -> str:
+    """Build the dim subtitle under the HTTP title (folds in the header's pull-up CSS)."""
     return (
-        '<div style="display:flex;flex-direction:column;line-height:1.2;margin-top:-0.35rem">'
-        f'<div style="font-weight:600">{html.escape(strings["AUTH_HTTP_TITLE"])}</div>'
-        '<div style="opacity:0.65;font-size:0.875rem">'
+        f"<style>.st-key-{_HTTP_TITLE_KEY}{{margin-top:-0.5rem}}</style>"
+        '<div style="opacity:0.65;font-size:0.875rem;margin-top:-0.85rem">'
         f"{html.escape(strings['AUTH_HTTP_SUBTITLE'])}</div>"
-        "</div>"
     )
 
 
@@ -111,12 +124,10 @@ def _render_http_section(rows: list[CredentialRow], *, disabled: bool, strings: 
     selected = _selected_ids(rows)
     header, actions = st.columns([4, 1], vertical_alignment="center")
     with header:
-        st.markdown(
-            _http_header_html(strings),
-            help=strings["AUTH_HTTP_HINT"],
-            unsafe_allow_html=True,
-        )
-    with actions, st.container(horizontal=True, horizontal_alignment="right", gap="small"):
+        with st.container(horizontal=True, width="content", key=_HTTP_TITLE_KEY):
+            st.markdown(f"**{strings['AUTH_HTTP_TITLE']}**", help=strings["AUTH_HTTP_HINT"])
+        st.markdown(_http_subtitle_html(strings), unsafe_allow_html=True)
+    with actions, st.container(horizontal=True, horizontal_alignment="right", gap="xxsmall"):
         if st.button(
             ":material/add:",
             type="primary",
@@ -152,8 +163,15 @@ def _render_http_section(rows: list[CredentialRow], *, disabled: bool, strings: 
 @st.dialog(_DIALOG_PLACEHOLDER_TITLE)
 def _add_credential_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    st.subheader(strings["AUTH_DIALOG_ADD_HTTP_TITLE"])
-    name = st.text_input(strings["AUTH_FIELD_NAME"])
+    st.markdown(_ADD_DIALOG_CSS, unsafe_allow_html=True)
+    st.markdown(
+        f"<h3 style='margin:-0.75rem 0 0.25rem 0;padding:0'>"
+        f"{html.escape(strings['AUTH_DIALOG_ADD_HTTP_TITLE'])}</h3>",
+        unsafe_allow_html=True,
+    )
+    name = st.text_input(
+        strings["AUTH_FIELD_NAME"], placeholder=strings["AUTH_FIELD_NAME_PLACEHOLDER"]
+    )
     is_bearer = (
         st.selectbox(
             strings["AUTH_FIELD_AUTH_TYPE"],
@@ -162,15 +180,22 @@ def _add_credential_dialog() -> None:
         == strings["AUTH_TYPE_BEARER"]
     )
     if is_bearer:
-        secret = st.text_input(strings["AUTH_FIELD_BEARER_TOKEN"], type="password")
+        secret = st.text_input(
+            strings["AUTH_FIELD_BEARER_TOKEN"],
+            type="password",
+            placeholder=strings["AUTH_FIELD_BEARER_TOKEN_PLACEHOLDER"],
+        )
     else:
         secret = st.text_input(
             strings["AUTH_FIELD_BASIC_CREDS"],
             type="password",
+            placeholder=strings["AUTH_FIELD_BASIC_CREDS_PLACEHOLDER"],
             help=strings["AUTH_FIELD_BASIC_HELP"],
         )
     url_prefixes = st.text_input(
-        strings["AUTH_FIELD_URL_PREFIXES"], help=strings["AUTH_FIELD_URL_PREFIXES_HELP"]
+        strings["AUTH_FIELD_URL_PREFIXES"],
+        placeholder=strings["AUTH_FIELD_URL_PREFIXES_PLACEHOLDER"],
+        help=strings["AUTH_FIELD_URL_PREFIXES_HELP"],
     )
     error_slot = st.empty()
     if st.button(
