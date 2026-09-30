@@ -498,7 +498,7 @@ def test_starting_new_crawl_resets_progress_toast_counters(
                 "streamlit.components.v2.component",
                 partial(_storage_component_factory, initial_records=initial_records),
             ),
-            patch("app_support.support.start_crawl_job", fake_start_crawl_job),
+            patch("app_support.shell.crawl_orchestration.start_crawl_job", fake_start_crawl_job),
         ):
             app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
             app.run(timeout=10)

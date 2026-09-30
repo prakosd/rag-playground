@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from streamlit.testing.v1 import AppTest
 
 from app_support import downloads_ui
 
@@ -93,3 +94,50 @@ def test_should_show_files_panel_idle_shows_even_without_files() -> None:
 def test_should_show_files_panel_hides_empty_panel_during_active_job() -> None:
     assert downloads_ui._should_show_files_panel(job_alive=True, has_files=False) is False
     assert downloads_ui._should_show_files_panel(job_alive=True, has_files=True) is True
+
+
+def _render_downloads_view() -> None:
+    # Self-contained render for AppTest.from_function (isolated namespace).
+    import streamlit as st
+
+    from app_support import downloads_ui as ui
+
+    defaults = {
+        "session_id": "s1",
+        "job": None,
+        "job_state": "idle",
+        "vector_index_job": None,
+        "vector_index_state": "idle",
+        "language": "EN",
+        "active_output_dir": "",
+        "preview_file_relative_path": "",
+        "delete_folder_relative_path": "",
+        "export_folder_relative_path": "",
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+    ui._render_downloads()
+
+
+# Risk: the Output Files panel render (tree, subheader, dataframe, sample panel) is
+# untested; only its pure helpers are. Type: unit (AppTest).
+def test_downloads_panel_renders_output_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    final_dir = (
+        tmp_path
+        / "outputs"
+        / "streamlit_sessions"
+        / "session_s1"
+        / "crawl_01_x"
+        / "2026-07-01_09-00-00"
+        / "final"
+    )
+    final_dir.mkdir(parents=True)
+    (final_dir / "sorted_success_content_001.md").write_text("# hi", encoding="utf-8")
+
+    app = AppTest.from_function(_render_downloads_view)
+    app.run(timeout=10)
+
+    assert not app.exception

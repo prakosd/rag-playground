@@ -15,8 +15,9 @@ pip install -e ".[dev,all]" -e "apps/streamlit[dev]"
 ```
 
 The distribution is `rag-playground`; `[all]` pulls every library extra
-(`crawl`, `vector`, `bedrock`, `openai`) and `[dev]` adds pytest/ruff. To work on a
-single library, install just its extra instead (e.g. `pip install -e ".[dev,vector]"`).
+(`crawl`, `vector`, `bedrock`, `openai`, `rag`, `rerank`, `s3`) and `[dev]` adds
+pytest/ruff. To work on a single library, install just its extra instead
+(e.g. `pip install -e ".[dev,vector]"`).
 See [INSTALLATION.md](INSTALLATION.md) for the full extras matrix.
 
 ## Tests and lint
@@ -31,6 +32,10 @@ python -m ruff format --check src/ tests/
 python -m pytest apps/streamlit/tests/ -q
 python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
+
+# FastAPI backend (install first: pip install -e "apps/backend[dev]")
+python -m pytest apps/backend/tests/ -q
+python -m ruff check apps/backend/
 ```
 
 - Core tests (including `artifact_store`, `vector_indexer`, and `rag_engine`) live in `tests/`.
@@ -38,6 +43,24 @@ python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app
 - Tests use mocked HTTP — no real network requests are made, no embedding
   models are downloaded (use fakes / explicit embeddings), and RAG tests use the
   offline echo chat model.
+- Backend (FastAPI) tests live in `apps/backend/tests/` and need the backend package
+  installed (`pip install -e "apps/backend[dev]"`).
+
+### Coverage
+
+Coverage is opt-in (kept out of the default `pytest` run so normal runs stay fast) and
+measured per suite; a `--cov-fail-under` floor guards against regressions. Test files are
+excluded from the report (`[tool.coverage.run] omit` in `pyproject.toml`).
+
+```bash
+python -m pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=90
+python -m pytest apps/streamlit/tests/ --cov=apps/streamlit --cov-report=term-missing --cov-fail-under=82
+python -m pytest apps/backend/tests/ --cov=apps/backend/app_backend --cov-fail-under=95
+```
+
+Current source coverage: `src` ~95%, app ~85% (the remaining gap is deeper Streamlit render
+paths — extend with `AppTest.from_function` / `AppTest.from_file` tests), backend 100%.
+Raise a floor whenever you add coverage so it never slips back.
 
 ## Conventions
 

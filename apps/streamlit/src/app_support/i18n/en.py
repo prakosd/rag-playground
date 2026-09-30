@@ -56,29 +56,6 @@ STRINGS_EN: Strings = {
         "Have a back-and-forth conversation grounded in your documents — each answer draws on "
         "the most relevant retrieved passages, and you can keep asking follow-ups."
     ),
-    "PLACEHOLDER_SECTION_HEADER": "Step workspace",
-    "PLACEHOLDER_SECTION_CAPTION": (
-        "This page uses the same session controls and layout while the RAG backend is added."
-    ),
-    "PLACEHOLDER_EXPANDER_LABEL": "Requirements summary",
-    "PLACEHOLDER_VECTOR_INDEX": (
-        "Select generated Markdown or text files, including ZIP archives that contain them. "
-        "The future workflow will split content into chunks, generate embeddings, and persist "
-        "the index in ChromaDB."
-    ),
-    "PLACEHOLDER_SEMANTIC_SEARCH": (
-        "Enter a search query, embed it with the same model used for the indexed chunks, run a "
-        "similarity search, then display ranked snippets with scores and source references."
-    ),
-    "PLACEHOLDER_BASIC_RAG_QA": (
-        "Ask a single question, retrieve the most relevant chunks, combine them into a prompt, "
-        "call the selected LLM, then display the answer together with the context sources."
-    ),
-    "PLACEHOLDER_CONVERSATIONAL_RAG": (
-        "A chat interface that decomposes multi-part questions, retrieves and re-ranks passages "
-        "per sub-question, maintains conversation state, and suggests validated follow-ups — "
-        "with an inspect mode for each stage."
-    ),
     # ── RAG pages (Steps 3-5) ──────────────────────────────────
     "RAG_NO_INDEX_HINT": "No vector index found yet. Build one in Step 2 first.",
     "RAG_INDEX_LABEL": "Vector index",

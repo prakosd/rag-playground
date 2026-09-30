@@ -99,3 +99,12 @@ def test_cached_retriever_offloads_to_backend_when_http(monkeypatch: pytest.Monk
 
     assert rc.cached_retriever("/idx", "q", "cfg") == "HTTP_RESULT"
     assert seen["query"] == "q"  # request offloaded to the backend client
+
+
+# Risk: an unbounded st.cache_resource on a long-lived Cloud process grows without limit.
+# Type: unit.
+def test_resource_caches_are_bounded() -> None:
+    assert isinstance(rc._CHAT_MODEL_CACHE_MAX_ENTRIES, int)
+    assert isinstance(rc._SEARCHER_CACHE_MAX_ENTRIES, int)
+    assert 0 < rc._CHAT_MODEL_CACHE_MAX_ENTRIES <= 64
+    assert 0 < rc._SEARCHER_CACHE_MAX_ENTRIES <= 64

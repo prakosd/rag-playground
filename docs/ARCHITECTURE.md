@@ -128,30 +128,26 @@ flowchart TD
   one-call convenience for other UIs.
 - **Step 5 (conversational)** offers two entry points. `chat_answer` is the simple
   history-aware flow (rewrite the follow-up via `condense_question`, then retrieve and
-  answer). The Streamlit page uses the advanced `conversational_answer` pipeline:
-  `plan_queries` decomposes the question into standalone sub-questions (small auxiliary
-  model from `resolve_auxiliary_model`), `retrieve_multi` searches each in parallel and
-  de-dupes, `rerank_chunks` re-orders them (off / local cross-encoder / LLM),
-  the answer is generated (the Streamlit page streams it token-by-token via the `conversational_answer_stream` variant, which returns a `ConversationalGeneration` and shares `_prepare_turn`/`_finalize_turn` with the blocking call, while follow-ups run concurrently), then `suggest_followups` + `validate_followups` propose only
-  corpus-answerable follow-ups (written in the configured language) and `update_state` rolls conversation memory forward. It
-  returns a `ConversationalAnswer` (answer + `QueryPlan` + sources + `ValidatedFollowup`s
-  + next `ConversationState` + per-stage `timings` + per-process `token_usage` + per-stage `prompt_traces`) that the
-  UI renders as a per-turn inspection panel, disk-persisted per-session conversations (a
-  New button + picker; a selected conversation's turns are replayed from the history log on
-  session load), a Token usage panel (a shared renderer also
-  used by Step 4), and the standard Output Files section. Every stage's built-in prompt is
-  overridable through `ConversationalConfig.prompts` (a `ConversationalPrompts` model), and
-  the Step 5 page exposes an editable prompt-template editor whose stage tabs hide when their
-  feature is off (Query decomposition / Follow-ups / the LLM re-ranker), plus app-only message
-  tabs — an editable **Welcome message** greeting, a **Follow-up intro** line, and a
-  **No-suggestions** nudge, each holding one alternate per line and shown at random per turn;
-  validated follow-ups render inside the chat panel as an integrated continuation bubble with
-  inline, link-styled (blue, underlined) suggestions; a malformed override falls back to the built-in. Heavy chat/auxiliary
-  models and the vector searcher are cached app-side (`rag_shared/resource_cache.py`,
-  `@st.cache_resource`) and injected through `rag_engine`'s resolver/retriever hooks, so a chat
-  session reuses one client per model/index while the library stays fresh-per-call. Every stage
-  degrades safely (offline model, missing re-rank dependency, unparsable output) with a recorded
-  warning, never an error.
+  answer). The Streamlit page uses the advanced `conversational_answer` pipeline, which
+  chains:
+  - `plan_queries` — decompose the question into standalone sub-questions (small auxiliary
+    model from `resolve_auxiliary_model`);
+  - `retrieve_multi` — search each sub-question in parallel and de-dupe;
+  - `rerank_chunks` — re-order the merged pool (off / local cross-encoder / LLM);
+  - answer generation — streamed token-by-token via `conversational_answer_stream`, with
+    `suggest_followups` + `validate_followups` running concurrently to propose only
+    corpus-answerable follow-ups, then `update_state` to roll conversation memory forward.
+
+  It returns a `ConversationalAnswer` (answer + `QueryPlan` + sources + `ValidatedFollowup`s
+  + next `ConversationState` + per-stage `timings`, `token_usage`, and `prompt_traces`). Every
+  stage's built-in prompt is overridable via `ConversationalConfig.prompts`, and every stage
+  degrades safely (offline model, missing re-rank dependency, unparsable output) with a
+  recorded warning rather than an error. Heavy chat/auxiliary models and the vector searcher
+  are cached app-side (`rag_shared/resource_cache.py`) and injected through `rag_engine`'s
+  resolver/retriever hooks. For the full stage/prompt/token contract see
+  [src/rag_engine/README.md](../src/rag_engine/README.md); for the Step 5 page UI (inspection
+  panel, per-session conversations, token panel, message tabs) see
+  [apps/streamlit/README.md](../apps/streamlit/README.md).
 
 **Why Steps 4 and 5 retrieve differently.** Step 4 keeps chunks in pure
 vector-similarity order — one question, one search, an editable prompt you can

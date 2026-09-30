@@ -40,7 +40,7 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 
 ## Set up local development
 
-These steps install **all four libraries** (`artifact_store`, `crawl4md`, `vector_indexer`, `rag_engine`) and the **Streamlit app** so you can work on everything.
+These steps install **all five libraries** (`log4py`, `artifact_store`, `crawl4md`, `vector_indexer`, `rag_engine`) and the **Streamlit app** so you can work on everything.
 
 ### Quick setup (one command)
 
@@ -77,8 +77,8 @@ pip install --upgrade pip
 pip install -e ".[dev,all]" -e "apps/streamlit[dev]"
 ```
 
-- `[dev]` adds the test/lint tools (pytest, ruff); `[all]` pulls every library and backend (`crawl`, `vector`, `bedrock`, `openai`, `rag`).
-- The app package depends on `rag-playground[crawl,vector,bedrock,openai,rag]`, so installing it alongside the root package wires the libraries together.
+- `[dev]` adds the test/lint tools (pytest, ruff); `[all]` pulls every library extra — see [Optional extras](docs/INSTALLATION.md#optional-extras) for the full matrix.
+- The app package depends on `rag-playground[crawl,vector,bedrock,openai,rag,rerank]`, so installing it alongside the root package wires the libraries together.
 
 ### 4. Finish the crawler setup
 
@@ -90,7 +90,7 @@ crawl4ai-setup
 ```
 
 ### 5. Run the Streamlit app
-
+` 
 ```bash
 python -m streamlit run apps/streamlit/streamlit_app.py
 ```
@@ -135,9 +135,10 @@ The base install has **zero third-party dependencies** (`artifact_store` is pure
 | Vector index + Amazon Titan embeddings (langchain-aws) | `pip install -e ".[vector,bedrock]"` | No |
 | Vector index + OpenAI embeddings (langchain-openai) | `pip install -e ".[vector,openai]"` | No |
 | RAG Q&A / chat with the offline echo model (`rag_engine`) | `pip install -e ".[vector,rag]"` | No |
+| + Step 5 local cross-encoder re-ranker (`sentence-transformers`) | `pip install -e ".[vector,rag,rerank]"` | No |
 | Everything | `pip install -e ".[all]"` | Yes |
 
-The `bedrock` and `openai` extras now serve both embeddings **and** cloud chat models (via `langchain-aws` / `langchain-openai`); add them alongside `[vector,rag]` to use real LLMs instead of the offline echo model.
+The `bedrock` and `openai` extras now serve both embeddings **and** cloud chat models (via `langchain-aws` / `langchain-openai`); add them alongside `[vector,rag]` to use real LLMs instead of the offline echo model. See [Optional extras](docs/INSTALLATION.md#optional-extras) for the complete matrix (including `s3` and `dev`).
 
 Not yet on PyPI — install from a local clone (above) or straight from GitHub, e.g.:
 

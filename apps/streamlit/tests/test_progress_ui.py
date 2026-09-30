@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from streamlit.testing.v1 import AppTest
 
 from app_support import progress_ui
 
@@ -105,3 +106,44 @@ def test_apply_vector_index_event_terminal_builds_result(
     clear_caches.assert_called_once()
     assert state.vector_index_result["indexed_chunk_count"] == 40
     assert state.vector_index_result["skipped_file_count"] == 1
+
+
+def _render_progress(*, state: str = "running", processed: int = 5, discovered: int = 10) -> None:
+    # Self-contained render for AppTest.from_function (isolated namespace).
+    from datetime import datetime, timezone
+
+    import streamlit as st
+
+    from app_support.progress_ui import render_progress_and_files
+
+    st.session_state["language"] = "EN"
+    st.session_state["started_at"] = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
+    st.session_state["job_state"] = state
+    st.session_state["last_elapsed"] = "00:05"
+    st.session_state["latest_event"] = {"eta_remaining_seconds": 12.0}
+    render_progress_and_files(
+        processed=processed,
+        successful=4,
+        failed=1,
+        discovered=discovered,
+        limit=20,
+        state=state,
+    )
+
+
+# Risk: the running-card / banner / retry branches of the progress panel are untested.
+# Type: unit (AppTest).
+@pytest.mark.parametrize("state", ["running", "failed", "cancel_requested", "stopped"])
+def test_render_progress_and_files_renders_across_states(state: str) -> None:
+    app = AppTest.from_function(_render_progress, kwargs={"state": state}).run()
+    assert not app.exception
+    assert len(app.metric) >= 5  # 6 metrics (the running state swaps one for an st.html card)
+
+
+# Risk: the retry phase (processed > discovered) swaps the progress copy + processed delta.
+# Type: unit (AppTest).
+def test_render_progress_and_files_retry_phase() -> None:
+    app = AppTest.from_function(
+        _render_progress, kwargs={"state": "running", "processed": 15, "discovered": 10}
+    ).run()
+    assert not app.exception

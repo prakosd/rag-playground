@@ -110,3 +110,22 @@ addopts = "--tb=short"
 filterwarnings = [
     "ignore:Tesseract OCR is not installed:UserWarning",
 ]
+
+# Coverage is opt-in (kept out of the default pytest addopts so normal runs stay
+# fast). Measure per suite, e.g.:
+#   python -m pytest tests/ --cov=src --cov-report=term-missing
+#   python -m pytest apps/streamlit/tests/ --cov=apps/streamlit --cov-report=term-missing
+# See docs/DEVELOPMENT.md for the coverage command and threshold.
+[tool.coverage.run]
+omit = ["*/tests/*", "*/conftest.py"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "\\.\\.\\.",
+    "@(abc\\.)?abstractmethod",
+]

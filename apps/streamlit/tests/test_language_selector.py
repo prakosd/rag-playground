@@ -110,7 +110,7 @@ def _patched_app_test(
             yield AppTest.from_file(str(_STREAMLIT_APP_FILE))
             return
         with patch(
-            "app_support.support.create_session_record",
+            "app_support.shell.session_select.create_session_record",
             return_value=created_record,
         ):
             yield AppTest.from_file(str(_STREAMLIT_APP_FILE))
@@ -228,6 +228,29 @@ def test_new_session_button_with_existing_session_defaults_to_en(
 
         assert app.selectbox[0].value == "created"
         assert app.button_group[0].value == "EN"
+
+
+def test_language_change_survives_missing_session_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: the language on_change callback can fire before _init_state sets
+    session_id (a hot-reload or bootstrap rerun); it must not crash on the read."""
+    initial_records = serialize_session_records([SessionRecord("active", _FIXED_CREATED_AT, "EN")])
+    (tmp_path / "outputs" / "streamlit_sessions" / "session_active").mkdir(parents=True)
+    with _patched_app_test(
+        monkeypatch,
+        tmp_path,
+        component_factory=_storage_component_factory(initial_records=initial_records),
+    ) as app:
+        app.run(timeout=10)
+        assert app.button_group[0].value == "EN"
+
+        # Force the pre-_init_state race: session_id absent when the callback fires.
+        del app.session_state["session_id"]
+        app.button_group[0].set_value("ID")
+        app.run(timeout=10)
+
+        assert not app.exception
 
 
 def test_real_app_shows_error_when_bootstrap_storage_write_fails(

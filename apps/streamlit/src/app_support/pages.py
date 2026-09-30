@@ -25,7 +25,6 @@ class AppPageSpec:
     icon: str
     url_path: str
     module_name: str
-    placeholder_key: str | None = None
 
 
 APP_PAGE_SPECS: tuple[AppPageSpec, ...] = (
@@ -46,7 +45,6 @@ APP_PAGE_SPECS: tuple[AppPageSpec, ...] = (
         icon=":material/database:",
         url_path="vector-index",
         module_name="app_pages.vector_index",
-        placeholder_key="PLACEHOLDER_VECTOR_INDEX",
     ),
     AppPageSpec(
         page_id=_PAGE_ID_SEMANTIC_SEARCH,
@@ -56,7 +54,6 @@ APP_PAGE_SPECS: tuple[AppPageSpec, ...] = (
         icon=":material/search:",
         url_path="semantic-search",
         module_name="app_pages.semantic_search",
-        placeholder_key="PLACEHOLDER_SEMANTIC_SEARCH",
     ),
     AppPageSpec(
         page_id=_PAGE_ID_BASIC_RAG_QA,
@@ -66,7 +63,6 @@ APP_PAGE_SPECS: tuple[AppPageSpec, ...] = (
         icon=":material/question_answer:",
         url_path="basic-rag-qa",
         module_name="app_pages.basic_rag_qa",
-        placeholder_key="PLACEHOLDER_BASIC_RAG_QA",
     ),
     AppPageSpec(
         page_id=_PAGE_ID_CONVERSATIONAL_RAG,
@@ -76,7 +72,6 @@ APP_PAGE_SPECS: tuple[AppPageSpec, ...] = (
         icon=":material/forum:",
         url_path="conversational-rag",
         module_name="app_pages.conversational_rag",
-        placeholder_key="PLACEHOLDER_CONVERSATIONAL_RAG",
     ),
 )
 

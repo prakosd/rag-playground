@@ -119,7 +119,7 @@ Every library is an opt-in extra so each install stays lightweight:
 | `openai` | `langchain-openai` (pulls `openai`) | OpenAI embeddings **and** chat models |
 | `rag` | `langchain` (umbrella), `langchain-core`, `pydantic` | retrieval + QA + conversational RAG (Steps 3-5) |
 | `rerank` | `sentence-transformers` (pulls `torch`) | Step 5 local cross-encoder re-ranker (heavy; the LLM/off re-rankers need it not) |
-| `all` | `crawl` + `vector` + `bedrock` + `openai` + `rag` + `rerank` | the full playground |
+| `all` | `crawl` + `vector` + `bedrock` + `openai` + `rag` + `rerank` + `s3` | the full playground |
 | `dev` | `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff` | tests, lint |
 
 The extras are **audited to stay atomic**: every package listed above is imported by

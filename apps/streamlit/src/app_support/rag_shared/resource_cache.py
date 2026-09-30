@@ -40,8 +40,13 @@ if TYPE_CHECKING:
 
 __all__ = ["cached_aux_resolver", "cached_chat_resolver", "cached_retriever"]
 
+# Bound the process-wide resource caches so a long-lived Cloud process cannot grow
+# them without limit; least-recently-used clients are evicted and rebuilt on demand.
+_CHAT_MODEL_CACHE_MAX_ENTRIES = 8
+_SEARCHER_CACHE_MAX_ENTRIES = 8
 
-@st.cache_resource(show_spinner=False)
+
+@st.cache_resource(show_spinner=False, max_entries=_CHAT_MODEL_CACHE_MAX_ENTRIES)
 def _cached_resolved_chat(
     model_id: str, temperature: float, max_tokens: int
 ) -> tuple[ResolvedChatModel, list[LibraryMessage]]:
@@ -61,7 +66,7 @@ def cached_aux_resolver(config: Any) -> tuple[ResolvedChatModel, list[LibraryMes
     return resolve_auxiliary_model(config, resolver=cached_chat_resolver)
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=False, max_entries=_SEARCHER_CACHE_MAX_ENTRIES)
 def _open_cached_searcher(run_dir_str: str) -> VectorSearcher:
     """Open and warm one searcher per index directory; reused across turns/queries."""
     resolved_emb, _warnings = load_index_embeddings(run_dir_str)

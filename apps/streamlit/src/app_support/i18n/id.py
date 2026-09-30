@@ -57,30 +57,6 @@ STRINGS_ID: Strings = {
         "Adakan percakapan bolak-balik yang berlandaskan dokumen Anda — setiap jawaban mengambil "
         "dari bagian paling relevan, dan Anda dapat terus mengajukan pertanyaan lanjutan."
     ),
-    "PLACEHOLDER_SECTION_HEADER": "Area kerja langkah",
-    "PLACEHOLDER_SECTION_CAPTION": (
-        "Halaman ini memakai kontrol sesi dan layout yang sama sambil backend RAG ditambahkan."
-    ),
-    "PLACEHOLDER_EXPANDER_LABEL": "Ringkasan kebutuhan",
-    "PLACEHOLDER_VECTOR_INDEX": (
-        "Pilih file Markdown atau teks yang dihasilkan, termasuk arsip ZIP yang berisi file "
-        "tersebut. Alur berikutnya akan memecah konten menjadi chunk, membuat embedding, "
-        "dan menyimpan index di ChromaDB."
-    ),
-    "PLACEHOLDER_SEMANTIC_SEARCH": (
-        "Masukkan kueri pencarian, buat embedding dengan model yang sama seperti chunk dalam "
-        "index, jalankan similarity search, lalu tampilkan snippet berperingkat dengan skor "
-        "dan referensi sumber."
-    ),
-    "PLACEHOLDER_BASIC_RAG_QA": (
-        "Ajukan satu pertanyaan, ambil chunk yang paling relevan, gabungkan ke dalam prompt, "
-        "panggil LLM yang dipilih, lalu tampilkan jawaban bersama sumber konteks."
-    ),
-    "PLACEHOLDER_CONVERSATIONAL_RAG": (
-        "Antarmuka chat yang memecah pertanyaan multi-bagian, mengambil dan memeringkat ulang "
-        "bagian per sub-pertanyaan, mempertahankan state percakapan, dan menyarankan pertanyaan "
-        "lanjutan tervalidasi — dengan mode inspeksi untuk setiap tahap."
-    ),
     # ── RAG pages (Steps 3-5) ──────────────────────────────────
     "RAG_NO_INDEX_HINT": "Belum ada vector index. Bangun satu di Langkah 2 dulu.",
     "RAG_INDEX_LABEL": "Vector index",

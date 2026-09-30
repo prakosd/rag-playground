@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 from pytest import MonkeyPatch
 from rag_engine.models import TokenUsage
+from streamlit.testing.v1 import AppTest
 
 from app_support.basic_rag_qa.basic_rag_qa_history import BasicQaRecord
 from app_support.i18n import STRINGS_EN
@@ -334,3 +335,90 @@ def test_transaction_csv_has_header_and_rows(monkeypatch: MonkeyPatch) -> None:
     assert STRINGS_EN["BASIC_QA_TXN_COL_PROVIDER"] in lines[0]
     assert len(lines) == 2  # header + one record
     assert _transaction_csv([]) == ""
+
+
+def _render_basic_qa(session_dir: str, *, chunks: int = 2) -> None:
+    # Self-contained render for AppTest.from_function (isolated namespace).
+    from pathlib import Path as _Path
+    from types import SimpleNamespace as _NS
+    from unittest.mock import patch
+
+    import app_pages.basic_rag_qa as page
+    from rag_engine import RetrievedChunk
+    from vector_indexer import IndexManifest
+
+    from app_support.rag_shared.index_catalog import IndexRef
+    from app_support.rag_shared.rag_ui import RagPageContext
+
+    root = _Path(session_dir)
+    manifest = IndexManifest(
+        embedding_model_requested="titan",
+        embedding_model_used="titan",
+        embedding_dimension=512,
+        collection_name="c",
+        chunk_size=600,
+        chunk_overlap=100,
+        language="english",
+        success=True,
+        indexed_file_count=1,
+        indexed_chunk_count=3,
+        skipped_file_count=0,
+        indexed_sources=("a.md",),
+    )
+    ref = IndexRef(
+        run_dir=root / "idx",
+        vector_folder="vector_01_x",
+        run_name="2026-07-01_09-00-00",
+        manifest=manifest,
+    )
+    context = RagPageContext(
+        default_language="EN",
+        list_indexes=lambda: [ref],
+        render_downloads=lambda: None,
+        session_root=lambda: root,
+    )
+    result = _NS(
+        chunks=[
+            RetrievedChunk(text=f"hit {i}", source="a.md", score=0.9, metadata={"chunk_index": i})
+            for i in range(chunks)
+        ],
+        warnings=[],
+        errors=[],
+    )
+    with (
+        patch.object(page, "cached_retriever", return_value=result),
+        patch.object(page, "build_rag_prompt", return_value="GENERATED PROMPT"),
+    ):
+        page.render_page(context)
+
+
+# Risk: the Basic RAG Q&A page render (panel, forms, empty results, history) is untested.
+# Type: unit (AppTest).
+def test_basic_rag_qa_renders_with_index(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(_APP_DIR))
+    app = AppTest.from_function(_render_basic_qa, kwargs={"session_dir": str(tmp_path)})
+    app.run(timeout=10)
+    assert not app.exception
+
+
+# Risk: the Generate-prompt flow (retrieve + build_rag_prompt) must fill the prompt field.
+# Type: unit (AppTest).
+def test_basic_rag_qa_generate_prompt_fills_prompt(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from app_support.i18n import get_strings
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(_APP_DIR))
+    app = AppTest.from_function(_render_basic_qa, kwargs={"session_dir": str(tmp_path)})
+    app.run(timeout=10)
+    assert not app.exception
+
+    next(ti for ti in app.text_input if ti.key == "basic_rag_qa_question").set_value("what is X?")
+    generate_label = get_strings("EN")["BASIC_QA_GENERATE_BUTTON"]
+    next(button for button in app.button if button.label == generate_label).click()
+    app.run(timeout=10)
+
+    assert not app.exception
+    assert app.session_state["basic_rag_qa_prompt"] == "GENERATED PROMPT"

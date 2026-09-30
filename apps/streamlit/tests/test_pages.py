@@ -17,7 +17,7 @@ from app_support.pages import (
 _APP_DIR = Path(__file__).resolve().parents[1]
 
 
-# Risk: navigation breaks if page metadata loses ordering, ids, or placeholder links.
+# Risk: navigation breaks if page metadata loses ordering or ids.
 # Type: unit.
 def test_app_page_specs_define_five_ordered_steps() -> None:
     assert [page_spec.page_id for page_spec in APP_PAGE_SPECS] == [
@@ -28,17 +28,6 @@ def test_app_page_specs_define_five_ordered_steps() -> None:
         "conversational_rag",
     ]
     assert default_page_spec().page_id == DEFAULT_PAGE_ID == "crawl"
-
-
-# Risk: placeholder pages can render blank content if metadata points at missing strings.
-# Type: unit.
-def test_placeholder_pages_have_placeholder_keys() -> None:
-    placeholder_specs = [page_spec for page_spec in APP_PAGE_SPECS if page_spec.page_id != "crawl"]
-
-    assert all(page_spec.placeholder_key for page_spec in placeholder_specs)
-    for page_spec in placeholder_specs:
-        assert page_spec.placeholder_key in STRINGS_EN
-        assert page_spec.placeholder_key in STRINGS_ID
 
 
 # Risk: navigation metadata can drift away from the actual page modules.
