@@ -221,18 +221,22 @@ def kv_grid_html(
     )
 
 
-def stacked_label_value_html(label: str, value: str, *, margin_bottom: bool = False) -> str:
+def stacked_label_value_html(
+    label: str, value: str, *, margin_bottom: bool = False, top_gap: bool = False
+) -> str:
     """Build a dim-gray label stacked tightly above a single-line value.
 
     Matches the kv-grid label style (dim, 0.875rem) and clips the value to one
     line with an ellipsis (full text on hover), so the Search history card's
     question label + value stay within the replay button's height. Set
-    *margin_bottom* to add breathing room below (e.g. above a results panel's cards).
+    *margin_bottom* to add breathing room below (e.g. above a results panel's cards);
+    set *top_gap* to ease the upward pull so a card's label clears its top border.
     """
+    top = "-0.15rem" if top_gap else "-0.35rem"
     bottom = ";margin-bottom:0.5rem" if margin_bottom else ""
     return (
         '<div style="display:flex;flex-direction:column;line-height:1.25;overflow:hidden;'
-        f'margin-top:-0.35rem{bottom}">'
+        f'margin-top:{top}{bottom}">'
         f'<div style="opacity:0.65;font-size:0.875rem">{html.escape(label)}</div>'
         '<div style="font-weight:600;white-space:nowrap;overflow:hidden;'
         f'text-overflow:ellipsis" title="{html.escape(value)}">{html.escape(value)}</div>'

@@ -52,7 +52,7 @@ Walk through every item. Flag violations with file + line.
 - **Provider gating:** check the package *and* credentials before calling a cloud provider — raise `EmbeddingProviderUnavailable` / `ChatModelUnavailable` rather than calling in without auth. No silent fallback that would corrupt an index's embeddings.
 - **Path containment:** any discovered, extracted, or browser-supplied path must pass through `artifact_store.paths.ensure_within_root` before read/write. Streamlit file access stays inside the session root; session ids go through `validate_safe_id()`. Flag manual string path checks.
 - **Archive safety:** archive extraction is restricted to safe `.md`/`.txt` members via `artifact_store.archives` (zip-slip guard) — flag any extraction that bypasses it.
-- **Prompt-injection defense (`rag_engine`):** retrieved context is wrapped in `<context>` and treated as data; never substring-match retrieved text into a prompt as instructions.
+- **Prompt-injection defense (`rag_engine`):** retrieved knowledge is wrapped in `<knowledge>` and treated as data; never substring-match retrieved text into a prompt as instructions.
 - **Streamlit caching:** `st.cache_data` only for trusted, serializable data (it pickles); `st.cache_resource` returns are shared singletons — must be thread-safe and not mutated.
 - Flag OWASP-style issues (injection, unvalidated input at a trust boundary). **Security findings are always Must-fix blockers.**
 

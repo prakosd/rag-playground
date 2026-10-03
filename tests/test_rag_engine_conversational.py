@@ -615,6 +615,91 @@ def test_conversational_answer_populates_followups(tmp_path: Path) -> None:
     assert "followups" in result.timings
 
 
+def test_conversational_answer_serial_followups_see_the_answer(tmp_path: Path) -> None:
+    prompts: list[str] = []
+
+    class _CapturingAux(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capturing-aux"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            text = "\n".join(str(getattr(m, "content", m)) for m in messages)
+            prompts.append(text)
+            return '["What else about France?"]' if "follow-up questions" in text else ""
+
+    def retriever(run_dir, query, config):
+        return RetrievalResult(
+            chunks=[RetrievedChunk(text="ctx", source="a.md", score=0.9, metadata={})]
+        )
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        model = _ScriptedModel(reply="PARIS_IS_THE_CAPITAL")
+        return ResolvedChatModel(model=model, model_id="main"), []
+
+    def aux_resolver(config):
+        return ResolvedChatModel(model=_CapturingAux(), model_id="aux"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "Tell me about France",
+        ConversationState(),
+        ConversationalConfig(reranker="off"),  # serial is the default
+        retriever=retriever,
+        chat_resolver=main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    followup_prompts = [p for p in prompts if "follow-up questions" in p]
+    assert followup_prompts
+    # Serial mode (default) threads the finished answer into the follow-up prompt.
+    assert "PARIS_IS_THE_CAPITAL" in followup_prompts[0]
+    assert [f.question for f in result.follow_ups] == ["What else about France?"]
+
+
+def test_conversational_answer_parallel_followups_skip_the_answer(tmp_path: Path) -> None:
+    prompts: list[str] = []
+
+    class _CapturingAux(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capturing-aux"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            text = "\n".join(str(getattr(m, "content", m)) for m in messages)
+            prompts.append(text)
+            return '["What else about France?"]' if "follow-up questions" in text else ""
+
+    def retriever(run_dir, query, config):
+        return RetrievalResult(
+            chunks=[RetrievedChunk(text="ctx", source="a.md", score=0.9, metadata={})]
+        )
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        model = _ScriptedModel(reply="PARIS_IS_THE_CAPITAL")
+        return ResolvedChatModel(model=model, model_id="main"), []
+
+    def aux_resolver(config):
+        return ResolvedChatModel(model=_CapturingAux(), model_id="aux"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "Tell me about France",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followups_parallel=True),
+        retriever=retriever,
+        chat_resolver=main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    followup_prompts = [p for p in prompts if "follow-up questions" in p]
+    assert followup_prompts
+    # Parallel mode runs follow-ups alongside the answer, so the answer text is absent.
+    assert "PARIS_IS_THE_CAPITAL" not in followup_prompts[0]
+    assert "(not yet available)" in followup_prompts[0]
+    assert [f.question for f in result.follow_ups] == ["What else about France?"]
+
+
 def test_conversational_answer_answer_failure_still_returns_followups(tmp_path: Path) -> None:
     class _BoomModel(SimpleChatModel):
         @property
@@ -646,7 +731,7 @@ def test_conversational_answer_answer_failure_still_returns_followups(tmp_path: 
         aux_resolver=aux_resolver,
     )
 
-    # The answer branch failed, but the concurrent follow-up branch still returned.
+    # The answer branch failed, but the follow-up branch still returned.
     assert result.answer == ""
     assert any(e.code == messages.CODE_GENERATION_FAILED for e in result.errors)
     assert [f.question for f in result.follow_ups] == ["What else about France?"]

@@ -31,7 +31,7 @@ STRINGS_ID: Strings = {
     "PROGRESS_CAPTION": "Pantau aktivitas crawl secara langsung.",
     "PROGRESS_EXPANDER_LABEL": "Statistik langsung",
     "PROGRESS_EXPANDER_LABEL_ACTIVE": "Statistik langsung: {crawl_id}",
-    "LANG_SELECTOR_LABEL": "Pilih bahasa",
+    "LANG_SELECTOR_LABEL": "Bahasa",
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
@@ -54,8 +54,9 @@ STRINGS_ID: Strings = {
     ),
     "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Langkah 5 - Conversational RAG",
     "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
-        "Adakan percakapan bolak-balik yang berlandaskan dokumen Anda — setiap jawaban mengambil "
-        "dari bagian paling relevan, dan Anda dapat terus mengajukan pertanyaan lanjutan."
+        "Adakan percakapan bolak-balik yang berlandaskan pengetahuan terindeks Anda — setiap "
+        "jawaban mengambil dari bagian paling relevan, dan Anda dapat terus mengajukan pertanyaan "
+        "lanjutan."
     ),
     # ── RAG pages (Steps 3-5) ──────────────────────────────────
     "RAG_NO_INDEX_HINT": "Belum ada vector index. Bangun satu di Langkah 2 dulu.",
@@ -245,9 +246,9 @@ STRINGS_ID: Strings = {
     "CHAT_NEW_CONVERSATION": "Percakapan baru",
     "CHAT_CONVERSATION_SELECT": "Percakapan",
     "CHAT_WELCOME_DEFAULT": (
-        "Hai! Saya siap membantu dengan dokumen yang sudah Anda indeks. Tanyakan apa saja.\n"
-        "Halo! Tanyakan apa saja tentang dokumen yang Anda indeks — saya menjawab dari sana.\n"
-        "Hai! Saya bisa membantu menjelajahi dokumen yang Anda indeks. Apa yang ingin Anda ketahui?"
+        "Hai! Saya siap membantu. Tanyakan apa saja dan saya jawab dari yang saya ketahui.\n"
+        "Halo! Ada yang bisa saya bantu hari ini? Tanyakan apa saja.\n"
+        "Hai! Dengan senang hati saya bantu — apa yang ingin Anda ketahui?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
@@ -266,8 +267,13 @@ STRINGS_ID: Strings = {
     ),
     "CONV_DECOMPOSITION_LABEL": "Dekomposisi kueri",
     "CONV_DECOMPOSITION_HELP": "Pecah pertanyaan multi-bagian menjadi pencarian terpisah.",
-    "CONV_FOLLOWUPS_LABEL": "Saran pertanyaan lanjutan",
-    "CONV_FOLLOWUPS_HELP": "Sarankan pertanyaan lanjutan yang bisa dijawab dokumen.",
+    "CONV_FOLLOWUPS_LABEL": "Pertanyaan lanjutan",
+    "CONV_FOLLOWUPS_HELP": "Sarankan pertanyaan lanjutan untuk ditanyakan berikutnya.",
+    "CONV_FOLLOWUPS_COUNT_LABEL": "Tampilkan hingga",
+    "CONV_FOLLOWUPS_COUNT_HELP": (
+        "Jumlah maksimum pertanyaan lanjutan yang disarankan setelah jawaban. Lebih "
+        "sedikit bisa muncul bila hanya sedikit yang benar-benar relevan."
+    ),
     "CONV_INSPECT_LABEL": "Mode inspeksi",
     "CONV_INSPECT_HELP": "Tampilkan bagaimana setiap jawaban dibangun.",
     "CONV_THRESHOLD_LABEL": "Ambang pertanyaan lanjutan",
@@ -282,10 +288,11 @@ STRINGS_ID: Strings = {
     "CONV_PROMPT_TAB_FOLLOWUPS": "Pertanyaan lanjutan",
     "CONV_PROMPT_TAB_ANSWERABILITY": "Keterjawaban",
     "CONV_PROMPT_TAB_STATE": "State percakapan",
+    "CONV_PROMPT_TAB_MESSAGES": "Pesan",
     "CONV_PROMPT_TAB_WELCOME": "Pesan sambutan",
     "CONV_PROMPT_TAB_ERROR_REPLY": "Pesan kesalahan",
     "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Pembuka lanjutan",
-    "CONV_PROMPT_TAB_NO_FOLLOWUPS": "Pesan tanpa saran",
+    "CONV_PROMPT_TAB_NO_FOLLOWUPS": "Pesan tanpa pertanyaan lanjutan",
     "CONV_PROMPT_FIELDS_CAPTION": "Placeholder wajib: {fields}",
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Ditampilkan sebagai sapaan asisten di awal percakapan baru. "
@@ -315,8 +322,8 @@ STRINGS_ID: Strings = {
     ),
     "CONV_NO_FOLLOWUPS_DEFAULT": (
         "Apa lagi yang ingin Anda ketahui?\n"
-        "Ada lagi yang bisa saya bantu temukan?\n"
-        "Silakan ajukan pertanyaan lain tentang dokumen Anda."
+        "Ada lagi yang bisa saya bantu?\n"
+        "Silakan ajukan pertanyaan lain."
     ),
     "CONV_PROMPT_SAVE": "Simpan",
     "CONV_PROMPT_RESET": "Reset ke bawaan",
@@ -362,8 +369,8 @@ STRINGS_ID: Strings = {
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "Tidak ada saran pertanyaan lanjutan untuk giliran ini.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
-        "Persentase menunjukkan seberapa yakin dokumen Anda dapat menjawab pertanyaan "
-        "lanjutan itu (kecocokan terbaik saat dicari)."
+        "Persentase menunjukkan seberapa yakin pertanyaan lanjutan itu dapat dijawab dari "
+        "pengetahuan terindeks Anda (kecocokan terbaik saat dicari)."
     ),
     "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Keyakinan %",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
@@ -725,16 +732,9 @@ STRINGS_ID: Strings = {
     "VEC_WORKERS_LABEL": "Pekerja",
     "VEC_WORKERS_HELP": "Pekerja embedding paralel (1-8). Lebih banyak mempercepat model cloud pada crawl besar; model offline lokal selalu berjalan satu utas.",
     "VEC_EMBEDDING_MODEL_LABEL": "Model embedding",
-    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Model cloud (☁️‣🔑) memerlukan API key di file konfigurasi — lihat README untuk cara mengaturnya. Jika model yang dipilih tidak tersedia (kunci API, kredensial, atau internet tidak ada), pengindeksan berhenti dengan kesalahan dan Anda dapat beralih ke model lokal luring (all-MiniLM-L6-v2) yang tidak memerlukan penyiapan.",
+    "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Model cloud (☁️‣🔑) berjalan di cloud dan memerlukan API key atau kredensial di file konfigurasi — lihat README untuk cara mengaturnya. Jika model yang dipilih tidak tersedia (kunci API, kredensial, atau internet tidak ada), pengindeksan berhenti dengan kesalahan dan Anda dapat beralih ke model lokal luring (all-MiniLM-L6-v2) yang berjalan di mesin ini dan tidak memerlukan penyiapan — model diunduh sekali (sekitar 80 MB) saat pertama kali, lalu bekerja luring.",
     "VEC_MODEL_TAG_LOCAL": "💻 Lokal",
     "VEC_MODEL_TAG_CLOUD": "☁️‣🔑",
-    "VEC_MODEL_INDICATOR_LOCAL": (
-        "Berjalan di mesin ini. Mengunduh model sekali (sekitar 80 MB) saat pertama kali, "
-        "lalu bekerja luring."
-    ),
-    "VEC_MODEL_INDICATOR_CLOUD": (
-        "Berjalan di cloud. Perlu API key atau kredensial yang dikonfigurasi di server."
-    ),
     "VEC_EMBEDDING_DIMENSION_LABEL": "Dimensi embedding",
     "VEC_EMBEDDING_DIMENSION_HELP": "Seberapa detail vektor embedding. Dimensi lebih besar menangkap lebih banyak detail, dimensi lebih kecil lebih ringan untuk disimpan dan dicari.",
     "VEC_LANGUAGE_LABEL": "Bahasa",

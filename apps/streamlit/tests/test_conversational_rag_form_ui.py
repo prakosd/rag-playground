@@ -33,6 +33,7 @@ def _controls(**overrides) -> ConversationalControls:
         aux_model_id="echo",
         decomposition=False,
         followups=True,
+        followup_show_count=4,
         inspect=True,
         followup_drop=0.3,
         followup_keep=0.7,
@@ -50,6 +51,8 @@ def test_build_config_maps_controls() -> None:
     assert config.aux_model_id == "echo"
     assert config.plan_enabled is False
     assert config.followups_enabled is True
+    assert config.followup_show_count == 4
+    assert config.followups_parallel is False  # the shipped default runs follow-ups serially
     assert config.followup_drop_score == 0.3
     assert config.followup_min_score == 0.7
     assert config.tone == "Formal"
@@ -80,7 +83,7 @@ def test_aux_model_choices_offers_only_small_priced_models() -> None:
         assert price is not None, model_id  # unpriced models are filtered out
         assert price.size_band in {"XS", "Small"}, (model_id, price.size_band)
     assert "apac.amazon.nova-micro-v1:0" in options  # the pre-selected micro model
-    assert "google.gemma-3-4b-it" in options  # a cheap cross-provider (Google) helper
+    assert "mistral.ministral-3-3b-instruct" in options  # a cheap cross-provider (Mistral) helper
     # Claude Haiku is not a micro/mini/lite model and must not be offered here.
     assert "apac.anthropic.claude-haiku-4-5-20251001-v1:0" not in options
 

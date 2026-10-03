@@ -34,28 +34,6 @@ models:
     size_band: Small
     price_in_per_1m: 0.063
     price_out_per_1m: 0.252
-  # ── Amazon Bedrock · Google ──
-  - model_id: google.gemma-3-4b-it
-    display_name: Gemma 3 4B IT
-    provider: Google
-    cloud_service: Amazon Bedrock
-    size_band: XS
-    price_in_per_1m: 0.041
-    price_out_per_1m: 0.082
-  - model_id: google.gemma-3-12b-it
-    display_name: Gemma 3 12B IT
-    provider: Google
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.093
-    price_out_per_1m: 0.299
-  - model_id: google.gemma-3-27b-it
-    display_name: Gemma 3 27B IT
-    provider: Google
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.237
-    price_out_per_1m: 0.391
   # ── Amazon Bedrock · Mistral AI ──
   - model_id: mistral.ministral-3-14b-instruct
     display_name: Ministral 14B 3.0
@@ -78,13 +56,6 @@ models:
     size_band: Small
     price_in_per_1m: 0.154
     price_out_per_1m: 0.154
-  - model_id: mistral.mistral-7b-instruct-v0:2
-    display_name: Mistral 7B Instruct
-    provider: Mistral AI
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.2
-    price_out_per_1m: 0.26
   # ── Amazon Bedrock · NVIDIA ──
   - model_id: nvidia.nemotron-nano-3-30b
     display_name: Nemotron Nano 3 30B
@@ -93,13 +64,6 @@ models:
     size_band: Small
     price_in_per_1m: 0.062
     price_out_per_1m: 0.247
-  - model_id: nvidia.nemotron-nano-9b-v2
-    display_name: Nemotron Nano 9B v2
-    provider: NVIDIA
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.062
-    price_out_per_1m: 0.237
   # ── Amazon Bedrock · OpenAI ──
   - model_id: openai.gpt-oss-120b-1:0
     display_name: gpt-oss-120b
@@ -123,21 +87,6 @@ models:
     size_band: Small
     price_in_per_1m: 0.154
     price_out_per_1m: 0.618
-  - model_id: qwen.qwen3-coder-30b-a3b-v1:0
-    display_name: Qwen3 Coder 30B A3B
-    provider: Qwen
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.154
-    price_out_per_1m: 0.618
-  # ── Amazon Bedrock · Z.AI ──
-  - model_id: zai.glm-4.7-flash
-    display_name: GLM 4.7 Flash
-    provider: Z.AI
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.07
-    price_out_per_1m: 0.41
   # ── OpenAI API · OpenAI ──
   - model_id: gpt-4.1-nano
     display_name: GPT-4.1 nano

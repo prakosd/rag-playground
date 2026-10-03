@@ -105,6 +105,10 @@ class ConversationalConfig(BaseModel):
     rerank_top_n: int = 5
 
     followups_enabled: bool = True
+    # When True, follow-ups run concurrently with the answer (lower latency) and
+    # cannot see the answer text; when False (default) they run after the answer and
+    # build on it for continuity.
+    followups_parallel: bool = False
     followup_candidate_count: int = 6
     followup_show_count: int = 3
     followup_probe_k: int = 3

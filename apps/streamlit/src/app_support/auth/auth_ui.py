@@ -160,7 +160,15 @@ def _render_http_section(rows: list[CredentialRow], *, disabled: bool, strings: 
     )
 
 
-@st.dialog(_DIALOG_PLACEHOLDER_TITLE)
+def _on_add_dialog_dismiss() -> None:
+    """Clear the add-dialog open flag when it is dismissed (x / click-away / Esc).
+
+    Without this the flag persists and the dialog re-opens on the next page visit.
+    """
+    st.session_state[_ADD_OPEN_KEY] = False
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, on_dismiss=_on_add_dialog_dismiss)
 def _add_credential_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     st.markdown(_ADD_DIALOG_CSS, unsafe_allow_html=True)
@@ -227,7 +235,15 @@ def _persist_and_close(credential: HttpCredential) -> None:
     st.rerun()
 
 
-@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small")
+def _on_delete_dialog_dismiss() -> None:
+    """Clear the pending-delete ids when the dialog is dismissed (x / click-away / Esc).
+
+    Without this the ids persist and the dialog re-opens on the next page visit.
+    """
+    st.session_state[_DELETE_IDS_KEY] = []
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_delete_dialog_dismiss)
 def _delete_credential_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     ids = [str(item) for item in st.session_state.get(_DELETE_IDS_KEY, []) if item]

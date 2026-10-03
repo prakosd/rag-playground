@@ -39,7 +39,7 @@ conversational_answer(run_dir, question, state, config)  # Step 5 (advanced pipe
 
 conversational_answer_stream(run_dir, q, state, config, *, history, …)  # Step 5 streaming
   ├─ _prepare_turn(...)                        → plan → retrieve_multi → rerank (shared internals)
-  ├─ stream_chat_answer_with_usage(...) + follow-ups  → ChatAnswerStream tokens (concurrent)
+  ├─ stream_chat_answer_with_usage(...) + follow-ups  → ChatAnswerStream tokens (follow-ups after answer by default)
   └─ _finalize_turn(...)                        → update_state → ConversationalGeneration (.answer)
 ```
 
@@ -63,7 +63,7 @@ config = RagConfig(llm_model="anthropic.claude-3-5-sonnet-20240620-v1:0", top_k=
 answer = answer_question(run_dir, "What does the API return on error?", config)
 
 print(answer.answer)  # generated answer (or an echo when no credentials)
-for chunk in answer.sources:  # the retrieved context, with provenance + score
+for chunk in answer.sources:  # the retrieved knowledge, with provenance + score
     print(chunk.source, round(chunk.score, 3))
 for message in answer.warnings:  # structured LibraryMessage warnings (e.g. echo fallback)
     print(message)
@@ -106,7 +106,7 @@ can be tested without ChromaDB or network access.
 
 ### Prompts — injection-defensive
 
-Retrieved context is wrapped in `<context>` delimiters and the model is told to
+Retrieved knowledge is wrapped in `<knowledge>` delimiters and the model is told to
 treat it as data only and never follow instructions embedded inside it (see
 `prompts.py`). The prompts also tell the model to answer directly and naturally —
 no "the retrieved knowledge…" / "the context…" meta-phrasing — and to weave a
@@ -158,7 +158,7 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | Module | Responsibility |
 |---|---|
 | `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter`; `ConversationalConfig` (Step 5 stage flags + thresholds + answer `tone` + `language` + `ConversationalPrompts` per-stage prompt overrides, wraps a `RagConfig`) |
-| `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock Nova/Claude APAC profiles + Qwen3/Gemma/Mistral/NVIDIA in-Region + OpenAI Direct API, echo; sorted by cloud → provider → size → name), `DEFAULT_CHAT_MODEL` (pinned to Bedrock Claude), `ECHO_MODEL` |
+| `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock Nova/Claude APAC profiles + Qwen3/Ministral/NVIDIA in-Region + OpenAI Direct API, echo; sorted by cloud → provider → size → name), `DEFAULT_CHAT_MODEL` (pinned to Bedrock Claude), `ECHO_MODEL` |
 | `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), `resolve_auxiliary_model` (small helper model for Step 5), `thinking_disabled_model_kwargs`, lazy echo model |
 | `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, post-filter by score threshold (Step 3); `retrieve_multi` (parallel per-sub-question, deduped, sharing one warmed searcher) |
 | `search.py` | `VectorSearcher` interface (+ `ensure_ready` warm hook) + `ChromaSearcher` (thread-safe lazy open behind a module lock) + backend-neutral `SearchHit` |

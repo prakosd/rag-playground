@@ -172,10 +172,6 @@ def _render_embedding_controls(*, strings: Strings, fields_disabled: bool) -> tu
             embedding_dimension = _render_dimension_input(
                 info, embedding_model, strings=strings, fields_disabled=fields_disabled
             )
-        if info.kind == "local":
-            st.caption(strings["VEC_MODEL_INDICATOR_LOCAL"])
-        elif info.kind == "cloud":
-            st.caption(strings["VEC_MODEL_INDICATOR_CLOUD"])
     return embedding_model, embedding_dimension
 
 

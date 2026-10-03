@@ -135,8 +135,9 @@ flowchart TD
   - `retrieve_multi` — search each sub-question in parallel and de-dupe;
   - `rerank_chunks` — re-order the merged pool (off / local cross-encoder / LLM);
   - answer generation — streamed token-by-token via `conversational_answer_stream`, with
-    `suggest_followups` + `validate_followups` running concurrently to propose only
-    corpus-answerable follow-ups, then `update_state` to roll conversation memory forward.
+    `suggest_followups` + `validate_followups` then propose only corpus-answerable
+    follow-ups (by default after the answer so they build on it; a `followups_parallel`
+    flag runs them alongside it), and `update_state` rolls conversation memory forward.
 
   It returns a `ConversationalAnswer` (answer + `QueryPlan` + sources + `ValidatedFollowup`s
   + next `ConversationState` + per-stage `timings`, `token_usage`, and `prompt_traces`). Every

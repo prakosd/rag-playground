@@ -74,6 +74,9 @@ _RERANKER_KEYS = ("off", "local", "llm")
 # Panel layout mirrors Step 4's Basic RAG Q&A panel: a wide control + a compact one.
 _PANEL_COLUMN_WIDTHS = (0.8, 0.2)
 _MAX_TOP_K = 20
+# The follow-up count field is a soft cap (1-5): fewer appear when few pass validation.
+_FOLLOWUP_SHOW_MIN = 1
+_FOLLOWUP_SHOW_MAX = 5
 _PROMPT_EDITOR_HEIGHT = 240  # px height of each prompt-template text area
 # ConversationalPrompts field name → its editor tab's i18n label key.
 _PROMPT_TAB_KEYS = {
@@ -104,6 +107,7 @@ class ConversationalControls:
     aux_model_id: str
     decomposition: bool
     followups: bool
+    followup_show_count: int
     inspect: bool
     followup_drop: float
     followup_keep: float
@@ -154,7 +158,8 @@ def build_conversational_config(
         reranker=controls.reranker,
         rerank_top_n=settings.conv_rag_rerank_top_n,
         followups_enabled=controls.followups,
-        followup_show_count=settings.conv_rag_followup_show_count,
+        followups_parallel=settings.conv_rag_followups_parallel,
+        followup_show_count=controls.followup_show_count,
         followup_min_score=controls.followup_keep,
         followup_drop_score=controls.followup_drop,
         tone=controls.tone,
@@ -269,7 +274,7 @@ def render_advanced_controls(
                 key=f"{key_prefix}_thresholds",
             )
         toggles_left, toggles_right = st.columns([3, 1], vertical_alignment="center")
-        with toggles_left, st.container(horizontal=True):
+        with toggles_left, st.container(horizontal=True, vertical_alignment="center"):
             decomposition = st.toggle(
                 strings["CONV_DECOMPOSITION_LABEL"],
                 value=settings.conv_rag_decomposition_enabled,
@@ -283,6 +288,21 @@ def render_advanced_controls(
                 help=strings["CONV_FOLLOWUPS_HELP"],
                 disabled=disabled,
                 key=f"{key_prefix}_followups",
+            )
+            followup_show_count = int(
+                st.number_input(
+                    strings["CONV_FOLLOWUPS_COUNT_LABEL"],
+                    min_value=_FOLLOWUP_SHOW_MIN,
+                    max_value=_FOLLOWUP_SHOW_MAX,
+                    value=min(
+                        max(settings.conv_rag_followup_show_count, _FOLLOWUP_SHOW_MIN),
+                        _FOLLOWUP_SHOW_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_FOLLOWUPS_COUNT_HELP"],
+                    disabled=disabled or not followups,
+                    key=f"{key_prefix}_followup_count",
+                )
             )
         with toggles_right, st.container(horizontal_alignment="right"):
             inspect = st.toggle(
@@ -310,6 +330,7 @@ def render_advanced_controls(
         aux_model_id=aux_model_id,
         decomposition=decomposition,
         followups=followups,
+        followup_show_count=followup_show_count,
         inspect=inspect,
         followup_drop=float(drop),
         followup_keep=float(keep),
@@ -382,19 +403,23 @@ def _render_prompt_editor(
             _ERROR_REPLY_TAB,
             *(_FOLLOWUP_MESSAGE_TABS if followups else ()),
         ]
+        # The model-stage prompts get a tab each; the app-only messages are grouped
+        # under one "Messages" tab (nested tabs) so the row doesn't grow too wide.
         labels = [strings[_PROMPT_TAB_KEYS[key]] for key in model_keys]
-        labels += [strings[label_key] for _, label_key, _, _ in message_tabs]
+        labels.append(strings["CONV_PROMPT_TAB_MESSAGES"])
         tabs = st.tabs(labels)
         for tab, prompt_key in zip(tabs[: len(model_keys)], model_keys, strict=True):
             with tab:
                 _render_single_prompt(
                     strings, key_prefix, session_root, prompt_key, disabled=disabled
                 )
-        for tab, spec in zip(tabs[len(model_keys) :], message_tabs, strict=True):
-            with tab:
-                _render_app_message_prompt(
-                    strings, key_prefix, session_root, spec, disabled=disabled
-                )
+        with tabs[-1]:
+            message_labels = [strings[label_key] for _, label_key, _, _ in message_tabs]
+            for tab, spec in zip(st.tabs(message_labels), message_tabs, strict=True):
+                with tab:
+                    _render_app_message_prompt(
+                        strings, key_prefix, session_root, spec, disabled=disabled
+                    )
 
 
 def _render_prompt_actions(

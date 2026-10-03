@@ -422,7 +422,7 @@ _LANGUAGE_SELECTOR_CSS = f"""
 <style>
 .st-key-{_LANGUAGE_SELECTOR_WRAP_KEY} [data-testid="stWidgetLabel"] {{
     justify-content: flex-end;
-    margin-bottom: -0.3rem;
+    margin-bottom: 0rem;
 }}
 .st-key-{_LANGUAGE_SELECTOR_WRAP_KEY} [data-testid="stWidgetLabel"] p {{
     font-size: 0.8rem;

@@ -43,6 +43,8 @@ _logger = get_logger(__name__)
 _MAX_TOPICS = 6
 _TOPIC_SNIPPET_CHARS = 160
 _NONE_PLACEHOLDER = "(none)"
+_NO_SUMMARY_PLACEHOLDER = "(no summary yet)"
+_NO_ANSWER_PLACEHOLDER = "(not yet available)"
 _YES = "yes"
 # A follow-up whose normalized text matches an already-asked question at or above
 # this difflib ratio is dropped as a repeat (a backstop to the prompt instruction).
@@ -56,16 +58,22 @@ def suggest_followups(
     config: ConversationalConfig,
     *,
     asked_questions: Sequence[str] = (),
+    latest_question: str = "",
+    latest_answer: str = "",
+    summary: str = "",
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
     record_prompt: Callable[[str, str, str], None] | None = None,
     system_directive: str = "",
 ) -> list[str]:
-    """Generate candidate follow-up questions from the retrieved topics.
+    """Generate candidate follow-up questions that continue from the latest turn.
 
     Returns an empty list when follow-ups are disabled or nothing was retrieved,
     and on a parse failure. A model error propagates so the caller can record a
-    generation-failure warning. ``asked_questions`` (the conversation's resolved
-    history) is passed to the model so it avoids re-suggesting covered ground.
+    generation-failure warning. ``latest_question``/``latest_answer`` and the
+    rolling ``summary`` anchor the suggestions to the most recent exchange so a
+    topic switch is followed rather than ignored (``latest_answer`` is empty in the
+    parallel path, where the answer is not ready yet). ``asked_questions`` (the
+    conversation's resolved history) is passed so the model avoids covered ground.
     """
     if not config.followups_enabled or not chunks:
         return []
@@ -78,6 +86,9 @@ def suggest_followups(
         asked=_format_questions(asked_questions),
         language=config.language,
         tone=config.tone,
+        summary=summary.strip() or _NO_SUMMARY_PLACEHOLDER,
+        latest_question=latest_question.strip() or _NONE_PLACEHOLDER,
+        latest_answer=latest_answer.strip() or _NO_ANSWER_PLACEHOLDER,
     )
     reply, usage = invoke_text_with_usage(model, prompt, system_directive=system_directive)
     if record_usage is not None:
@@ -101,7 +112,7 @@ def answerability_check(
     """Return whether the top *limit* *chunks* can answer *question* (YES/NO)."""
     context = "\n\n".join(chunk.text for chunk in list(chunks)[:limit])
     prompt = render_conversational_template(
-        template, ANSWERABILITY_TEMPLATE, context=context, question=question
+        template, ANSWERABILITY_TEMPLATE, knowledge=context, question=question
     )
     try:
         reply, usage = invoke_text_with_usage(model, prompt, system_directive=system_directive)

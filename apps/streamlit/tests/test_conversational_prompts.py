@@ -133,7 +133,7 @@ def test_save_load_reset_round_trip(tmp_path: Path) -> None:
 
 
 def test_conversational_prompt_is_valid_accepts_and_rejects() -> None:
-    assert conversational_prompt_is_valid("answer", "sys {tone} {context}") is True
+    assert conversational_prompt_is_valid("answer", "sys {tone} {knowledge}") is True
     assert conversational_prompt_is_valid("answer", "sys {tone} {oops}") is False
     assert conversational_prompt_is_valid("rerank", "{query} {passages}") is True
     assert conversational_prompt_is_valid("rerank", "stray { brace") is False

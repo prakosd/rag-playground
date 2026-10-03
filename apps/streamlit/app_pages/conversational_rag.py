@@ -126,11 +126,13 @@ def _assistant_bubble_css(fill: str) -> str:
 
 # The live status ("Generating…"/"Finalizing…") streams inside the answer bubble,
 # just under the answer text. Strip its expander frame and padding so it reads as a
-# plain spinner + label line hugging the answer instead of a boxed rectangle.
+# plain spinner + label line hugging the answer instead of a boxed rectangle. A small
+# negative top margin lifts it so, before any answer text, the spinner centres on the
+# avatar instead of sitting below it (the empty answer slot above would push it down).
 _STATUS_BUBBLE_CSS = (
     "<style>"
     f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander']"
-    "{border:0;background:transparent;box-shadow:none}"
+    "{border:0;background:transparent;box-shadow:none;margin-top:-0.5rem}"
     f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] details"
     "{border:0;background:transparent}"
     f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] summary"
@@ -154,7 +156,7 @@ def _followup_bubble_css(fill: str) -> str:
         "{visibility:hidden}"
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
         f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-0.5rem;"
-        "padding-top:0.5rem}"
+        "padding-top:0.5rem;padding-bottom:0.5rem}"
         # Tighten the intro line's own bottom margin so the chips sit close under it.
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessageContent'] p"
         "{margin-bottom:0.25rem}"

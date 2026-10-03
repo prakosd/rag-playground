@@ -57,7 +57,7 @@ def _qa_chain(
         [("system", QA_SYSTEM_PROMPT), ("human", "{question}")]
     )
     return prompt | chat_model | StrOutputParser(), {
-        "context": format_context(chunks),
+        "knowledge": format_context(chunks),
         "tone": tone,
         "language": language,
     }

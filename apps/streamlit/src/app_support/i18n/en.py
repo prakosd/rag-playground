@@ -30,7 +30,7 @@ STRINGS_EN: Strings = {
     "PROGRESS_CAPTION": "Track crawl activity as it runs.",
     "PROGRESS_EXPANDER_LABEL": "Live statistics",
     "PROGRESS_EXPANDER_LABEL_ACTIVE": "Live statistics: {crawl_id}",
-    "LANG_SELECTOR_LABEL": "Select language",
+    "LANG_SELECTOR_LABEL": "Language",
     "NAV_CRAWL": "1. Crawl",
     "NAV_VECTOR_INDEX": "2. Vector Index",
     "NAV_SEMANTIC_SEARCH": "3. Semantic Search",
@@ -53,8 +53,8 @@ STRINGS_EN: Strings = {
     ),
     "PAGE_CONVERSATIONAL_RAG_TITLE": ":material/forum: Step 5 - Conversational RAG",
     "PAGE_CONVERSATIONAL_RAG_SUBTITLE": (
-        "Have a back-and-forth conversation grounded in your documents — each answer draws on "
-        "the most relevant retrieved passages, and you can keep asking follow-ups."
+        "Have a back-and-forth conversation grounded in your indexed knowledge — each answer draws "
+        "on the most relevant retrieved passages, and you can keep asking follow-ups."
     ),
     # ── RAG pages (Steps 3-5) ──────────────────────────────────
     "RAG_NO_INDEX_HINT": "No vector index found yet. Build one in Step 2 first.",
@@ -241,9 +241,9 @@ STRINGS_EN: Strings = {
     "CHAT_NEW_CONVERSATION": "New conversation",
     "CHAT_CONVERSATION_SELECT": "Conversation",
     "CHAT_WELCOME_DEFAULT": (
-        "Hi! I'm here to help with the documents you've indexed. Ask me anything about them.\n"
-        "Hello! Ask me anything about the documents you've indexed — I'll answer from them.\n"
-        "Hi there! I can help you explore the documents you've indexed. What would you like to know?"
+        "Hi! I'm here to help. Ask me anything and I'll answer from what I know.\n"
+        "Hello! What can I help you with today? Ask me anything.\n"
+        "Hi there! I'm happy to help — what would you like to know?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
@@ -262,8 +262,13 @@ STRINGS_EN: Strings = {
     ),
     "CONV_DECOMPOSITION_LABEL": "Query decomposition",
     "CONV_DECOMPOSITION_HELP": "Split multi-part questions into separate searches.",
-    "CONV_FOLLOWUPS_LABEL": "Follow-up suggestions",
-    "CONV_FOLLOWUPS_HELP": "Suggest follow-up questions the documents can answer.",
+    "CONV_FOLLOWUPS_LABEL": "Follow-up questions",
+    "CONV_FOLLOWUPS_HELP": "Suggest follow-up questions to ask next.",
+    "CONV_FOLLOWUPS_COUNT_LABEL": "Show up to",
+    "CONV_FOLLOWUPS_COUNT_HELP": (
+        "The most follow-up questions to suggest after an answer. Fewer may appear "
+        "when only a few are closely related."
+    ),
     "CONV_INSPECT_LABEL": "Inspect mode",
     "CONV_INSPECT_HELP": "Show how each answer was built.",
     "CONV_THRESHOLD_LABEL": "Follow-up thresholds",
@@ -278,10 +283,11 @@ STRINGS_EN: Strings = {
     "CONV_PROMPT_TAB_FOLLOWUPS": "Follow-ups",
     "CONV_PROMPT_TAB_ANSWERABILITY": "Answerability",
     "CONV_PROMPT_TAB_STATE": "Conversation state",
+    "CONV_PROMPT_TAB_MESSAGES": "Messages",
     "CONV_PROMPT_TAB_WELCOME": "Welcome message",
     "CONV_PROMPT_TAB_ERROR_REPLY": "Error message",
     "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Follow-up intro",
-    "CONV_PROMPT_TAB_NO_FOLLOWUPS": "No-suggestions message",
+    "CONV_PROMPT_TAB_NO_FOLLOWUPS": "No follow-ups message",
     "CONV_PROMPT_FIELDS_CAPTION": "Required placeholders: {fields}",
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Shown as the assistant's greeting at the start of a new conversation. "
@@ -311,8 +317,8 @@ STRINGS_EN: Strings = {
     ),
     "CONV_NO_FOLLOWUPS_DEFAULT": (
         "What else would you like to know?\n"
-        "Is there anything else I can help you find?\n"
-        "Feel free to ask another question about your documents."
+        "Is there anything else I can help you with?\n"
+        "Feel free to ask me anything else."
     ),
     "CONV_PROMPT_SAVE": "Save",
     "CONV_PROMPT_RESET": "Reset to default",
@@ -358,8 +364,8 @@ STRINGS_EN: Strings = {
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "No follow-up suggestions for this turn.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
-        "Each percentage is how confidently your documents can answer that follow-up — "
-        "its best match when searched against your collection."
+        "Each percentage is how confidently that follow-up can be answered from your indexed "
+        "knowledge — its best match when searched against your collection."
     ),
     "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Confidence %",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
@@ -712,16 +718,9 @@ STRINGS_EN: Strings = {
     "VEC_WORKERS_LABEL": "Workers",
     "VEC_WORKERS_HELP": "Parallel embedding workers (1-8). More speeds up cloud models on large crawls; the local offline model always runs single-threaded.",
     "VEC_EMBEDDING_MODEL_LABEL": "Embedding model",
-    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. Cloud models (☁️‣🔑) need an API key set in the config file — see the README for how to configure it. If the selected model is unavailable (missing API key, credentials, or internet), indexing stops with an error and you can switch to the local offline model (all-MiniLM-L6-v2), which needs no setup.",
+    "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. Cloud models (☁️‣🔑) run in the cloud and need an API key or credentials set in the config file — see the README for how to configure it. If the selected model is unavailable (missing API key, credentials, or internet), indexing stops with an error and you can switch to the local offline model (all-MiniLM-L6-v2), which runs on this machine and needs no setup — it downloads once (about 80 MB) the first time, then works offline.",
     "VEC_MODEL_TAG_LOCAL": "💻 Local",
     "VEC_MODEL_TAG_CLOUD": "☁️‣🔑",
-    "VEC_MODEL_INDICATOR_LOCAL": (
-        "Runs on this machine. Downloads the model once (about 80 MB) the first time, "
-        "then works offline."
-    ),
-    "VEC_MODEL_INDICATOR_CLOUD": (
-        "Runs in the cloud. Needs an API key or credentials configured on the server."
-    ),
     "VEC_EMBEDDING_DIMENSION_LABEL": "Embedding dimension",
     "VEC_EMBEDDING_DIMENSION_HELP": "How detailed the embedding vectors are. Bigger dimensions can capture more detail, while smaller dimensions are lighter to store and search.",
     "VEC_LANGUAGE_LABEL": "Language",

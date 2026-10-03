@@ -88,7 +88,7 @@ def test_generate_chat_answer_uses_custom_system_prompt() -> None:
             return "ok"
 
     answer = generate_chat_answer(
-        _Capture(), "q", _CHUNKS, [], system_prompt="CUSTOM_SYS {context} {tone}"
+        _Capture(), "q", _CHUNKS, [], system_prompt="CUSTOM_SYS {knowledge} {tone}"
     )
 
     assert answer == "ok"
@@ -139,10 +139,10 @@ def test_generate_chat_answer_ignores_invalid_system_prompt() -> None:
             captured.append(str(messages[0].content))
             return "ok"
 
-    # A system prompt missing the {context}/{tone} slots falls back to the default.
+    # A system prompt missing the {knowledge}/{tone} slots falls back to the default.
     generate_chat_answer(_Capture(), "q", _CHUNKS, [], system_prompt="broken {oops}")
 
-    assert captured and "question-answering assistant" in captured[0]
+    assert captured and "customer-support assistant" in captured[0]
 
 
 def test_chat_answer_with_echo_skips_condensation(tmp_path: Path) -> None:

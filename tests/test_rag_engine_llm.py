@@ -93,7 +93,7 @@ def test_thinking_disabled_kwargs_target_bedrock_qwen_and_glm() -> None:
     assert thinking_disabled_model_kwargs("qwen.qwen3-32b-v1:0", "bedrock_converse") == disable
     assert thinking_disabled_model_kwargs("zai.glm-4.7-flash", "bedrock_converse") == disable
     # Nemotron uses a prompt directive, not a request field; gpt-oss cannot disable.
-    assert thinking_disabled_model_kwargs("nvidia.nemotron-nano-9b-v2", "bedrock_converse") == {}
+    assert thinking_disabled_model_kwargs("nvidia.nemotron-nano-3-30b", "bedrock_converse") == {}
     assert thinking_disabled_model_kwargs("openai.gpt-oss-120b-1:0", "bedrock_converse") == {}
     assert thinking_disabled_model_kwargs("apac.amazon.nova-lite-v1:0", "bedrock_converse") == {}
     assert thinking_disabled_model_kwargs("gpt-4o-mini", "openai") == {}
@@ -103,7 +103,6 @@ def test_thinking_disabled_kwargs_target_bedrock_qwen_and_glm() -> None:
 def test_thinking_disabled_directive_targets_only_bedrock_nemotron() -> None:
     from rag_engine.llm import thinking_disabled_system_directive
 
-    assert thinking_disabled_system_directive("nvidia.nemotron-nano-9b-v2") == "/no_think"
     assert thinking_disabled_system_directive("nvidia.nemotron-nano-3-30b") == "/no_think"
     # Qwen/GLM disable via kwargs; gpt-oss cannot disable; others have no directive.
     assert thinking_disabled_system_directive("qwen.qwen3-32b-v1:0") == ""

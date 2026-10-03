@@ -53,6 +53,24 @@ def test_broken_apac_models_removed_and_replacements_present() -> None:
     assert "qwen.qwen3-235b-a22b-2507-v1:0" in ids
 
 
+def test_deprecated_bedrock_models_removed() -> None:
+    # Models AWS moved to Legacy (deprecation began 2026-09-30) are dropped from the catalog.
+    ids = {info.model_id for info in CHAT_MODEL_OPTIONS}
+    for model_id in (
+        "google.gemma-3-4b-it",
+        "google.gemma-3-12b-it",
+        "google.gemma-3-27b-it",
+        "mistral.mistral-7b-instruct-v0:2",
+        "nvidia.nemotron-nano-9b-v2",
+        "qwen.qwen3-coder-30b-a3b-v1:0",
+        "zai.glm-4.7-flash",
+    ):
+        assert model_id not in ids
+    # Non-deprecated small replacements remain available.
+    assert "mistral.ministral-3-3b-instruct" in ids
+    assert "nvidia.nemotron-nano-3-30b" in ids
+
+
 def test_openai_direct_models_present() -> None:
     ids = {info.model_id for info in CHAT_MODEL_OPTIONS}
     for model_id in ("gpt-5-nano", "gpt-4.1-nano", "gpt-5-mini", "gpt-4.1", "o3"):

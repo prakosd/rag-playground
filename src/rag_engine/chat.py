@@ -154,12 +154,12 @@ def _chat_prompt(
 ) -> tuple[Any, dict]:
     from langchain_core.prompts import ChatPromptTemplate
 
-    # A custom system prompt is used only when it keeps the {context}/{tone}/
+    # A custom system prompt is used only when it keeps the {knowledge}/{tone}/
     # {language} slots; anything else falls back so a bad override never breaks
     # answer generation.
     system = (
         system_prompt
-        if system_prompt and template_has_fields(system_prompt, ("context", "tone", "language"))
+        if system_prompt and template_has_fields(system_prompt, ("knowledge", "tone", "language"))
         else QA_SYSTEM_PROMPT
     )
     # A best-effort per-model directive (e.g. Nemotron's /no_think) rides in the
@@ -169,7 +169,7 @@ def _chat_prompt(
     prompt = ChatPromptTemplate.from_messages(
         [("system", system), *_history_messages(history), ("human", "{question}")]
     )
-    return prompt, {"context": format_context(chunks), "tone": tone, "language": language}
+    return prompt, {"knowledge": format_context(chunks), "tone": tone, "language": language}
 
 
 def _render_chat_prompt(
@@ -778,8 +778,15 @@ def _followups_stage(
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
     record_prompt: Callable[[str, str, str], None] | None = None,
     asked_questions: Sequence[str] = (),
+    latest_question: str = "",
+    latest_answer: str = "",
+    summary: str = "",
 ) -> tuple[list[ValidatedFollowup], list[LibraryMessage], float]:
-    """Suggest and validate follow-ups, returning (follow_ups, warnings, elapsed seconds)."""
+    """Suggest and validate follow-ups, returning (follow_ups, warnings, elapsed seconds).
+
+    ``latest_question``/``latest_answer`` + ``summary`` anchor the suggestions to the
+    most recent exchange (``latest_answer`` is empty in the parallel path).
+    """
     warnings: list[LibraryMessage] = []
     follow_ups: list[ValidatedFollowup] = []
     start = perf_counter()
@@ -791,6 +798,9 @@ def _followups_stage(
             plan,
             config,
             asked_questions=asked_questions,
+            latest_question=latest_question,
+            latest_answer=latest_answer,
+            summary=summary,
             record_usage=record_usage,
             record_prompt=record_prompt,
             system_directive=directive,
@@ -826,6 +836,9 @@ def _submit_followups(
     record_prompt: Callable[[str, str, str], None],
     *,
     asked_questions: Sequence[str],
+    latest_question: str = "",
+    latest_answer: str = "",
+    summary: str = "",
 ) -> Future | None:
     """Submit the follow-up stage to *executor*, or None when it is off/offline."""
     if not (config.followups_enabled and aux.model_id != ECHO_MODEL):
@@ -841,6 +854,9 @@ def _submit_followups(
         record_usage,
         record_prompt,
         asked_questions=asked_questions,
+        latest_question=latest_question,
+        latest_answer=latest_answer,
+        summary=summary,
     )
 
 
@@ -931,6 +947,7 @@ def _compose_turn(
     """
     _report(progress_callback, messages.progress_answer())
     follow_ups: list[ValidatedFollowup] = []
+    resolved_question = "; ".join(plan.sub_questions) or raw_question
     with ThreadPoolExecutor(max_workers=2) as executor:
         answer_future = executor.submit(
             _answer_stage,
@@ -944,19 +961,43 @@ def _compose_turn(
             ledger.record,
             prompt_ledger.record,
         )
-        followups_future = _submit_followups(
-            executor,
-            run_dir,
-            aux,
-            chunks,
-            plan,
-            config,
-            retriever,
-            ledger.record,
-            prompt_ledger.record,
-            asked_questions=state.asked_questions,
+        # Parallel mode kicks off follow-ups now (they won't see the answer text);
+        # serial mode (default) waits and builds them from the finished answer below.
+        followups_future = (
+            _submit_followups(
+                executor,
+                run_dir,
+                aux,
+                chunks,
+                plan,
+                config,
+                retriever,
+                ledger.record,
+                prompt_ledger.record,
+                asked_questions=state.asked_questions,
+                latest_question=resolved_question,
+                summary=state.summary,
+            )
+            if config.followups_parallel
+            else None
         )
         answer_text, errors, timings["answer"] = answer_future.result()
+        if followups_future is None and not config.followups_parallel:
+            followups_future = _submit_followups(
+                executor,
+                run_dir,
+                aux,
+                chunks,
+                plan,
+                config,
+                retriever,
+                ledger.record,
+                prompt_ledger.record,
+                asked_questions=state.asked_questions,
+                latest_question=resolved_question,
+                latest_answer=answer_text,
+                summary=state.summary,
+            )
         if followups_future is not None:
             follow_ups, followups_warnings, timings["followups"] = followups_future.result()
             warnings.extend(followups_warnings)
@@ -1020,18 +1061,27 @@ class ConversationalGeneration:
         follow_ups: list[ValidatedFollowup] = []
 
         _report(self._progress, messages.progress_answer())
+        resolved_question = "; ".join(prepared.plan.sub_questions) or prepared.raw_question
         with ThreadPoolExecutor(max_workers=2) as executor:
-            followups_future = _submit_followups(
-                executor,
-                self._run_dir,
-                prepared.aux,
-                prepared.chunks,
-                prepared.plan,
-                config,
-                self._retriever,
-                prepared.ledger.record,
-                prepared.prompt_ledger.record,
-                asked_questions=self._state.asked_questions,
+            # Parallel mode kicks off follow-ups now (they won't see the answer text);
+            # serial mode (default) runs them from the finished answer after the stream.
+            followups_future = (
+                _submit_followups(
+                    executor,
+                    self._run_dir,
+                    prepared.aux,
+                    prepared.chunks,
+                    prepared.plan,
+                    config,
+                    self._retriever,
+                    prepared.ledger.record,
+                    prepared.prompt_ledger.record,
+                    asked_questions=self._state.asked_questions,
+                    latest_question=resolved_question,
+                    summary=self._state.summary,
+                )
+                if config.followups_parallel
+                else None
             )
             start = perf_counter()
             parts: list[str] = []
@@ -1066,6 +1116,22 @@ class ConversationalGeneration:
                 errors.append(messages.classify_generation_failure(str(exc)))
             answer_text = "".join(parts)
             prepared.timings["answer"] = perf_counter() - start
+            if followups_future is None and not config.followups_parallel:
+                followups_future = _submit_followups(
+                    executor,
+                    self._run_dir,
+                    prepared.aux,
+                    prepared.chunks,
+                    prepared.plan,
+                    config,
+                    self._retriever,
+                    prepared.ledger.record,
+                    prepared.prompt_ledger.record,
+                    asked_questions=self._state.asked_questions,
+                    latest_question=resolved_question,
+                    latest_answer=answer_text,
+                    summary=self._state.summary,
+                )
             if followups_future is not None:
                 follow_ups, followups_warnings, prepared.timings["followups"] = (
                     followups_future.result()

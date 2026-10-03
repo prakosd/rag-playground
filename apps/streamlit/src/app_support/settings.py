@@ -164,6 +164,9 @@ class Settings(BaseSettings):
     # Whether query decomposition / follow-up suggestions start on (toggleable).
     conv_rag_decomposition_enabled: bool
     conv_rag_followups_enabled: bool
+    # When True, follow-ups run concurrently with the answer (faster, no answer
+    # awareness); False (default) runs them after the answer for better continuity.
+    conv_rag_followups_parallel: bool
     # Follow-up validation thresholds (0-1 similarity): at/above keep, at/below
     # drop, in between the model decides. Keep drop <= min.
     conv_rag_followup_min_score: float

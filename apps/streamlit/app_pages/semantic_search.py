@@ -250,7 +250,7 @@ def _render_search_history(
             with st.container(border=True):
                 head, actions = st.columns([0.8, 0.2], vertical_alignment="top")
                 lead_html = stacked_label_value_html(
-                    strings["SEARCH_HISTORY_LABEL_QUERY"], record.query
+                    strings["SEARCH_HISTORY_LABEL_QUERY"], record.query, top_gap=True
                 )
                 if position == 0:
                     lead_html = history_actions_gap_css("search_history_actions_") + lead_html

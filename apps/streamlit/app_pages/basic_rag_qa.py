@@ -887,7 +887,7 @@ def _render_basic_rag_qa_history(
             with st.container(border=True):
                 head, actions = st.columns([0.8, 0.2], vertical_alignment="top")
                 lead_html = stacked_label_value_html(
-                    strings["BASIC_QA_HISTORY_LABEL_QUESTION"], record.question or "—"
+                    strings["BASIC_QA_HISTORY_LABEL_QUESTION"], record.question or "—", top_gap=True
                 )
                 if position == 0:
                     lead_html = history_actions_gap_css("basic_rag_qa_history_actions_") + lead_html
