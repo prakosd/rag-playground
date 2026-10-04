@@ -77,6 +77,9 @@ _MAX_TOP_K = 20
 # The follow-up count field is a soft cap (1-5): fewer appear when few pass validation.
 _FOLLOWUP_SHOW_MIN = 1
 _FOLLOWUP_SHOW_MAX = 5
+# Keep the follow-up count field narrow (it holds a single digit) so it doesn't crowd the
+# toggles beside it, but wide enough that the +/- steppers stay visible.
+_FOLLOWUP_COUNT_WIDTH_PX = 150
 _PROMPT_EDITOR_HEIGHT = 240  # px height of each prompt-template text area
 # ConversationalPrompts field name → its editor tab's i18n label key.
 _PROMPT_TAB_KEYS = {
@@ -301,6 +304,7 @@ def render_advanced_controls(
                     step=1,
                     help=strings["CONV_FOLLOWUPS_COUNT_HELP"],
                     disabled=disabled or not followups,
+                    width=_FOLLOWUP_COUNT_WIDTH_PX,
                     key=f"{key_prefix}_followup_count",
                 )
             )
@@ -516,6 +520,12 @@ def _render_app_message_prompt(
         st.session_state[widget_key] = resolve_app_message(
             session_root, prompt_key, strings[default_key]
         )
+    # Caption above the field, matching the stage prompts, so it reads as a heading.
+    st.markdown(
+        f"<div style='margin:-0.5rem 0 0.25rem;opacity:0.6;font-size:0.875rem'>"
+        f"{html.escape(strings[caption_key])}</div>",
+        unsafe_allow_html=True,
+    )
     st.text_area(
         strings[label_key],
         height=_PROMPT_EDITOR_HEIGHT,
@@ -523,7 +533,6 @@ def _render_app_message_prompt(
         disabled=disabled,
         key=widget_key,
     )
-    st.caption(strings[caption_key])
     _render_prompt_actions(strings, session_root, prompt_key, widget_key, disabled=disabled)
 
 
@@ -565,22 +574,30 @@ def _stage_tokens(token_usage: Sequence[StageTokenUsage]) -> dict[str, int]:
 
 
 def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None:
-    """Render per-turn metadata: a Process | Time·Tokens grid (2 stages/row), then models."""
+    """Render per-turn metadata as two side-by-side grids: time·tokens | models.
+
+    The left grid lists each stage's time (and tokens when it spent any); the right
+    grid lists the models used. Splitting them horizontally keeps the last stage row
+    and the first model row from crowding together.
+    """
     timings = answer.timings
     tokens = _stage_tokens(answer.token_usage)
-    rows: list[tuple[str, str]] = []
+    stage_rows: list[tuple[str, str]] = []
     for key, label in _TIMING_STAGES:
         value = f"{timings.get(key, 0.0):.2f}s"
         if key in tokens:
             value += f" · {_compact_tokens(tokens[key])}"
-        rows.append((strings[label], value))
-    st.markdown(kv_grid_html(rows, columns=4), unsafe_allow_html=True)
+        stage_rows.append((strings[label], value))
     model_rows = [
         (strings["CONV_META_ANSWER_MODEL"], answer.model_used or "—"),
         (strings["CONV_META_AUX_MODEL"], answer.aux_model_used or "—"),
         (strings["CONV_META_RERANKER"], answer.reranker_used or "—"),
     ]
-    st.markdown(kv_grid_html(model_rows, columns=2, margin_top=True), unsafe_allow_html=True)
+    stages_col, models_col = st.columns(2)
+    with stages_col:
+        st.markdown(kv_grid_html(stage_rows, columns=2), unsafe_allow_html=True)
+    with models_col:
+        st.markdown(kv_grid_html(model_rows, columns=2), unsafe_allow_html=True)
 
 
 def _render_diagnostics(strings: Strings, answer: ConversationalAnswer) -> None:

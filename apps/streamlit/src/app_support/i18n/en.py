@@ -264,7 +264,7 @@ STRINGS_EN: Strings = {
     "CONV_DECOMPOSITION_HELP": "Split multi-part questions into separate searches.",
     "CONV_FOLLOWUPS_LABEL": "Follow-up questions",
     "CONV_FOLLOWUPS_HELP": "Suggest follow-up questions to ask next.",
-    "CONV_FOLLOWUPS_COUNT_LABEL": "Show up to",
+    "CONV_FOLLOWUPS_COUNT_LABEL": "Follow-up limit",
     "CONV_FOLLOWUPS_COUNT_HELP": (
         "The most follow-up questions to suggest after an answer. Fewer may appear "
         "when only a few are closely related."

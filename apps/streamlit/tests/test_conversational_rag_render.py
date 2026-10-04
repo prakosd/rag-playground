@@ -71,3 +71,57 @@ def test_conversational_rag_renders_fresh_conversation(
     # A fresh conversation seeds a new short id into session state.
     assert app.session_state["conversational_rag_current_id"]
     assert app.session_state["conversational_rag_turns"] == []
+
+
+def _render_with_followups(session_dir: str) -> None:
+    # Seed one saved turn carrying a follow-up, then render the page (isolated namespace).
+    from pathlib import Path as _Path
+
+    import app_pages.conversational_rag as page
+
+    from app_support.conversational_rag.conversational_rag_history import (
+        ConversationalTurnRecord,
+        append_conversational_rag_record,
+    )
+    from app_support.rag_shared.rag_ui import RagPageContext
+
+    root = _Path(session_dir)
+    append_conversational_rag_record(
+        root,
+        ConversationalTurnRecord(
+            timestamp_utc="2026-09-01T10:00:00.000+00:00",
+            index_folder="vector_01_x",
+            index_run="2026-07-01_09-00-00",
+            embedding_model="titan",
+            llm_model="main",
+            aux_model="aux",
+            reranker="off",
+            raw_question="What is X?",
+            sub_questions=(),
+            answer="X is a thing.",
+            follow_ups_shown=("Tell me more about X?",),
+            conversation_id="c1",
+        ),
+    )
+    context = RagPageContext(
+        default_language="EN",
+        list_indexes=lambda: [],
+        render_downloads=lambda: None,
+        session_root=lambda: root,
+    )
+    page.render_page(context)
+
+
+# Smoke test: a conversation with a saved follow-up exercises the restructured render
+# path (follow-ups + the deferred Inspect render inside the `st.empty` slot the next turn
+# clears) and must load + render without raising. Type: unit (AppTest).
+def test_conversational_rag_renders_turn_with_followups(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(_APP_DIR))
+    app = AppTest.from_function(_render_with_followups, kwargs={"session_dir": str(tmp_path)})
+    app.run(timeout=10)
+
+    assert not app.exception  # the follow-ups-present render path renders cleanly
+    assert len(app.session_state["conversational_rag_turns"]) == 1  # the saved turn loaded

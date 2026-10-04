@@ -269,7 +269,7 @@ STRINGS_ID: Strings = {
     "CONV_DECOMPOSITION_HELP": "Pecah pertanyaan multi-bagian menjadi pencarian terpisah.",
     "CONV_FOLLOWUPS_LABEL": "Pertanyaan lanjutan",
     "CONV_FOLLOWUPS_HELP": "Sarankan pertanyaan lanjutan untuk ditanyakan berikutnya.",
-    "CONV_FOLLOWUPS_COUNT_LABEL": "Tampilkan hingga",
+    "CONV_FOLLOWUPS_COUNT_LABEL": "Batas tindak lanjut",
     "CONV_FOLLOWUPS_COUNT_HELP": (
         "Jumlah maksimum pertanyaan lanjutan yang disarankan setelah jawaban. Lebih "
         "sedikit bisa muncul bila hanya sedikit yang benar-benar relevan."

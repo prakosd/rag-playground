@@ -128,11 +128,12 @@ def _assistant_bubble_css(fill: str) -> str:
 # just under the answer text. Strip its expander frame and padding so it reads as a
 # plain spinner + label line hugging the answer instead of a boxed rectangle. A small
 # negative top margin lifts it so, before any answer text, the spinner centres on the
-# avatar instead of sitting below it (the empty answer slot above would push it down).
+# avatar instead of sitting below it (the empty answer slot above would push it down) —
+# kept gentle so the spinner stays level with the avatar rather than riding above it.
 _STATUS_BUBBLE_CSS = (
     "<style>"
     f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander']"
-    "{border:0;background:transparent;box-shadow:none;margin-top:-0.5rem}"
+    "{border:0;background:transparent;box-shadow:none;margin-top:-0.25rem}"
     f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] details"
     "{border:0;background:transparent}"
     f"div[class*='st-key-{_ASSISTANT_TURN_KEY_PREFIX}'] div[data-testid='stExpander'] summary"
@@ -156,7 +157,8 @@ def _followup_bubble_css(fill: str) -> str:
         "{visibility:hidden}"
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
         f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-0.5rem;"
-        "padding-top:0.5rem;padding-bottom:0.5rem}"
+        # Match the answer bubble's padding so both bubbles share the same inner spacing.
+        "padding-right:1rem;padding-top:1rem;padding-bottom:1rem}"
         # Tighten the intro line's own bottom margin so the chips sit close under it.
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessageContent'] p"
         "{margin-bottom:0.25rem}"
@@ -189,6 +191,11 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
     "[data-testid='stExpanderDetails']"
     ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
     "{padding-top:0.25rem}"
+    # The Messages tab nests a second tab row; pull it up so it sits snug under the
+    # outer tab row instead of leaving an empty band above the sub-tabs.
+    "[data-testid='stExpanderDetails']"
+    ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
+    " [data-testid='stTabs'] [data-testid='stTabs']{margin-top:-0.75rem}"
     "</style>"
 )
 # Consistent rhythm inside each per-turn Inspect panel: a small, even space above the
@@ -208,6 +215,18 @@ _INSPECT_TABS_RHYTHM_CSS = (
     " [data-testid='stCaptionContainer'] p{margin-bottom:0}"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"
     " [data-testid='stMarkdownContainer'] ul{margin-bottom:0.5rem}"
+    "</style>"
+)
+# The "Follow-up limit" number input in Advanced options carries a label row, making its
+# column taller than the bare toggles beside it; centred in that taller row the three
+# toggles ride above the input box. Nudge them down so they line up with the box centre.
+# Scoped to the toggle widget keys (prefix matches render_advanced_controls' key_prefix).
+_TOGGLE_ALIGN_CSS = (
+    "<style>"
+    ".st-key-conversational_rag_decomposition,"
+    ".st-key-conversational_rag_followups,"
+    ".st-key-conversational_rag_inspect"
+    "{margin-top:1.8rem}"
     "</style>"
 )
 
@@ -281,6 +300,7 @@ def render_page(context: RagPageContext) -> None:
     st.html(_idle_input_border_css(panel_border))
     st.html(_TABS_EXPANDER_TIGHTEN_CSS)
     st.html(_INSPECT_TABS_RHYTHM_CSS)
+    st.html(_TOGGLE_ALIGN_CSS)
 
     # Peek the queued question (a typed message or a follow-up click) before the
     # controls so every input can be locked while its answer streams — a mid-stream
@@ -335,6 +355,13 @@ def render_page(context: RagPageContext) -> None:
                 inspect=controls.inspect and not defer_inspect,
                 default_tab=default_tab,
             )
+        # Fixed-position slot for the latest turn's follow-ups and its deferred Inspect
+        # panel, so the next turn can wipe them the instant it starts streaming. An
+        # emptied st.empty flushes mid-run; an emptied keyed container only clears when
+        # the run ends, and st.write_stream blocks the run for the whole answer — which
+        # is why the old chips used to linger beside the just-asked question until it
+        # finished.
+        followup_slot = st.empty()
         if submitting:
             config = build_conversational_config(
                 controls,
@@ -343,19 +370,7 @@ def render_page(context: RagPageContext) -> None:
                     st.session_state.get("language", context.default_language)
                 ),
             )
-            # Clear the previous turn's follow-up chips before streaming. Streamlit
-            # removes stale elements only when a script run ends, but st.write_stream
-            # blocks the run for the whole answer — without this, the old chips linger
-            # beside the just-asked question until the answer finishes.
-            if turns:
-                st.container(key=f"{FOLLOWUP_BUBBLE_KEY_PREFIX}{turns[-1]['turn_id']}")
-                # The prior turn's deferred Inspect panel is skipped in the loop while
-                # streaming; empty its keyed container so the stale copy doesn't linger
-                # (a duplicate panel) beside the new inline copy during the blocked run.
-                if controls.inspect and _inspect_deferred(
-                    is_latest=True, followups_enabled=controls.followups
-                ):
-                    st.container(key=f"{INSPECT_BUBBLE_KEY_PREFIX}{turns[-1]['turn_id']}")
+            followup_slot.empty()  # wipe the prior turn's follow-ups + Inspect now
             answer, elapsed = _stream_pending_turn(
                 strings,
                 context.session_root(),
@@ -371,18 +386,20 @@ def render_page(context: RagPageContext) -> None:
         elif turns and controls.followups:
             # Suggested follow-ups read as a continuation of the latest answer, so
             # they live inside the scroll panel right beneath it; the Inspect panel
-            # then sits below them at the bottom of the turn.
+            # then sits below them at the bottom of the turn. Both go in the slot so the
+            # next turn's stream can clear them together.
             latest = turns[-1]
-            clicked = render_followup_bubble(
-                strings, context.session_root(), latest["answer"].follow_ups, latest["turn_id"]
-            )
-            if controls.inspect:
-                render_turn_inspection(
-                    strings,
-                    latest["answer"],
-                    default_tab=default_tab,
-                    turn_id=latest["turn_id"],
+            with followup_slot.container():
+                clicked = render_followup_bubble(
+                    strings, context.session_root(), latest["answer"].follow_ups, latest["turn_id"]
                 )
+                if controls.inspect:
+                    render_turn_inspection(
+                        strings,
+                        latest["answer"],
+                        default_tab=default_tab,
+                        turn_id=latest["turn_id"],
+                    )
             if clicked:
                 st.session_state[_PENDING_KEY] = clicked
                 st.session_state[_SCROLL_REQUESTED_KEY] = True
