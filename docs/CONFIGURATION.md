@@ -90,7 +90,7 @@ crawl/index/RAG config models.
 | `UI_DOWNLOADS_REFRESH_SEC` | `7` | Seconds between Output Files panel refreshes |
 | `LOG_LEVEL` | `INFO` | Minimum log level for the terminal + log file (threshold: DEBUG < INFO < WARNING < ERROR; `WARN` accepted) |
 | `LOG_FILE` | `logs/app.log` | Per-session developer log path (relative to each session's folder); surfaced as a preview/download in the Files & folders panel |
-| `ZIP_SIGNING_SECRET` | `crawl4md-dev-zip-key` | Shared key that signs downloaded zips so a folder can be re-uploaded to an instance using the same key; override per deployment |
+| `ZIP_SIGNING_SECRET` | `rag-playground-prakosd-dev-zip-key` | Shared key that signs downloaded zips (so a folder can be re-uploaded to an instance using the same key) **and** derives the per-session credential-encryption key; override per deployment — the shipped dev default logs a startup warning. See [SECURITY.md](SECURITY.md) |
 
 These are *starting defaults* for the forms; users can still override most of them
 per crawl/index in the UI. See `.env.defaults` for the inline documentation.

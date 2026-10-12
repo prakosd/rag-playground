@@ -171,9 +171,16 @@ image must reproduce the dev container's system setup:
 
 ## 8. Security checklist
 
+See [SECURITY.md](SECURITY.md) for the full findings-by-severity audit. In brief:
+
 - Put `AWS_*`, `OPENAI_API_KEY`, and `ZIP_SIGNING_SECRET` in a **secrets manager**
   (AWS Secrets Manager / Azure Key Vault), injected as environment variables — never
-  baked into an image or committed.
+  baked into an image or committed. `ZIP_SIGNING_SECRET` is dual-purpose (it signs
+  downloadable zips **and** derives the credential-encryption key), so the shipped
+  development default must be overridden per deployment — the app logs a startup
+  warning while it is in use.
+- For shared / multi-tenant crawl, restrict **network egress** (deny RFC1918 /
+  link-local / metadata ranges) — the crawler does not block private-IP seed URLs.
 - Terminate TLS at the CDN/load balancer; keep the container ports private.
 - Scope object-storage and volume access with least-privilege IAM roles.
 - The `SSL: CERTIFICATE_VERIFY_FAILED` error some users see comes from a

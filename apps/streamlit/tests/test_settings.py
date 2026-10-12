@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from pydantic import ValidationError
 
@@ -72,6 +74,36 @@ def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatc
     assert settings.session_retention_days == 30
     assert settings.sessions_root == "/data/sessions"
     assert settings.semantic_search_default_tab == "preview"
+
+
+def test_settings_warns_when_signing_secret_is_default(caplog: pytest.LogCaptureFixture) -> None:
+    # .env.defaults ships the public development ZIP_SIGNING_SECRET; constructing
+    # Settings with it must log a warning so an operator knows to override it.
+    caplog.set_level(logging.WARNING, logger="app_support.settings")
+    target = logging.getLogger("app_support.settings")
+    target.addHandler(caplog.handler)
+    try:
+        Settings()
+    finally:
+        target.removeHandler(caplog.handler)
+
+    assert any("ZIP_SIGNING_SECRET" in record.getMessage() for record in caplog.records)
+
+
+def test_settings_no_warning_when_signing_secret_overridden(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("ZIP_SIGNING_SECRET", "a-unique-per-deployment-secret")
+    caplog.set_level(logging.WARNING, logger="app_support.settings")
+    target = logging.getLogger("app_support.settings")
+    target.addHandler(caplog.handler)
+    try:
+        settings = Settings()
+    finally:
+        target.removeHandler(caplog.handler)
+
+    assert settings.zip_signing_secret == "a-unique-per-deployment-secret"
+    assert not any("ZIP_SIGNING_SECRET" in record.getMessage() for record in caplog.records)
 
 
 def test_sessions_root_setting_drives_default_root() -> None:

@@ -142,19 +142,17 @@ _STATUS_BUBBLE_CSS = (
 )
 
 
-# The follow-up suggestions render as a compact bubble just under the answer. It keeps
-# its OWN rounded bubble (rather than welding into the answer) so the two fit-content
-# bubbles' differing widths can't leave an empty stepped notch beside it; a small
-# negative top margin keeps it close so it still reads as a continuation. The avatar is
-# kept but hidden (visibility, not display) so the suggestions line up with the answer
-# text; they lay out inline like a sentence (a wrapping row of tertiary buttons) styled
-# as blue underlined links.
+# The follow-up suggestions render as a compact bubble just under the answer, showing
+# the assistant avatar so it reads as a distinct model message matching the answer
+# bubble above it. It keeps its OWN rounded bubble (rather than welding into the answer)
+# so the two fit-content bubbles' differing widths can't leave an empty stepped notch
+# beside it; a small negative top margin keeps it close so it still reads as a
+# continuation. The suggestions lay out inline like a sentence (a wrapping row of
+# tertiary buttons) styled as blue underlined links.
 def _followup_bubble_css(fill: str) -> str:
     """Render the follow-up suggestions as a compact bubble just under the answer."""
     return (
         "<style>"
-        f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] [data-testid^='stChatMessageAvatar']"
-        "{visibility:hidden}"
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessage']"
         f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-0.5rem;"
         # Match the answer bubble's padding so both bubbles share the same inner spacing.

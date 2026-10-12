@@ -21,11 +21,21 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from log4py import get_logger
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_logger = get_logger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _ENV_DEFAULTS = _REPO_ROOT / ".env.defaults"
 _ENV_LOCAL = _REPO_ROOT / ".env"
+
+# The ZIP_SIGNING_SECRET shipped in .env.defaults for local development. It signs
+# downloadable zips AND derives the per-session credential-encryption key, so any
+# shared/hosted deployment must override it — the public default makes exported zips
+# forgeable and stored credentials decryptable. Kept in sync with .env.defaults.
+_DEV_DEFAULT_ZIP_SIGNING_SECRET = "rag-playground-prakosd-dev-zip-key"
 
 __all__ = ["Settings", "get_settings"]
 
@@ -234,6 +244,18 @@ class Settings(BaseSettings):
     # Per-session developer log file, written under each browser session's folder
     # (path relative to that session's directory) and surfaced in the Files panel.
     log_file: str
+
+    @model_validator(mode="after")
+    def _warn_on_default_signing_secret(self) -> Settings:
+        # The secret protects both zip integrity and credential confidentiality; warn
+        # loudly when a deployment still uses the public development default.
+        if self.zip_signing_secret == _DEV_DEFAULT_ZIP_SIGNING_SECRET:
+            _logger.warning(
+                "ZIP_SIGNING_SECRET is the shipped development default; override it per "
+                "deployment (it signs downloadable zips and derives the credential-"
+                "encryption key, so the public default weakens both)."
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

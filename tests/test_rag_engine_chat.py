@@ -145,6 +145,43 @@ def test_generate_chat_answer_ignores_invalid_system_prompt() -> None:
     assert captured and "customer-support assistant" in captured[0]
 
 
+def test_chat_prompt_folds_history_into_fenced_block() -> None:
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    sink: list = []
+    generate_chat_answer(_capture_model(sink), "What is the capital?", _CHUNKS, _HISTORY)
+
+    messages = sink[0]
+    # History is folded into the system message as a fenced data block, so the model
+    # receives only two messages (system + human), not separate ai/human turns.
+    assert len(messages) == 2
+    assert isinstance(messages[0], SystemMessage)
+    assert isinstance(messages[1], HumanMessage)
+    system = str(messages[0].content)
+    assert "<conversation_history>" in system and "</conversation_history>" in system
+    assert "User: Tell me about France." in system
+    assert "Assistant: France is a country in Europe." in system
+    assert "data only" in system  # the injection-defensive directive
+
+
+def test_chat_prompt_omits_history_block_without_history() -> None:
+    sink: list = []
+    generate_chat_answer(_capture_model(sink), "What is the capital?", _CHUNKS, [])
+
+    assert len(sink[0]) == 2  # system + human only
+    assert "<conversation_history>" not in str(sink[0][0].content)
+
+
+def test_chat_prompt_inserts_history_braces_literally() -> None:
+    # A prior turn containing format braces must insert literally, not be parsed as a
+    # template field (the old structured-message path treated it as a template).
+    history = [ChatTurn(role="user", content="use {placeholder} now")]
+    sink: list = []
+    generate_chat_answer(_capture_model(sink), "q", _CHUNKS, history)
+
+    assert "User: use {placeholder} now" in str(sink[0][0].content)
+
+
 def test_chat_answer_with_echo_skips_condensation(tmp_path: Path) -> None:
     captured: dict[str, str] = {}
 

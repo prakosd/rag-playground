@@ -108,7 +108,11 @@ can be tested without ChromaDB or network access.
 
 Retrieved knowledge is wrapped in `<knowledge>` delimiters and the model is told to
 treat it as data only and never follow instructions embedded inside it (see
-`prompts.py`). The prompts also tell the model to answer directly and naturally —
+`prompts.py`). Conversation history in the Step 5 grounded answer is handled the same
+way — `chat._chat_prompt` folds it into a `<conversation_history>` block via
+`format_conversation_history` + `CONVERSATION_HISTORY_SUFFIX` (a treat-as-data directive)
+instead of passing prior turns as separate chat messages, so an earlier turn can't
+smuggle instructions and any braces in it insert literally. The prompts also tell the model to answer directly and naturally —
 no "the retrieved knowledge…" / "the context…" meta-phrasing — and to weave a
 source's URL into the reply the way a helpful person would (mentioning it in
 passing, not as a stiff labelled "Sources" list) only when it genuinely

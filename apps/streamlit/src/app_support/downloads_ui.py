@@ -11,6 +11,7 @@ these renderers read/write the same state the shell owns.
 
 from __future__ import annotations
 
+import html
 import mimetypes
 from collections.abc import Mapping
 from contextlib import nullcontext
@@ -97,6 +98,30 @@ def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
         return None
 
 
+def _preview_caption_html(
+    path_text: str, size_text: str, modified_text: str | None, created_text: str | None
+) -> str:
+    """Build the preview dialog's caption rows with every value HTML-escaped.
+
+    The path row carries the file's crawler- or import-derived relative path, so each
+    value is escaped before embedding to stop a crafted filename injecting markup.
+    """
+    rows = (
+        f'<div style="{_STATUS_ROW_STYLE}"><span>{html.escape(path_text)}</span>'
+        f"<span>{html.escape(size_text)}</span></div>"
+    )
+    if modified_text and created_text:
+        rows += (
+            f'<div style="{_STATUS_ROW_STYLE}"><span>{html.escape(modified_text)}</span>'
+            f"<span>{html.escape(created_text)}</span></div>"
+        )
+    elif modified_text:
+        rows += f"<div>{html.escape(modified_text)}</div>"
+    elif created_text:
+        rows += f"<div>{html.escape(created_text)}</div>"
+    return rows
+
+
 def _on_preview_dismiss() -> None:
     st.session_state.preview_file_relative_path = ""
 
@@ -158,20 +183,10 @@ def _file_preview_dialog() -> None:
         else None
     )
 
-    caption_html = (
-        f'<div style="{_STATUS_ROW_STYLE}"><span>{path_text}</span><span>{size_text}</span></div>'
+    st.caption(
+        _preview_caption_html(path_text, size_text, modified_text, created_text),
+        unsafe_allow_html=True,
     )
-    if modified_text and created_text:
-        caption_html += (
-            f'<div style="{_STATUS_ROW_STYLE}">'
-            f"<span>{modified_text}</span><span>{created_text}</span></div>"
-        )
-    elif modified_text:
-        caption_html += f"<div>{modified_text}</div>"
-    elif created_text:
-        caption_html += f"<div>{created_text}</div>"
-
-    st.caption(caption_html, unsafe_allow_html=True)
 
     try:
         preview = read_text_preview(file_path, max_bytes=_PREVIEW_LIMIT_BYTES)

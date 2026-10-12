@@ -44,10 +44,12 @@ from rag_engine.models import (
 from rag_engine.prompts import (
     _DEFAULT_TONE,
     CONDENSE_SYSTEM_PROMPT,
+    CONVERSATION_HISTORY_SUFFIX,
     DEFAULT_ANSWER_LANGUAGE,
     QA_SYSTEM_PROMPT,
     extract_token_usage,
     format_context,
+    format_conversation_history,
     message_text,
     template_has_fields,
 )
@@ -166,10 +168,14 @@ def _chat_prompt(
     # system message; Bedrock's chat template reads it and strips the token.
     if system_directive:
         system = f"{system} {system_directive}"
-    prompt = ChatPromptTemplate.from_messages(
-        [("system", system), *_history_messages(history), ("human", "{question}")]
-    )
-    return prompt, {"knowledge": format_context(chunks), "tone": tone, "language": language}
+    values = {"knowledge": format_context(chunks), "tone": tone, "language": language}
+    # Fold recent history into the system prompt as a fenced data block (not separate
+    # chat turns) so a prior turn is treated as data and its braces insert literally.
+    if history:
+        system = f"{system}{CONVERSATION_HISTORY_SUFFIX}"
+        values["conversation_history"] = format_conversation_history(history)
+    prompt = ChatPromptTemplate.from_messages([("system", system), ("human", "{question}")])
+    return prompt, values
 
 
 def _render_chat_prompt(

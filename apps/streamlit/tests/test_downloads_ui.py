@@ -81,6 +81,16 @@ def test_format_preview_timestamp_utc_out_of_range_returns_none() -> None:
     assert downloads_ui._format_preview_timestamp_utc(1e300) is None
 
 
+# Risk: a crafted filename (e.g. from an imported zip member) must not inject markup
+# into the preview caption; every value is HTML-escaped. Type: unit.
+def test_preview_caption_html_escapes_values() -> None:
+    caption = downloads_ui._preview_caption_html(
+        "Path: <img src=x onerror=alert(1)>", "Size: 1.0 KiB", None, None
+    )
+    assert "<img" not in caption
+    assert "&lt;img src=x onerror=alert(1)&gt;" in caption
+
+
 # Risk: after a browser reset clears the session, the session folder does not yet
 # exist and holds no files; the panel must still show so Import is reachable.
 # Type: unit.

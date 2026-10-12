@@ -469,9 +469,10 @@ def test_conversational_answer_stream_matches_blocking(tmp_path: Path) -> None:
     assert generation.answer.answer == blocking.answer == "ANSWER"
 
 
-def test_conversational_answer_stream_survives_bad_history_brace(tmp_path: Path) -> None:
-    # A prior turn containing a stray "{" breaks ChatPromptTemplate construction; the
-    # streaming path must catch it and record an error, not raise a raw traceback.
+def test_conversational_answer_stream_handles_history_brace(tmp_path: Path) -> None:
+    # A prior turn containing a stray "{" is folded into the prompt as a fenced data
+    # value, so it inserts literally instead of breaking ChatPromptTemplate — the
+    # stream now completes normally with no recorded error.
     def retriever(run_dir, query, config):
         return RetrievalResult(chunks=list(_CHUNKS))
 
@@ -487,9 +488,10 @@ def test_conversational_answer_stream_survives_bad_history_brace(tmp_path: Path)
     )
     tokens = list(generation)  # must not raise
 
-    assert tokens == []  # nothing streamed
+    assert "".join(tokens) == "ANSWER"  # streamed normally despite the stray brace
     assert generation.answer is not None
-    assert generation.answer.errors  # a generation error was recorded
+    assert generation.answer.answer == "ANSWER"
+    assert not generation.answer.errors  # no generation error
 
 
 def test_conversational_answer_decomposes_with_real_aux(tmp_path: Path) -> None:
