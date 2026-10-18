@@ -134,6 +134,23 @@ def test_save_load_reset_round_trip(tmp_path: Path) -> None:
 
 def test_conversational_prompt_is_valid_accepts_and_rejects() -> None:
     assert conversational_prompt_is_valid("answer", "sys {tone} {knowledge}") is True
+    # The answer template may also carry the fenced conversation-history block.
+    assert (
+        conversational_prompt_is_valid(
+            "answer", "{tone} {knowledge} {language} <h>{conversation_history}</h>"
+        )
+        is True
+    )
+    # A full chat template with [system]/[human] markers + the history block is valid.
+    assert (
+        conversational_prompt_is_valid(
+            "answer",
+            "[system]\n{tone}{knowledge}{language}"
+            "<conversation_history user='Human' assistant='Assistant'>{conversation_history}"
+            "</conversation_history>\n[human]\n{question}",
+        )
+        is True
+    )
     assert conversational_prompt_is_valid("answer", "sys {tone} {oops}") is False
     assert conversational_prompt_is_valid("rerank", "{query} {passages}") is True
     assert conversational_prompt_is_valid("rerank", "stray { brace") is False

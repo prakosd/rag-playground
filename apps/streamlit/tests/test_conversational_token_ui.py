@@ -163,5 +163,11 @@ def test_panel_data_rows_include_conversation_and_transaction_ids(
     data = conversational_token_panel_data(STRINGS_EN, [record])
 
     row = data.rows[0]
-    assert row[STRINGS_EN["CONV_TXN_COL_CONVERSATION"]] == "conv7"  # traces the chat
-    assert row[STRINGS_EN["CONV_TXN_COL_TRANSACTION"]] == "txn3"  # traces the turn
+    # The conversation + transaction ids merge into one ID column via the settings delimiter.
+    assert row[STRINGS_EN["CONV_TXN_COL_ID"]] == "conv7_txn3"
+
+
+def test_join_ids_combines_present_parts_with_delimiter() -> None:
+    assert ctu._join_ids("conv7", "txn3", "_") == "conv7_txn3"
+    assert ctu._join_ids("conv7", "", "_") == "conv7"  # only the present part is shown
+    assert ctu._join_ids("", "", "_") == "—"  # a legacy turn missing both → n/a dash

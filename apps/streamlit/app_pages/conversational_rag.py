@@ -157,6 +157,10 @@ def _followup_bubble_css(fill: str) -> str:
         f"{{width:fit-content;max-width:80%;background-color:{fill};margin-top:-0.5rem;"
         # Match the answer bubble's padding so both bubbles share the same inner spacing.
         "padding-right:1rem;padding-top:1rem;padding-bottom:1rem}"
+        # Align the content's first line with the avatar like the answer bubble, so a
+        # lone no-suggestions nudge sits level with the icon instead of centred lower.
+        f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessageContent']"
+        "{margin-top:0.2rem}"
         # Tighten the intro line's own bottom margin so the chips sit close under it.
         f"div[class*='st-key-{FOLLOWUP_BUBBLE_KEY_PREFIX}'] div[data-testid='stChatMessageContent'] p"
         "{margin-bottom:0.25rem}"
@@ -503,13 +507,16 @@ def _stream_pending_turn(
     whole answer has finished.
     """
     _render_user_message(question, turn_id)
-    if scroll:
-        scroll_message_into_view(_CHAT_PANEL_KEY, f"{_USER_TURN_KEY_PREFIX}{turn_id}")
     key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn_id}"
     with st.container(key=key), st.chat_message("assistant"):
         answer_area = st.container()
         # The live status sits inside the answer bubble, just under the streamed text.
         status = st.status(strings["RAG_GENERATING"])
+    # Scroll only after the answer bubble is in the DOM, so the 1px scroll-helper
+    # iframe lands below it instead of between the question and the answer — where it
+    # otherwise added a visible gap during the blocking stream that vanished on commit.
+    if scroll:
+        scroll_message_into_view(_CHAT_PANEL_KEY, f"{_USER_TURN_KEY_PREFIX}{turn_id}")
 
     def _report_progress(message: LibraryMessage) -> None:
         status.update(label=localize_message(strings, message.as_dict()))

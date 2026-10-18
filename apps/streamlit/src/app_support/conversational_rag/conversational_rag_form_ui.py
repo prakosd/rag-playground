@@ -77,6 +77,9 @@ _MAX_TOP_K = 20
 # The follow-up count field is a soft cap (1-5): fewer appear when few pass validation.
 _FOLLOWUP_SHOW_MIN = 1
 _FOLLOWUP_SHOW_MAX = 5
+# Ask the model for a few more candidates than will be shown, so validation (which
+# drops unanswerable or duplicate suggestions) still has enough left to fill the limit.
+_FOLLOWUP_CANDIDATE_BUFFER = 2
 # Keep the follow-up count field narrow (it holds a single digit) so it doesn't crowd the
 # toggles beside it, but wide enough that the +/- steppers stay visible.
 _FOLLOWUP_COUNT_WIDTH_PX = 150
@@ -163,6 +166,9 @@ def build_conversational_config(
         followups_enabled=controls.followups,
         followups_parallel=settings.conv_rag_followups_parallel,
         followup_show_count=controls.followup_show_count,
+        # Size the candidate pool (the prompt's {count}) from the shown limit so the
+        # limit drives generation, keeping a small buffer for validation drop-off.
+        followup_candidate_count=controls.followup_show_count + _FOLLOWUP_CANDIDATE_BUFFER,
         followup_min_score=controls.followup_keep,
         followup_drop_score=controls.followup_drop,
         tone=controls.tone,
@@ -536,15 +542,6 @@ def _render_app_message_prompt(
     _render_prompt_actions(strings, session_root, prompt_key, widget_key, disabled=disabled)
 
 
-# Per-turn timing stages in execution order: (timings key, i18n label key).
-_TIMING_STAGES = (
-    ("plan", "CONV_META_PLAN"),
-    ("retrieve", "CONV_META_RETRIEVE"),
-    ("rerank", "CONV_META_RERANK"),
-    ("answer", "CONV_META_ANSWER"),
-    ("followups", "CONV_META_FOLLOWUPS"),
-    ("state", "CONV_META_STATE"),
-)
 # Token-usage process key → display stage; the answerability probe folds into
 # follow-ups. Display stages render in execution order (retrieval spends no tokens).
 _TOKEN_PROCESS_STAGE = {
@@ -558,8 +555,8 @@ _TOKEN_PROCESS_STAGE = {
 
 
 def _compact_tokens(count: int) -> str:
-    """Short token count, e.g. 320 or 1.4k."""
-    return f"{count / 1000:.1f}k" if count >= 1000 else str(count)
+    """Short token count with unit, e.g. 320 Tok or 1.4 kTok."""
+    return f"{count / 1000:.1f} kTok" if count >= 1000 else f"{count} Tok"
 
 
 def _stage_tokens(token_usage: Sequence[StageTokenUsage]) -> dict[str, int]:
@@ -574,21 +571,33 @@ def _stage_tokens(token_usage: Sequence[StageTokenUsage]) -> dict[str, int]:
 
 
 def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None:
-    """Render per-turn metadata as two side-by-side grids: time·tokens | models.
+    """Render per-turn metadata as two side-by-side 4-row grids: timings | models.
 
-    The left grid lists each stage's time (and tokens when it spent any); the right
-    grid lists the models used. Splitting them horizontally keeps the last stage row
-    and the first model row from crowding together.
+    The left grid lists each stage's time (and tokens when it spent any), with
+    decomposition and retrieval folded into one row (retrieval is a token-free
+    vector search); the right grid leads with the state stage's time, then the
+    models used. Keeping both grids four rows tall avoids a lopsided gap.
     """
     timings = answer.timings
     tokens = _stage_tokens(answer.token_usage)
-    stage_rows: list[tuple[str, str]] = []
-    for key, label in _TIMING_STAGES:
+
+    def _timed(key: str) -> str:
         value = f"{timings.get(key, 0.0):.2f}s"
         if key in tokens:
             value += f" · {_compact_tokens(tokens[key])}"
-        stage_rows.append((strings[label], value))
+        return value
+
+    stage_rows = [
+        (
+            strings["CONV_META_DECOMPOSE_RETRIEVE"],
+            f"{_timed('plan')} / {timings.get('retrieve', 0.0):.2f}s",
+        ),
+        (strings["CONV_META_RERANK"], _timed("rerank")),
+        (strings["CONV_META_ANSWER"], _timed("answer")),
+        (strings["CONV_META_FOLLOWUPS"], _timed("followups")),
+    ]
     model_rows = [
+        (strings["CONV_META_STATE"], _timed("state")),
         (strings["CONV_META_ANSWER_MODEL"], answer.model_used or "—"),
         (strings["CONV_META_AUX_MODEL"], answer.aux_model_used or "—"),
         (strings["CONV_META_RERANKER"], answer.reranker_used or "—"),

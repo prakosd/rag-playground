@@ -118,6 +118,16 @@ def _process_label(strings: Strings, process: str, count: int = 1) -> str:
     return label
 
 
+def _join_ids(conversation_id: str, transaction_id: str, delimiter: str) -> str:
+    """Join a turn's conversation + transaction ids into one "ID" column value.
+
+    Shows only the present parts joined by *delimiter* (newest sessions always have
+    both); a legacy turn missing both falls back to the n/a dash.
+    """
+    parts = [value for value in (conversation_id, transaction_id) if value]
+    return delimiter.join(parts) or "—"
+
+
 def conversational_token_panel_data(
     strings: Strings, records: Sequence[ConversationalTurnRecord]
 ) -> TokenPanelData:
@@ -133,8 +143,11 @@ def conversational_token_panel_data(
                 strings["BASIC_QA_TXN_COL_TIME"]: local_time_label(
                     record.timestamp_utc, abbreviate_month=True, with_seconds=True
                 ),
-                strings["CONV_TXN_COL_CONVERSATION"]: record.conversation_id or "—",
-                strings["CONV_TXN_COL_TRANSACTION"]: record.transaction_id or "—",
+                strings["CONV_TXN_COL_ID"]: _join_ids(
+                    record.conversation_id,
+                    record.transaction_id,
+                    settings.conv_rag_txn_id_delimiter,
+                ),
                 strings["BASIC_QA_TXN_COL_PROCESS"]: _process_label(
                     strings, merged.process, merged.count
                 ),

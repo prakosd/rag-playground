@@ -52,6 +52,7 @@ def test_build_config_maps_controls() -> None:
     assert config.plan_enabled is False
     assert config.followups_enabled is True
     assert config.followup_show_count == 4
+    assert config.followup_candidate_count == 6  # shown limit (4) + candidate buffer (2)
     assert config.followups_parallel is False  # the shipped default runs follow-ups serially
     assert config.followup_drop_score == 0.3
     assert config.followup_min_score == 0.7
@@ -122,8 +123,8 @@ def test_inspect_note_returns_localized_text_for_matching_code() -> None:
 
 
 def test_compact_tokens_shortens_thousands() -> None:
-    assert form_ui._compact_tokens(320) == "320"
-    assert form_ui._compact_tokens(1400) == "1.4k"
+    assert form_ui._compact_tokens(320) == "320 Tok"
+    assert form_ui._compact_tokens(1400) == "1.4 kTok"
 
 
 def test_stage_tokens_sums_and_folds_answerability() -> None:

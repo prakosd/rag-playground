@@ -198,6 +198,10 @@ class Settings(BaseSettings):
     # question/answer text but shed retrieved-chunk payloads (they remain on disk
     # and reload via the conversation picker). Bounds a long chat's memory.
     conv_rag_max_live_turns: int
+    # Delimiter joining a turn's conversation id and transaction id into the single
+    # "ID" column of the Step 5 Token usage transaction table (e.g. p8dtwc_z50nla).
+    # Use a URL-unreserved character so the combined id survives URL encode/decode.
+    conv_rag_txn_id_delimiter: str
 
     # ── Session lifecycle ────────────────────────────────────────────────────
     # Filesystem root under which every browser session's files (crawls, indexes,

@@ -45,12 +45,17 @@ from rag_engine.prompts import (
     _DEFAULT_TONE,
     CONDENSE_SYSTEM_PROMPT,
     CONVERSATION_HISTORY_SUFFIX,
+    CONVERSATIONAL_PROMPT_FIELDS,
     DEFAULT_ANSWER_LANGUAGE,
     QA_SYSTEM_PROMPT,
+    conversation_history_labels,
     extract_token_usage,
     format_context,
     format_conversation_history,
+    has_conversation_history_block,
     message_text,
+    split_chat_sections,
+    strip_conversation_history_block,
     template_has_fields,
 )
 from rag_engine.rerank import rerank_chunks
@@ -156,25 +161,36 @@ def _chat_prompt(
 ) -> tuple[Any, dict]:
     from langchain_core.prompts import ChatPromptTemplate
 
-    # A custom system prompt is used only when it keeps the {knowledge}/{tone}/
-    # {language} slots; anything else falls back so a bad override never breaks
-    # answer generation.
-    system = (
+    # A custom answer template is used only when it keeps the answer stage's allowed
+    # slots (it may also carry the optional {conversation_history} block and [system]/
+    # [human] sections); anything else falls back so a bad override never breaks a turn.
+    template = (
         system_prompt
-        if system_prompt and template_has_fields(system_prompt, ("knowledge", "tone", "language"))
+        if system_prompt
+        and template_has_fields(system_prompt, CONVERSATIONAL_PROMPT_FIELDS["answer"])
         else QA_SYSTEM_PROMPT
     )
-    # A best-effort per-model directive (e.g. Nemotron's /no_think) rides in the
-    # system message; Bedrock's chat template reads it and strips the token.
+    # The template is a full chat prompt: split its [system]/[human] sections into the
+    # two messages (a marker-less prompt is all-system with the built-in {question} turn).
+    system, human = split_chat_sections(template)
+    values = {"knowledge": format_context(chunks), "tone": tone, "language": language}
+    # The conversation-history block lives in the [system] section, fenced as data. With
+    # history, fill it (appending the built-in block first if a custom prompt omitted it);
+    # with none, drop the block so the first turn's prompt stays clean.
+    if history:
+        if not has_conversation_history_block(system):
+            system = f"{system}{CONVERSATION_HISTORY_SUFFIX}"
+        user_label, assistant_label = conversation_history_labels(system)
+        values["conversation_history"] = format_conversation_history(
+            history, user_label=user_label, assistant_label=assistant_label
+        )
+    elif has_conversation_history_block(system):
+        system = strip_conversation_history_block(system)
+    # A best-effort per-model directive (e.g. Nemotron's /no_think) rides at the end of
+    # the system message; Bedrock's chat template reads it and strips the token.
     if system_directive:
         system = f"{system} {system_directive}"
-    values = {"knowledge": format_context(chunks), "tone": tone, "language": language}
-    # Fold recent history into the system prompt as a fenced data block (not separate
-    # chat turns) so a prior turn is treated as data and its braces insert literally.
-    if history:
-        system = f"{system}{CONVERSATION_HISTORY_SUFFIX}"
-        values["conversation_history"] = format_conversation_history(history)
-    prompt = ChatPromptTemplate.from_messages([("system", system), ("human", "{question}")])
+    prompt = ChatPromptTemplate.from_messages([("system", system), ("human", human)])
     return prompt, values
 
 
