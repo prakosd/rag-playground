@@ -201,18 +201,19 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
     "</style>"
 )
 # Consistent rhythm inside each per-turn Inspect panel: a small, even space above the
-# first element of every tab (the section label, or the Answer tab's Prompt/Response
-# tabs) and above the nested Prompt/Response tabs wherever they appear — trimmed from
-# Streamlit's default 16px slack but not welded shut. The section-label caption's own
-# `<p>` carries a 16px bottom margin that its container only half-compensates, leaving a
-# visible gap under the label; zero it (and trim list bottoms) so content hugs its label.
-# Scoped to the per-turn Inspect containers by their key prefix.
+# first element and below the last of every tab (the section label, or the Answer tab's
+# Prompt/Response tabs) and above the nested Prompt/Response tabs wherever they appear —
+# trimmed from Streamlit's default 16px slack but not welded shut. The bottom space keeps
+# an empty-state note (the State/Diagnostics tabs' "nothing here" caption) off the panel's
+# bottom border. The section-label caption's own `<p>` carries a 16px bottom margin that
+# its container only half-compensates, leaving a visible gap under the label; zero it (and
+# trim list bottoms) so content hugs its label. Scoped to the Inspect containers by key.
 _INSPECT_TABS_RHYTHM_CSS = (
     "<style>"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [data-testid='stTabs']"
     "{margin-top:-0.25rem}"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [role='tabpanel']"
-    "{padding-top:0.5rem}"
+    "{padding-top:0.5rem;padding-bottom:0.5rem}"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"
     " [data-testid='stCaptionContainer'] p{margin-bottom:0}"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"

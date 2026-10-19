@@ -43,6 +43,8 @@ from rag_engine.models import (
 )
 from rag_engine.prompts import (
     _DEFAULT_TONE,
+    _SYSTEM_MARKER,
+    _USER_MARKER,
     CONDENSE_SYSTEM_PROMPT,
     CONVERSATION_HISTORY_SUFFIX,
     CONVERSATIONAL_PROMPT_FIELDS,
@@ -78,6 +80,11 @@ __all__ = [
 ]
 
 _logger = get_logger(__name__)
+
+# LangChain message types → the editable template's section markers, so the Inspect
+# "Prompt" shows the same [system]/[user] markers the template uses (a HumanMessage's
+# wire type is "human").
+_MESSAGE_TYPE_MARKERS = {"system": _SYSTEM_MARKER, "human": _USER_MARKER}
 
 
 def _report(callback: Callable[[LibraryMessage], None] | None, message: LibraryMessage) -> None:
@@ -163,14 +170,14 @@ def _chat_prompt(
 
     # A custom answer template is used only when it keeps the answer stage's allowed
     # slots (it may also carry the optional {conversation_history} block and [system]/
-    # [human] sections); anything else falls back so a bad override never breaks a turn.
+    # [user] sections); anything else falls back so a bad override never breaks a turn.
     template = (
         system_prompt
         if system_prompt
         and template_has_fields(system_prompt, CONVERSATIONAL_PROMPT_FIELDS["answer"])
         else QA_SYSTEM_PROMPT
     )
-    # The template is a full chat prompt: split its [system]/[human] sections into the
+    # The template is a full chat prompt: split its [system]/[user] sections into the
     # two messages (a marker-less prompt is all-system with the built-in {question} turn).
     system, human = split_chat_sections(template)
     values = {"knowledge": format_context(chunks), "tone": tone, "language": language}
@@ -218,7 +225,10 @@ def _render_chat_prompt(
         system_directive=system_directive,
     )
     formatted = prompt.format_messages(**values, question=question)
-    return "\n\n".join(f"[{message.type}]\n{message_text(message)}" for message in formatted)
+    return "\n\n".join(
+        f"{_MESSAGE_TYPE_MARKERS.get(message.type, f'[{message.type}]')}\n{message_text(message)}"
+        for message in formatted
+    )
 
 
 def generate_chat_answer(

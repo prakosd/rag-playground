@@ -199,7 +199,7 @@ def test_answer_prompts_and_fields_carry_language() -> None:
     assert "{language}" in RAG_PROMPT_TEMPLATE
     assert "language" in CONVERSATIONAL_PROMPT_FIELDS["answer"]
     # The editable answer template may also carry the conversation-history block and the
-    # {question} input slot for its [human] section.
+    # {question} input slot for its [user] section.
     assert "conversation_history" in CONVERSATIONAL_PROMPT_FIELDS["answer"]
     assert "question" in CONVERSATIONAL_PROMPT_FIELDS["answer"]
 
@@ -230,8 +230,8 @@ def test_conversation_history_labels_read_tag_attributes() -> None:
         "Bot",
     )
     # A plain tag (or no tag) falls back to the built-in labels.
-    assert conversation_history_labels("<conversation_history>") == ("Human", "Assistant")
-    assert conversation_history_labels("no tag here") == ("Human", "Assistant")
+    assert conversation_history_labels("<conversation_history>") == ("User", "Assistant")
+    assert conversation_history_labels("no tag here") == ("User", "Assistant")
 
 
 def test_format_conversation_history_uses_given_labels() -> None:
@@ -240,30 +240,46 @@ def test_format_conversation_history_uses_given_labels() -> None:
         ChatTurn(role="assistant", content="hello"),
     ]
 
-    assert format_conversation_history(history) == "Human: hi\nAssistant: hello"
+    assert format_conversation_history(history) == "User: hi\nAssistant: hello"
     assert (
         format_conversation_history(history, user_label="Q", assistant_label="A")
         == "Q: hi\nA: hello"
     )
 
 
-def test_split_chat_sections_separates_system_and_human() -> None:
-    template = "[system]\nYou answer.\n{knowledge}\n\n[human]\n{question}"
-    system, human = split_chat_sections(template)
+def test_conversation_history_supports_custom_labels() -> None:
+    # Operators can rebrand the transcript by editing the tag values (e.g. a support
+    # persona); multi-word labels are read back verbatim and drive the rendered lines.
+    tag = "<conversation_history user='Customer' assistant='Insurance Agent'>"
+    assert conversation_history_labels(tag) == ("Customer", "Insurance Agent")
+    history = [
+        ChatTurn(role="user", content="Am I covered?"),
+        ChatTurn(role="assistant", content="Yes, fully."),
+    ]
+    user_label, assistant_label = conversation_history_labels(tag)
+    assert (
+        format_conversation_history(history, user_label=user_label, assistant_label=assistant_label)
+        == "Customer: Am I covered?\nInsurance Agent: Yes, fully."
+    )
+
+
+def test_split_chat_sections_separates_system_and_user() -> None:
+    template = "[system]\nYou answer.\n{knowledge}\n\n[user]\n{question}"
+    system, user = split_chat_sections(template)
 
     # The markers are consumed by the split; each section is trimmed.
     assert system == "You answer.\n{knowledge}"
-    assert human == "{question}"
+    assert user == "{question}"
 
 
-def test_split_chat_sections_defaults_human_when_marker_missing() -> None:
+def test_split_chat_sections_defaults_user_when_marker_missing() -> None:
     # A marker-less template (e.g. the library default) is all-system with the built-in
-    # {question} human turn, so it still works.
-    system, human = split_chat_sections("You answer. {knowledge}")
+    # {question} user turn, so it still works.
+    system, user = split_chat_sections("You answer. {knowledge}")
     assert system == "You answer. {knowledge}"
-    assert human == "{question}"
-    # An empty [human] section also falls back to {question}.
-    assert split_chat_sections("[system]\nSys\n[human]\n   ")[1] == "{question}"
+    assert user == "{question}"
+    # An empty [user] section also falls back to {question}.
+    assert split_chat_sections("[system]\nSys\n[user]\n   ")[1] == "{question}"
 
 
 def test_followups_prompt_and_fields_carry_language() -> None:

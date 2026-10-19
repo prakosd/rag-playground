@@ -109,12 +109,13 @@ can be tested without ChromaDB or network access.
 Retrieved knowledge is wrapped in `<knowledge>` delimiters and the model is told to
 treat it as data only and never follow instructions embedded inside it (see
 `prompts.py`). The Step 5 answer template is a **full, editable chat prompt**: a leading
-`[system]` section and a trailing `[human]` / `{question}` section that
+`[system]` section and a trailing `[user]` / `{question}` section that
 `chat._chat_prompt` splits into the two messages (`split_chat_sections`), so what you
 edit is exactly what the Inspect "Prompt" shows. Conversation history lives in the
 `[system]` section as a `<conversation_history>` data block whose `user`/`assistant` tag
 attributes name the transcript labels (`conversation_history_labels`, default
-`Human`/`Assistant`); `_chat_prompt` fills it when there is history and strips it on the
+`User`/`Assistant`, rebrandable by editing the tag values — e.g. `Customer` /
+`Insurance Agent`); `_chat_prompt` fills it when there is history and strips it on the
 first turn (appending the built-in `CONVERSATION_HISTORY_SUFFIX` only for a custom prompt
 that omits the block), so prior turns are fenced as data rather than passed as separate
 chat messages — an earlier turn can't smuggle instructions and any braces in it insert
@@ -142,7 +143,7 @@ optional field per stage (`answer`, `decompose`, `rerank`, `followups`, `answera
 `state`; `None` keeps the built-in). `CONVERSATIONAL_PROMPT_FIELDS` names the required
 `{placeholders}` for each — the `answer` stage takes `(tone, knowledge, language,
 conversation_history, question)` (the optional `conversation_history` slot carries the
-editable history block and `question` fills the `[human]` section), where
+editable history block and `question` fills the `[user]` section), where
 `language` (from `ConversationalConfig.language`, default `"English"`) matches the UI
 language (the `followups` stage takes `language` too, so suggested follow-ups match the UI
 language) — and `template_has_fields` / `render_conversational_template`

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rag_engine.chat import (
+    _render_chat_prompt,
     chat_answer,
     condense_question,
     generate_chat_answer,
@@ -159,7 +160,7 @@ def test_chat_prompt_folds_history_into_fenced_block() -> None:
     assert isinstance(messages[1], HumanMessage)
     system = str(messages[0].content)
     assert "<conversation_history" in system and "</conversation_history>" in system
-    assert "Human: Tell me about France." in system
+    assert "User: Tell me about France." in system
     assert "Assistant: France is a country in Europe." in system
     assert "data only" in system  # the injection-defensive directive
 
@@ -179,7 +180,7 @@ def test_chat_prompt_inserts_history_braces_literally() -> None:
     sink: list = []
     generate_chat_answer(_capture_model(sink), "q", _CHUNKS, history)
 
-    assert "Human: use {placeholder} now" in str(sink[0][0].content)
+    assert "User: use {placeholder} now" in str(sink[0][0].content)
 
 
 _ANSWER_TEMPLATE_WITH_BLOCK = (
@@ -199,7 +200,7 @@ def test_chat_prompt_fills_block_in_custom_template_without_reappending() -> Non
     system = str(sink[0][0].content)
     # The template already carries the block, so it is filled in place, not appended twice.
     assert system.count("<conversation_history>") == 1
-    assert "Human: Tell me about France." in system
+    assert "User: Tell me about France." in system
     assert "Assistant: France is a country in Europe." in system
 
 
@@ -226,29 +227,39 @@ def test_chat_prompt_uses_history_labels_from_tag() -> None:
     generate_chat_answer(_capture_model(sink), "q", _CHUNKS, _HISTORY, system_prompt=template)
 
     system = str(sink[0][0].content)
-    # The tag attributes override the default Human/Assistant transcript labels.
+    # The tag attributes override the default User/Assistant transcript labels.
     assert "Q: Tell me about France." in system
     assert "A: France is a country in Europe." in system
 
 
-def test_chat_prompt_splits_system_and_human_markers() -> None:
+def test_chat_prompt_splits_system_and_user_markers() -> None:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     template = (
         "[system]\nYou answer. {tone} {language}\n<knowledge>\n{knowledge}\n</knowledge>\n"
-        "[human]\n{question}"
+        "[user]\n{question}"
     )
     sink: list = []
     generate_chat_answer(
         _capture_model(sink), "What is the capital?", _CHUNKS, [], system_prompt=template
     )
 
-    system, human = sink[0]
-    assert isinstance(system, SystemMessage) and isinstance(human, HumanMessage)
-    # The [system]/[human] markers are consumed by the split, not sent to the model.
-    assert "[system]" not in str(system.content) and "[human]" not in str(system.content)
-    # The [human] section's {question} slot carries the user's live question.
-    assert str(human.content) == "What is the capital?"
+    system, user = sink[0]
+    assert isinstance(system, SystemMessage) and isinstance(user, HumanMessage)
+    # The [system]/[user] markers are consumed by the split, not sent to the model.
+    assert "[system]" not in str(system.content) and "[user]" not in str(system.content)
+    # The [user] section's {question} slot carries the user's live question.
+    assert str(user.content) == "What is the capital?"
+
+
+def test_render_chat_prompt_shows_user_marker_not_human() -> None:
+    # The Inspect "Prompt" trace must show the editable template's [user] marker, not
+    # LangChain's internal "human" message type, so it matches what the user edits.
+    rendered = _render_chat_prompt(_CHUNKS, [], "What is the capital?")
+
+    assert "[system]" in rendered
+    assert "[user]" in rendered
+    assert "[human]" not in rendered
 
 
 def test_chat_answer_with_echo_skips_condensation(tmp_path: Path) -> None:

@@ -141,13 +141,13 @@ def test_conversational_prompt_is_valid_accepts_and_rejects() -> None:
         )
         is True
     )
-    # A full chat template with [system]/[human] markers + the history block is valid.
+    # A full chat template with [system]/[user] markers + the history block is valid.
     assert (
         conversational_prompt_is_valid(
             "answer",
             "[system]\n{tone}{knowledge}{language}"
-            "<conversation_history user='Human' assistant='Assistant'>{conversation_history}"
-            "</conversation_history>\n[human]\n{question}",
+            "<conversation_history user='User' assistant='Assistant'>{conversation_history}"
+            "</conversation_history>\n[user]\n{question}",
         )
         is True
     )

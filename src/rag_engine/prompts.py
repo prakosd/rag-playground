@@ -87,7 +87,7 @@ CONDENSE_SYSTEM_PROMPT = (
 _CONVERSATION_HISTORY_OPEN = "<conversation_history"
 _CONVERSATION_HISTORY_END = "</conversation_history>"
 # Default transcript labels; the answer template overrides them via the tag attributes.
-_DEFAULT_USER_LABEL = "Human"
+_DEFAULT_USER_LABEL = "User"
 _DEFAULT_ASSISTANT_LABEL = "Assistant"
 _CONVERSATION_HISTORY_TAG = (
     f"{_CONVERSATION_HISTORY_OPEN} "
@@ -105,11 +105,11 @@ _HISTORY_ASSISTANT_LABEL_RE = re.compile(
     rf"{_CONVERSATION_HISTORY_OPEN}[^>]*\bassistant=['\"]([^'\"]*)['\"]"
 )
 # The Step 5 answer template is a full chat prompt: a leading ``[system]`` section and a
-# trailing ``[human]`` section split into the two chat messages (see split_chat_sections).
+# trailing ``[user]`` section split into the two chat messages (see split_chat_sections).
 _SYSTEM_MARKER = "[system]"
-_HUMAN_MARKER = "[human]"
-# The human turn used when an answer template declares no [human] section.
-_DEFAULT_HUMAN_SECTION = "{question}"
+_USER_MARKER = "[user]"
+# The user turn used when an answer template declares no [user] section.
+_DEFAULT_USER_SECTION = "{question}"
 
 _NO_CONTEXT_PLACEHOLDER = "(no relevant context was retrieved)"
 # Chunk metadata key holding the page URL (stamped by vector_indexer.chunking);
@@ -146,7 +146,7 @@ def conversation_history_labels(system_prompt: str) -> tuple[str, str]:
 
     Reads the ``user='…'`` / ``assistant='…'`` attributes of the
     ``<conversation_history>`` tag so the answer template controls how prior turns are
-    labelled, falling back to the built-in ``Human`` / ``Assistant`` when absent.
+    labelled, falling back to the built-in ``User`` / ``Assistant`` when absent.
     """
     user = _HISTORY_USER_LABEL_RE.search(system_prompt)
     assistant = _HISTORY_ASSISTANT_LABEL_RE.search(system_prompt)
@@ -166,7 +166,7 @@ def format_conversation_history(
 
     Folded into the grounded-answer prompt as the ``{conversation_history}`` value of
     :data:`CONVERSATION_HISTORY_SUFFIX` so prior turns are fenced as data. The labels
-    default to ``Human`` / ``Assistant`` but the answer template overrides them via the
+    default to ``User`` / ``Assistant`` but the answer template overrides them via the
     tag attributes (see :func:`conversation_history_labels`); an unrecognized role takes
     the *user_label* (never the assistant's) so unexpected content is not given the
     model's own voice. Returns an empty string for empty history.
@@ -192,20 +192,20 @@ def strip_conversation_history_block(system_prompt: str) -> str:
 
 
 def split_chat_sections(template: str) -> tuple[str, str]:
-    """Split an answer *template* into its (system, human) message sections.
+    """Split an answer *template* into its (system, user) message sections.
 
-    The ``[human]`` marker separates the two: text before it (minus a leading
-    ``[system]`` marker) is the system message, and text after it is the human
-    message. A template with no ``[human]`` marker is treated as all-system with the
-    built-in ``{question}`` human turn, so a marker-less prompt (e.g. the library
-    default) still works; an empty human section likewise falls back to ``{question}``.
+    The ``[user]`` marker separates the two: text before it (minus a leading
+    ``[system]`` marker) is the system message, and text after it is the user
+    message. A template with no ``[user]`` marker is treated as all-system with the
+    built-in ``{question}`` user turn, so a marker-less prompt (e.g. the library
+    default) still works; an empty user section likewise falls back to ``{question}``.
     """
-    if _HUMAN_MARKER in template:
-        system_part, human_part = template.split(_HUMAN_MARKER, 1)
+    if _USER_MARKER in template:
+        system_part, user_part = template.split(_USER_MARKER, 1)
     else:
-        system_part, human_part = template, _DEFAULT_HUMAN_SECTION
+        system_part, user_part = template, _DEFAULT_USER_SECTION
     system_part = system_part.replace(_SYSTEM_MARKER, "", 1).strip()
-    return system_part, human_part.strip() or _DEFAULT_HUMAN_SECTION
+    return system_part, user_part.strip() or _DEFAULT_USER_SECTION
 
 
 # ── Basic RAG Q&A (Step 4): a fully-visible, editable prompt ──────────────

@@ -141,6 +141,14 @@ def test_stage_tokens_sums_and_folds_answerability() -> None:
     assert totals == {"answer": 1400, "plan": 20, "followups": 140}
 
 
+def test_numbered_stage_rows_prefixes_in_execution_order() -> None:
+    # Each stage gets its 1-based position; downstream the first four fill the left grid
+    # and the fifth leads the right grid, so the pipeline order is what the numbers show.
+    rows = form_ui._numbered_stage_rows([("Plan", "1s"), ("Rerank", "2s"), ("Answer", "3s")])
+
+    assert rows == [("1. Plan", "1s"), ("2. Rerank", "2s"), ("3. Answer", "3s")]
+
+
 def test_render_followup_bubble_lays_out_suggestions_inline(monkeypatch, tmp_path) -> None:
     # The suggestions are wrapped in a horizontal container so they flow inline
     # like a sentence (a wrapping row) instead of stacking vertically.

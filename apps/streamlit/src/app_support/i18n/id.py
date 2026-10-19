@@ -381,7 +381,7 @@ STRINGS_ID: Strings = {
     "CONV_META_RERANK": "Pemeringkatan ulang",
     "CONV_META_ANSWER": "Jawaban",
     "CONV_META_FOLLOWUPS": "Lanjutan",
-    "CONV_META_STATE": "State",
+    "CONV_META_STATE": "State percakapan",
     "CONV_META_ANSWER_MODEL": "Model jawaban",
     "CONV_META_AUX_MODEL": "Model bantu",
     "CONV_META_RERANKER": "Pemeringkat ulang",

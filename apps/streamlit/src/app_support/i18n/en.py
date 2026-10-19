@@ -376,7 +376,7 @@ STRINGS_EN: Strings = {
     "CONV_META_RERANK": "Re-ranking",
     "CONV_META_ANSWER": "Answer",
     "CONV_META_FOLLOWUPS": "Follow-ups",
-    "CONV_META_STATE": "State",
+    "CONV_META_STATE": "Conversation state",
     "CONV_META_ANSWER_MODEL": "Answer model",
     "CONV_META_AUX_MODEL": "Auxiliary model",
     "CONV_META_RERANKER": "Re-ranker",

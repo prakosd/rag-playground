@@ -570,13 +570,18 @@ def _stage_tokens(token_usage: Sequence[StageTokenUsage]) -> dict[str, int]:
     return totals
 
 
+def _numbered_stage_rows(stages: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Prefix each stage (label, value) with its 1-based position in execution order."""
+    return [(f"{number}. {label}", value) for number, (label, value) in enumerate(stages, start=1)]
+
+
 def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None:
     """Render per-turn metadata as two side-by-side 4-row grids: timings | models.
 
-    The left grid lists each stage's time (and tokens when it spent any), with
-    decomposition and retrieval folded into one row (retrieval is a token-free
-    vector search); the right grid leads with the state stage's time, then the
-    models used. Keeping both grids four rows tall avoids a lopsided gap.
+    The left grid lists each stage's time (and tokens when it spent any), numbered in
+    execution order with decomposition and retrieval folded into one row (retrieval is a
+    token-free vector search); the right grid leads with the fifth stage (state), then the
+    unnumbered models used. Keeping both grids four rows tall avoids a lopsided gap.
     """
     timings = answer.timings
     tokens = _stage_tokens(answer.token_usage)
@@ -587,7 +592,9 @@ def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None
             value += f" · {_compact_tokens(tokens[key])}"
         return value
 
-    stage_rows = [
+    # The five pipeline stages are numbered in execution order; the first four fill the
+    # left grid and the fifth (state) leads the right grid above the unnumbered model rows.
+    stages = [
         (
             strings["CONV_META_DECOMPOSE_RETRIEVE"],
             f"{_timed('plan')} / {timings.get('retrieve', 0.0):.2f}s",
@@ -595,9 +602,12 @@ def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None
         (strings["CONV_META_RERANK"], _timed("rerank")),
         (strings["CONV_META_ANSWER"], _timed("answer")),
         (strings["CONV_META_FOLLOWUPS"], _timed("followups")),
-    ]
-    model_rows = [
         (strings["CONV_META_STATE"], _timed("state")),
+    ]
+    numbered = _numbered_stage_rows(stages)
+    stage_rows = numbered[:4]
+    model_rows = [
+        numbered[4],
         (strings["CONV_META_ANSWER_MODEL"], answer.model_used or "—"),
         (strings["CONV_META_AUX_MODEL"], answer.aux_model_used or "—"),
         (strings["CONV_META_RERANKER"], answer.reranker_used or "—"),
