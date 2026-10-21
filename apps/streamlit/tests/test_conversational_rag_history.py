@@ -46,6 +46,29 @@ def test_append_and_load_round_trip_newest_first(tmp_path: Path) -> None:
     assert csv_path.is_file()
 
 
+def test_proposed_subquestion_count_round_trips(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    append_conversational_rag_record(tmp_path, replace(_record(), proposed_subquestion_count=6))
+
+    record = load_conversational_rag_history(tmp_path)[0]
+
+    assert record.proposed_subquestion_count == 6
+
+
+def test_overflow_results_round_trip(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    record = replace(
+        _record(), overflow_results=(StoredResult(source="b.md", score=0.5, text="lo"),)
+    )
+    append_conversational_rag_record(tmp_path, record)
+
+    loaded = load_conversational_rag_history(tmp_path)[0]
+
+    assert [result.source for result in loaded.overflow_results] == ["b.md"]
+
+
 def test_results_and_followups_persist(tmp_path: Path) -> None:
     append_conversational_rag_record(tmp_path, _record())
 

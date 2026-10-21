@@ -94,6 +94,16 @@ def test_plan_queries_uses_custom_decompose_template() -> None:
     assert _CAPTURED_PROMPTS and _CAPTURED_PROMPTS[0].startswith("CUSTOM_DECOMPOSE::")
 
 
+def test_plan_queries_prompt_includes_limit() -> None:
+    _CAPTURED_PROMPTS.clear()
+    config = ConversationalConfig(plan_max_subquestions=4)
+
+    plan_queries(_CaptureModel(reply='["x"]'), _STATE, "a and b?", config, model_id="aux")
+
+    # The configured cap is injected into the prompt so the model targets it.
+    assert _CAPTURED_PROMPTS and "at most 4" in _CAPTURED_PROMPTS[0]
+
+
 def test_plan_queries_splits_multi_part() -> None:
     model = _ScriptedModel(reply='["capital of France", "population of France"]')
     plan = plan_queries(
@@ -110,6 +120,8 @@ def test_plan_queries_caps_and_dedupes() -> None:
     plan = plan_queries(model, _STATE, "a and b and c and d?", config, model_id="aux")
 
     assert plan.sub_questions == ["a", "b", "c"]
+    # proposed_count counts the unique sub-questions before the cap (a,b,c,d,e).
+    assert plan.proposed_count == 5
 
 
 def test_plan_queries_unparsable_is_degraded() -> None:

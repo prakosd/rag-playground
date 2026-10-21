@@ -457,6 +457,7 @@ class _PreparedTurn:
     resolved: ResolvedChatModel
     aux: ResolvedChatModel
     chunks: list[RetrievedChunk]
+    overflow: list[RetrievedChunk]
     plan: QueryPlan
     recent: list[ChatTurn]
     reranker_used: str | None
@@ -514,6 +515,7 @@ def _prepare_turn(
             resolved=resolved,
             aux=aux_resolved,
             chunks=list(cached_chunks),
+            overflow=[],
             plan=QueryPlan(sub_questions=[raw_question]),
             recent=recent,
             reranker_used=None,
@@ -574,7 +576,7 @@ def _prepare_turn(
 
     _report(progress_callback, messages.progress_rerank())
     start = perf_counter()
-    reranked, rerank_warnings = rerank_chunks(
+    reranked, overflow, rerank_warnings = rerank_chunks(
         sub_questions,
         retrieval.chunks,
         config.rerank_top_n,
@@ -592,6 +594,7 @@ def _prepare_turn(
         resolved=resolved,
         aux=aux_resolved,
         chunks=reranked,
+        overflow=overflow,
         plan=plan,
         recent=recent,
         reranker_used=config.reranker,
@@ -654,6 +657,7 @@ def conversational_answer(
         prepared.aux,
         config,
         retriever=retriever,
+        overflow=prepared.overflow,
         warnings=prepared.warnings,
         timings=prepared.timings,
         turn_index=prepared.turn_index,
@@ -911,6 +915,7 @@ def _finalize_turn(
     ledger: _UsageLedger,
     prompt_ledger: _PromptLedger,
     progress_callback: Callable[[LibraryMessage], None] | None,
+    overflow: Sequence[RetrievedChunk] = (),
 ) -> ConversationalAnswer:
     """Roll conversation state forward and assemble the ``ConversationalAnswer``.
 
@@ -937,6 +942,7 @@ def _finalize_turn(
     return ConversationalAnswer(
         answer=answer_text,
         sources=chunks,
+        overflow_sources=list(overflow),
         plan=plan,
         follow_ups=follow_ups,
         state=next_state,
@@ -963,6 +969,7 @@ def _compose_turn(
     config: ConversationalConfig,
     *,
     retriever: Callable[..., RetrievalResult],
+    overflow: list[RetrievedChunk],
     warnings: list[LibraryMessage],
     timings: dict[str, float],
     turn_index: int,
@@ -1052,6 +1059,7 @@ def _compose_turn(
         ledger=ledger,
         prompt_ledger=prompt_ledger,
         progress_callback=progress_callback,
+        overflow=overflow,
     )
 
 
@@ -1188,4 +1196,5 @@ class ConversationalGeneration:
             ledger=prepared.ledger,
             prompt_ledger=prepared.prompt_ledger,
             progress_callback=self._progress,
+            overflow=prepared.overflow,
         )

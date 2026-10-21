@@ -74,7 +74,7 @@ crawl/index/RAG config models.
 | `CONV_RAG_AUX_MODELS` | `apac.amazon.nova-micro-v1:0,gpt-4o-mini,mistral.ministral-3-3b-instruct` | Small helper models offered as the Step 5 **Auxiliary model** (decomposition / state / follow-ups / LLM re-rank), which may span providers (e.g. Amazon, OpenAI, Mistral); the list is filtered to the `CONV_RAG_AUX_SIZE_BANDS` pricing bands, so oversized or unpriced ids are dropped even if listed |
 | `CONV_RAG_DEFAULT_AUX_MODEL` | `apac.amazon.nova-micro-v1:0` | Auxiliary model pre-selected on Step 5 |
 | `CONV_RAG_AUX_SIZE_BANDS` | `XS,Small` | Size bands the Step 5 **Auxiliary model** list is filtered to (via `resolve_offered_from_pricing` against `config/model_pricing.yaml`); models outside these bands are dropped even if listed in `CONV_RAG_AUX_MODELS` |
-| `CONV_RAG_DECOMPOSITION_ENABLED` | `true` | Whether query decomposition starts on (users can toggle it) |
+| `CONV_RAG_DECOMPOSITION_LIMIT` | `3` | Default Step 5 **Decomposition limit** (1-5): `1` = off (treat the message as a single question), `2`-`5` = split a multi-part question into at most this many standalone sub-questions. Users adjust it per session; the value is injected into the decomposition prompt so the model targets it |
 | `CONV_RAG_FOLLOWUPS_ENABLED` | `true` | Whether follow-up suggestions start on (users can toggle them) |
 | `CONV_RAG_FOLLOWUPS_PARALLEL` | `false` | Run follow-ups concurrently with the answer (faster, but they can't use the answer text). Default `false` runs them after the answer so they build on it |
 | `CONV_RAG_FOLLOWUP_MIN_SCORE` | `0.60` | A follow-up is kept outright at/above this similarity |

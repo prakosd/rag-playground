@@ -31,7 +31,7 @@ def _controls(**overrides) -> ConversationalControls:
         tone="Formal",
         reranker="llm",
         aux_model_id="echo",
-        decomposition=False,
+        decomposition_limit=1,
         followups=True,
         followup_show_count=4,
         inspect=True,
@@ -57,6 +57,17 @@ def test_build_config_maps_controls() -> None:
     assert config.followup_drop_score == 0.3
     assert config.followup_min_score == 0.7
     assert config.tone == "Formal"
+
+
+def test_build_config_decomposition_limit_controls_planning() -> None:
+    # 1 = off; 2-5 enables planning and sets the sub-question cap.
+    off = build_conversational_config(_controls(decomposition_limit=1))
+    assert off.plan_enabled is False
+    assert off.plan_max_subquestions == 1
+
+    on = build_conversational_config(_controls(decomposition_limit=4))
+    assert on.plan_enabled is True
+    assert on.plan_max_subquestions == 4
 
 
 def test_build_config_blank_aux_becomes_none() -> None:
@@ -227,6 +238,17 @@ def test_subquestion_provenance_rows_empty_for_single_subquestion() -> None:
     plan = QueryPlan(sub_questions=["only one"])
 
     assert form_ui.subquestion_provenance_rows([_prov_chunk(())], plan) == []
+
+
+def test_subquestion_provenance_includes_overflow_only_queries() -> None:
+    # Point 3: provenance runs over sources + overflow, so a sub-question whose only
+    # hit landed in the overflow (below the top-N) still appears, numbered across both.
+    plan = QueryPlan(sub_questions=["top q", "overflow q"])
+    combined = [_prov_chunk(("top q",)), _prov_chunk(("overflow q",))]
+
+    rows = form_ui.subquestion_provenance_rows(combined, plan)
+
+    assert rows == [("top q", "#1"), ("overflow q", "#2")]
 
 
 def test_subquestion_provenance_rows_skips_queries_without_hits() -> None:

@@ -226,7 +226,6 @@ _INSPECT_TABS_RHYTHM_CSS = (
 # Scoped to the toggle widget keys (prefix matches render_advanced_controls' key_prefix).
 _TOGGLE_ALIGN_CSS = (
     "<style>"
-    ".st-key-conversational_rag_decomposition,"
     ".st-key-conversational_rag_followups,"
     ".st-key-conversational_rag_inspect"
     "{margin-top:1.8rem}"
@@ -684,6 +683,7 @@ def _append_history(
         reranker=answer.reranker_used or config.reranker,
         raw_question=question,
         sub_questions=tuple(answer.plan.sub_questions),
+        proposed_subquestion_count=answer.plan.proposed_count,
         answer=answer.answer,
         plan_seconds=timings.get("plan", 0.0),
         retrieve_seconds=timings.get("retrieve", 0.0),
@@ -693,6 +693,7 @@ def _append_history(
         state_seconds=timings.get("state", 0.0),
         total_seconds=elapsed,
         results=stored_results(answer.sources),
+        overflow_results=stored_results(answer.overflow_sources),
         token_usage=tuple(
             ConversationalStageUsage(
                 process=stage.process,

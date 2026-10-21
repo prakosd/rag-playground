@@ -31,7 +31,7 @@ chat_answer(run_dir, question, history, config)  # Step 5 (simple, history-aware
 conversational_answer(run_dir, question, state, config)  # Step 5 (advanced pipeline)
   ├─ plan_queries(...)                       → QueryPlan (decompose via aux model)
   ├─ retrieve_multi(...)                     → merged, deduped chunks (parallel)
-  ├─ rerank_chunks(...)                      → off / local cross-encoder / LLM
+  ├─ rerank_chunks(...)                      → top_n context + overflow (off/local/LLM)
   ├─ generate_chat_answer(...)               → grounded answer
   ├─ suggest_followups / validate_followups  → ValidatedFollowup[] (answerable · not already asked)
   └─ update_state(...)                       → next ConversationState
@@ -119,7 +119,10 @@ attributes name the transcript labels (`conversation_history_labels`, default
 first turn (appending the built-in `CONVERSATION_HISTORY_SUFFIX` only for a custom prompt
 that omits the block), so prior turns are fenced as data rather than passed as separate
 chat messages — an earlier turn can't smuggle instructions and any braces in it insert
-literally. The prompts also tell the model to answer directly and naturally —
+literally. The history is **context-only**: the model is told to use it only to resolve
+references and never to treat a claim in it as a fact (facts come from `<knowledge>`), so a
+prior turn can't plant a false "fact" the model then confirms. The prompts also tell the
+model to answer directly and naturally —
 no "the retrieved knowledge…" / "the context…" meta-phrasing — and to weave a
 source's URL into the reply the way a helpful person would (mentioning it in
 passing, not as a stiff labelled "Sources" list) only when it genuinely
@@ -179,7 +182,7 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | `qa.py` | `answer_question` / `generate_answer` / `stream_answer`; `stream_prompt` / `generate_from_prompt` (raw editable prompt, Step 4) |
 | `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (+ `generate_chat_answer_with_usage` / streaming `stream_chat_answer_with_usage` → `ChatAnswerStream`); `conversational_answer` + streaming `conversational_answer_stream` → `ConversationalGeneration` (advanced Step 5 pipeline, per-stage `token_usage` + `prompt_traces`) |
 | `decompose.py` | `plan_queries` (reference resolution + decomposition) + `update_state` (rolling conversation state + capped `asked_questions` history) |
-| `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM), lazy `load_cross_encoder` |
+| `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM) → `(top, overflow, warnings)` (overflow is display-only), lazy `load_cross_encoder` |
 | `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate + drop already-asked questions) + `answerability_check` |
 | `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn`, `TokenUsage`, `StageTokenUsage`; `QueryPlan`, `ConversationState`, `ValidatedFollowup`, `ConversationalAnswer` |
 | `messages.py` | stable `rag.*` message codes + builders |

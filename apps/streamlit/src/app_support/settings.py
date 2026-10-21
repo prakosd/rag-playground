@@ -171,8 +171,10 @@ class Settings(BaseSettings):
     # to, so only genuinely small helper models (micro/mini/lite) are offered;
     # larger or unpriced ids are dropped even if listed in conv_rag_aux_models.
     conv_rag_aux_size_bands: str
-    # Whether query decomposition / follow-up suggestions start on (toggleable).
-    conv_rag_decomposition_enabled: bool
+    # Decomposition limit (1-5): 1 = off (treat the message as one question), 2-5 =
+    # split a multi-part question into at most this many standalone sub-questions.
+    conv_rag_decomposition_limit: int
+    # Whether follow-up suggestions start on (toggleable).
     conv_rag_followups_enabled: bool
     # When True, follow-ups run concurrently with the answer (faster, no answer
     # awareness); False (default) runs them after the answer for better continuity.

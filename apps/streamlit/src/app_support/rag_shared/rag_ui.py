@@ -311,6 +311,7 @@ def render_result_cards(
     *,
     default_tab: str = _RESULT_TAB_RAW,
     preserve_order: bool = False,
+    start_rank: int = 1,
 ) -> None:
     """Render ranked result cards as collapsed panels.
 
@@ -320,6 +321,8 @@ def render_result_cards(
     tabs (the configured *default_tab* first). Cards are sorted highest-similarity
     first unless *preserve_order* is set, which keeps the given order (e.g. a
     re-ranked list whose order carries more meaning than the raw similarity).
+    *start_rank* offsets the card numbering so a continued list (e.g. the overflow
+    results below the top-N) carries on from a previous block.
     """
     tab_order = ordered_result_tabs(default_tab)
     tab_labels = {
@@ -327,7 +330,7 @@ def render_result_cards(
         _RESULT_TAB_PREVIEW: strings["SEARCH_RESULT_TAB_PREVIEW"],
     }
     ordered = list(chunks) if preserve_order else sort_results_by_score(chunks)
-    for rank, chunk in enumerate(ordered, start=1):
+    for rank, chunk in enumerate(ordered, start=start_rank):
         with st.expander(
             result_panel_title(strings, rank, chunk), icon=_RESULT_CARD_ICON, expanded=False
         ):

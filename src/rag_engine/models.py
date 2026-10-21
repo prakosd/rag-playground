@@ -109,11 +109,14 @@ class QueryPlan:
 
     ``degraded`` is ``True`` when planning was skipped or fell back (e.g. the
     offline model, or unparsable output), so a single sub-question equal to the
-    original was used.
+    original was used. ``proposed_count`` is how many unique sub-questions the
+    model proposed before the ``plan_max_subquestions`` cap (0 when planning was
+    skipped), so a UI can note when the shown list was truncated.
     """
 
     sub_questions: list[str] = field(default_factory=list)
     degraded: bool = False
+    proposed_count: int = 0
     warnings: list[LibraryMessage] = field(default_factory=list)
 
 
@@ -163,6 +166,9 @@ class ConversationalAnswer:
 
     answer: str
     sources: list[RetrievedChunk] = field(default_factory=list)
+    # Lower-ranked chunks kept for display only (the "not sent to the model" section);
+    # never fed to the answer, which uses only ``sources`` (the top ``rerank_top_n``).
+    overflow_sources: list[RetrievedChunk] = field(default_factory=list)
     plan: QueryPlan = field(default_factory=QueryPlan)
     follow_ups: list[ValidatedFollowup] = field(default_factory=list)
     state: ConversationState = field(default_factory=ConversationState)

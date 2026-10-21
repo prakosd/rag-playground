@@ -117,7 +117,11 @@ def turn_from_record(record: ConversationalTurnRecord) -> dict:
     answer = ConversationalAnswer(
         answer=record.answer,
         sources=_chunks_from_results(record.results),
-        plan=QueryPlan(sub_questions=list(record.sub_questions)),
+        overflow_sources=_chunks_from_results(record.overflow_results),
+        plan=QueryPlan(
+            sub_questions=list(record.sub_questions),
+            proposed_count=record.proposed_subquestion_count,
+        ),
         follow_ups=[ValidatedFollowup(question=question) for question in record.follow_ups_shown],
         state=ConversationState(summary=record.state_summary),
         model_used=record.llm_model or None,
@@ -203,6 +207,7 @@ def trim_old_turn_payloads(turns: list[dict], keep_recent: int) -> None:
     for turn in turns[:-keep_recent]:
         answer = turn["answer"]
         answer.sources = []
+        answer.overflow_sources = []
         answer.prompt_traces = []
         answer.follow_ups = [replace(followup, chunks=[]) for followup in answer.follow_ups]
 

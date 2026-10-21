@@ -100,6 +100,32 @@ def test_turn_from_record_rebuilds_display_adequate_answer() -> None:
     assert answer.sources[0].score == 0.9
 
 
+def test_turn_from_record_maps_proposed_count() -> None:
+    from dataclasses import replace
+
+    record = replace(
+        _record("2026-09-01T10:00:00.000+00:00", sub_questions=("a?", "b?")),
+        proposed_subquestion_count=5,
+    )
+
+    answer = turn_from_record(record)["answer"]
+
+    assert answer.plan.proposed_count == 5
+
+
+def test_turn_from_record_maps_overflow_sources() -> None:
+    from dataclasses import replace
+
+    record = replace(
+        _record("2026-09-01T10:00:00.000+00:00"),
+        overflow_results=(StoredResult(source="lo.md", score=0.3, text="low"),),
+    )
+
+    answer = turn_from_record(record)["answer"]
+
+    assert [chunk.source for chunk in answer.overflow_sources] == ["lo.md"]
+
+
 def test_turn_from_record_maps_token_usage() -> None:
     record = _record(
         "2026-09-01T10:00:00.000+00:00",
@@ -211,6 +237,7 @@ def _live_turn(index: int) -> dict:
     answer = ConversationalAnswer(
         answer=f"a{index}",
         sources=[chunk],
+        overflow_sources=[chunk],
         follow_ups=[ValidatedFollowup(question="f?", chunks=[chunk])],
         prompt_traces=[StagePromptTrace(process="reranking", prompt="P", response="R")],
     )
@@ -223,10 +250,12 @@ def test_trim_old_turn_payloads_frees_old_chunks_keeps_text() -> None:
     trim_old_turn_payloads(turns, keep_recent=1)
 
     assert turns[0]["answer"].sources == []
+    assert turns[0]["answer"].overflow_sources == []
     assert turns[0]["answer"].prompt_traces == []
     assert turns[0]["answer"].follow_ups[0].chunks == []
     assert turns[0]["answer"].answer == "a0"  # transcript text preserved
     assert turns[-1]["answer"].sources  # newest turn kept intact
+    assert turns[-1]["answer"].overflow_sources  # newest turn's overflow kept
     assert turns[-1]["answer"].prompt_traces  # newest turn's prompts kept
     assert turns[-1]["answer"].follow_ups[0].chunks
 

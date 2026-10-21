@@ -164,6 +164,36 @@ def test_conversational_answer_runs_llm_rerank_for_single_query(tmp_path: Path) 
     assert result.reranker_used == "llm"
 
 
+def test_conversational_answer_keeps_overflow_beyond_top_n(tmp_path: Path) -> None:
+    chunks = [
+        RetrievedChunk(text="a", source="a.md", score=0.9, metadata={}),
+        RetrievedChunk(text="b", source="b.md", score=0.8, metadata={}),
+    ]
+
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=list(chunks))
+
+    def aux_resolver(config):
+        # The LLM re-ranker orders b before a.
+        return ResolvedChatModel(model=_UsageModel(reply="[1, 0]"), model_id="aux"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "What is the capital of France?",
+        ConversationState(),
+        ConversationalConfig(
+            reranker="llm", rerank_top_n=1, plan_enabled=False, followups_enabled=False
+        ),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    # Answer context is capped at rerank_top_n; the lower-ranked rest are kept as overflow.
+    assert [chunk.text for chunk in result.sources] == ["b"]
+    assert [chunk.text for chunk in result.overflow_sources] == ["a"]
+
+
 def test_conversational_answer_captures_prompt_traces(tmp_path: Path) -> None:
     def retriever(run_dir, query, config):
         return RetrievalResult(chunks=list(_CHUNKS))

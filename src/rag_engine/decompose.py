@@ -98,6 +98,7 @@ def plan_queries(
         entities=_format_entities(state.entities),
         recent=_format_recent(state.recent_resolved, config.plan_recent_turns),
         question=raw_question,
+        limit=config.plan_max_subquestions,
     )
     try:
         reply, usage = invoke_text_with_usage(
@@ -120,17 +121,15 @@ def plan_queries(
         )
 
     seen: set[str] = set()
-    sub_questions: list[str] = []
+    unique: list[str] = []
     for item in parsed:
         key = item.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        sub_questions.append(item)
-        if len(sub_questions) >= config.plan_max_subquestions:
-            break
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    sub_questions = unique[: config.plan_max_subquestions]
     _logger.info("Query plan: %d sub-question(s)", len(sub_questions))
-    return QueryPlan(sub_questions=sub_questions)
+    return QueryPlan(sub_questions=sub_questions, proposed_count=len(unique))
 
 
 def _format_entities(entities: dict[str, str]) -> str:

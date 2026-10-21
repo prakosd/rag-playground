@@ -265,8 +265,12 @@ STRINGS_ID: Strings = {
         "Model kecil dan cepat untuk dekomposisi kueri, state percakapan, saran "
         "pertanyaan lanjutan, dan pemeringkatan ulang LLM."
     ),
-    "CONV_DECOMPOSITION_LABEL": "Dekomposisi kueri",
-    "CONV_DECOMPOSITION_HELP": "Pecah pertanyaan multi-bagian menjadi pencarian terpisah.",
+    "CONV_DECOMPOSITION_LABEL": "Batas dekomposisi",
+    "CONV_DECOMPOSITION_HELP": (
+        "Berapa banyak sub-pertanyaan mandiri untuk memecah pertanyaan multi-bagian. "
+        "1 = nonaktif (perlakukan pesan sebagai satu pertanyaan); 2 sampai 5 = pecah menjadi "
+        "paling banyak sebanyak itu."
+    ),
     "CONV_FOLLOWUPS_LABEL": "Pertanyaan lanjutan",
     "CONV_FOLLOWUPS_HELP": "Sarankan pertanyaan lanjutan untuk ditanyakan berikutnya.",
     "CONV_FOLLOWUPS_COUNT_LABEL": "Batas tindak lanjut",
@@ -346,8 +350,12 @@ STRINGS_ID: Strings = {
         "Pertanyaan pencarian mandiri hasil pemecahan pesan Anda — masing-masing dicari "
         "terpisah, lalu hasilnya digabungkan."
     ),
+    "CONV_INSPECT_SUBQUESTIONS_CAPPED": (
+        "Model mengusulkan {proposed}; menampilkan {shown} pertama (batas dekomposisi)."
+    ),
     "CONV_INSPECT_DEGRADED": "Perencanaan dilewati atau kembali ke pertanyaan asli.",
     "CONV_INSPECT_RERANKER_USED": "Pemeringkat ulang: {reranker}",
+    "CONV_INSPECT_OVERFLOW": "Peringkat lebih rendah — tidak dikirim ke model ({count})",
     "CONV_INSPECT_RETRIEVAL_HELP": (
         "Bagian teks teratas yang dipakai untuk menjawab — digabung dan dihilangkan "
         "duplikatnya dari semua sub-pertanyaan, lalu diurutkan oleh pemeringkat ulang "

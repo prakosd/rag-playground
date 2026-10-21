@@ -6,6 +6,7 @@ import pytest
 
 from rag_engine.models import ChatTurn, RetrievedChunk, TokenUsage
 from rag_engine.prompts import (
+    CONVERSATION_HISTORY_SUFFIX,
     CONVERSATIONAL_PROMPT_FIELDS,
     PLAN_QUERIES_TEMPLATE,
     QA_SYSTEM_PROMPT,
@@ -217,6 +218,14 @@ def test_conversation_history_block_helpers_detect_and_strip() -> None:
     assert strip_conversation_history_block(with_block) == "Answer here."
     # A prompt without the block is returned unchanged.
     assert strip_conversation_history_block(without) == without
+
+
+def test_conversation_history_suffix_forbids_history_as_fact_source() -> None:
+    # History is context-only: facts must come from <knowledge>, so a prior turn cannot
+    # plant a "fact" the model then confirms (indirect prompt-injection defense).
+    assert "<knowledge>" in CONVERSATION_HISTORY_SUFFIX
+    assert "fact" in CONVERSATION_HISTORY_SUFFIX.lower()
+    assert "data only" in CONVERSATION_HISTORY_SUFFIX
 
 
 def test_conversation_history_labels_read_tag_attributes() -> None:

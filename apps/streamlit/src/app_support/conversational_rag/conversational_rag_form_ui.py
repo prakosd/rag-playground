@@ -68,6 +68,7 @@ __all__ = [
     "render_followup_bubble",
     "render_turn_inspection",
     "render_turn_metadata",
+    "subquestion_provenance_rows",
 ]
 
 _RERANKER_KEYS = ("off", "local", "llm")
@@ -77,6 +78,9 @@ _MAX_TOP_K = 20
 # The follow-up count field is a soft cap (1-5): fewer appear when few pass validation.
 _FOLLOWUP_SHOW_MIN = 1
 _FOLLOWUP_SHOW_MAX = 5
+# Decomposition limit (1-5): 1 = off (one question), 2-5 = split into at most N sub-questions.
+_DECOMPOSITION_LIMIT_MIN = 1
+_DECOMPOSITION_LIMIT_MAX = 5
 # Ask the model for a few more candidates than will be shown, so validation (which
 # drops unanswerable or duplicate suggestions) still has enough left to fill the limit.
 _FOLLOWUP_CANDIDATE_BUFFER = 2
@@ -111,7 +115,7 @@ class ConversationalControls:
     tone: str
     reranker: str
     aux_model_id: str
-    decomposition: bool
+    decomposition_limit: int
     followups: bool
     followup_show_count: int
     inspect: bool
@@ -160,7 +164,8 @@ def build_conversational_config(
         rag=RagConfig(llm_model=controls.answer_model, top_k=controls.top_k),
         prompts=resolve_conversational_prompts(session_root),
         aux_model_id=controls.aux_model_id or None,
-        plan_enabled=controls.decomposition,
+        plan_enabled=controls.decomposition_limit > _DECOMPOSITION_LIMIT_MIN,
+        plan_max_subquestions=controls.decomposition_limit,
         reranker=controls.reranker,
         rerank_top_n=settings.conv_rag_rerank_top_n,
         followups_enabled=controls.followups,
@@ -284,13 +289,23 @@ def render_advanced_controls(
             )
         toggles_left, toggles_right = st.columns([3, 1], vertical_alignment="center")
         with toggles_left, st.container(horizontal=True, vertical_alignment="center"):
-            decomposition = st.toggle(
-                strings["CONV_DECOMPOSITION_LABEL"],
-                value=settings.conv_rag_decomposition_enabled,
-                help=strings["CONV_DECOMPOSITION_HELP"],
-                disabled=disabled,
-                key=f"{key_prefix}_decomposition",
+            decomposition_limit = int(
+                st.number_input(
+                    strings["CONV_DECOMPOSITION_LABEL"],
+                    min_value=_DECOMPOSITION_LIMIT_MIN,
+                    max_value=_DECOMPOSITION_LIMIT_MAX,
+                    value=min(
+                        max(settings.conv_rag_decomposition_limit, _DECOMPOSITION_LIMIT_MIN),
+                        _DECOMPOSITION_LIMIT_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_DECOMPOSITION_HELP"],
+                    disabled=disabled,
+                    width=_FOLLOWUP_COUNT_WIDTH_PX,
+                    key=f"{key_prefix}_decomposition",
+                )
             )
+            decomposition_on = decomposition_limit > _DECOMPOSITION_LIMIT_MIN
             followups = st.toggle(
                 strings["CONV_FOLLOWUPS_LABEL"],
                 value=settings.conv_rag_followups_enabled,
@@ -327,7 +342,7 @@ def render_advanced_controls(
             key_prefix,
             session_root,
             disabled=disabled,
-            decomposition=decomposition,
+            decomposition=decomposition_on,
             followups=followups,
             reranker=reranker,
         )
@@ -338,7 +353,7 @@ def render_advanced_controls(
         tone=tone,
         reranker=reranker,
         aux_model_id=aux_model_id,
-        decomposition=decomposition,
+        decomposition_limit=decomposition_limit,
         followups=followups,
         followup_show_count=followup_show_count,
         inspect=inspect,
@@ -774,6 +789,12 @@ def _render_decomposition(strings: Strings, plan: QueryPlan) -> None:
         strings["CONV_INSPECT_SUBQUESTIONS"], help_text=strings["CONV_INSPECT_SUBQUESTIONS_HELP"]
     )
     _bullet_list(plan.sub_questions)
+    if plan.proposed_count > len(plan.sub_questions):
+        st.caption(
+            strings["CONV_INSPECT_SUBQUESTIONS_CAPPED"].format(
+                proposed=plan.proposed_count, shown=len(plan.sub_questions)
+            )
+        )
     if plan.degraded:
         st.caption(strings["CONV_INSPECT_DEGRADED"])
 
@@ -809,7 +830,8 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
     rerank_note = _inspect_note(strings, answer.warnings, CODE_RERANK_UNAVAILABLE)
     if rerank_note:
         st.caption(rerank_note)
-    rows = subquestion_provenance_rows(answer.sources, answer.plan)
+    all_chunks = [*answer.sources, *answer.overflow_sources]
+    rows = subquestion_provenance_rows(all_chunks, answer.plan)
     if rows:
         _section_label(
             strings["CONV_INSPECT_RETRIEVAL_BYQUERY"],
@@ -817,6 +839,18 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
         )
         _bullet_list([f"{question} → {hits}" for question, hits in rows])
     render_result_cards(strings, answer.sources, default_tab=default_tab, preserve_order=True)
+    if answer.overflow_sources:
+        with st.expander(
+            strings["CONV_INSPECT_OVERFLOW"].format(count=len(answer.overflow_sources)),
+            icon=":material/visibility_off:",
+        ):
+            render_result_cards(
+                strings,
+                answer.overflow_sources,
+                default_tab=default_tab,
+                preserve_order=True,
+                start_rank=len(answer.sources) + 1,
+            )
     _render_stage_prompt(strings, answer, "reranking")
 
 

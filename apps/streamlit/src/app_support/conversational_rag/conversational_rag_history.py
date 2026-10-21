@@ -97,6 +97,8 @@ class ConversationalTurnRecord:
     raw_question: str
     sub_questions: tuple[str, ...]
     answer: str
+    # Unique sub-questions the model proposed before the decomposition cap (0 = n/a).
+    proposed_subquestion_count: int = 0
     plan_seconds: float = 0.0
     retrieve_seconds: float = 0.0
     rerank_seconds: float = 0.0
@@ -105,6 +107,7 @@ class ConversationalTurnRecord:
     state_seconds: float = 0.0
     total_seconds: float = 0.0
     results: tuple[StoredResult, ...] = ()
+    overflow_results: tuple[StoredResult, ...] = ()
     token_usage: tuple[ConversationalStageUsage, ...] = ()
     prompt_traces: tuple[ConversationalPromptTrace, ...] = ()
     follow_ups_shown: tuple[str, ...] = ()
@@ -286,6 +289,7 @@ def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
             raw_question=str(payload["raw_question"]),
             sub_questions=_str_tuple(payload.get("sub_questions")),
             answer=str(payload.get("answer", "")),
+            proposed_subquestion_count=int(payload.get("proposed_subquestion_count", 0)),
             plan_seconds=float(payload.get("plan_seconds", 0.0)),
             retrieve_seconds=float(payload.get("retrieve_seconds", 0.0)),
             rerank_seconds=float(payload.get("rerank_seconds", 0.0)),
@@ -294,6 +298,7 @@ def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
             state_seconds=float(payload.get("state_seconds", 0.0)),
             total_seconds=float(payload.get("total_seconds", 0.0)),
             results=stored_results_from_payload(payload.get("results")),
+            overflow_results=stored_results_from_payload(payload.get("overflow_results")),
             token_usage=_stage_usages_from_payload(payload.get("token_usage")),
             prompt_traces=_prompt_traces_from_payload(payload.get("prompt_traces")),
             follow_ups_shown=_str_tuple(payload.get("follow_ups_shown")),

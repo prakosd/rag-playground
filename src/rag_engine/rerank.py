@@ -84,11 +84,17 @@ def rerank_chunks(
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
     record_prompt: Callable[[str, str, str], None] | None = None,
     system_directive: str = "",
-) -> tuple[list[RetrievedChunk], list[LibraryMessage]]:
-    """Reorder *chunks* per ``config.reranker`` and return the top ``top_n``."""
+) -> tuple[list[RetrievedChunk], list[RetrievedChunk], list[LibraryMessage]]:
+    """Reorder *chunks* per ``config.reranker``; return (top_n, overflow, warnings).
+
+    The full re-ranked list is split at ``top_n``: the first ``top_n`` are the answer
+    context, and the rest (``overflow``) are retained for display only — the "not sent
+    to the model" section in the Inspect panel — never fed to the answer.
+    """
     ordered = list(chunks)
     if not ordered or config.reranker == "off":
-        return ordered[:top_n], []
+        top, overflow = _split_top(ordered, top_n)
+        return top, overflow, []
     if config.reranker == "local":
         return _rerank_local(queries, ordered, top_n, encoder_loader)
     if config.reranker == "llm":
@@ -102,7 +108,15 @@ def rerank_chunks(
             system_directive,
             record_prompt=record_prompt,
         )
-    return ordered[:top_n], []
+    top, overflow = _split_top(ordered, top_n)
+    return top, overflow, []
+
+
+def _split_top(
+    chunks: list[RetrievedChunk], top_n: int
+) -> tuple[list[RetrievedChunk], list[RetrievedChunk]]:
+    """Split a ranked list into the top ``top_n`` (answer context) and the overflow."""
+    return chunks[:top_n], chunks[top_n:]
 
 
 def _rerank_local(
@@ -110,16 +124,18 @@ def _rerank_local(
     chunks: list[RetrievedChunk],
     top_n: int,
     encoder_loader: Callable[..., object],
-) -> tuple[list[RetrievedChunk], list[LibraryMessage]]:
+) -> tuple[list[RetrievedChunk], list[RetrievedChunk], list[LibraryMessage]]:
     query_text = " ".join(queries)
     pairs = [(query_text, chunk.text) for chunk in chunks]
     try:
         scores = encoder_loader().predict(pairs)
     except Exception as exc:  # noqa: BLE001 - any local re-rank failure degrades to search order
         _logger.warning("Local re-ranking unavailable: %s", exc)
-        return chunks[:top_n], [messages.rerank_unavailable("local", str(exc))]
+        top, overflow = _split_top(chunks, top_n)
+        return top, overflow, [messages.rerank_unavailable("local", str(exc))]
     order = sorted(range(len(chunks)), key=lambda index: scores[index], reverse=True)
-    return [chunks[index] for index in order][:top_n], []
+    top, overflow = _split_top([chunks[index] for index in order], top_n)
+    return top, overflow, []
 
 
 def _rerank_llm(
@@ -132,9 +148,10 @@ def _rerank_llm(
     system_directive: str = "",
     *,
     record_prompt: Callable[[str, str, str], None] | None = None,
-) -> tuple[list[RetrievedChunk], list[LibraryMessage]]:
+) -> tuple[list[RetrievedChunk], list[RetrievedChunk], list[LibraryMessage]]:
     if chat_model is None:
-        return chunks[:top_n], [messages.rerank_unavailable("llm", "no auxiliary model available")]
+        top, overflow = _split_top(chunks, top_n)
+        return top, overflow, [messages.rerank_unavailable("llm", "no auxiliary model available")]
     query_text = " ".join(queries)
     passages = "\n".join(f"[{index}] {chunk.text}" for index, chunk in enumerate(chunks))
     prompt = render_conversational_template(
@@ -144,16 +161,19 @@ def _rerank_llm(
         reply, usage = invoke_text_with_usage(chat_model, prompt, system_directive=system_directive)
     except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
         _logger.warning("LLM re-ranking failed: %s", exc)
-        return chunks[:top_n], [messages.rerank_unavailable("llm", str(exc))]
+        top, overflow = _split_top(chunks, top_n)
+        return top, overflow, [messages.rerank_unavailable("llm", str(exc))]
     if record_usage is not None:
         record_usage("reranking", usage)
     if record_prompt is not None:
         record_prompt("reranking", prompt, reply)
     order = parse_ranking(reply, len(chunks))
     if not order:
-        return chunks[:top_n], [messages.rerank_unavailable("llm", "unparsable ranking")]
+        top, overflow = _split_top(chunks, top_n)
+        return top, overflow, [messages.rerank_unavailable("llm", "unparsable ranking")]
     ranked = [chunks[index] for index in order]
     # Append chunks the model omitted, preserving their search order.
     ranked_indices = set(order)
     ranked.extend(chunk for index, chunk in enumerate(chunks) if index not in ranked_indices)
-    return ranked[:top_n], []
+    top, overflow = _split_top(ranked, top_n)
+    return top, overflow, []

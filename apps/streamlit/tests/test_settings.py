@@ -24,6 +24,7 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.conv_rag_session_token_quota == 5700000
     assert settings.conv_rag_session_cost_quota == 1.0
     assert settings.conv_rag_reranker == "llm"
+    assert settings.conv_rag_decomposition_limit == 3
     assert settings.conv_rag_max_live_turns == 30
     assert settings.conv_rag_txn_id_delimiter == "_"
     assert settings.basic_rag_qa_session_token_quota == 5700000

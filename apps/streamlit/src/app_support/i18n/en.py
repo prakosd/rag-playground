@@ -260,8 +260,11 @@ STRINGS_EN: Strings = {
         "Small, fast model used for query decomposition, conversation state, "
         "follow-up suggestions, and LLM re-ranking."
     ),
-    "CONV_DECOMPOSITION_LABEL": "Query decomposition",
-    "CONV_DECOMPOSITION_HELP": "Split multi-part questions into separate searches.",
+    "CONV_DECOMPOSITION_LABEL": "Decomposition limit",
+    "CONV_DECOMPOSITION_HELP": (
+        "How many standalone sub-questions to split a multi-part question into. "
+        "1 = off (treat your message as a single question); 2 to 5 = split into at most that many."
+    ),
     "CONV_FOLLOWUPS_LABEL": "Follow-up questions",
     "CONV_FOLLOWUPS_HELP": "Suggest follow-up questions to ask next.",
     "CONV_FOLLOWUPS_COUNT_LABEL": "Follow-up limit",
@@ -341,8 +344,12 @@ STRINGS_EN: Strings = {
         "The standalone search questions your message was broken into — each is searched "
         "separately, then the results are merged."
     ),
+    "CONV_INSPECT_SUBQUESTIONS_CAPPED": (
+        "The model proposed {proposed}; showing the first {shown} (decomposition limit)."
+    ),
     "CONV_INSPECT_DEGRADED": "Planning was skipped or fell back to the original question.",
     "CONV_INSPECT_RERANKER_USED": "Re-ranker: {reranker}",
+    "CONV_INSPECT_OVERFLOW": "Lower-ranked — not sent to the model ({count})",
     "CONV_INSPECT_RETRIEVAL_HELP": (
         "The top passages used to answer — merged and de-duplicated across all "
         "sub-questions, then ordered by the re-ranker (so the % similarity may not "
