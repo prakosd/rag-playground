@@ -21,6 +21,7 @@ from app_support.rag_shared.result_snapshot import StoredResult, stored_results_
 
 __all__ = [
     "CONVERSATIONAL_RAG_HISTORY_DIRNAME",
+    "ConversationalFollowupRecord",
     "ConversationalPromptTrace",
     "ConversationalStageUsage",
     "ConversationalTurnRecord",
@@ -84,6 +85,20 @@ class ConversationalPromptTrace:
 
 
 @dataclass(frozen=True)
+class ConversationalFollowupRecord:
+    """One evaluated follow-up candidate: its question, confidence, and verdict.
+
+    Persisted so a reloaded turn shows the real confidence % and the Yes/No
+    answerability split, not just the question text.
+    """
+
+    question: str
+    score: float = 0.0
+    verdict: str = "keep"
+    checked_by_llm: bool = False
+
+
+@dataclass(frozen=True)
 class ConversationalTurnRecord:
     """One Step 5 turn: the question, how it was planned/ranked, and its answer."""
 
@@ -112,6 +127,9 @@ class ConversationalTurnRecord:
     prompt_traces: tuple[ConversationalPromptTrace, ...] = ()
     follow_ups_shown: tuple[str, ...] = ()
     follow_ups_dropped: tuple[str, ...] = ()
+    # Full-fidelity record of every evaluated candidate (question + score + verdict),
+    # so a reloaded turn shows real confidence % and the Yes/No answerability split.
+    follow_ups_evaluated: tuple[ConversationalFollowupRecord, ...] = ()
     pinned: bool = False
     # Grouping + tracing: the conversation this turn belongs to, a per-turn id,
     # and the rewriter's rolling summary (persisted so a reloaded session can
@@ -274,6 +292,24 @@ def _prompt_traces_from_payload(value: object) -> tuple[ConversationalPromptTrac
     return tuple(traces)
 
 
+def _followups_from_payload(value: object) -> tuple[ConversationalFollowupRecord, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    followups: list[ConversationalFollowupRecord] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        followups.append(
+            ConversationalFollowupRecord(
+                question=str(item.get("question", "")),
+                score=float(item.get("score", 0.0)),
+                verdict=str(item.get("verdict", "keep")),
+                checked_by_llm=bool(item.get("checked_by_llm", False)),
+            )
+        )
+    return tuple(followups)
+
+
 def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
     if not isinstance(payload, dict):
         return None
@@ -303,6 +339,7 @@ def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
             prompt_traces=_prompt_traces_from_payload(payload.get("prompt_traces")),
             follow_ups_shown=_str_tuple(payload.get("follow_ups_shown")),
             follow_ups_dropped=_str_tuple(payload.get("follow_ups_dropped")),
+            follow_ups_evaluated=_followups_from_payload(payload.get("follow_ups_evaluated")),
             pinned=bool(payload.get("pinned", False)),
             conversation_id=str(payload.get("conversation_id", "")),
             transaction_id=str(payload.get("transaction_id", "")),

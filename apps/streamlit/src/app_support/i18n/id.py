@@ -271,12 +271,11 @@ STRINGS_ID: Strings = {
         "1 = nonaktif (perlakukan pesan sebagai satu pertanyaan); 2 sampai 5 = pecah menjadi "
         "paling banyak sebanyak itu."
     ),
-    "CONV_FOLLOWUPS_LABEL": "Pertanyaan lanjutan",
-    "CONV_FOLLOWUPS_HELP": "Sarankan pertanyaan lanjutan untuk ditanyakan berikutnya.",
     "CONV_FOLLOWUPS_COUNT_LABEL": "Batas tindak lanjut",
     "CONV_FOLLOWUPS_COUNT_HELP": (
-        "Jumlah maksimum pertanyaan lanjutan yang disarankan setelah jawaban. Lebih "
-        "sedikit bisa muncul bila hanya sedikit yang benar-benar relevan."
+        "Berapa banyak pertanyaan lanjutan yang disarankan setelah jawaban. 0 = nonaktif "
+        "(tidak ada); 1 sampai 5 = sarankan paling banyak sebanyak itu. Lebih sedikit bisa "
+        "muncul bila hanya sedikit yang benar-benar relevan."
     ),
     "CONV_INSPECT_LABEL": "Mode inspeksi",
     "CONV_INSPECT_HELP": "Tampilkan bagaimana setiap jawaban dibangun.",
@@ -377,10 +376,15 @@ STRINGS_ID: Strings = {
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "Tidak ada saran pertanyaan lanjutan untuk giliran ini.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
-        "Persentase menunjukkan seberapa yakin pertanyaan lanjutan itu dapat dijawab dari "
-        "pengetahuan terindeks Anda (kecocokan terbaik saat dicari)."
+        "Ya/Tidak menunjukkan apakah pertanyaan lanjutan dapat dijawab dari pengetahuan "
+        "terindeks Anda: keyakinan tinggi mempertahankannya (Ya), keyakinan rendah "
+        "membuangnya (Tidak), dan yang di ambang diperiksa oleh model. Persentasenya adalah "
+        "keyakinan itu — kecocokan pencarian semantik terbaik terhadap koleksi Anda, bukan "
+        "penilaian model."
     ),
-    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Keyakinan %",
+    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Dapat dijawab / Keyakinan %",
+    "CONV_INSPECT_ANSWERABILITY_YES": "Ya",
+    "CONV_INSPECT_ANSWERABILITY_NO": "Tidak",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
     "CONV_INSPECT_RESPONSE_LABEL": "Respons",
     "CONV_INSPECT_NO_PROMPT": "Tidak ada prompt yang dikirim untuk tahap ini.",

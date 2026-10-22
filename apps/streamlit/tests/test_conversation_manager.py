@@ -15,6 +15,7 @@ from app_support.conversational_rag.conversation_manager import (
     turn_from_record,
 )
 from app_support.conversational_rag.conversational_rag_history import (
+    ConversationalFollowupRecord,
     ConversationalPromptTrace,
     ConversationalStageUsage,
     ConversationalTurnRecord,
@@ -98,6 +99,37 @@ def test_turn_from_record_rebuilds_display_adequate_answer() -> None:
     assert answer.model_used == "main"
     assert [chunk.source for chunk in answer.sources] == ["doc.md"]
     assert answer.sources[0].score == 0.9
+
+
+def test_turn_from_record_rebuilds_followups_with_scores_and_verdicts() -> None:
+    from dataclasses import replace
+
+    evaluated = (
+        ConversationalFollowupRecord(question="Keep me", score=0.8, verdict="keep"),
+        ConversationalFollowupRecord(question="Drop me", score=0.2, verdict="drop"),
+    )
+    record = replace(_record("2026-09-01T10:00:00.000+00:00"), follow_ups_evaluated=evaluated)
+
+    answer = turn_from_record(record)["answer"]
+
+    assert [(f.question, f.score) for f in answer.follow_ups] == [("Keep me", 0.8)]
+    assert [(f.question, f.verdict) for f in answer.dropped_followups] == [("Drop me", "drop")]
+
+
+def test_turn_from_record_falls_back_to_followup_strings_without_evaluated() -> None:
+    from dataclasses import replace
+
+    record = replace(
+        _record("2026-09-01T10:00:00.000+00:00", follow_ups=("Shown?",)),
+        follow_ups_dropped=("Dropped?",),
+    )
+
+    answer = turn_from_record(record)["answer"]
+
+    # Old records (no evaluated list) still split kept/dropped, with blank confidence.
+    assert [f.question for f in answer.follow_ups] == ["Shown?"]
+    assert [f.question for f in answer.dropped_followups] == ["Dropped?"]
+    assert answer.follow_ups[0].score == 0.0
 
 
 def test_turn_from_record_maps_proposed_count() -> None:

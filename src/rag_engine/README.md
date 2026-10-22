@@ -33,7 +33,7 @@ conversational_answer(run_dir, question, state, config)  # Step 5 (advanced pipe
   ├─ retrieve_multi(...)                     → merged, deduped chunks (parallel)
   ├─ rerank_chunks(...)                      → top_n context + overflow (off/local/LLM)
   ├─ generate_chat_answer(...)               → grounded answer
-  ├─ suggest_followups / validate_followups  → ValidatedFollowup[] (answerable · not already asked)
+  ├─ suggest_followups / validate_followups  → kept + dropped ValidatedFollowup[] (verdict + confidence)
   └─ update_state(...)                       → next ConversationState
                                              → ConversationalAnswer (+ plan, timings, token_usage, prompt_traces)
 
@@ -183,7 +183,7 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (+ `generate_chat_answer_with_usage` / streaming `stream_chat_answer_with_usage` → `ChatAnswerStream`); `conversational_answer` + streaming `conversational_answer_stream` → `ConversationalGeneration` (advanced Step 5 pipeline, per-stage `token_usage` + `prompt_traces`) |
 | `decompose.py` | `plan_queries` (reference resolution + decomposition) + `update_state` (rolling conversation state + capped `asked_questions` history) |
 | `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM) → `(top, overflow, warnings)` (overflow is display-only), lazy `load_cross_encoder` |
-| `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate + drop already-asked questions) + `answerability_check` |
+| `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate + drop already-asked; `record_evaluation` surfaces dropped candidates) + `answerability_check` |
 | `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn`, `TokenUsage`, `StageTokenUsage`; `QueryPlan`, `ConversationState`, `ValidatedFollowup`, `ConversationalAnswer` |
 | `messages.py` | stable `rag.*` message codes + builders |
 

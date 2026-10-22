@@ -94,14 +94,17 @@ def test_plan_queries_uses_custom_decompose_template() -> None:
     assert _CAPTURED_PROMPTS and _CAPTURED_PROMPTS[0].startswith("CUSTOM_DECOMPOSE::")
 
 
-def test_plan_queries_prompt_includes_limit() -> None:
+def test_plan_queries_prompt_omits_limit_and_asks_for_priority_order() -> None:
     _CAPTURED_PROMPTS.clear()
     config = ConversationalConfig(plan_max_subquestions=4)
 
     plan_queries(_CaptureModel(reply='["x"]'), _STATE, "a and b?", config, model_id="aux")
 
-    # The configured cap is injected into the prompt so the model targets it.
-    assert _CAPTURED_PROMPTS and "at most 4" in _CAPTURED_PROMPTS[0]
+    # The cap is applied after parsing, not sent to the model; the prompt instead asks
+    # the model to order sub-questions by importance so the cap keeps the most valuable.
+    assert _CAPTURED_PROMPTS
+    assert "at most 4" not in _CAPTURED_PROMPTS[0]
+    assert "important" in _CAPTURED_PROMPTS[0].lower()
 
 
 def test_plan_queries_splits_multi_part() -> None:

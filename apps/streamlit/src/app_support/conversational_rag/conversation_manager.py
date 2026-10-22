@@ -105,6 +105,36 @@ def _chunks_from_results(results: tuple[StoredResult, ...]) -> list[RetrievedChu
     ]
 
 
+def _rebuild_followups(
+    record: ConversationalTurnRecord,
+) -> tuple[list[ValidatedFollowup], list[ValidatedFollowup]]:
+    """Rebuild (kept, dropped) follow-ups from a stored record.
+
+    Prefers the full-fidelity ``follow_ups_evaluated`` (real score + verdict); falls
+    back to the plain question-string lists for records saved before scores were kept
+    (their confidence then shows blank rather than a misleading 0%).
+    """
+    if record.follow_ups_evaluated:
+        evaluated = [
+            ValidatedFollowup(
+                question=item.question,
+                score=item.score,
+                verdict="keep" if item.verdict == "keep" else "drop",
+                checked_by_llm=item.checked_by_llm,
+            )
+            for item in record.follow_ups_evaluated
+        ]
+        kept = [item for item in evaluated if item.verdict == "keep"]
+        dropped = [item for item in evaluated if item.verdict == "drop"]
+        return kept, dropped
+    kept = [ValidatedFollowup(question=question) for question in record.follow_ups_shown]
+    dropped = [
+        ValidatedFollowup(question=question, verdict="drop")
+        for question in record.follow_ups_dropped
+    ]
+    return kept, dropped
+
+
 def turn_from_record(record: ConversationalTurnRecord) -> dict:
     """Rebuild a display-adequate ``{question, answer}`` turn from a stored record.
 
@@ -114,6 +144,7 @@ def turn_from_record(record: ConversationalTurnRecord) -> dict:
     (live retrieval cache, entities, warnings/errors) are left empty; the turn id
     is assigned by the caller.
     """
+    kept_followups, dropped_followups = _rebuild_followups(record)
     answer = ConversationalAnswer(
         answer=record.answer,
         sources=_chunks_from_results(record.results),
@@ -122,7 +153,8 @@ def turn_from_record(record: ConversationalTurnRecord) -> dict:
             sub_questions=list(record.sub_questions),
             proposed_count=record.proposed_subquestion_count,
         ),
-        follow_ups=[ValidatedFollowup(question=question) for question in record.follow_ups_shown],
+        follow_ups=kept_followups,
+        dropped_followups=dropped_followups,
         state=ConversationState(summary=record.state_summary),
         model_used=record.llm_model or None,
         aux_model_used=record.aux_model or None,

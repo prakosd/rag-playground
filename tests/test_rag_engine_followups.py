@@ -4,7 +4,7 @@ from langchain_core.language_models import SimpleChatModel
 
 from rag_engine.config import ConversationalConfig
 from rag_engine.followups import answerability_check, suggest_followups, validate_followups
-from rag_engine.models import QueryPlan, RetrievedChunk
+from rag_engine.models import QueryPlan, RetrievedChunk, ValidatedFollowup
 from rag_engine.retrieval import RetrievalResult
 
 
@@ -135,6 +135,29 @@ def test_validate_followups_keeps_high_score() -> None:
     assert [f.question for f in result] == ["good"]
     assert result[0].chunks[0].score == 0.9
     assert result[0].checked_by_llm is False
+
+
+def test_validate_followups_records_every_evaluated_candidate() -> None:
+    scores = {"keep me": 0.9, "drop me": 0.1}
+
+    def retriever(run_dir, query, config):
+        return RetrievalResult(chunks=[_chunk("c", scores[query])])
+
+    seen: list[ValidatedFollowup] = []
+    kept = validate_followups(
+        "/tmp",
+        ["keep me", "drop me"],
+        ConversationalConfig(),
+        retriever=retriever,
+        record_evaluation=seen.append,
+    )
+
+    assert [f.question for f in kept] == ["keep me"]
+    # Every probed candidate is reported with its verdict + score — kept and dropped.
+    by_question = {f.question: f for f in seen}
+    assert by_question["keep me"].verdict == "keep" and by_question["keep me"].score == 0.9
+    assert by_question["drop me"].verdict == "drop" and by_question["drop me"].score == 0.1
+    assert by_question["drop me"].chunks == []  # dropped candidates carry no probe chunks
 
 
 def test_validate_followups_drops_low_score() -> None:

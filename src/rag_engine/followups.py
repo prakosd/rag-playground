@@ -136,6 +136,7 @@ def validate_followups(
     asked_questions: Sequence[str] = (),
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
     record_prompt: Callable[[str, str, str], None] | None = None,
+    record_evaluation: Callable[[ValidatedFollowup], None] | None = None,
     system_directive: str = "",
 ) -> list[ValidatedFollowup]:
     """Keep only candidates the corpus can answer, carrying their probe chunks.
@@ -145,6 +146,9 @@ def validate_followups(
     drops it; in between, the LLM answerability check decides. Kept follow-ups
     are sorted by score and truncated to ``followup_show_count``. Candidates that
     repeat or closely paraphrase an ``asked_questions`` entry are dropped first.
+    ``record_evaluation`` (when given) receives every probed candidate as a
+    :class:`ValidatedFollowup` (verdict + score), so a UI can show the dropped
+    ones alongside the kept.
     """
     unique = _dedupe([text.strip() for text in candidates if text.strip()])
     unique = _filter_asked(unique, asked_questions)
@@ -191,16 +195,19 @@ def validate_followups(
             )
         else:
             keep = False
+        # Dropped candidates carry no probe chunks (they are not clickable), but keep
+        # their score + verdict so the inspector can report them.
+        evaluated = ValidatedFollowup(
+            question=question,
+            chunks=result.chunks if keep else [],
+            score=best,
+            verdict="keep" if keep else "drop",
+            checked_by_llm=checked,
+        )
+        if record_evaluation is not None:
+            record_evaluation(evaluated)
         if keep:
-            kept.append(
-                ValidatedFollowup(
-                    question=question,
-                    chunks=result.chunks,
-                    score=best,
-                    verdict="keep",
-                    checked_by_llm=checked,
-                )
-            )
+            kept.append(evaluated)
     kept.sort(key=lambda item: item.score, reverse=True)
     return kept[: config.followup_show_count]
 

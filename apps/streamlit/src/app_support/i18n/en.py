@@ -265,12 +265,11 @@ STRINGS_EN: Strings = {
         "How many standalone sub-questions to split a multi-part question into. "
         "1 = off (treat your message as a single question); 2 to 5 = split into at most that many."
     ),
-    "CONV_FOLLOWUPS_LABEL": "Follow-up questions",
-    "CONV_FOLLOWUPS_HELP": "Suggest follow-up questions to ask next.",
     "CONV_FOLLOWUPS_COUNT_LABEL": "Follow-up limit",
     "CONV_FOLLOWUPS_COUNT_HELP": (
-        "The most follow-up questions to suggest after an answer. Fewer may appear "
-        "when only a few are closely related."
+        "How many follow-up questions to suggest after an answer. 0 = off (none); "
+        "1 to 5 = suggest at most that many. Fewer may appear when only a few are "
+        "closely related."
     ),
     "CONV_INSPECT_LABEL": "Inspect mode",
     "CONV_INSPECT_HELP": "Show how each answer was built.",
@@ -371,10 +370,14 @@ STRINGS_EN: Strings = {
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "No follow-up suggestions for this turn.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
-        "Each percentage is how confidently that follow-up can be answered from your indexed "
-        "knowledge — its best match when searched against your collection."
+        "Yes/No is whether the follow-up can be answered from your indexed knowledge: a high "
+        "confidence keeps it (Yes), a low one drops it (No), and a borderline one is checked by "
+        "the model. The percentage is that confidence — the follow-up's best semantic-search "
+        "match against your collection, not a model judgement."
     ),
-    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Confidence %",
+    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Answerability / Confidence %",
+    "CONV_INSPECT_ANSWERABILITY_YES": "Yes",
+    "CONV_INSPECT_ANSWERABILITY_NO": "No",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",
     "CONV_INSPECT_RESPONSE_LABEL": "Response",
     "CONV_INSPECT_NO_PROMPT": "No prompt was sent for this stage.",

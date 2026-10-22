@@ -171,6 +171,9 @@ class ConversationalAnswer:
     overflow_sources: list[RetrievedChunk] = field(default_factory=list)
     plan: QueryPlan = field(default_factory=QueryPlan)
     follow_ups: list[ValidatedFollowup] = field(default_factory=list)
+    # Candidates that were evaluated but not shown as buttons (verdict "drop"), kept so
+    # the inspector can report their answerability + confidence beside the kept ones.
+    dropped_followups: list[ValidatedFollowup] = field(default_factory=list)
     state: ConversationState = field(default_factory=ConversationState)
     model_used: str | None = None
     aux_model_used: str | None = None

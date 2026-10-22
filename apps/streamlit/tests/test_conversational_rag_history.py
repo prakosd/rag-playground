@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app_support.conversational_rag.conversational_rag_history import (
     CONVERSATIONAL_RAG_HISTORY_DIRNAME,
+    ConversationalFollowupRecord,
     ConversationalPromptTrace,
     ConversationalStageUsage,
     ConversationalTurnRecord,
@@ -78,6 +79,20 @@ def test_results_and_followups_persist(tmp_path: Path) -> None:
     assert record.results[0].text == "c"
     assert record.follow_ups_shown == ("f1",)
     assert record.follow_ups_dropped == ("f2",)
+
+
+def test_follow_ups_evaluated_round_trips(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    evaluated = (
+        ConversationalFollowupRecord(question="k", score=0.8, verdict="keep"),
+        ConversationalFollowupRecord(question="d", score=0.2, verdict="drop", checked_by_llm=True),
+    )
+    append_conversational_rag_record(tmp_path, replace(_record(), follow_ups_evaluated=evaluated))
+
+    record = load_conversational_rag_history(tmp_path)[0]
+
+    assert record.follow_ups_evaluated == evaluated  # score + verdict survive the round trip
 
 
 def test_prompt_traces_persist(tmp_path: Path) -> None:

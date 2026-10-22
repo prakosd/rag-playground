@@ -98,7 +98,6 @@ def plan_queries(
         entities=_format_entities(state.entities),
         recent=_format_recent(state.recent_resolved, config.plan_recent_turns),
         question=raw_question,
-        limit=config.plan_max_subquestions,
     )
     try:
         reply, usage = invoke_text_with_usage(

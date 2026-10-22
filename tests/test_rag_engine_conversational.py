@@ -429,7 +429,35 @@ def test_conversational_answer_stream_streams_tokens_and_finalizes(tmp_path: Pat
     assert {"retrieve", "answer", "state"} <= set(generation.answer.timings)
 
 
-def test_conversational_answer_stream_empty_question_yields_nothing() -> None:
+def test_conversational_answer_stream_populates_dropped_followups(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        score = 0.1 if "weather" in query else 0.9
+        return RetrievalResult(
+            chunks=[RetrievedChunk(text="ctx", source="a.md", score=score, metadata={})]
+        )
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        return ResolvedChatModel(model=_StreamingUsageModel(), model_id="main"), []
+
+    def aux_resolver(config):
+        model = _ScriptedModel(reply='["What else about France?", "What is the weather?"]')
+        return ResolvedChatModel(model=model, model_id="aux"), []
+
+    generation = conversational_answer_stream(
+        tmp_path,
+        "Tell me about France",
+        ConversationState(),
+        ConversationalConfig(reranker="off"),
+        retriever=retriever,
+        chat_resolver=main_resolver,
+        aux_resolver=aux_resolver,
+    )
+    list(generation)  # drain the stream to finalize the turn
+
+    assert generation.answer is not None
+    assert [f.question for f in generation.answer.follow_ups] == ["What else about France?"]
+    # The streaming path surfaces dropped follow-ups too (verdict "No" in the inspector).
+    assert [f.question for f in generation.answer.dropped_followups] == ["What is the weather?"]
     generation = conversational_answer_stream(
         "/tmp/x",
         "   ",
@@ -647,7 +675,32 @@ def test_conversational_answer_populates_followups(tmp_path: Path) -> None:
     assert "followups" in result.timings
 
 
-def test_conversational_answer_serial_followups_see_the_answer(tmp_path: Path) -> None:
+def test_conversational_answer_populates_dropped_followups(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        # The "weather" candidate scores below the drop threshold → dropped (verdict "No").
+        score = 0.1 if "weather" in query else 0.9
+        return RetrievalResult(
+            chunks=[RetrievedChunk(text="ctx", source="a.md", score=score, metadata={})]
+        )
+
+    def aux_resolver(config):
+        model = _ScriptedModel(reply='["What else about France?", "What is the weather?"]')
+        return ResolvedChatModel(model=model, model_id="aux"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "Tell me about France",
+        ConversationState(),
+        ConversationalConfig(reranker="off"),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    assert [f.question for f in result.follow_ups] == ["What else about France?"]
+    # The low-scoring candidate is surfaced as a dropped follow-up for the inspector.
+    assert [f.question for f in result.dropped_followups] == ["What is the weather?"]
+    assert result.dropped_followups[0].verdict == "drop"
     prompts: list[str] = []
 
     class _CapturingAux(SimpleChatModel):

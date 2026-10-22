@@ -817,14 +817,17 @@ def _followups_stage(
     latest_question: str = "",
     latest_answer: str = "",
     summary: str = "",
-) -> tuple[list[ValidatedFollowup], list[LibraryMessage], float]:
-    """Suggest and validate follow-ups, returning (follow_ups, warnings, elapsed seconds).
+) -> tuple[list[ValidatedFollowup], list[ValidatedFollowup], list[LibraryMessage], float]:
+    """Suggest/validate follow-ups → (follow_ups, dropped, warnings, elapsed seconds).
 
+    ``dropped`` are the probed-but-rejected candidates (verdict "drop"), returned so
+    the inspector can show their answerability + confidence beside the kept ones.
     ``latest_question``/``latest_answer`` + ``summary`` anchor the suggestions to the
     most recent exchange (``latest_answer`` is empty in the parallel path).
     """
     warnings: list[LibraryMessage] = []
     follow_ups: list[ValidatedFollowup] = []
+    dropped: list[ValidatedFollowup] = []
     start = perf_counter()
     directive = thinking_disabled_system_directive(aux.model_id)
     try:
@@ -850,6 +853,8 @@ def _followups_stage(
             asked_questions=asked_questions,
             record_usage=record_usage,
             record_prompt=record_prompt,
+            # Rejected candidates feed the inspector's "No" rows (kept ones ride the return).
+            record_evaluation=lambda fu: dropped.append(fu) if fu.verdict == "drop" else None,
             system_directive=directive,
         )
         if candidates and not follow_ups:
@@ -857,7 +862,7 @@ def _followups_stage(
     except Exception as exc:  # noqa: BLE001 - follow-ups are optional
         _logger.warning("Follow-up generation failed: %s", exc)
         warnings.append(messages.followups_generation_failed(str(exc)))
-    return follow_ups, warnings, perf_counter() - start
+    return follow_ups, dropped, warnings, perf_counter() - start
 
 
 def _submit_followups(
@@ -916,6 +921,7 @@ def _finalize_turn(
     prompt_ledger: _PromptLedger,
     progress_callback: Callable[[LibraryMessage], None] | None,
     overflow: Sequence[RetrievedChunk] = (),
+    dropped_followups: Sequence[ValidatedFollowup] = (),
 ) -> ConversationalAnswer:
     """Roll conversation state forward and assemble the ``ConversationalAnswer``.
 
@@ -945,6 +951,7 @@ def _finalize_turn(
         overflow_sources=list(overflow),
         plan=plan,
         follow_ups=follow_ups,
+        dropped_followups=list(dropped_followups),
         state=next_state,
         model_used=resolved.model_id,
         aux_model_used=aux.model_id,
@@ -986,6 +993,7 @@ def _compose_turn(
     """
     _report(progress_callback, messages.progress_answer())
     follow_ups: list[ValidatedFollowup] = []
+    dropped_followups: list[ValidatedFollowup] = []
     resolved_question = "; ".join(plan.sub_questions) or raw_question
     with ThreadPoolExecutor(max_workers=2) as executor:
         answer_future = executor.submit(
@@ -1038,7 +1046,9 @@ def _compose_turn(
                 summary=state.summary,
             )
         if followups_future is not None:
-            follow_ups, followups_warnings, timings["followups"] = followups_future.result()
+            follow_ups, dropped_followups, followups_warnings, timings["followups"] = (
+                followups_future.result()
+            )
             warnings.extend(followups_warnings)
 
     return _finalize_turn(
@@ -1051,6 +1061,7 @@ def _compose_turn(
         config,
         answer_text=answer_text,
         follow_ups=follow_ups,
+        dropped_followups=dropped_followups,
         warnings=warnings,
         errors=errors,
         timings=timings,
@@ -1099,6 +1110,7 @@ class ConversationalGeneration:
         config = self._config
         errors: list[LibraryMessage] = []
         follow_ups: list[ValidatedFollowup] = []
+        dropped_followups: list[ValidatedFollowup] = []
 
         _report(self._progress, messages.progress_answer())
         resolved_question = "; ".join(prepared.plan.sub_questions) or prepared.raw_question
@@ -1173,7 +1185,7 @@ class ConversationalGeneration:
                     summary=self._state.summary,
                 )
             if followups_future is not None:
-                follow_ups, followups_warnings, prepared.timings["followups"] = (
+                follow_ups, dropped_followups, followups_warnings, prepared.timings["followups"] = (
                     followups_future.result()
                 )
                 prepared.warnings.extend(followups_warnings)
@@ -1188,6 +1200,7 @@ class ConversationalGeneration:
             config,
             answer_text=answer_text,
             follow_ups=follow_ups,
+            dropped_followups=dropped_followups,
             warnings=prepared.warnings,
             errors=errors,
             timings=prepared.timings,

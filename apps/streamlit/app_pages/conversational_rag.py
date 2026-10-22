@@ -48,6 +48,7 @@ from app_support.conversational_rag.conversational_rag_form_ui import (
     render_turn_inspection,
 )
 from app_support.conversational_rag.conversational_rag_history import (
+    ConversationalFollowupRecord,
     ConversationalPromptTrace,
     ConversationalStageUsage,
     ConversationalTurnRecord,
@@ -221,16 +222,10 @@ _INSPECT_TABS_RHYTHM_CSS = (
     "</style>"
 )
 # The "Follow-up limit" number input in Advanced options carries a label row, making its
-# column taller than the bare toggles beside it; centred in that taller row the three
-# toggles ride above the input box. Nudge them down so they line up with the box centre.
-# Scoped to the toggle widget keys (prefix matches render_advanced_controls' key_prefix).
-_TOGGLE_ALIGN_CSS = (
-    "<style>"
-    ".st-key-conversational_rag_followups,"
-    ".st-key-conversational_rag_inspect"
-    "{margin-top:1.8rem}"
-    "</style>"
-)
+# column taller than the bare Inspect toggle beside it; centred in that taller row the
+# toggle rides above the input box. Nudge it down so it lines up with the box centre.
+# Scoped to the toggle widget key (prefix matches render_advanced_controls' key_prefix).
+_TOGGLE_ALIGN_CSS = "<style>.st-key-conversational_rag_inspect{margin-top:1.8rem}</style>"
 
 
 def _idle_input_border_css(border_color: str) -> str:
@@ -349,7 +344,7 @@ def render_page(context: RagPageContext) -> None:
             # The latest turn's Inspect panel renders below its follow-ups (see the
             # follow-ups branch) so the answer↔follow-up bubbles stay welded and the
             # full-width panel drops to the very bottom of the turn.
-            defer_inspect = _inspect_deferred(is_latest, controls.followups)
+            defer_inspect = _inspect_deferred(is_latest, controls.followup_show_count > 0)
             _render_stored_turn(
                 strings,
                 context.session_root(),
@@ -385,7 +380,7 @@ def render_page(context: RagPageContext) -> None:
                 get_cached_chunks(cache, question),
                 scroll=scroll_requested,
             )
-        elif turns and controls.followups:
+        elif turns and controls.followup_show_count > 0:
             # Suggested follow-ups read as a continuation of the latest answer, so
             # they live inside the scroll panel right beneath it; the Inspect panel
             # then sits below them at the bottom of the turn. Both go in the slot so the
@@ -713,6 +708,16 @@ def _append_history(
             for trace in answer.prompt_traces
         ),
         follow_ups_shown=tuple(item.question for item in answer.follow_ups),
+        follow_ups_dropped=tuple(item.question for item in answer.dropped_followups),
+        follow_ups_evaluated=tuple(
+            ConversationalFollowupRecord(
+                question=item.question,
+                score=item.score,
+                verdict=item.verdict,
+                checked_by_llm=item.checked_by_llm,
+            )
+            for item in (*answer.follow_ups, *answer.dropped_followups)
+        ),
         conversation_id=conversation_id,
         transaction_id=new_transaction_id(),
         state_summary=answer.state.summary,

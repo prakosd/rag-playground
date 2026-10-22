@@ -64,6 +64,8 @@ __all__ = [
     "INSPECT_BUBBLE_KEY_PREFIX",
     "aux_model_choices",
     "build_conversational_config",
+    "decomposition_help_text",
+    "followup_answerability_rows",
     "render_advanced_controls",
     "render_followup_bubble",
     "render_turn_inspection",
@@ -75,8 +77,9 @@ _RERANKER_KEYS = ("off", "local", "llm")
 # Panel layout mirrors Step 4's Basic RAG Q&A panel: a wide control + a compact one.
 _PANEL_COLUMN_WIDTHS = (0.8, 0.2)
 _MAX_TOP_K = 20
-# The follow-up count field is a soft cap (1-5): fewer appear when few pass validation.
-_FOLLOWUP_SHOW_MIN = 1
+# The follow-up limit doubles as the on/off switch (0-5): 0 = off, 1-5 = show at most
+# that many (fewer appear when few pass validation).
+_FOLLOWUP_SHOW_MIN = 0
 _FOLLOWUP_SHOW_MAX = 5
 # Decomposition limit (1-5): 1 = off (one question), 2-5 = split into at most N sub-questions.
 _DECOMPOSITION_LIMIT_MIN = 1
@@ -103,6 +106,9 @@ FOLLOWUP_BUBBLE_KEY_PREFIX = "conv-followup-"
 # Each per-turn Inspect panel renders inside its own keyed container so page CSS can
 # scope the nested Prompt/Response tab tightening to just these panels.
 INSPECT_BUBBLE_KEY_PREFIX = "conv-inspect-"
+# Answerability verdict markers for the Inspect follow-ups grid (emoji → theme-independent).
+_VERDICT_KEEP_EMOJI = "🟢"
+_VERDICT_DROP_EMOJI = "🔴"
 
 
 @dataclass(frozen=True)
@@ -116,7 +122,6 @@ class ConversationalControls:
     reranker: str
     aux_model_id: str
     decomposition_limit: int
-    followups: bool
     followup_show_count: int
     inspect: bool
     followup_drop: float
@@ -168,12 +173,14 @@ def build_conversational_config(
         plan_max_subquestions=controls.decomposition_limit,
         reranker=controls.reranker,
         rerank_top_n=settings.conv_rag_rerank_top_n,
-        followups_enabled=controls.followups,
+        followups_enabled=controls.followup_show_count > 0,
         followups_parallel=settings.conv_rag_followups_parallel,
-        followup_show_count=controls.followup_show_count,
+        # A 0 limit means "off" (handled above); clamp to >= 1 so the library model,
+        # which requires a positive count, still validates.
+        followup_show_count=max(controls.followup_show_count, 1),
         # Size the candidate pool (the prompt's {count}) from the shown limit so the
         # limit drives generation, keeping a small buffer for validation drop-off.
-        followup_candidate_count=controls.followup_show_count + _FOLLOWUP_CANDIDATE_BUFFER,
+        followup_candidate_count=max(controls.followup_show_count, 1) + _FOLLOWUP_CANDIDATE_BUFFER,
         followup_min_score=controls.followup_keep,
         followup_drop_score=controls.followup_drop,
         tone=controls.tone,
@@ -306,29 +313,27 @@ def render_advanced_controls(
                 )
             )
             decomposition_on = decomposition_limit > _DECOMPOSITION_LIMIT_MIN
-            followups = st.toggle(
-                strings["CONV_FOLLOWUPS_LABEL"],
-                value=settings.conv_rag_followups_enabled,
-                help=strings["CONV_FOLLOWUPS_HELP"],
-                disabled=disabled,
-                key=f"{key_prefix}_followups",
+            # The follow-up limit doubles as the on/off switch: 0 = off, 1-5 = show at
+            # most that many. The deployment "start off" setting folds into the default.
+            followup_default = (
+                settings.conv_rag_followup_show_count
+                if settings.conv_rag_followups_enabled
+                else _FOLLOWUP_SHOW_MIN
             )
             followup_show_count = int(
                 st.number_input(
                     strings["CONV_FOLLOWUPS_COUNT_LABEL"],
                     min_value=_FOLLOWUP_SHOW_MIN,
                     max_value=_FOLLOWUP_SHOW_MAX,
-                    value=min(
-                        max(settings.conv_rag_followup_show_count, _FOLLOWUP_SHOW_MIN),
-                        _FOLLOWUP_SHOW_MAX,
-                    ),
+                    value=min(max(followup_default, _FOLLOWUP_SHOW_MIN), _FOLLOWUP_SHOW_MAX),
                     step=1,
                     help=strings["CONV_FOLLOWUPS_COUNT_HELP"],
-                    disabled=disabled or not followups,
+                    disabled=disabled,
                     width=_FOLLOWUP_COUNT_WIDTH_PX,
                     key=f"{key_prefix}_followup_count",
                 )
             )
+            followups = followup_show_count > 0
         with toggles_right, st.container(horizontal_alignment="right"):
             inspect = st.toggle(
                 strings["CONV_INSPECT_LABEL"],
@@ -354,7 +359,6 @@ def render_advanced_controls(
         reranker=reranker,
         aux_model_id=aux_model_id,
         decomposition_limit=decomposition_limit,
-        followups=followups,
         followup_show_count=followup_show_count,
         inspect=inspect,
         followup_drop=float(drop),
@@ -683,6 +687,7 @@ def render_turn_inspection(
             _render_followups(
                 strings,
                 answer.follow_ups,
+                answer.dropped_followups,
                 none_valid_note=_inspect_note(strings, answer.warnings, CODE_FOLLOWUPS_NONE_VALID),
             )
             _render_followups_prompts(strings, answer)
@@ -784,17 +789,27 @@ def _bullet_list(items: Sequence[str]) -> None:
     st.markdown("\n".join(f"- {item}" for item in items))
 
 
+def decomposition_help_text(strings: Strings, plan: QueryPlan) -> str:
+    """Sub-questions hint, with the decomposition-cap note folded in when it applied.
+
+    When the model proposed more sub-questions than the limit shows, the "proposed N,
+    showing M" note joins the hover hint instead of a separate caption, keeping the
+    panel uncluttered.
+    """
+    help_text = strings["CONV_INSPECT_SUBQUESTIONS_HELP"]
+    if plan.proposed_count > len(plan.sub_questions):
+        capped = strings["CONV_INSPECT_SUBQUESTIONS_CAPPED"].format(
+            proposed=plan.proposed_count, shown=len(plan.sub_questions)
+        )
+        return f"{help_text} {capped}"
+    return help_text
+
+
 def _render_decomposition(strings: Strings, plan: QueryPlan) -> None:
     _section_label(
-        strings["CONV_INSPECT_SUBQUESTIONS"], help_text=strings["CONV_INSPECT_SUBQUESTIONS_HELP"]
+        strings["CONV_INSPECT_SUBQUESTIONS"], help_text=decomposition_help_text(strings, plan)
     )
     _bullet_list(plan.sub_questions)
-    if plan.proposed_count > len(plan.sub_questions):
-        st.caption(
-            strings["CONV_INSPECT_SUBQUESTIONS_CAPPED"].format(
-                proposed=plan.proposed_count, shown=len(plan.sub_questions)
-            )
-        )
     if plan.degraded:
         st.caption(strings["CONV_INSPECT_DEGRADED"])
 
@@ -881,19 +896,48 @@ def _inspect_note(strings: Strings, warnings: Sequence[LibraryMessage], code: st
     return None
 
 
+def _answerability_value(emoji: str, verdict_label: str, score: float) -> str:
+    """One verdict cell: emoji + Yes/No, with the confidence % appended when known."""
+    label = f"{emoji} {verdict_label}"
+    if score > 0:
+        return f"{label} · {round(max(0.0, min(1.0, score)) * 100)}%"
+    return label
+
+
+def followup_answerability_rows(
+    follow_ups: Sequence[ValidatedFollowup],
+    dropped: Sequence[ValidatedFollowup],
+    strings: Strings,
+) -> list[tuple[str, str]]:
+    """Inspect follow-up rows: (question, "🟢 Yes · 53%" / "🔴 No · 30%").
+
+    Kept (answerable) candidates come first, then dropped (unanswerable) by confidence.
+    The % — the follow-up's best semantic-search match — is omitted when unknown (e.g. a
+    turn reloaded from history before scores were saved), leaving just the Yes/No verdict.
+    """
+    yes_label = strings["CONV_INSPECT_ANSWERABILITY_YES"]
+    no_label = strings["CONV_INSPECT_ANSWERABILITY_NO"]
+    rows: list[tuple[str, str]] = []
+    for item in follow_ups:
+        value = _answerability_value(_VERDICT_KEEP_EMOJI, yes_label, item.score)
+        rows.append((html.unescape(item.question), value))
+    for item in sorted(dropped, key=lambda item: item.score, reverse=True):
+        value = _answerability_value(_VERDICT_DROP_EMOJI, no_label, item.score)
+        rows.append((html.unescape(item.question), value))
+    return rows
+
+
 def _render_followups(
     strings: Strings,
     follow_ups: Sequence[ValidatedFollowup],
+    dropped: Sequence[ValidatedFollowup] = (),
     *,
     none_valid_note: str | None = None,
 ) -> None:
-    if not follow_ups:
+    rows = followup_answerability_rows(follow_ups, dropped, strings)
+    if not rows:
         st.caption(none_valid_note or strings["CONV_INSPECT_FOLLOWUPS_NONE"])
         return
-    rows = [
-        (html.unescape(item.question), f"{round(max(0.0, min(1.0, item.score)) * 100)}%")
-        for item in follow_ups
-    ]
     _section_label(
         strings["CONV_INSPECT_FOLLOWUPS_SCORE_HEADER"],
         help_text=strings["CONV_INSPECT_FOLLOWUPS_HELP"],

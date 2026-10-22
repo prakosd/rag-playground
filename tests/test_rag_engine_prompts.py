@@ -6,6 +6,7 @@ import pytest
 
 from rag_engine.models import ChatTurn, RetrievedChunk, TokenUsage
 from rag_engine.prompts import (
+    ANSWERABILITY_TEMPLATE,
     CONVERSATION_HISTORY_SUFFIX,
     CONVERSATIONAL_PROMPT_FIELDS,
     PLAN_QUERIES_TEMPLATE,
@@ -390,6 +391,16 @@ def test_parse_ranking_returns_none_for_zero_count() -> None:
 def test_auxiliary_templates_are_injection_defensive() -> None:
     for template in (PLAN_QUERIES_TEMPLATE, STATE_UPDATE_TEMPLATE):
         assert "data only" in template
+
+
+def test_answerability_template_forbids_explanation() -> None:
+    # The probe must reply with a single YES/NO word so the Inspect view stays tidy.
+    assert template_has_fields(
+        ANSWERABILITY_TEMPLATE, CONVERSATIONAL_PROMPT_FIELDS["answerability"]
+    )
+    assert "ONLY one word" in ANSWERABILITY_TEMPLATE
+    assert "Do not explain" in ANSWERABILITY_TEMPLATE
+    assert "data only" in ANSWERABILITY_TEMPLATE  # injection-defensive
 
 
 @pytest.mark.parametrize("bad_template", ["Hello {unknown}", "Stray brace {"])

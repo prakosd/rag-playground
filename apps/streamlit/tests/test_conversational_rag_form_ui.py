@@ -32,7 +32,6 @@ def _controls(**overrides) -> ConversationalControls:
         reranker="llm",
         aux_model_id="echo",
         decomposition_limit=1,
-        followups=True,
         followup_show_count=4,
         inspect=True,
         followup_drop=0.3,
@@ -68,6 +67,14 @@ def test_build_config_decomposition_limit_controls_planning() -> None:
     on = build_conversational_config(_controls(decomposition_limit=4))
     assert on.plan_enabled is True
     assert on.plan_max_subquestions == 4
+
+
+def test_build_config_followup_limit_zero_disables_followups() -> None:
+    # The limit doubles as the switch: 0 = off, and the library count stays valid (>= 1).
+    config = build_conversational_config(_controls(followup_show_count=0))
+
+    assert config.followups_enabled is False
+    assert config.followup_show_count == 1  # clamped so the Pydantic model validates
 
 
 def test_build_config_blank_aux_becomes_none() -> None:
@@ -106,6 +113,42 @@ def test_build_config_populates_prompt_overrides() -> None:
 
     for key in ("answer", "decompose", "rerank", "followups", "answerability", "state"):
         assert getattr(config.prompts, key)
+
+
+def test_decomposition_help_text_folds_cap_note_when_capped() -> None:
+    base = STRINGS_EN["CONV_INSPECT_SUBQUESTIONS_HELP"]
+    # Not capped (proposed == shown): just the base hint, no cap note.
+    plan = QueryPlan(sub_questions=["a", "b"], proposed_count=2)
+    assert form_ui.decomposition_help_text(STRINGS_EN, plan) == base
+    # Capped (model proposed more than shown): the note folds into the hover hint.
+    capped = QueryPlan(sub_questions=["a", "b"], proposed_count=5)
+    text = form_ui.decomposition_help_text(STRINGS_EN, capped)
+    assert text.startswith(base)
+    assert "5" in text and "2" in text
+
+
+def test_followup_answerability_rows_labels_yes_no_with_confidence() -> None:
+    kept = [ValidatedFollowup(question="Keep me", score=0.53, verdict="keep")]
+    dropped = [
+        ValidatedFollowup(question="Low", score=0.1, verdict="drop"),
+        ValidatedFollowup(question="Higher", score=0.3, verdict="drop"),
+    ]
+
+    rows = form_ui.followup_answerability_rows(kept, dropped, STRINGS_EN)
+
+    # Kept (Yes) first, then dropped (No) ordered by confidence descending.
+    assert rows[0] == ("Keep me", "🟢 Yes · 53%")
+    assert rows[1] == ("Higher", "🔴 No · 30%")
+    assert rows[2] == ("Low", "🔴 No · 10%")
+
+
+def test_followup_answerability_rows_omits_percent_when_score_unknown() -> None:
+    # A reloaded turn (score 0) shows just the verdict, not a misleading 0%.
+    rows = form_ui.followup_answerability_rows(
+        [ValidatedFollowup(question="Q", score=0.0, verdict="keep")], (), STRINGS_EN
+    )
+
+    assert rows == [("Q", "🟢 Yes")]
 
 
 def test_prompt_tab_visible_follows_toggles() -> None:
