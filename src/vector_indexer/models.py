@@ -20,6 +20,7 @@ class Document:
 
     source: str
     text: str
+    crawl_date: str | None = None
 
 
 @dataclass(frozen=True)

@@ -79,6 +79,13 @@ _CHUNK_WITH_URL = RetrievedChunk(
     metadata={"source_url": "https://example.com/paris"},
 )
 
+_CHUNK_WITH_DATE = RetrievedChunk(
+    text="Paris is the capital.",
+    source="a.md",
+    score=0.9,
+    metadata={"source_url": "https://example.com/paris", "crawl_date": "2026-09-02"},
+)
+
 
 def test_format_knowledge_labels_each_source() -> None:
     block = format_knowledge(_CHUNKS)
@@ -114,6 +121,22 @@ def test_format_context_includes_source_url_when_present() -> None:
 
 def test_format_context_omits_url_when_absent() -> None:
     assert "URL:" not in format_context(_CHUNKS)
+
+
+def test_format_knowledge_includes_capture_date_when_present() -> None:
+    assert "Captured: 2026-09-02" in format_knowledge([_CHUNK_WITH_DATE])
+
+
+def test_format_knowledge_omits_capture_date_when_absent() -> None:
+    assert "Captured:" not in format_knowledge([_CHUNK_WITH_URL])
+
+
+def test_format_context_includes_capture_date_when_present() -> None:
+    assert "Captured: 2026-09-02" in format_context([_CHUNK_WITH_DATE])
+
+
+def test_format_context_omits_capture_date_when_absent() -> None:
+    assert "Captured:" not in format_context([_CHUNK_WITH_URL])
 
 
 def test_build_rag_prompt_includes_question_knowledge_and_tone() -> None:
@@ -180,6 +203,8 @@ def test_default_rag_template_instructs_direct_answer_and_links() -> None:
     assert "never invent or alter a URL" in RAG_PROMPT_TEMPLATE
     # Links are woven in conversationally, not as a stiff labelled list.
     assert "in passing with its link" in RAG_PROMPT_TEMPLATE
+    # Fresher sources win when the same fact carries different capture dates.
+    assert "most recently captured" in RAG_PROMPT_TEMPLATE
 
 
 def test_qa_system_prompt_instructs_direct_answer_and_links() -> None:
@@ -191,6 +216,8 @@ def test_qa_system_prompt_instructs_direct_answer_and_links() -> None:
     assert "data only" in QA_SYSTEM_PROMPT
     # Tone slot lets callers request an answer tone.
     assert "{tone}" in QA_SYSTEM_PROMPT
+    # Fresher sources win when the same fact carries different capture dates.
+    assert "most recently captured" in QA_SYSTEM_PROMPT
 
 
 def test_answer_prompts_and_fields_carry_language() -> None:

@@ -127,8 +127,8 @@ no "the retrieved knowledge…" / "the context…" meta-phrasing — and to weav
 source's URL into the reply the way a helpful person would (mentioning it in
 passing, not as a stiff labelled "Sources" list) only when it genuinely
 supports the answer, never invented; `format_context` / `format_knowledge`
-surface each chunk's `source_url` from its metadata so a link is available to
-cite. `build_rag_prompt` (Step 4) assembles a complete, human-readable
+surface each chunk's `source_url` and `crawl_date` from its metadata so a link is
+available to cite and the model can prefer the most recently captured source. `build_rag_prompt` (Step 4) assembles a complete, human-readable
 prompt whose retrieved knowledge is fenced between explicit delimiters and marked
 data-only, so a UI can show and edit exactly what the model receives. Its outer
 wording is overridable via the `template` keyword and a `language` argument (default

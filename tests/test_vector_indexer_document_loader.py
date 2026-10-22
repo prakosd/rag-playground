@@ -30,6 +30,27 @@ def test_unsupported_file_is_skipped(tmp_path: Path) -> None:
     assert result.warnings
 
 
+def test_crawl_date_parsed_from_front_matter(tmp_path: Path) -> None:
+    md = tmp_path / "a.md"
+    md.write_text(
+        '---\ncrawl_start_datetime: "2026-09-02T13:16:23+00:00"\n---\n\n# heading\n',
+        encoding="utf-8",
+    )
+
+    result = load_documents([md])
+
+    assert result.documents[0].crawl_date == "2026-09-02"
+
+
+def test_crawl_date_none_for_plain_text(tmp_path: Path) -> None:
+    txt = tmp_path / "b.txt"
+    txt.write_text("plain text", encoding="utf-8")
+
+    result = load_documents([txt])
+
+    assert result.documents[0].crawl_date is None
+
+
 def test_zip_contributes_only_md_and_txt(tmp_path: Path) -> None:
     zip_path = tmp_path / "input.zip"
     with zipfile.ZipFile(zip_path, "w") as archive:

@@ -63,6 +63,32 @@ def test_prefers_sorted_over_unsorted_content(tmp_path: Path) -> None:
     assert names == ["sorted_success_content_001.md"]
 
 
+def test_discovers_prefixless_final_content(tmp_path: Path) -> None:
+    # Current crawls write the prefix-less primary output content_NNN_of_MMM.
+    root = tmp_path / "session_x"
+    final = root / "crawl_01_a" / "2026-06-01_10-00-00" / "final"
+    _write(final / "content_001_of_001.md")
+
+    files = list_crawl_result_files(root)
+
+    names = [Path(result.relative_path).name for result in files]
+    assert names == ["content_001_of_001.md"]
+
+
+def test_prefers_prefixless_content_over_legacy_names(tmp_path: Path) -> None:
+    # A crawl already on disk may carry the legacy sorted_success_content_* name;
+    # the current prefix-less content_* wins when both are present.
+    root = tmp_path / "session_x"
+    final = root / "crawl_01_a" / "2026-06-01_10-00-00" / "final"
+    _write(final / "content_001_of_001.md")
+    _write(final / "sorted_success_content_001.md")
+
+    files = list_crawl_result_files(root)
+
+    names = [Path(result.relative_path).name for result in files]
+    assert names == ["content_001_of_001.md"]
+
+
 def test_uses_newest_round_when_multiple(tmp_path: Path) -> None:
     root = tmp_path / "session_x"
     run = root / "crawl_01_a" / "2026-06-01_10-00-00"

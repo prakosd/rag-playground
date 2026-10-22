@@ -15,6 +15,7 @@ from artifact_store import LibraryMessage
 from artifact_store.archives import iter_text_members
 from vector_indexer import messages
 from vector_indexer.models import Document
+from vector_indexer.page_source import extract_crawl_date
 
 __all__ = ["SUPPORTED_TEXT_SUFFIXES", "DocumentLoadResult", "load_documents"]
 
@@ -59,7 +60,9 @@ def _load_text_file(path: Path, result: DocumentLoadResult) -> None:
         result.skipped_file_count += 1
         result.warnings.append(messages.file_unreadable(path.name, str(exc)))
         return
-    result.documents.append(Document(source=path.name, text=text))
+    result.documents.append(
+        Document(source=path.name, text=text, crawl_date=extract_crawl_date(text))
+    )
 
 
 def _load_zip(path: Path, result: DocumentLoadResult) -> None:
@@ -74,4 +77,10 @@ def _load_zip(path: Path, result: DocumentLoadResult) -> None:
         return
     for member_name, data in members:
         text = data.decode("utf-8", errors="replace")
-        result.documents.append(Document(source=f"{path.name}:{member_name}", text=text))
+        result.documents.append(
+            Document(
+                source=f"{path.name}:{member_name}",
+                text=text,
+                crawl_date=extract_crawl_date(text),
+            )
+        )

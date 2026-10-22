@@ -293,16 +293,18 @@ front matter and the header out of indexed chunk text.
 ### What to look at first
 
 A crawl writes many files. The primary output is
-`final/sorted_success_content_001_of_NNN.md` — all successfully extracted pages,
+`final/content_001_of_NNN.md` — all successfully extracted pages,
 merged across every retry round and sorted by URL path. When a single file would
 exceed `max_file_size_mb`, content splits into `001_of_003`, `002_of_003`, … files.
+Supporting files — URL lists and any failed-page content — sit in
+`final/diagnostics/`, so the `final/` folder itself shows only the content that matters.
 
 | I want… | File |
 |---------|------|
-| Extracted site content | `final/sorted_success_content_*.md` |
-| Succeeded URLs | `final/sorted_success_urls.txt` |
-| Pages that never succeeded | `final/sorted_fail_content_*.md` |
-| Failed URLs | `final/sorted_fail_urls.txt` |
+| Extracted site content | `final/content_*.md` |
+| Succeeded URLs | `final/diagnostics/sorted_success_urls.txt` |
+| Pages that never succeeded | `final/diagnostics/sorted_fail_content_*.md` |
+| Failed URLs | `final/diagnostics/sorted_fail_urls.txt` |
 | Full site map (status + depth) | `logs/site_graph.jsonl` |
 | Timestamped crawl diary | `logs/activity_log.txt` / `logs/activity_log.csv` |
 | Chart-ready progress timeline | `logs/progress_history.jsonl` |

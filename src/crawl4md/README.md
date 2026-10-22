@@ -20,7 +20,7 @@ crawler.print_summary(results)
 ```
 
 Output is written to a UTC-timestamped folder; the primary result is
-`final/sorted_success_content_*.md`.
+`final/content_*.md`.
 
 Each content file opens with a YAML front-matter block (crawl run metadata) and wraps
 every page's human-readable header (title + `*Source: <url>*`) in render-invisible markers

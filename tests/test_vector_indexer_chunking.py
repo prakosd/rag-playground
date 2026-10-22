@@ -55,6 +55,26 @@ def test_chunking_stamps_source_line_and_excludes_run_metadata() -> None:
     assert all("session_id" not in chunk.text for chunk in chunks)
 
 
+def test_chunking_stamps_crawl_date_when_present() -> None:
+    text = _crawl_output("Page One", "https://x.test/a", "Alpha beta gamma delta. " * 20)
+    documents = [Document(source="c.md", text=text, crawl_date="2026-09-02")]
+
+    chunks = chunk_documents(documents, chunk_size=120, chunk_overlap=20, language="english")
+
+    assert chunks
+    assert all(chunk.metadata["crawl_date"] == "2026-09-02" for chunk in chunks)
+
+
+def test_chunking_omits_crawl_date_when_absent() -> None:
+    text = _crawl_output("Page One", "https://x.test/a", "Alpha beta gamma. " * 20)
+    documents = [Document(source="c.md", text=text)]
+
+    chunks = chunk_documents(documents, chunk_size=120, chunk_overlap=20, language="english")
+
+    assert chunks
+    assert all("crawl_date" not in chunk.metadata for chunk in chunks)
+
+
 def test_chunking_without_markers_adds_no_source_prefix() -> None:
     documents = [Document(source="plain.txt", text="Plain content without any markers.")]
 

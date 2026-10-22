@@ -41,6 +41,8 @@ def chunk_documents(
                     "chunk_index": str(index),
                     "language": language,
                 }
+                if document.crawl_date:
+                    metadata["crawl_date"] = document.crawl_date
                 if page.title:
                     metadata["source_title"] = page.title
                 if page.url:

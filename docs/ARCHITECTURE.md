@@ -94,8 +94,8 @@ with the matching searcher. Embeddings are LangChain `Embeddings` objects. Befor
 indexer strips each file's leading crawl run metadata (the YAML front matter) and
 splits the body on the render-invisible page markers crawl4md emits, so run metadata
 never reaches a chunk and every chunk is stamped with its page's
-`Source: [title](url)` line (also carried as `source_title` / `source_url`
-metadata). Files without markers degrade to a single untitled page. The `manifest.json`
+`Source: [title](url)` line (also carried as `source_title` / `source_url` /
+`crawl_date` metadata). Files without markers degrade to a single untitled page. The `manifest.json`
 records the embedding model, dimension, collection name, `store_backend`, the run's `created_at`
 timestamp, and the distinct `indexed_sources` (for the Step 3 source filter) so an index
 can be reopened later. See

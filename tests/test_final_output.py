@@ -43,11 +43,17 @@ def test_write_final_files_writes_url_lists_and_content(tmp_path: Path) -> None:
             write_content=True,
         )
 
-    final_dir = tmp_path / "final"
-    assert (final_dir / "success_urls.txt").read_text(encoding="utf-8") == "https://example.com/a"
-    assert (final_dir / "fail_urls.txt").read_text(encoding="utf-8") == "https://example.com/b"
-    assert "# A" in next(final_dir.glob("success_content_*.md")).read_text(encoding="utf-8")
-    assert "# B failed" in next(final_dir.glob("fail_content_*.md")).read_text(encoding="utf-8")
+    diagnostics_dir = tmp_path / "final" / "diagnostics"
+    assert (diagnostics_dir / "success_urls.txt").read_text(encoding="utf-8") == (
+        "https://example.com/a"
+    )
+    assert (diagnostics_dir / "fail_urls.txt").read_text(encoding="utf-8") == (
+        "https://example.com/b"
+    )
+    assert "# A" in next(diagnostics_dir.glob("success_content_*.md")).read_text(encoding="utf-8")
+    assert "# B failed" in next(diagnostics_dir.glob("fail_content_*.md")).read_text(
+        encoding="utf-8"
+    )
 
 
 def test_write_final_files_skips_unsorted_content_when_cleanup_enabled(tmp_path: Path) -> None:
@@ -64,9 +70,11 @@ def test_write_final_files_skips_unsorted_content_when_cleanup_enabled(tmp_path:
             write_content=True,
         )
 
-    final_dir = tmp_path / "final"
-    assert (final_dir / "success_urls.txt").read_text(encoding="utf-8") == "https://example.com/a"
-    assert list(final_dir.glob("success_content_*.md")) == []
+    diagnostics_dir = tmp_path / "final" / "diagnostics"
+    assert (diagnostics_dir / "success_urls.txt").read_text(encoding="utf-8") == (
+        "https://example.com/a"
+    )
+    assert list(diagnostics_dir.glob("success_content_*.md")) == []
 
 
 def test_write_sorted_files_sorts_urls_and_renames_content(tmp_path: Path) -> None:
@@ -79,10 +87,35 @@ def test_write_sorted_files_sorts_urls_and_renames_content(tmp_path: Path) -> No
     writer.write_sorted_files()
 
     final_dir = tmp_path / "final"
-    assert (final_dir / "sorted_success_urls.txt").read_text(encoding="utf-8") == (
+    assert (final_dir / "diagnostics" / "sorted_success_urls.txt").read_text(encoding="utf-8") == (
         "https://example.com/a\nhttps://example.com/b"
     )
-    assert list(final_dir.glob("sorted_success_content_*_of_*.md"))
+    assert list(final_dir.glob("content_*_of_*.md"))
+
+
+def test_write_sorted_files_puts_supporting_files_under_diagnostics(tmp_path: Path) -> None:
+    round_dir = tmp_path / "round_1"
+    _append_page(round_dir / "success_pages.jsonl", "https://example.com/a", "# A")
+    _append_page(round_dir / "fail_pages.jsonl", "https://example.com/b", "# B")
+    writer = _output_writer(tmp_path)
+
+    writer.write_final_files(
+        [CrawlResult(url="https://example.com/a", success=True)],
+        [CrawlResult(url="https://example.com/b", success=False)],
+        write_content=False,
+    )
+    writer.write_sorted_files()
+
+    final_dir = tmp_path / "final"
+    diagnostics_dir = final_dir / "diagnostics"
+    # Only the primary content_* files and the diagnostics/ folder sit at the top.
+    assert list(final_dir.glob("content_*_of_*.md"))
+    for entry in final_dir.iterdir():
+        assert entry.name == "diagnostics" or entry.name.startswith("content_")
+    # Supporting files live under diagnostics/.
+    assert (diagnostics_dir / "sorted_success_urls.txt").exists()
+    assert (diagnostics_dir / "sorted_fail_urls.txt").exists()
+    assert list(diagnostics_dir.glob("sorted_fail_content_*_of_*.md"))
 
 
 def test_saved_results_from_sidecars_excludes_failed_urls_that_later_succeeded(
@@ -147,8 +180,9 @@ def test_write_sorted_files_deletes_unsorted_final_content_when_cleanup_enabled(
     round_dir = tmp_path / "round_1"
     _append_page(round_dir / "success_pages.jsonl", "https://example.com/a", "# A")
     final_dir = tmp_path / "final"
-    final_dir.mkdir()
-    unsorted = final_dir / "success_content_001.md"
+    diagnostics_dir = final_dir / "diagnostics"
+    diagnostics_dir.mkdir(parents=True)
+    unsorted = diagnostics_dir / "success_content_001.md"
     unsorted.write_text("old", encoding="utf-8")
     writer = _output_writer(tmp_path)
 
@@ -156,7 +190,7 @@ def test_write_sorted_files_deletes_unsorted_final_content_when_cleanup_enabled(
         writer.write_sorted_files()
 
     assert not unsorted.exists()
-    assert list(final_dir.glob("sorted_success_content_*"))
+    assert list(final_dir.glob("content_*"))
 
 
 def test_write_sorted_files_keeps_unsorted_final_content_when_cleanup_disabled(
@@ -190,7 +224,7 @@ def test_write_sorted_round_files_skipped_when_cleanup_enabled(tmp_path: Path) -
     with patch.object(_fo_mod, "_ENABLE_SORTED_ROUND_FILES", False):
         writer.write_sorted_round_files(1, round_dir)
 
-    assert not list(round_dir.glob("sorted_success_content_*"))
+    assert not list(round_dir.glob("content_*"))
     assert not list(round_dir.glob("sorted_success_urls.txt"))
 
 
@@ -202,5 +236,5 @@ def test_write_sorted_round_files_produced_when_cleanup_disabled(tmp_path: Path)
     with patch.object(_fo_mod, "_ENABLE_SORTED_ROUND_FILES", True):
         writer.write_sorted_round_files(2, round_dir)
 
-    assert list(round_dir.glob("sorted_success_content_*"))
+    assert list(round_dir.glob("content_*"))
     assert (round_dir / "sorted_success_urls.txt").exists()

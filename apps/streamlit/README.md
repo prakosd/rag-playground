@@ -476,8 +476,8 @@ timestamp can be parsed from the run folder or `logs/progress_history.jsonl`.
 
 **Which files to open first:**
 
-- `final/sorted_success_content_001_of_001.md` — the extracted content, sorted by URL path
-- `final/sorted_success_urls.txt` — all URLs that succeeded
+- `final/content_001_of_001.md` — the extracted content, sorted by URL path
+- `final/diagnostics/` — supporting files: URL lists and any failed-page content
 - `logs/activity_log.csv` — timestamped crawl diary in spreadsheet format
 
 The `round_N/` folders are intermediate per-round snapshots. They are useful when a crawl was

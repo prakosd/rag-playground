@@ -50,7 +50,7 @@ config = IndexingConfig(
 indexer = VectorIndexer()
 result = indexer.run(
     config,
-    inputs=["outputs/.../final/sorted_success_content_001.md", "notes.zip"],
+    inputs=["outputs/.../final/content_001.md", "notes.zip"],
     output_base="outputs/.../vector_01_navigate",
 )
 
@@ -74,7 +74,8 @@ each page's human-readable header (title + `*Source: <url>*`) in render-invisibl
 strips the front matter so run metadata never reaches a chunk, splits the body into pages,
 and recovers each page's title/URL. `chunk_documents` then prepends a
 `Source: [title](url)` line to every chunk and copies the title/URL into chunk metadata
-(`source_title`, `source_url`) so retrieval can cite the page. Inputs without markers
+(`source_title`, `source_url`, plus `crawl_date` when the file's front matter carries
+`crawl_start_datetime`) so retrieval can cite the page and prefer fresher sources. Inputs without markers
 (plain `.txt` or non-crawl4md Markdown) degrade to a single untitled page and get no Source
 prefix. The marker strings are duplicated in `crawl4md.writer` with a "keep in sync" note;
 `vector_indexer` does **not** import `crawl4md`.

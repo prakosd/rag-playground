@@ -123,13 +123,13 @@ class TestFailContentFiles:
         assert crawler.output_dir is not None
         assert [result.url for result in results if not result.success] == redirect_urls
 
-        final_dir = crawler.output_dir / "final"
-        assert (final_dir / "fail_urls.txt").read_text(
+        diagnostics_dir = crawler.output_dir / "final" / "diagnostics"
+        assert (diagnostics_dir / "fail_urls.txt").read_text(
             encoding="utf-8"
         ).splitlines() == redirect_urls
         final_fail_content = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in sorted(final_dir.glob("sorted_fail_content_*.txt"))
+            for path in sorted(diagnostics_dir.glob("sorted_fail_content_*.txt"))
         )
         for redirect_url in redirect_urls:
             assert redirect_url in final_fail_content
@@ -741,14 +741,14 @@ class TestPrintSummary:
 
         final_dir = tmp_path / "final"
         final_dir.mkdir()
-        (final_dir / "sorted_success_content_001.md").write_text("data", encoding="utf-8")
+        (final_dir / "content_001.md").write_text("data", encoding="utf-8")
         (final_dir / "sorted_success_urls.txt").write_text("url", encoding="utf-8")
 
         results = [CrawlResult(url="https://example.com/a", success=True)]
         crawler.print_summary(results)
         out = capsys.readouterr().out
         assert "Sorted by URL path" in out
-        assert "sorted_success_content_001.md" in out
+        assert "content_001.md" in out
 
     def test_prints_fail_hint(self, tmp_path: Path, capsys):
         from crawl4md.config import CrawlResult
@@ -781,9 +781,9 @@ class TestPrintSummary:
         crawler = SiteCrawler(config, output_base=tmp_path)
         crawler.output_dir = tmp_path
 
-        final_dir = tmp_path / "final"
-        final_dir.mkdir()
-        (final_dir / "success_content_001.md").write_text("data", encoding="utf-8")
+        diagnostics_dir = tmp_path / "final" / "diagnostics"
+        diagnostics_dir.mkdir(parents=True)
+        (diagnostics_dir / "success_content_001.md").write_text("data", encoding="utf-8")
 
         results = [CrawlResult(url="https://example.com/a", success=True)]
         crawler.print_summary(results)
@@ -979,7 +979,7 @@ class TestFinalUnsortedContentFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        final_files = list(crawler.output_dir.glob("final/success_content_*.txt"))
+        final_files = list(crawler.output_dir.glob("final/diagnostics/success_content_*.txt"))
         assert len(final_files) >= 1
         content = final_files[0].read_text(encoding="utf-8")
         assert "https://example.com" in content
@@ -1038,7 +1038,7 @@ class TestFinalUnsortedContentFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        fail_files = list(crawler.output_dir.glob("final/fail_content_*.txt"))
+        fail_files = list(crawler.output_dir.glob("final/diagnostics/fail_content_*.txt"))
         assert len(fail_files) >= 1
         content = fail_files[0].read_text(encoding="utf-8")
         assert "https://example.com/blocked" in content
@@ -1075,7 +1075,7 @@ class TestFinalUnsortedContentFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        final_files = list(crawler.output_dir.glob("final/success_content_*.txt"))
+        final_files = list(crawler.output_dir.glob("final/diagnostics/success_content_*.txt"))
         assert len(final_files) >= 1
         content = final_files[0].read_text(encoding="utf-8")
         # Both source blocks should appear exactly once
@@ -1168,7 +1168,7 @@ class TestSortedRoundFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        sorted_files = list(crawler.output_dir.glob("initial/sorted_success_content_*.txt"))
+        sorted_files = list(crawler.output_dir.glob("initial/content_*.txt"))
         assert len(sorted_files) >= 1
         content = sorted_files[0].read_text(encoding="utf-8")
         assert "https://example.com/page" in content
@@ -1273,7 +1273,7 @@ class TestSortedRoundFiles:
         assert set(urls) == {url_a, url_b}
 
         # Sorted content should contain both
-        sorted_r2_files = list(crawler.output_dir.glob("round_1/sorted_success_content_*.txt"))
+        sorted_r2_files = list(crawler.output_dir.glob("round_1/content_*.txt"))
         assert len(sorted_r2_files) >= 1
         content = sorted_r2_files[0].read_text(encoding="utf-8")
         assert url_a in content
@@ -1295,14 +1295,14 @@ class TestPrintSummarySortedRound:
         round_1_dir.mkdir()
         (round_1_dir / "success_content_001.md").write_text("x", encoding="utf-8")
         # Sorted round files
-        (round_1_dir / "sorted_success_content_001.md").write_text("x", encoding="utf-8")
+        (round_1_dir / "content_001.md").write_text("x", encoding="utf-8")
         (round_1_dir / "sorted_success_urls.txt").write_text("url", encoding="utf-8")
 
         results = [CrawlResult(url="https://example.com/a", success=True)]
         crawler.print_summary(results)
         out = capsys.readouterr().out
         assert "round_1 (sorted)" in out
-        assert "sorted_success_content_001.md" in out
+        assert "content_001.md" in out
 
 
 class TestInterruptHandling:
@@ -1382,7 +1382,7 @@ class TestInterruptHandling:
         results = crawler.crawl()
 
         assert crawler.output_dir is not None
-        final_urls = crawler.output_dir / "final" / "success_urls.txt"
+        final_urls = crawler.output_dir / "final" / "diagnostics" / "success_urls.txt"
         assert url_a in final_urls.read_text(encoding="utf-8")
         assert [result.url for result in results if result.success] == [url_a]
         assert not (crawler.output_dir / "session.jsonl").exists()
@@ -1400,16 +1400,16 @@ class TestInterruptHandling:
             ExtractedPage(url=url_a, title="A", markdown="fresh content"),
             round_dir / "success_pages.jsonl",
         )
-        (final_dir / "success_content_001.md").write_text("stale content", encoding="utf-8")
-        (final_dir / "success_content_002.md").write_text("stale extra", encoding="utf-8")
-        (final_dir / "fail_content_001.md").write_text("stale fail", encoding="utf-8")
-        (final_dir / "sorted_success_content_001_of_999.md").write_text(
-            "stale sorted", encoding="utf-8"
-        )
-        (final_dir / "sorted_fail_content_001_of_999.md").write_text(
+        diagnostics_dir = final_dir / "diagnostics"
+        diagnostics_dir.mkdir()
+        (final_dir / "content_001_of_999.md").write_text("stale sorted", encoding="utf-8")
+        (diagnostics_dir / "success_content_001.md").write_text("stale content", encoding="utf-8")
+        (diagnostics_dir / "success_content_002.md").write_text("stale extra", encoding="utf-8")
+        (diagnostics_dir / "fail_content_001.md").write_text("stale fail", encoding="utf-8")
+        (diagnostics_dir / "sorted_fail_content_001_of_999.md").write_text(
             "stale sorted fail", encoding="utf-8"
         )
-        (final_dir / "fail_urls.txt").write_text("https://example.com/old", encoding="utf-8")
+        (diagnostics_dir / "fail_urls.txt").write_text("https://example.com/old", encoding="utf-8")
 
         page_config = PageConfig(output_extension=".md")
         crawler = SiteCrawler(
@@ -1422,19 +1422,18 @@ class TestInterruptHandling:
         crawler._write_final_files([CrawlResult(url=url_a, success=True)], [])
         crawler._write_sorted_files([CrawlResult(url=url_a, success=True)], [])
 
-        # With _CLEANUP_INTERMEDIATE_FILES=True (default), unsorted content files
-        # are removed after sorted files are written.
-        sorted_success_files = sorted(final_dir.glob("sorted_success_content_*.md"))
-        assert [path.name for path in sorted_success_files] == [
-            "sorted_success_content_001_of_001.md"
-        ]
+        # With _CLEANUP_INTERMEDIATE_FILES=True (default), the primary content_*
+        # files stay at final/ top; stale supporting files under diagnostics/ are
+        # superseded and removed.
+        sorted_success_files = sorted(final_dir.glob("content_*.md"))
+        assert [path.name for path in sorted_success_files] == ["content_001_of_001.md"]
         assert "stale" not in sorted_success_files[0].read_text(encoding="utf-8")
         assert "fresh content" in sorted_success_files[0].read_text(encoding="utf-8")
-        assert not list(final_dir.glob("success_content_*.md"))  # cleaned up
-        assert not (final_dir / "fail_urls.txt").exists()
-        assert not (final_dir / "sorted_fail_urls.txt").exists()
-        assert not list(final_dir.glob("fail_content_*.md"))
-        assert not list(final_dir.glob("sorted_fail_content_*.md"))
+        assert not list(diagnostics_dir.glob("success_content_*.md"))  # cleaned up
+        assert not (diagnostics_dir / "fail_urls.txt").exists()
+        assert not (diagnostics_dir / "sorted_fail_urls.txt").exists()
+        assert not list(diagnostics_dir.glob("fail_content_*.md"))
+        assert not list(diagnostics_dir.glob("sorted_fail_content_*.md"))
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_interrupt_returns_partial_results(self, mock_crawler_cls, tmp_path: Path):
@@ -1664,7 +1663,7 @@ class TestSidecarFiles:
         assert not list(crawler.output_dir.glob("round_*/fail_pages.jsonl"))
         # Final sorted output should exist, proving the sidecars were used before deletion
         final_dir = crawler.output_dir / "final"
-        assert list(final_dir.glob("sorted_success_content_*"))
+        assert list(final_dir.glob("content_*"))
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_crawl_results_have_stripped_fields(self, mock_crawler_cls, tmp_path: Path):
@@ -1745,7 +1744,7 @@ class TestSidecarFiles:
 
         assert crawler.output_dir is not None
         # Sorted final files should exist and contain both URLs
-        sorted_files = list(crawler.output_dir.glob("final/sorted_success_content_*"))
+        sorted_files = list(crawler.output_dir.glob("final/content_*"))
         assert len(sorted_files) >= 1
         content = sorted_files[0].read_text(encoding="utf-8")
         assert "https://example.com/a/page" in content
@@ -1799,7 +1798,7 @@ class TestSidecarFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        sorted_files = sorted(crawler.output_dir.glob("final/sorted_success_content_*"))
+        sorted_files = sorted(crawler.output_dir.glob("final/content_*"))
         assert len(sorted_files) >= 1
         # Every sorted final file should contain the _of_ suffix
         for f in sorted_files:

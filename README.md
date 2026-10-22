@@ -168,7 +168,7 @@ from crawl4md import SiteCrawler, CrawlerConfig, PageConfig
 config = CrawlerConfig(urls=["https://example.com"], limit=20, max_depth=2)
 crawler = SiteCrawler(config, PageConfig())
 results = crawler.crawl()
-crawler.print_summary(results)  # timestamped folder; primary: final/sorted_success_content_*.md
+crawler.print_summary(results)  # timestamped folder; primary: final/content_*.md
 ```
 
 For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWriter` individually (see [src/crawl4md/README.md](src/crawl4md/README.md)). To index the results, see [src/vector_indexer/README.md](src/vector_indexer/README.md).

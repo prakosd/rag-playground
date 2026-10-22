@@ -11,6 +11,9 @@ from crawl4md.writer import FileWriter, PageIndexEntry, PageSidecar, rename_file
 __all__ = ["FinalOutputWriter"]
 
 _FINAL_DIR_NAME = "final"
+# Supporting files (URL lists, failed-page content, debug snapshots) live under
+# final/diagnostics/ so the final/ top level holds only the primary content_* files.
+_DIAGNOSTICS_DIR_NAME = "diagnostics"
 _INITIAL_DIR_NAME = "initial"
 _ROUND_DIR_PREFIX = "round_"
 
@@ -51,7 +54,9 @@ _SORTED_FAIL_URLS_FILE = "sorted_fail_urls.txt"
 # Set to False to keep every intermediate file on disk (useful for debugging).
 _CLEANUP_INTERMEDIATE_FILES = True
 _ENABLE_SORTED_ROUND_FILES = not _CLEANUP_INTERMEDIATE_FILES
-_SORTED_SUCCESS_PREFIX = "sorted_success_"
+# The sorted success content is the primary, user-facing output, so it carries no
+# name prefix: files are content_NNN_of_MMM.<ext>. Failed pages keep a prefix.
+_FINAL_SUCCESS_PREFIX = ""
 _SORTED_FAIL_PREFIX = "sorted_fail_"
 _SUCCESS_SIDECAR_SUFFIX = "success_pages.jsonl"
 _FAIL_SIDECAR_SUFFIX = "fail_pages.jsonl"
@@ -101,11 +106,11 @@ class FinalOutputWriter:
         success_entries = ContentSorter.sort_keys(self.index_success(round_num))
         if success_entries:
             for file_path in round_dir.glob(
-                f"{_SORTED_SUCCESS_PREFIX}content_*{self.output_extension}"
+                f"{_FINAL_SUCCESS_PREFIX}content_*{self.output_extension}"
             ):
                 file_path.unlink()
             self.stream_entries_to_writer(
-                success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=round_dir
+                success_entries, prefix=_FINAL_SUCCESS_PREFIX, output_dir=round_dir
             )
             path = round_dir / _SORTED_SUCCESS_URLS_FILE
             path.write_text("\n".join(entry.url for entry in success_entries), encoding="utf-8")
@@ -129,15 +134,25 @@ class FinalOutputWriter:
         final_dir = self.output_dir / _FINAL_DIR_NAME
         if not final_dir.exists():
             return
-        prefixes = (
-            (_SORTED_SUCCESS_PREFIX, _SORTED_FAIL_PREFIX)
-            if sorted_files
-            else (_SUCCESS_SUFFIX, _FAIL_SUFFIX)
-        )
-        for prefix in prefixes:
-            for file_path in final_dir.glob(f"{prefix}content_*{self.output_extension}"):
-                if file_path.is_file():
-                    file_path.unlink()
+        diagnostics_dir = final_dir / _DIAGNOSTICS_DIR_NAME
+        ext = self.output_extension
+        if sorted_files:
+            # Primary success content sits at the final/ top level; sorted fail
+            # content lives under diagnostics/.
+            self._unlink_content(final_dir, _FINAL_SUCCESS_PREFIX, ext)
+            self._unlink_content(diagnostics_dir, _SORTED_FAIL_PREFIX, ext)
+        else:
+            # Unsorted debug snapshots (success + fail) all live under diagnostics/.
+            self._unlink_content(diagnostics_dir, _SUCCESS_SUFFIX, ext)
+            self._unlink_content(diagnostics_dir, _FAIL_SUFFIX, ext)
+
+    @staticmethod
+    def _unlink_content(directory: Path, prefix: str, ext: str) -> None:
+        if not directory.is_dir():
+            return
+        for file_path in directory.glob(f"{prefix}content_*{ext}"):
+            if file_path.is_file():
+                file_path.unlink()
 
     def saved_results_from_sidecars(self) -> tuple[list[CrawlResult], list[CrawlResult]]:
         success_results = [
@@ -153,6 +168,7 @@ class FinalOutputWriter:
     @staticmethod
     def write_url_file(path: Path, urls: list[str]) -> None:
         if urls:
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("\n".join(urls), encoding="utf-8")
             return
         path.unlink(missing_ok=True)
@@ -167,6 +183,7 @@ class FinalOutputWriter:
         final_dir = self.output_dir / _FINAL_DIR_NAME
         final_dir.mkdir(parents=True, exist_ok=True)
         self.clear_final_content_files(sorted_files=False)
+        diagnostics_dir = final_dir / _DIAGNOSTICS_DIR_NAME
 
         unique_urls: list[str] = []
         if all_success:
@@ -175,11 +192,11 @@ class FinalOutputWriter:
                 if result.url not in seen:
                     seen.add(result.url)
                     unique_urls.append(result.url)
-        self.write_url_file(final_dir / _SUCCESS_URLS_FILE, unique_urls)
+        self.write_url_file(diagnostics_dir / _SUCCESS_URLS_FILE, unique_urls)
 
         remaining_fail_urls = [result.url for result in all_fail]
         unique_fail = list(dict.fromkeys(remaining_fail_urls))
-        self.write_url_file(final_dir / _FAIL_URLS_FILE, unique_fail)
+        self.write_url_file(diagnostics_dir / _FAIL_URLS_FILE, unique_fail)
 
         # When cleanup is on (the default), write_sorted_files immediately writes
         # the sorted content and deletes this unsorted copy — so skip writing it
@@ -189,13 +206,13 @@ class FinalOutputWriter:
             success_entries = self.index_success()
             if success_entries:
                 self.stream_entries_to_writer(
-                    success_entries, prefix=_SUCCESS_SUFFIX, output_dir=final_dir
+                    success_entries, prefix=_SUCCESS_SUFFIX, output_dir=diagnostics_dir
                 )
 
             fail_entries = self.index_fail()
             if fail_entries:
                 self.stream_entries_to_writer(
-                    fail_entries, prefix=_FAIL_SUFFIX, output_dir=final_dir
+                    fail_entries, prefix=_FAIL_SUFFIX, output_dir=diagnostics_dir
                 )
 
     def delete_sidecars(self) -> None:
@@ -217,26 +234,27 @@ class FinalOutputWriter:
         final_dir = self.output_dir / _FINAL_DIR_NAME
         final_dir.mkdir(parents=True, exist_ok=True)
         self.clear_final_content_files(sorted_files=True)
+        diagnostics_dir = final_dir / _DIAGNOSTICS_DIR_NAME
 
         success_entries = ContentSorter.sort_keys(self.index_success())
         self.write_url_file(
-            final_dir / _SORTED_SUCCESS_URLS_FILE,
+            diagnostics_dir / _SORTED_SUCCESS_URLS_FILE,
             [entry.url for entry in success_entries],
         )
         if success_entries:
             files = self.stream_entries_to_writer(
-                success_entries, prefix=_SORTED_SUCCESS_PREFIX, output_dir=final_dir
+                success_entries, prefix=_FINAL_SUCCESS_PREFIX, output_dir=final_dir
             )
             rename_files_with_total(files)
 
         fail_entries = ContentSorter.sort_keys(self.index_fail())
         self.write_url_file(
-            final_dir / _SORTED_FAIL_URLS_FILE,
+            diagnostics_dir / _SORTED_FAIL_URLS_FILE,
             [entry.url for entry in fail_entries],
         )
         if fail_entries:
             files = self.stream_entries_to_writer(
-                fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=final_dir
+                fail_entries, prefix=_SORTED_FAIL_PREFIX, output_dir=diagnostics_dir
             )
             rename_files_with_total(files)
 
@@ -246,7 +264,7 @@ class FinalOutputWriter:
 
     def get_final_content_files(self) -> list[Path]:
         final_dir = self.output_dir / _FINAL_DIR_NAME
-        pattern = f"{_SORTED_SUCCESS_PREFIX}content_*{self.output_extension}"
+        pattern = f"{_FINAL_SUCCESS_PREFIX}content_*{self.output_extension}"
         return sorted(final_dir.glob(pattern)) if final_dir.exists() else []
 
     def index_success(self, up_to_round: int | None = None) -> list[PageIndexEntry]:

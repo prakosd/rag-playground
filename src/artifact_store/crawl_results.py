@@ -29,6 +29,10 @@ SUPPORTED_INPUT_SUFFIXES = frozenset({".md", ".txt", ".zip"})
 
 _FINAL_DIR_NAME = "final"
 _ROUND_DIR_PREFIX = "round_"
+# Final success content is the current, prefix-less primary output; the older
+# sorted_success_content_* / success_content_* names are still read so crawls
+# already on disk remain selectable.
+_FINAL_CONTENT_GLOB = "content_*"
 _SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
 _SUCCESS_CONTENT_GLOB = "success_content_*"
 _ZIP_SUFFIX = ".zip"
@@ -99,17 +103,21 @@ def _collect_success_content(run_dir: Path) -> list[Path]:
 
 
 def _success_content_in_dir(directory: Path) -> list[Path]:
-    """Return success content files in *directory*, preferring sorted output."""
+    """Return success content files in *directory*, newest naming first.
+
+    Prefers the current prefix-less ``content_*`` output, then the legacy
+    ``sorted_success_content_*`` (crawls already on disk), then the unsorted
+    ``success_content_*`` round snapshot. The ``.zip`` aggregate is excluded.
+    """
     if not directory.is_dir():
         return []
-    sorted_files = sorted(f for f in directory.glob(_SORTED_SUCCESS_CONTENT_GLOB) if f.is_file())
-    if sorted_files:
-        return sorted_files
-    return sorted(
-        f
-        for f in directory.glob(_SUCCESS_CONTENT_GLOB)
-        if f.is_file() and f.suffix.lower() != _ZIP_SUFFIX
-    )
+    for pattern in (_FINAL_CONTENT_GLOB, _SORTED_SUCCESS_CONTENT_GLOB, _SUCCESS_CONTENT_GLOB):
+        files = sorted(
+            f for f in directory.glob(pattern) if f.is_file() and f.suffix.lower() != _ZIP_SUFFIX
+        )
+        if files:
+            return files
+    return []
 
 
 def _build_result_file(file_path: Path, root: Path, crawl_label: str) -> CrawlResultFile | None:

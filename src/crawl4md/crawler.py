@@ -294,6 +294,11 @@ _USER_AGENT_BROWSERS = ["Chrome", "Edge"]
 # Subdirectory name for final merged output files
 _FINAL_DIR_NAME = "final"
 
+# Subdirectory under final/ holding supporting files (URL lists, failed-page
+# content, debug snapshots) so final/ itself shows only the primary content.
+# Keep in sync with crawl4md._internal.final_output._DIAGNOSTICS_DIR_NAME.
+_DIAGNOSTICS_DIR_NAME = "diagnostics"
+
 # Subdirectory name for crawl log/diagnostic files (activity log, progress
 # history, site graph, network usage).
 _LOGS_DIR_NAME = "logs"
@@ -317,8 +322,9 @@ _CLEANUP_INTERMEDIATE_FILES = _INTERNAL_CLEANUP_INTERMEDIATE_FILES
 # superseded by the final/sorted_* output).
 _ENABLE_SORTED_ROUND_FILES = not _CLEANUP_INTERMEDIATE_FILES
 
-# Prefix for sorted output files within a round or final folder
-_SORTED_SUCCESS_PREFIX = "sorted_success_"
+# Final sorted success content carries no name prefix (primary output:
+# content_NNN_of_MMM); failed pages keep the sorted_fail_ prefix.
+_FINAL_SUCCESS_PREFIX = ""
 _SORTED_FAIL_PREFIX = "sorted_fail_"
 
 # ------------------------------------------------------------------
@@ -616,7 +622,7 @@ class SiteCrawler:
             _print_files("URL lists", url_files)
 
             sorted_content = [
-                f for f in round_files if f.name.startswith(f"{_SORTED_SUCCESS_PREFIX}content_")
+                f for f in round_files if f.name.startswith(f"{_FINAL_SUCCESS_PREFIX}content_")
             ]
             sorted_fail_content = [
                 f for f in round_files if f.name.startswith(f"{_SORTED_FAIL_PREFIX}content_")
@@ -634,11 +640,16 @@ class SiteCrawler:
 
         # --- Final folder ---
         final_dir = self.output_dir / _FINAL_DIR_NAME
+        diagnostics_dir = final_dir / _DIAGNOSTICS_DIR_NAME
         final_success = (
-            sorted(final_dir.glob(f"{_SUCCESS_SUFFIX}content_*")) if final_dir.exists() else []
+            sorted(diagnostics_dir.glob(f"{_SUCCESS_SUFFIX}content_*"))
+            if diagnostics_dir.exists()
+            else []
         )
         final_fail = (
-            sorted(final_dir.glob(f"{_FAIL_SUFFIX}content_*")) if final_dir.exists() else []
+            sorted(diagnostics_dir.glob(f"{_FAIL_SUFFIX}content_*"))
+            if diagnostics_dir.exists()
+            else []
         )
         if final_success or final_fail:
             print("--- Final (unsorted, merged across rounds) ---")
@@ -647,14 +658,16 @@ class SiteCrawler:
 
         # --- Sorted files in final/ (primary output) ---
         sorted_success = (
-            sorted(final_dir.glob(f"{_SORTED_SUCCESS_PREFIX}content_*"))
+            sorted(final_dir.glob(f"{_FINAL_SUCCESS_PREFIX}content_*"))
             if final_dir.exists()
             else []
         )
         sorted_fail = (
-            sorted(final_dir.glob(f"{_SORTED_FAIL_PREFIX}content_*")) if final_dir.exists() else []
+            sorted(diagnostics_dir.glob(f"{_SORTED_FAIL_PREFIX}content_*"))
+            if diagnostics_dir.exists()
+            else []
         )
-        all_urls = sorted(final_dir.glob("*urls*.txt")) if final_dir.exists() else []
+        all_urls = sorted(diagnostics_dir.glob("*urls*.txt")) if diagnostics_dir.exists() else []
         if sorted_success or sorted_fail:
             print("--- Sorted by URL path (primary output) ---")
             _print_files("Success content", sorted_success)
@@ -663,7 +676,7 @@ class SiteCrawler:
 
         if fail_count > 0:
             print(
-                f"See final/sorted_fail_urls.txt for the "
+                f"See final/diagnostics/sorted_fail_urls.txt for the "
                 f"{fail_count} URL(s) that could not be crawled."
             )
 

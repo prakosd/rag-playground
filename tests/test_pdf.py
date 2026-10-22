@@ -319,8 +319,11 @@ class TestDownloadPdf:
         fail_sidecar = crawler.output_dir / "round_1" / "fail_pages.jsonl"
         assert [entry.url for entry in PageSidecar.iter_index(fail_sidecar)] == [pdf_url]
         final_dir = crawler.output_dir / "final"
-        assert (final_dir / "fail_urls.txt").read_text(encoding="utf-8") == pdf_url
-        assert pdf_url in next(final_dir.glob("fail_content_*.txt")).read_text(encoding="utf-8")
+        diagnostics_dir = final_dir / "diagnostics"
+        assert (diagnostics_dir / "fail_urls.txt").read_text(encoding="utf-8") == pdf_url
+        assert pdf_url in next(diagnostics_dir.glob("fail_content_*.txt")).read_text(
+            encoding="utf-8"
+        )
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_direct_pdf_honors_concurrent_delay_start_slot(self, mock_crawler_cls, tmp_path):

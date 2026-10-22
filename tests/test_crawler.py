@@ -1006,7 +1006,7 @@ class TestSiteCrawler:
         assert results[0].url == "https://example.com"
         assert results[0].success is True
         assert crawler.output_dir is not None
-        assert (crawler.output_dir / "final" / "success_urls.txt").exists()
+        assert (crawler.output_dir / "final" / "diagnostics" / "success_urls.txt").exists()
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_limit_stops_further_discovery_after_overshoot(self, mock_crawler_cls, tmp_path: Path):
@@ -2407,7 +2407,7 @@ class TestEmptyExtraction:
         )
         crawler.crawl()
 
-        fail_urls = crawler.output_dir / "final" / "fail_urls.txt"
+        fail_urls = crawler.output_dir / "final" / "diagnostics" / "fail_urls.txt"
         assert fail_urls.exists()
         content = fail_urls.read_text(encoding="utf-8")
         assert "https://example.com/empty" in content

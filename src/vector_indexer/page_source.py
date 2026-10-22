@@ -25,13 +25,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-__all__ = ["PageSection", "format_source_line", "split_into_pages"]
+__all__ = ["PageSection", "extract_crawl_date", "format_source_line", "split_into_pages"]
 
 _PAGE_HEADER_START_MARKER = "<!-- crawl4md:source -->"
 _PAGE_HEADER_END_MARKER = "<!-- /crawl4md:source -->"
 
 # A leading YAML front matter block: "---\n ... \n---\n" anchored at the start.
 _FRONT_MATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
+# The crawl capture date inside that block: crawl_start_datetime: "YYYY-MM-DD...".
+_CRAWL_DATE_RE = re.compile(
+    r"^crawl_start_datetime:\s*\"?(?P<date>\d{4}-\d{2}-\d{2})", re.MULTILINE
+)
 # A page header block emitted by crawl4md, capturing the human-readable header.
 _PAGE_HEADER_RE = re.compile(
     re.escape(_PAGE_HEADER_START_MARKER) + r"(?P<header>.*?)" + re.escape(_PAGE_HEADER_END_MARKER),
@@ -92,6 +96,20 @@ def format_source_line(title: str | None, url: str | None) -> str:
     if url:
         return f"Source: {url}"
     return ""
+
+
+def extract_crawl_date(text: str) -> str | None:
+    """Return the crawl capture date (``YYYY-MM-DD``) from the leading front matter.
+
+    Reads ``crawl_start_datetime`` from the crawl4md metadata block and keeps only
+    its date part. Returns ``None`` for non-crawl4md input or when the key or a
+    valid date is absent, so plain ``.txt`` and foreign Markdown get no date.
+    """
+    front_matter = _FRONT_MATTER_RE.match(text)
+    if front_matter is None:
+        return None
+    match = _CRAWL_DATE_RE.search(front_matter.group(0))
+    return match.group("date") if match else None
 
 
 def _trim_separators(text: str) -> str:

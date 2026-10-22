@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from vector_indexer.page_source import format_source_line, split_into_pages
+from vector_indexer.page_source import extract_crawl_date, format_source_line, split_into_pages
 
 
 def _crawl_output(*pages: tuple[str | None, str, str]) -> str:
@@ -69,3 +69,22 @@ def test_format_source_line_variants() -> None:
     assert format_source_line(None, "https://x.test/a") == "Source: https://x.test/a"
     assert format_source_line("Title", None) == ""
     assert format_source_line(None, None) == ""
+
+
+def test_extract_crawl_date_reads_front_matter() -> None:
+    text = _crawl_output(("Page One", "https://x.test/a", "Body."))
+    assert extract_crawl_date(text) == "2026-06-22"
+
+
+def test_extract_crawl_date_none_without_front_matter() -> None:
+    assert extract_crawl_date("Just some plain text.\n") is None
+
+
+def test_extract_crawl_date_none_when_key_absent() -> None:
+    text = '---\nsession_id: "s1"\n---\n\nbody\n'
+    assert extract_crawl_date(text) is None
+
+
+def test_extract_crawl_date_none_for_malformed_value() -> None:
+    text = '---\ncrawl_start_datetime: "not-a-date"\n---\n\nbody\n'
+    assert extract_crawl_date(text) is None

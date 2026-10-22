@@ -81,6 +81,7 @@ _EMPTY_FOLDER_ZIP_TOKEN = (0, 0.0, 0)
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
 _SITE_GRAPH_FILENAME = "site_graph.jsonl"
 _RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+_FINAL_CONTENT_GLOB = "content_*"
 _SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
 _SUCCESS_CONTENT_GLOB = "success_content_*"
 _SUCCESS_ZIP_NAME = "success_content.zip"
@@ -921,8 +922,9 @@ def _history_created_timestamp(
 def collect_success_content_files(crawl_output_dir: Path, root: Path) -> list[Path]:
     """Return success content files from the final/ folder of a crawl output directory.
 
-    Prefers ``sorted_success_content_*`` files. Falls back to ``success_content_*``
-    (excluding any .zip file) when sorted files are absent.
+    Prefers the current prefix-less ``content_*`` output, then the legacy
+    ``sorted_success_content_*``, then the unsorted ``success_content_*`` snapshot,
+    always excluding the ``.zip`` aggregate.
     """
     try:
         safe_dir = ensure_within_root(root, crawl_output_dir)
@@ -931,14 +933,13 @@ def collect_success_content_files(crawl_output_dir: Path, root: Path) -> list[Pa
     final_dir = safe_dir / _FINAL_DIR_NAME
     if not final_dir.exists():
         return []
-    files = sorted(f for f in final_dir.glob(_SORTED_SUCCESS_CONTENT_GLOB) if f.is_file())
-    if not files:
+    for pattern in (_FINAL_CONTENT_GLOB, _SORTED_SUCCESS_CONTENT_GLOB, _SUCCESS_CONTENT_GLOB):
         files = sorted(
-            f
-            for f in final_dir.glob(_SUCCESS_CONTENT_GLOB)
-            if f.is_file() and f.suffix.lower() != ".zip"
+            f for f in final_dir.glob(pattern) if f.is_file() and f.suffix.lower() != ".zip"
         )
-    return files
+        if files:
+            return files
+    return []
 
 
 def _refresh_success_zip(source_files: list[Path], zip_path: Path) -> None:

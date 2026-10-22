@@ -614,6 +614,18 @@ def test_collect_prefers_sorted_success_files(tmp_path: Path) -> None:
     assert result == [sorted_f]
 
 
+def test_collect_prefers_prefixless_content_files(tmp_path: Path) -> None:
+    final = _make_final_dir(tmp_path)
+    current_f = final / "content_001_of_001.md"
+    legacy_f = final / "sorted_success_content_001_of_001.md"
+    current_f.write_text("current", encoding="utf-8")
+    legacy_f.write_text("legacy", encoding="utf-8")
+
+    result = collect_success_content_files(tmp_path, tmp_path)
+
+    assert result == [current_f]
+
+
 def test_collect_falls_back_to_unsorted_success_files(tmp_path: Path) -> None:
     final = _make_final_dir(tmp_path)
     content_f = final / "success_content_001.md"
