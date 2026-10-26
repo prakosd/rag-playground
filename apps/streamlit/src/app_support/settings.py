@@ -194,6 +194,14 @@ class Settings(BaseSettings):
     # Turn from which the model starts summarising the rolling conversation memory;
     # earlier turns just track recent questions verbatim.
     conv_rag_state_summary_start_turn: int
+    # Word cap for the rolling conversation summary the model keeps as its memory.
+    conv_rag_state_summary_max_words: int
+    # Recent back-and-forth turns shown to the answer prompt so the model can resolve
+    # references like "it"/"that"; 0 = none.
+    conv_rag_answer_recent_turns: int
+    # Recent turns shown to the query-planner prompt (and kept as the memory's
+    # "recent questions" window); 0 = none.
+    conv_rag_plan_recent_turns: int
     # Directory (relative to the repo root) holding the six Step 5 default prompt
     # files (answer/decompose/rerank/followups/answerability/state). Edit those to
     # reword a default without a code change; a per-session edit from the app's

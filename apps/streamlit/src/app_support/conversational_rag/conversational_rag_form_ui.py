@@ -94,6 +94,16 @@ _ANSWERABILITY_CHUNKS_MAX = 10
 # before the model begins summarising.
 _STATE_START_TURN_MIN = 1
 _STATE_START_TURN_MAX = 20
+# Rolling conversation-summary length cap (library default 150 words).
+_STATE_MAX_WORDS_MIN = 50
+_STATE_MAX_WORDS_MAX = 300
+_STATE_MAX_WORDS_STEP = 10
+# Recent-turn windows (0 = none): turns the answer prompt sees (library default 3,
+# app default 5) and turns the planner prompt sees / the memory recent-questions window.
+_ANSWER_RECENT_TURNS_MIN = 0
+_ANSWER_RECENT_TURNS_MAX = 10
+_PLAN_RECENT_TURNS_MIN = 0
+_PLAN_RECENT_TURNS_MAX = 10
 # Ask the model for a few more candidates than will be shown, so validation (which
 # drops unanswerable or duplicate suggestions) still has enough left to fill the limit.
 _FOLLOWUP_CANDIDATE_BUFFER = 2
@@ -139,6 +149,9 @@ class ConversationalControls:
     followup_probe_k: int
     answerability_chunks: int
     state_summary_start_turn: int
+    state_summary_max_words: int
+    answer_recent_turns: int
+    plan_recent_turns: int
 
 
 def aux_model_choices() -> tuple[list[str], int]:
@@ -199,6 +212,9 @@ def build_conversational_config(
         followup_probe_k=controls.followup_probe_k,
         answerability_chunks=controls.answerability_chunks,
         state_summary_start_turn=controls.state_summary_start_turn,
+        state_summary_max_words=controls.state_summary_max_words,
+        answer_recent_turns=controls.answer_recent_turns,
+        plan_recent_turns=controls.plan_recent_turns,
         tone=controls.tone,
         language=language,
     )
@@ -411,6 +427,57 @@ def render_advanced_controls(
                     key=f"{key_prefix}_state_start_turn",
                 )
             )
+        # Memory/history windows: how much recent chat the answer and planner prompts
+        # see, and the rolling summary's length cap.
+        answer_turns_col, plan_turns_col, summary_words_col = st.columns(3)
+        with answer_turns_col:
+            answer_recent_turns = int(
+                st.number_input(
+                    strings["CONV_ANSWER_RECENT_TURNS_LABEL"],
+                    min_value=_ANSWER_RECENT_TURNS_MIN,
+                    max_value=_ANSWER_RECENT_TURNS_MAX,
+                    value=min(
+                        max(settings.conv_rag_answer_recent_turns, _ANSWER_RECENT_TURNS_MIN),
+                        _ANSWER_RECENT_TURNS_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_ANSWER_RECENT_TURNS_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_answer_recent_turns",
+                )
+            )
+        with plan_turns_col:
+            plan_recent_turns = int(
+                st.number_input(
+                    strings["CONV_PLAN_RECENT_TURNS_LABEL"],
+                    min_value=_PLAN_RECENT_TURNS_MIN,
+                    max_value=_PLAN_RECENT_TURNS_MAX,
+                    value=min(
+                        max(settings.conv_rag_plan_recent_turns, _PLAN_RECENT_TURNS_MIN),
+                        _PLAN_RECENT_TURNS_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_PLAN_RECENT_TURNS_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_plan_recent_turns",
+                )
+            )
+        with summary_words_col:
+            state_summary_max_words = int(
+                st.number_input(
+                    strings["CONV_STATE_MAX_WORDS_LABEL"],
+                    min_value=_STATE_MAX_WORDS_MIN,
+                    max_value=_STATE_MAX_WORDS_MAX,
+                    value=min(
+                        max(settings.conv_rag_state_summary_max_words, _STATE_MAX_WORDS_MIN),
+                        _STATE_MAX_WORDS_MAX,
+                    ),
+                    step=_STATE_MAX_WORDS_STEP,
+                    help=strings["CONV_STATE_MAX_WORDS_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_state_max_words",
+                )
+            )
         _render_prompt_editor(
             strings,
             key_prefix,
@@ -435,6 +502,9 @@ def render_advanced_controls(
         followup_probe_k=followup_probe_k,
         answerability_chunks=answerability_chunks,
         state_summary_start_turn=state_summary_start_turn,
+        state_summary_max_words=state_summary_max_words,
+        answer_recent_turns=answer_recent_turns,
+        plan_recent_turns=plan_recent_turns,
     )
 
 
@@ -580,10 +650,9 @@ def _render_single_prompt(
     st.session_state[widget_key] = editor_prompt_text(
         st.session_state.get(widget_key), prompt_key, session_root
     )
-    st.markdown(
-        f"<div style='margin:-0.5rem 0 0.25rem;opacity:0.6;font-size:0.875rem'>"
-        f"{html.escape(strings['CONV_PROMPT_FIELDS_CAPTION'].format(fields=fields))}</div>",
-        unsafe_allow_html=True,
+    st.caption(
+        strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields),
+        help=strings["CONV_PROMPT_FIELDS_HELP"],
     )
     st.text_area(
         strings[_PROMPT_TAB_KEYS[prompt_key]],
@@ -910,20 +979,27 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
     if not answer.sources:
         st.caption(strings["RAG_NO_INDEX_HINT"])
         return
-    _section_label(
-        strings["CONV_INSPECT_RERANKER_USED"].format(reranker=answer.reranker_used or "—"),
-        help_text=strings["CONV_INSPECT_RETRIEVAL_HELP"],
+    all_chunks = [*answer.sources, *answer.overflow_sources]
+    rows = subquestion_provenance_rows(all_chunks, answer.plan)
+    reranker_label = strings["CONV_INSPECT_RERANKER_USED"].format(
+        reranker=answer.reranker_used or "—"
     )
+    if rows:
+        # Re-ranker and the per-sub-question heading share one line to save height,
+        # with their two hints merged behind a single help icon.
+        _section_label(
+            f"{reranker_label} · {strings['CONV_INSPECT_RETRIEVAL_BYQUERY']}",
+            help_text=(
+                f"{strings['CONV_INSPECT_RETRIEVAL_HELP']} "
+                f"{strings['CONV_INSPECT_RETRIEVAL_BYQUERY_HELP']}"
+            ),
+        )
+    else:
+        _section_label(reranker_label, help_text=strings["CONV_INSPECT_RETRIEVAL_HELP"])
     rerank_note = _inspect_note(strings, answer.warnings, CODE_RERANK_UNAVAILABLE)
     if rerank_note:
         st.caption(rerank_note)
-    all_chunks = [*answer.sources, *answer.overflow_sources]
-    rows = subquestion_provenance_rows(all_chunks, answer.plan)
     if rows:
-        _section_label(
-            strings["CONV_INSPECT_RETRIEVAL_BYQUERY"],
-            help_text=strings["CONV_INSPECT_RETRIEVAL_BYQUERY_HELP"],
-        )
         _bullet_list([f"{question} → {hits}" for question, hits in rows])
     render_result_cards(strings, answer.sources, default_tab=default_tab, preserve_order=True)
     if answer.overflow_sources:
@@ -1014,4 +1090,9 @@ def _render_followups(
         strings["CONV_INSPECT_FOLLOWUPS_SCORE_HEADER"],
         help_text=strings["CONV_INSPECT_FOLLOWUPS_HELP"],
     )
-    st.markdown(kv_grid_html(rows, columns=2), unsafe_allow_html=True)
+    # Labels here are the questions themselves, so render them full-opacity with a
+    # bullet rather than as dimmed field names.
+    st.markdown(
+        kv_grid_html(rows, columns=2, dim_labels=False, label_prefix="· "),
+        unsafe_allow_html=True,
+    )

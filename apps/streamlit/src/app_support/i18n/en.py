@@ -59,13 +59,18 @@ STRINGS_EN: Strings = {
     # ── RAG pages (Steps 3-5) ──────────────────────────────────
     "RAG_NO_INDEX_HINT": "No vector index found yet. Build one in Step 2 first.",
     "RAG_INDEX_LABEL": "Vector index",
-    "RAG_INDEX_HELP": "Choose which index built in Step 2 to query.",
+    "RAG_INDEX_HELP": (
+        "Pick the searchable knowledge base to answer from. Each one was built in Step 2 from "
+        "your crawled pages and uploaded files. If the list is empty, build an index in Step 2 "
+        "first."
+    ),
     "RAG_INDEX_OPTION": "{folder} / {run} · {model} · {chunks} chunks",
     "RAG_LLM_LABEL": "Answer model",
     "RAG_LLM_HELP": (
         "The chat model that writes the answer. Cloud models (☁️‣🔑) need an API key set "
         "in the config file — see the README for how to configure it. If it is "
-        "unavailable, the app falls back to the offline echo model."
+        "unavailable, the app falls back to the offline echo model, which just repeats the "
+        "prompt back so you can try the app with no setup."
     ),
     "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
     "RAG_LLM_TAG_CLOUD": "☁️‣🔑",
@@ -74,8 +79,10 @@ STRINGS_EN: Strings = {
     "RAG_LLM_SIZE_LARGE": "Large",
     "RAG_TOP_K_LABEL": "Top results",
     "RAG_TOP_K_HELP": (
-        "How many top-N chunks from semantic search — those with the highest similarity "
-        "score — are retrieved as knowledge for the answer."
+        "When you ask a question, the app finds the text passages ('chunks') most similar in "
+        "meaning to it. This sets how many of those top passages are handed to the model as "
+        "the knowledge it answers from. Fewer (3-5) keeps the answer focused; more (10+) gives "
+        "broader coverage but can add off-topic text. Default 5."
     ),
     "RAG_SOURCES_HEADER": "Sources",
     "RAG_SOURCE_CAPTION": "{source} · score {score}",
@@ -133,21 +140,28 @@ STRINGS_EN: Strings = {
     "BASIC_QA_LLM_HELP": (
         "The language model that reads the prompt and writes the answer. Cloud models "
         "(☁️‣🔑) need an API key set in the config file — see the README for how to "
-        "configure it. Without one, the app falls back to the offline echo model."
+        "configure it. Without one, the app falls back to the offline echo model, which just "
+        "repeats the prompt back so you can try the app with no setup."
     ),
     "BASIC_QA_TOP_RESULTS_LABEL": "Top results",
     "BASIC_QA_TOP_RESULTS_HELP": (
-        "How many top-N chunks from semantic search — those with the highest similarity "
-        "score — are retrieved as knowledge for the answer."
+        "When you ask a question, the app finds the text passages ('chunks') most similar in "
+        "meaning to it. This sets how many of those top passages are handed to the model as "
+        "the knowledge it answers from. Fewer (3-5) keeps the answer focused; more (10+) gives "
+        "broader coverage but can add off-topic text. Default 5."
     ),
     "BASIC_QA_TONE_LABEL": "Tone",
-    "BASIC_QA_TONE_HELP": "The writing style the model should use when answering.",
+    "BASIC_QA_TONE_HELP": (
+        "The writing style the model should use in its answer — for example Neutral, Formal, "
+        "or Friendly. It changes the wording, not the facts."
+    ),
     "BASIC_QA_QUESTION_LABEL": "Your question",
     "BASIC_QA_QUESTION_PLACEHOLDER": "Ask a question about your indexed documents…",
     "BASIC_QA_GENERATE_BUTTON": "Generate prompt",
     "BASIC_QA_GENERATE_HELP": (
-        "Run semantic search and assemble the RAG prompt from your question, retrieved "
-        "knowledge, and tone."
+        "Search your index for the passages most relevant to your question, then build the "
+        "full prompt (your question + those passages + the chosen tone) that will be sent to "
+        "the model. You can review and edit it before sending."
     ),
     "BASIC_QA_SEARCHING": "Searching your index…",
     "BASIC_QA_RESULTS_EMPTY": "Generate a prompt to search your index and see the matches here.",
@@ -249,16 +263,20 @@ STRINGS_EN: Strings = {
     "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
     "CONV_RERANKER_LABEL": "Re-ranking",
     "CONV_RERANKER_HELP": (
-        "Re-order retrieved passages by relevance. Local uses an on-device "
-        "cross-encoder; LLM uses the auxiliary model; Off keeps search order."
+        "After the first search, this takes a second pass to re-order the passages so the "
+        "most relevant come first, which can improve the answer. 'Local' uses a small scoring "
+        "model on this machine; 'LLM' asks the auxiliary model to rank them; 'Off' keeps the "
+        "original search order. Local is a good default; Off is fastest."
     ),
     "CONV_RERANKER_OFF": "Off",
     "CONV_RERANKER_LOCAL": "Local",
     "CONV_RERANKER_LLM": "LLM",
     "CONV_AUX_MODEL_LABEL": "Auxiliary model",
     "CONV_AUX_MODEL_HELP": (
-        "Small, fast model used for query decomposition, conversation state, "
-        "follow-up suggestions, and LLM re-ranking."
+        "A small, fast, cheap model used for the behind-the-scenes helper steps: rewriting "
+        "your message into search questions, keeping a running memory of the chat, ranking "
+        "passages, and suggesting follow-ups. The main answer still comes from the Answer "
+        "model above."
     ),
     "CONV_DECOMPOSITION_LABEL": "Decomposition limit",
     "CONV_DECOMPOSITION_HELP": (
@@ -289,12 +307,38 @@ STRINGS_EN: Strings = {
         "this turn onward (used to understand later questions). Earlier turns just track "
         "recent questions. Lower starts sooner; higher waits longer. Default 4."
     ),
+    "CONV_STATE_MAX_WORDS_LABEL": "Summary word limit",
+    "CONV_STATE_MAX_WORDS_HELP": (
+        "The model keeps a short running summary of the conversation as its memory. This "
+        "caps how long that summary can get, in words. Lower keeps it brief and cheap; "
+        "higher lets it hold more detail but adds a few tokens each turn. Default 150."
+    ),
+    "CONV_ANSWER_RECENT_TURNS_LABEL": "Recent turns in answers",
+    "CONV_ANSWER_RECENT_TURNS_HELP": (
+        "When writing each answer, the model is also shown this many of your most recent "
+        "back-and-forth turns, so it can follow references like 'what about its price?'. "
+        "0 = show none, so every answer stands on its own. Higher remembers more of the "
+        "recent chat but uses more tokens. Default 5."
+    ),
+    "CONV_PLAN_RECENT_TURNS_LABEL": "Recent turns for planning",
+    "CONV_PLAN_RECENT_TURNS_HELP": (
+        "Before searching, the app rewrites your message into clear standalone questions; "
+        "this sets how many recent turns it reads while doing so (it's also the length of "
+        "the short 'recent questions' list kept in memory). 0 = use only your latest "
+        "message. Higher helps it resolve vague follow-ups. Default 2."
+    ),
     "CONV_INSPECT_LABEL": "Inspect mode",
-    "CONV_INSPECT_HELP": "Show how each answer was built.",
+    "CONV_INSPECT_HELP": (
+        "Show a per-answer breakdown of how it was built — the sub-questions searched, the "
+        "passages retrieved and re-ranked, the running memory, and the exact prompts sent. "
+        "Great for learning what RAG does under the hood; leave it off for a clean chat."
+    ),
     "CONV_THRESHOLD_LABEL": "Follow-up thresholds",
     "CONV_THRESHOLD_HELP": (
-        "A follow-up is kept above the upper mark, dropped below the lower mark, "
-        "and checked by the model in between."
+        "Each suggested follow-up gets a 0-100% score for how well your knowledge can answer "
+        "it. Above the upper mark it's kept, below the lower mark it's dropped, and in between "
+        "the model takes a closer look. Widen the gap to lean on the model's judgement; narrow "
+        "it to decide by score alone."
     ),
     "CONV_PROMPTS_LABEL": ":material/edit_note: Prompt templates",
     "CONV_PROMPT_TAB_ANSWER": "Answer",
@@ -309,6 +353,13 @@ STRINGS_EN: Strings = {
     "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Follow-up intro",
     "CONV_PROMPT_TAB_NO_FOLLOWUPS": "No follow-ups message",
     "CONV_PROMPT_FIELDS_CAPTION": "Required placeholders: {fields}",
+    "CONV_PROMPT_FIELDS_HELP": (
+        "Placeholders are slots the app fills in for you before the prompt is sent to the "
+        "model — for example, {question} becomes your message and {knowledge} becomes the "
+        "passages found in your documents. Keep every placeholder listed here exactly as "
+        "shown, including the curly braces, or that part of the prompt won't work. You can "
+        "still reword the text around them or change their order."
+    ),
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Shown as the assistant's greeting at the start of a new conversation. "
         "One line per alternate — a random one appears."
@@ -742,19 +793,43 @@ STRINGS_EN: Strings = {
     "VEC_UPLOAD_LABEL": "Upload files",
     "VEC_UPLOAD_HELP": "Add your own .md, .txt, or .zip files to index alongside crawl results.",
     "VEC_CHUNK_SIZE_LABEL": "Chunk size",
-    "VEC_CHUNK_SIZE_HELP": "Maximum characters or tokens the text splitter keeps in each fragment before generating an embedding.",
+    "VEC_CHUNK_SIZE_HELP": (
+        "Before indexing, each document is cut into smaller passages called 'chunks'. This "
+        "is the largest a single chunk can be, counted in characters. Smaller chunks (e.g. "
+        "300) pinpoint exact sentences but can lose surrounding context; larger chunks (e.g. "
+        "1200) keep more context together but make each match less precise. Default 600."
+    ),
     "VEC_CHUNK_OVERLAP_LABEL": "Chunk overlap",
-    "VEC_CHUNK_OVERLAP_HELP": "Number of characters or tokens from the end of one chunk that are repeated at the start of the next.",
+    "VEC_CHUNK_OVERLAP_HELP": (
+        "When a document is split into chunks, this many characters from the end of one chunk "
+        "are repeated at the start of the next. The overlap keeps an idea from being cut in "
+        "half at a chunk boundary, so a sentence that straddles two chunks can still be found. "
+        "Too much just stores duplicate text. Default 100."
+    ),
     "VEC_WORKERS_LABEL": "Workers",
-    "VEC_WORKERS_HELP": "Parallel embedding workers (1-8). More speeds up cloud models on large crawls; the local offline model always runs single-threaded.",
+    "VEC_WORKERS_HELP": (
+        "How many chunks are turned into vectors at the same time (1-8). Higher is faster when "
+        "using a cloud embedding model on a lot of documents; the local offline model always "
+        "runs one at a time, so this has no effect on it. Start low and raise it if indexing "
+        "feels slow."
+    ),
     "VEC_EMBEDDING_MODEL_LABEL": "Embedding model",
     "VEC_EMBEDDING_MODEL_HELP": "The model that turns text into searchable numerical vectors. Cloud models (☁️‣🔑) run in the cloud and need an API key or credentials set in the config file — see the README for how to configure it. If the selected model is unavailable (missing API key, credentials, or internet), indexing stops with an error and you can switch to the local offline model (all-MiniLM-L6-v2), which runs on this machine and needs no setup — it downloads once (about 80 MB) the first time, then works offline.",
     "VEC_MODEL_TAG_LOCAL": "💻 Local",
     "VEC_MODEL_TAG_CLOUD": "☁️‣🔑",
     "VEC_EMBEDDING_DIMENSION_LABEL": "Embedding dimension",
-    "VEC_EMBEDDING_DIMENSION_HELP": "How detailed the embedding vectors are. Bigger dimensions can capture more detail, while smaller dimensions are lighter to store and search.",
+    "VEC_EMBEDDING_DIMENSION_HELP": (
+        "An embedding turns each chunk into a list of numbers that captures its meaning; this "
+        "is how long that list is. More dimensions can capture finer meaning but take more "
+        "space and are slower to search; fewer are lighter and faster. Leave it at the model's "
+        "default unless you have a reason to change it. Default 512."
+    ),
     "VEC_LANGUAGE_LABEL": "Language",
-    "VEC_LANGUAGE_HELP": "Source-language hint passed to the splitter or embedding layer so multilingual models can handle tokenization correctly.",
+    "VEC_LANGUAGE_HELP": (
+        "The main language of your documents (e.g. English). It's a hint that helps the app "
+        "split and match the text correctly — especially for languages that don't put spaces "
+        "between words. Set it to the language most of your content is written in."
+    ),
     "VEC_ERROR_NO_INPUTS": "Select at least one crawl result or upload a file before indexing.",
     "VEC_ERROR_ALREADY_RUNNING": "An indexing job is already running.",
     "VEC_ERROR_NO_ACTIVE_INDEX": "No active indexing job to stop.",

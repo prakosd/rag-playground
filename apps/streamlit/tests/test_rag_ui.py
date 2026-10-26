@@ -95,6 +95,14 @@ def test_kv_grid_html_margin_top_pulls_grid_up() -> None:
     assert "margin-top:-0.5rem" in grid
 
 
+def test_kv_grid_html_undimmed_labels_with_prefix() -> None:
+    # Follow-up rows treat the label as content: full-opacity and bullet-prefixed.
+    grid = kv_grid_html([("Ask this?", "Yes")], dim_labels=False, label_prefix="· ")
+
+    assert "opacity:0.65" not in grid  # the label is not greyed
+    assert "· Ask this?" in grid  # the bullet is prepended to the label
+
+
 def test_stacked_label_value_html_escapes_and_clips() -> None:
     block = stacked_label_value_html("Question", "a & <b>")
 

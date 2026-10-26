@@ -39,6 +39,9 @@ def _controls(**overrides) -> ConversationalControls:
         followup_probe_k=3,
         answerability_chunks=2,
         state_summary_start_turn=4,
+        state_summary_max_words=150,
+        answer_recent_turns=5,
+        plan_recent_turns=2,
     )
     values.update(overrides)
     return ConversationalControls(**values)
@@ -70,6 +73,17 @@ def test_build_config_threads_answerability_and_memory_controls() -> None:
     assert config.followup_probe_k == 5
     assert config.answerability_chunks == 4
     assert config.state_summary_start_turn == 2
+
+
+def test_build_config_threads_recent_turns_and_summary_length() -> None:
+    # The memory/history windows flow straight through to the library config.
+    config = build_conversational_config(
+        _controls(answer_recent_turns=7, plan_recent_turns=4, state_summary_max_words=200)
+    )
+
+    assert config.answer_recent_turns == 7
+    assert config.plan_recent_turns == 4
+    assert config.state_summary_max_words == 200
 
 
 def test_build_config_decomposition_limit_controls_planning() -> None:

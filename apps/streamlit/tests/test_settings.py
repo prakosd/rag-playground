@@ -31,6 +31,9 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.conv_rag_followup_probe_k == 3
     assert settings.conv_rag_answerability_chunks == 2
     assert settings.conv_rag_state_summary_start_turn == 4
+    assert settings.conv_rag_state_summary_max_words == 150
+    assert settings.conv_rag_answer_recent_turns == 5
+    assert settings.conv_rag_plan_recent_turns == 2
     assert settings.basic_rag_qa_session_token_quota == 5700000
     assert settings.basic_rag_qa_session_cost_quota == 1.0
     assert "Neutral" in settings.basic_rag_qa_tones.split(",")

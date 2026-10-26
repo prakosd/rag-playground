@@ -61,13 +61,18 @@ STRINGS_ID: Strings = {
     # ── RAG pages (Steps 3-5) ──────────────────────────────────
     "RAG_NO_INDEX_HINT": "Belum ada vector index. Bangun satu di Langkah 2 dulu.",
     "RAG_INDEX_LABEL": "Vector index",
-    "RAG_INDEX_HELP": "Pilih index hasil Langkah 2 yang akan dikueri.",
+    "RAG_INDEX_HELP": (
+        "Pilih basis pengetahuan yang bisa dicari untuk menjawab. Masing-masing dibuat di "
+        "Langkah 2 dari halaman hasil crawl dan berkas yang Anda unggah. Jika daftarnya kosong, "
+        "buat index dulu di Langkah 2."
+    ),
     "RAG_INDEX_OPTION": "{folder} / {run} · {model} · {chunks} chunk",
     "RAG_LLM_LABEL": "Model jawaban",
     "RAG_LLM_HELP": (
         "Model chat yang menulis jawaban. Model cloud (☁️‣🔑) memerlukan API key di "
         "file konfigurasi — lihat README untuk cara mengaturnya. Jika tidak tersedia, "
-        "aplikasi memakai model echo offline."
+        "aplikasi memakai model echo offline, yang hanya mengulang kembali prompt sehingga "
+        "Anda bisa mencoba aplikasi tanpa pengaturan apa pun."
     ),
     "RAG_LLM_TAG_OFFLINE": "💻 Offline (echo)",
     "RAG_LLM_TAG_CLOUD": "☁️‣🔑",
@@ -76,8 +81,11 @@ STRINGS_ID: Strings = {
     "RAG_LLM_SIZE_LARGE": "Besar",
     "RAG_TOP_K_LABEL": "Hasil teratas",
     "RAG_TOP_K_HELP": (
-        "Berapa banyak chunk top-N dari semantic search — dengan skor kemiripan tertinggi "
-        "— yang diambil sebagai pengetahuan untuk jawaban."
+        "Saat Anda bertanya, aplikasi mencari bagian teks ('chunk') yang maknanya paling mirip "
+        "dengan pertanyaan Anda. Ini menentukan berapa banyak bagian teratas itu yang diberikan "
+        "ke model sebagai pengetahuan untuk menjawab. Lebih sedikit (3-5) membuat jawaban fokus; "
+        "lebih banyak (10+) memberi cakupan lebih luas tetapi bisa menambah teks di luar topik. "
+        "Bawaan 5."
     ),
     "RAG_SOURCES_HEADER": "Sumber",
     "RAG_SOURCE_CAPTION": "{source} · skor {score}",
@@ -137,21 +145,29 @@ STRINGS_ID: Strings = {
     "BASIC_QA_LLM_HELP": (
         "Model bahasa yang membaca prompt dan menulis jawaban. Model cloud (☁️‣🔑) "
         "memerlukan API key di file konfigurasi — lihat README untuk cara mengaturnya. "
-        "Tanpa itu aplikasi beralih ke model echo offline."
+        "Tanpa itu aplikasi beralih ke model echo offline, yang hanya mengulang kembali prompt "
+        "sehingga Anda bisa mencoba aplikasi tanpa pengaturan apa pun."
     ),
     "BASIC_QA_TOP_RESULTS_LABEL": "Hasil teratas",
     "BASIC_QA_TOP_RESULTS_HELP": (
-        "Berapa banyak chunk top-N dari semantic search — dengan skor kemiripan tertinggi "
-        "— yang diambil sebagai pengetahuan untuk jawaban."
+        "Saat Anda bertanya, aplikasi mencari bagian teks ('chunk') yang maknanya paling mirip "
+        "dengan pertanyaan Anda. Ini menentukan berapa banyak bagian teratas itu yang diberikan "
+        "ke model sebagai pengetahuan untuk menjawab. Lebih sedikit (3-5) membuat jawaban fokus; "
+        "lebih banyak (10+) memberi cakupan lebih luas tetapi bisa menambah teks di luar topik. "
+        "Bawaan 5."
     ),
     "BASIC_QA_TONE_LABEL": "Nada",
-    "BASIC_QA_TONE_HELP": "Gaya penulisan yang digunakan model saat menjawab.",
+    "BASIC_QA_TONE_HELP": (
+        "Gaya penulisan yang dipakai model dalam jawabannya — misalnya Netral, Formal, atau "
+        "Ramah. Ini mengubah pilihan kata, bukan faktanya."
+    ),
     "BASIC_QA_QUESTION_LABEL": "Pertanyaan Anda",
     "BASIC_QA_QUESTION_PLACEHOLDER": "Ajukan pertanyaan tentang dokumen yang terindeks…",
     "BASIC_QA_GENERATE_BUTTON": "Hasilkan prompt",
     "BASIC_QA_GENERATE_HELP": (
-        "Jalankan semantic search dan susun prompt RAG dari pertanyaan, pengetahuan yang "
-        "diambil, dan nada."
+        "Cari di index Anda bagian-bagian yang paling relevan dengan pertanyaan, lalu susun "
+        "prompt lengkap (pertanyaan Anda + bagian-bagian itu + nada yang dipilih) yang akan "
+        "dikirim ke model. Anda bisa meninjau dan menyuntingnya sebelum mengirim."
     ),
     "BASIC_QA_SEARCHING": "Mencari di indeks Anda…",
     "BASIC_QA_RESULTS_EMPTY": "Hasilkan prompt untuk mencari di indeks Anda dan melihat kecocokannya di sini.",
@@ -254,16 +270,21 @@ STRINGS_ID: Strings = {
     "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
     "CONV_RERANKER_LABEL": "Pemeringkatan ulang",
     "CONV_RERANKER_HELP": (
-        "Urutkan ulang bagian yang diambil berdasarkan relevansi. Local memakai "
-        "cross-encoder di perangkat; LLM memakai model bantu; Off memakai urutan pencarian."
+        "Setelah pencarian pertama, ini melakukan putaran kedua untuk mengurutkan ulang bagian "
+        "teks agar yang paling relevan muncul lebih dulu, yang bisa memperbaiki jawaban. "
+        "'Local' memakai model penilai kecil di mesin ini; 'LLM' meminta model bantu untuk "
+        "memeringkatnya; 'Off' mempertahankan urutan pencarian asli. Local pilihan bawaan yang "
+        "baik; Off paling cepat."
     ),
     "CONV_RERANKER_OFF": "Off",
     "CONV_RERANKER_LOCAL": "Local",
     "CONV_RERANKER_LLM": "LLM",
     "CONV_AUX_MODEL_LABEL": "Model bantu",
     "CONV_AUX_MODEL_HELP": (
-        "Model kecil dan cepat untuk dekomposisi kueri, state percakapan, saran "
-        "pertanyaan lanjutan, dan pemeringkatan ulang LLM."
+        "Model kecil, cepat, dan murah untuk langkah-langkah pembantu di balik layar: menulis "
+        "ulang pesan Anda menjadi pertanyaan pencarian, menjaga memory percakapan yang berjalan, "
+        "memeringkat bagian teks, dan menyarankan pertanyaan lanjutan. Jawaban utama tetap "
+        "berasal dari Model jawaban di atas."
     ),
     "CONV_DECOMPOSITION_LABEL": "Batas dekomposisi",
     "CONV_DECOMPOSITION_HELP": (
@@ -298,12 +319,41 @@ STRINGS_ID: Strings = {
         "hanya mencatat pertanyaan terbaru. Makin rendah makin cepat mulai; makin tinggi makin "
         "lama menunggu. Bawaan 4."
     ),
+    "CONV_STATE_MAX_WORDS_LABEL": "Batas kata ringkasan",
+    "CONV_STATE_MAX_WORDS_HELP": (
+        "Model menyimpan ringkasan singkat percakapan sebagai memory-nya. Ini membatasi "
+        "seberapa panjang ringkasan itu, dalam kata. Makin rendah makin singkat dan hemat; "
+        "makin tinggi menyimpan lebih banyak detail tetapi menambah sedikit token tiap giliran. "
+        "Bawaan 150."
+    ),
+    "CONV_ANSWER_RECENT_TURNS_LABEL": "Giliran terbaru di jawaban",
+    "CONV_ANSWER_RECENT_TURNS_HELP": (
+        "Saat menulis tiap jawaban, model juga ditunjukkan sebanyak ini giliran percakapan "
+        "terbaru Anda, agar bisa mengikuti rujukan seperti 'kalau harganya bagaimana?'. "
+        "0 = tidak menampilkan apa pun, jadi tiap jawaban berdiri sendiri. Makin tinggi makin "
+        "banyak obrolan terbaru yang diingat tetapi memakai lebih banyak token. Bawaan 5."
+    ),
+    "CONV_PLAN_RECENT_TURNS_LABEL": "Giliran terbaru untuk perencanaan",
+    "CONV_PLAN_RECENT_TURNS_HELP": (
+        "Sebelum mencari, aplikasi menulis ulang pesan Anda menjadi pertanyaan mandiri yang "
+        "jelas; ini menentukan berapa banyak giliran terbaru yang dibaca saat melakukannya "
+        "(sekaligus panjang daftar singkat 'pertanyaan terbaru' yang disimpan di memory). "
+        "0 = hanya memakai pesan terakhir Anda. Makin tinggi membantu menyelesaikan pertanyaan "
+        "lanjutan yang samar. Bawaan 2."
+    ),
     "CONV_INSPECT_LABEL": "Mode inspeksi",
-    "CONV_INSPECT_HELP": "Tampilkan bagaimana setiap jawaban dibangun.",
+    "CONV_INSPECT_HELP": (
+        "Tampilkan rincian per jawaban tentang cara pembuatannya — sub-pertanyaan yang dicari, "
+        "bagian teks yang diambil dan diperingkat ulang, memory yang berjalan, dan prompt persis "
+        "yang dikirim. Bagus untuk belajar cara kerja RAG di balik layar; matikan untuk obrolan "
+        "yang bersih."
+    ),
     "CONV_THRESHOLD_LABEL": "Ambang pertanyaan lanjutan",
     "CONV_THRESHOLD_HELP": (
-        "Pertanyaan lanjutan disimpan di atas ambang atas, dibuang di bawah ambang "
-        "bawah, dan diperiksa model di antaranya."
+        "Setiap saran pertanyaan lanjutan diberi skor 0-100% untuk seberapa baik pengetahuan "
+        "Anda bisa menjawabnya. Di atas ambang atas disimpan, di bawah ambang bawah dibuang, dan "
+        "di antaranya model memeriksa lebih dekat. Lebarkan jaraknya untuk lebih mengandalkan "
+        "penilaian model; sempitkan untuk memutuskan berdasarkan skor saja."
     ),
     "CONV_PROMPTS_LABEL": ":material/edit_note: Templat prompt",
     "CONV_PROMPT_TAB_ANSWER": "Jawaban",
@@ -318,6 +368,14 @@ STRINGS_ID: Strings = {
     "CONV_PROMPT_TAB_FOLLOWUP_INTRO": "Pembuka lanjutan",
     "CONV_PROMPT_TAB_NO_FOLLOWUPS": "Pesan tanpa pertanyaan lanjutan",
     "CONV_PROMPT_FIELDS_CAPTION": "Placeholder wajib: {fields}",
+    "CONV_PROMPT_FIELDS_HELP": (
+        "Placeholder adalah bagian yang otomatis diisi aplikasi sebelum prompt dikirim ke "
+        "model — misalnya, {question} menjadi pesan Anda dan {knowledge} menjadi bagian teks "
+        "yang ditemukan di dokumen Anda. Pertahankan setiap placeholder yang tercantum di "
+        "sini persis seperti tertulis, termasuk kurung kurawalnya, atau bagian prompt itu "
+        "tidak akan berfungsi. Anda tetap boleh mengubah kata-kata di sekitarnya atau "
+        "mengurutkan ulang."
+    ),
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Ditampilkan sebagai sapaan asisten di awal percakapan baru. "
         "Satu baris per alternatif — satu dipilih acak."
@@ -762,19 +820,44 @@ STRINGS_ID: Strings = {
     "VEC_UPLOAD_LABEL": "Unggah file",
     "VEC_UPLOAD_HELP": "Tambahkan file .md, .txt, atau .zip Anda untuk diindeks bersama hasil crawl.",
     "VEC_CHUNK_SIZE_LABEL": "Ukuran chunk",
-    "VEC_CHUNK_SIZE_HELP": "Jumlah maksimum karakter atau token yang disimpan text splitter di setiap fragmen sebelum membuat embedding.",
+    "VEC_CHUNK_SIZE_HELP": (
+        "Sebelum diindeks, setiap dokumen dipotong menjadi bagian-bagian kecil yang disebut "
+        "'chunk'. Ini adalah ukuran terbesar satu chunk, dihitung dalam karakter. Chunk kecil "
+        "(mis. 300) menunjuk kalimat secara tepat tetapi bisa kehilangan konteks di sekitarnya; "
+        "chunk besar (mis. 1200) menjaga lebih banyak konteks tetapi membuat tiap kecocokan "
+        "kurang presisi. Bawaan 600."
+    ),
     "VEC_CHUNK_OVERLAP_LABEL": "Tumpang tindih chunk",
-    "VEC_CHUNK_OVERLAP_HELP": "Jumlah karakter atau token dari akhir satu chunk yang diulang di awal chunk berikutnya.",
+    "VEC_CHUNK_OVERLAP_HELP": (
+        "Saat dokumen dipecah menjadi chunk, sebanyak ini karakter dari akhir satu chunk "
+        "diulang di awal chunk berikutnya. Tumpang-tindih ini mencegah sebuah gagasan terpotong "
+        "di batas chunk, sehingga kalimat yang terbelah antara dua chunk tetap bisa ditemukan. "
+        "Terlalu banyak hanya menyimpan teks ganda. Bawaan 100."
+    ),
     "VEC_WORKERS_LABEL": "Pekerja",
-    "VEC_WORKERS_HELP": "Pekerja embedding paralel (1-8). Lebih banyak mempercepat model cloud pada crawl besar; model offline lokal selalu berjalan satu utas.",
+    "VEC_WORKERS_HELP": (
+        "Berapa banyak chunk yang diubah menjadi vektor secara bersamaan (1-8). Lebih tinggi "
+        "lebih cepat saat memakai model embedding cloud pada banyak dokumen; model offline "
+        "lokal selalu berjalan satu per satu, jadi ini tidak berpengaruh padanya. Mulai dari "
+        "kecil dan naikkan bila pengindeksan terasa lambat."
+    ),
     "VEC_EMBEDDING_MODEL_LABEL": "Model embedding",
     "VEC_EMBEDDING_MODEL_HELP": "Model yang mengubah teks menjadi vektor numerik yang dapat dicari. Model cloud (☁️‣🔑) berjalan di cloud dan memerlukan API key atau kredensial di file konfigurasi — lihat README untuk cara mengaturnya. Jika model yang dipilih tidak tersedia (kunci API, kredensial, atau internet tidak ada), pengindeksan berhenti dengan kesalahan dan Anda dapat beralih ke model lokal luring (all-MiniLM-L6-v2) yang berjalan di mesin ini dan tidak memerlukan penyiapan — model diunduh sekali (sekitar 80 MB) saat pertama kali, lalu bekerja luring.",
     "VEC_MODEL_TAG_LOCAL": "💻 Lokal",
     "VEC_MODEL_TAG_CLOUD": "☁️‣🔑",
     "VEC_EMBEDDING_DIMENSION_LABEL": "Dimensi embedding",
-    "VEC_EMBEDDING_DIMENSION_HELP": "Seberapa detail vektor embedding. Dimensi lebih besar menangkap lebih banyak detail, dimensi lebih kecil lebih ringan untuk disimpan dan dicari.",
+    "VEC_EMBEDDING_DIMENSION_HELP": (
+        "Embedding mengubah tiap chunk menjadi deret angka yang menangkap maknanya; ini adalah "
+        "panjang deret itu. Dimensi lebih banyak bisa menangkap makna lebih halus tetapi butuh "
+        "lebih banyak ruang dan lebih lambat dicari; lebih sedikit lebih ringan dan cepat. "
+        "Biarkan pada bawaan model kecuali ada alasan untuk mengubah. Bawaan 512."
+    ),
     "VEC_LANGUAGE_LABEL": "Bahasa",
-    "VEC_LANGUAGE_HELP": "Petunjuk bahasa sumber yang diberikan ke splitter atau lapisan embedding agar model multibahasa menangani tokenisasi dengan benar.",
+    "VEC_LANGUAGE_HELP": (
+        "Bahasa utama dokumen Anda (mis. Inggris). Ini petunjuk yang membantu aplikasi memecah "
+        "dan mencocokkan teks dengan benar — terutama untuk bahasa yang tidak memberi spasi "
+        "antar kata. Setel ke bahasa yang paling banyak dipakai di konten Anda."
+    ),
     "VEC_ERROR_NO_INPUTS": "Pilih minimal satu hasil crawl atau unggah file sebelum mengindeks.",
     "VEC_ERROR_ALREADY_RUNNING": "Sebuah pekerjaan pengindeksan sedang berjalan.",
     "VEC_ERROR_NO_ACTIVE_INDEX": "Tidak ada pekerjaan pengindeksan aktif untuk dihentikan.",
