@@ -271,6 +271,24 @@ STRINGS_EN: Strings = {
         "1 to 5 = suggest at most that many. Fewer may appear when only a few are "
         "closely related."
     ),
+    "CONV_PROBE_K_LABEL": "Follow-up check depth",
+    "CONV_PROBE_K_HELP": (
+        "Before a suggested follow-up is shown, it's searched against your knowledge to "
+        "check it can be answered. This sets how many passages that search pulls back — "
+        "higher looks wider (may keep more follow-ups), lower is quicker. Default 3."
+    ),
+    "CONV_ANSWERABILITY_CHUNKS_LABEL": "Answerability passages",
+    "CONV_ANSWERABILITY_CHUNKS_HELP": (
+        "For a borderline follow-up, the model reads this many of the top passages found "
+        "by the check above to decide Yes (keep) or No (drop). More gives it more to go "
+        "on. Default 2 — never more than the check depth."
+    ),
+    "CONV_STATE_START_TURN_LABEL": "Memory summary start",
+    "CONV_STATE_START_TURN_HELP": (
+        "The conversation's running memory: the model starts writing a short summary from "
+        "this turn onward (used to understand later questions). Earlier turns just track "
+        "recent questions. Lower starts sooner; higher waits longer. Default 4."
+    ),
     "CONV_INSPECT_LABEL": "Inspect mode",
     "CONV_INSPECT_HELP": "Show how each answer was built.",
     "CONV_THRESHOLD_LABEL": "Follow-up thresholds",
@@ -365,17 +383,21 @@ STRINGS_EN: Strings = {
     "CONV_INSPECT_STATE_RECENT": "Recent questions",
     "CONV_INSPECT_STATE_EMPTY": "No conversation memory yet.",
     "CONV_INSPECT_STATE_HELP": (
-        "A model summarises memory only after the first few turns; earlier turns just "
-        "track recent questions, so no prompt is sent yet."
+        "A rolling memory of the conversation: each turn updates it from your question and "
+        "the answer, and the next turn uses it to resolve references (like 'it' or 'that') "
+        "and plan its search — it is not part of the answer itself. The model only starts "
+        "summarising after the first few turns (configurable in Advanced options), so "
+        "earlier turns just track recent questions and send no prompt."
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "No follow-up suggestions for this turn.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
-        "Yes/No is whether the follow-up can be answered from your indexed knowledge: a high "
-        "confidence keeps it (Yes), a low one drops it (No), and a borderline one is checked by "
-        "the model. The percentage is that confidence — the follow-up's best semantic-search "
-        "match against your collection, not a model judgement."
+        "Yes/No is the verdict — whether this follow-up can be answered from your indexed "
+        "knowledge. A clearly high confidence keeps it (Yes) and a clearly low one drops it (No) "
+        "by the threshold alone; only a borderline confidence is decided by the model, using the "
+        "Answerability prompt. The percentage is that confidence — the follow-up's best "
+        "semantic-search match against your collection — not a model judgement."
     ),
-    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Answerability / Confidence %",
+    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Answerability · Confidence %",
     "CONV_INSPECT_ANSWERABILITY_YES": "Yes",
     "CONV_INSPECT_ANSWERABILITY_NO": "No",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",

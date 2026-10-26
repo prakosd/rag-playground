@@ -84,6 +84,16 @@ _FOLLOWUP_SHOW_MAX = 5
 # Decomposition limit (1-5): 1 = off (one question), 2-5 = split into at most N sub-questions.
 _DECOMPOSITION_LIMIT_MIN = 1
 _DECOMPOSITION_LIMIT_MAX = 5
+# Follow-up answerability tuning (library defaults 3 / 2): how many passages each
+# follow-up probe fetches and how many the model reads to judge a borderline one.
+_PROBE_K_MIN = 1
+_PROBE_K_MAX = 10
+_ANSWERABILITY_CHUNKS_MIN = 1
+_ANSWERABILITY_CHUNKS_MAX = 10
+# Conversation-memory start turn (library default 4): opening turns kept verbatim
+# before the model begins summarising.
+_STATE_START_TURN_MIN = 1
+_STATE_START_TURN_MAX = 20
 # Ask the model for a few more candidates than will be shown, so validation (which
 # drops unanswerable or duplicate suggestions) still has enough left to fill the limit.
 _FOLLOWUP_CANDIDATE_BUFFER = 2
@@ -126,6 +136,9 @@ class ConversationalControls:
     inspect: bool
     followup_drop: float
     followup_keep: float
+    followup_probe_k: int
+    answerability_chunks: int
+    state_summary_start_turn: int
 
 
 def aux_model_choices() -> tuple[list[str], int]:
@@ -183,6 +196,9 @@ def build_conversational_config(
         followup_candidate_count=max(controls.followup_show_count, 1) + _FOLLOWUP_CANDIDATE_BUFFER,
         followup_min_score=controls.followup_keep,
         followup_drop_score=controls.followup_drop,
+        followup_probe_k=controls.followup_probe_k,
+        answerability_chunks=controls.answerability_chunks,
+        state_summary_start_turn=controls.state_summary_start_turn,
         tone=controls.tone,
         language=language,
     )
@@ -335,12 +351,65 @@ def render_advanced_controls(
             )
             followups = followup_show_count > 0
         with toggles_right, st.container(horizontal_alignment="right"):
+            # Persist the Inspect preference in a plain key so it survives a session
+            # switch's page-less reruns (which can drop the toggle's own widget state,
+            # leaving it shown on but reading off): the toggle re-seeds from the plain key,
+            # which is then mirrored back each run and drives the per-turn Inspect render.
+            inspect_pref_key = f"{key_prefix}_inspect_on"
             inspect = st.toggle(
                 strings["CONV_INSPECT_LABEL"],
-                value=False,
+                value=st.session_state.get(inspect_pref_key, False),
                 help=strings["CONV_INSPECT_HELP"],
                 disabled=disabled,
                 key=f"{key_prefix}_inspect",
+            )
+            st.session_state[inspect_pref_key] = bool(inspect)
+        # Expert tuning: how deeply follow-ups are probed/judged and when memory summarises.
+        probe_col, answerability_col, memory_col = st.columns(3)
+        with probe_col:
+            followup_probe_k = int(
+                st.number_input(
+                    strings["CONV_PROBE_K_LABEL"],
+                    min_value=_PROBE_K_MIN,
+                    max_value=_PROBE_K_MAX,
+                    value=min(max(settings.conv_rag_followup_probe_k, _PROBE_K_MIN), _PROBE_K_MAX),
+                    step=1,
+                    help=strings["CONV_PROBE_K_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_followup_probe_k",
+                )
+            )
+        with answerability_col:
+            answerability_chunks = int(
+                st.number_input(
+                    strings["CONV_ANSWERABILITY_CHUNKS_LABEL"],
+                    min_value=_ANSWERABILITY_CHUNKS_MIN,
+                    max_value=_ANSWERABILITY_CHUNKS_MAX,
+                    value=min(
+                        max(settings.conv_rag_answerability_chunks, _ANSWERABILITY_CHUNKS_MIN),
+                        _ANSWERABILITY_CHUNKS_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_ANSWERABILITY_CHUNKS_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_answerability_chunks",
+                )
+            )
+        with memory_col:
+            state_summary_start_turn = int(
+                st.number_input(
+                    strings["CONV_STATE_START_TURN_LABEL"],
+                    min_value=_STATE_START_TURN_MIN,
+                    max_value=_STATE_START_TURN_MAX,
+                    value=min(
+                        max(settings.conv_rag_state_summary_start_turn, _STATE_START_TURN_MIN),
+                        _STATE_START_TURN_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_STATE_START_TURN_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_state_start_turn",
+                )
             )
         _render_prompt_editor(
             strings,
@@ -363,6 +432,9 @@ def render_advanced_controls(
         inspect=inspect,
         followup_drop=float(drop),
         followup_keep=float(keep),
+        followup_probe_k=followup_probe_k,
+        answerability_chunks=answerability_chunks,
+        state_summary_start_turn=state_summary_start_turn,
     )
 
 
@@ -785,8 +857,8 @@ def _section_label(text: str, *, help_text: str | None = None) -> None:
 
 
 def _bullet_list(items: Sequence[str]) -> None:
-    """Render *items* as one tight bulleted markdown block (no per-item block gaps)."""
-    st.markdown("\n".join(f"- {item}" for item in items))
+    """Render *items* as one tight `·`-prefixed block, one per line (markdown hard breaks)."""
+    st.markdown("  \n".join(f"· {item}" for item in items))
 
 
 def decomposition_help_text(strings: Strings, plan: QueryPlan) -> str:

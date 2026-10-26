@@ -277,6 +277,27 @@ STRINGS_ID: Strings = {
         "(tidak ada); 1 sampai 5 = sarankan paling banyak sebanyak itu. Lebih sedikit bisa "
         "muncul bila hanya sedikit yang benar-benar relevan."
     ),
+    "CONV_PROBE_K_LABEL": "Kedalaman pemeriksaan lanjutan",
+    "CONV_PROBE_K_HELP": (
+        "Sebelum sebuah saran pertanyaan lanjutan ditampilkan, ia dicari di pengetahuan "
+        "Anda untuk memastikan bisa dijawab. Ini menentukan berapa banyak bagian teks yang "
+        "diambil pencarian itu — makin tinggi makin luas (bisa menyimpan lebih banyak "
+        "lanjutan), makin rendah makin cepat. Bawaan 3."
+    ),
+    "CONV_ANSWERABILITY_CHUNKS_LABEL": "Bagian teks keterjawaban",
+    "CONV_ANSWERABILITY_CHUNKS_HELP": (
+        "Untuk pertanyaan lanjutan di ambang batas, model membaca sebanyak ini bagian teks "
+        "teratas dari pemeriksaan di atas untuk memutuskan Ya (simpan) atau Tidak (buang). "
+        "Lebih banyak memberi lebih banyak bahan. Bawaan 2 — tidak pernah melebihi kedalaman "
+        "pemeriksaan."
+    ),
+    "CONV_STATE_START_TURN_LABEL": "Mulai ringkasan memory",
+    "CONV_STATE_START_TURN_HELP": (
+        "Memory percakapan yang berjalan: model mulai menulis ringkasan singkat dari giliran "
+        "ini dan seterusnya (dipakai untuk memahami pertanyaan berikutnya). Giliran sebelumnya "
+        "hanya mencatat pertanyaan terbaru. Makin rendah makin cepat mulai; makin tinggi makin "
+        "lama menunggu. Bawaan 4."
+    ),
     "CONV_INSPECT_LABEL": "Mode inspeksi",
     "CONV_INSPECT_HELP": "Tampilkan bagaimana setiap jawaban dibangun.",
     "CONV_THRESHOLD_LABEL": "Ambang pertanyaan lanjutan",
@@ -371,18 +392,23 @@ STRINGS_ID: Strings = {
     "CONV_INSPECT_STATE_RECENT": "Pertanyaan terbaru",
     "CONV_INSPECT_STATE_EMPTY": "Belum ada memory percakapan.",
     "CONV_INSPECT_STATE_HELP": (
-        "Model hanya meringkas memory setelah beberapa giliran pertama; giliran awal "
-        "hanya mencatat pertanyaan terbaru, jadi belum ada prompt yang dikirim."
+        "Memory percakapan yang berjalan: setiap giliran memperbaruinya dari pertanyaan Anda "
+        "dan jawabannya, lalu giliran berikutnya memakainya untuk memahami rujukan (seperti "
+        "'itu' atau 'tersebut') dan merencanakan pencariannya — ini bukan bagian dari jawaban "
+        "itu sendiri. Model baru mulai meringkas setelah beberapa giliran pertama (dapat "
+        "diatur di Opsi lanjutan), jadi giliran awal hanya mencatat pertanyaan terbaru dan "
+        "tidak mengirim prompt."
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "Tidak ada saran pertanyaan lanjutan untuk giliran ini.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
-        "Ya/Tidak menunjukkan apakah pertanyaan lanjutan dapat dijawab dari pengetahuan "
-        "terindeks Anda: keyakinan tinggi mempertahankannya (Ya), keyakinan rendah "
-        "membuangnya (Tidak), dan yang di ambang diperiksa oleh model. Persentasenya adalah "
-        "keyakinan itu — kecocokan pencarian semantik terbaik terhadap koleksi Anda, bukan "
+        "Ya/Tidak adalah putusannya — apakah pertanyaan lanjutan ini dapat dijawab dari "
+        "pengetahuan terindeks Anda. Keyakinan yang jelas tinggi mempertahankannya (Ya) dan yang "
+        "jelas rendah membuangnya (Tidak) berdasarkan ambang saja; hanya keyakinan di ambang "
+        "batas yang diputuskan oleh model, memakai prompt Keterjawaban. Persentasenya adalah "
+        "keyakinan itu — kecocokan pencarian semantik terbaik terhadap koleksi Anda — bukan "
         "penilaian model."
     ),
-    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Dapat dijawab / Keyakinan %",
+    "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Dapat dijawab · Keyakinan %",
     "CONV_INSPECT_ANSWERABILITY_YES": "Ya",
     "CONV_INSPECT_ANSWERABILITY_NO": "Tidak",
     "CONV_INSPECT_PROMPT_LABEL": "Prompt",

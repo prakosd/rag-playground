@@ -80,9 +80,13 @@ crawl/index/RAG config models.
 | `CONV_RAG_FOLLOWUP_MIN_SCORE` | `0.60` | A follow-up is kept outright at/above this similarity |
 | `CONV_RAG_FOLLOWUP_DROP_SCORE` | `0.40` | A follow-up is dropped outright at/below this similarity (in between → the model checks) |
 | `CONV_RAG_FOLLOWUP_SHOW_COUNT` | `3` | Default Step 5 **Follow-up limit** — the max validated follow-up buttons (users adjust 0-5 per session; `0` = off) |
+| `CONV_RAG_FOLLOWUP_PROBE_K` | `3` | Default Step 5 **Follow-up check depth**: when validating a suggested follow-up, how many passages its probe search pulls from your index (users adjust 1-10 per session). Higher checks wider; lower is faster |
+| `CONV_RAG_ANSWERABILITY_CHUNKS` | `2` | Default Step 5 **Answerability passages**: how many of the top probe passages the model reads to judge a borderline follow-up Yes/No (users adjust 1-10 per session; never more than the probe depth) |
+| `CONV_RAG_STATE_SUMMARY_START_TURN` | `4` | Default Step 5 **Memory summary start**: the turn from which the model begins writing the rolling conversation summary; earlier turns just track recent questions (users adjust 1-20 per session) |
 | `CONV_RAG_PROMPT_TEMPLATE_DIR` | `apps/streamlit/config` | Directory (relative to the repo root) holding the six Step 5 default prompt files (`conversational_{answer,decompose,rerank,followups,answerability,state}_prompt.txt`). Edit them to reword a default without a code change; a per-session edit from the app's prompt editor takes precedence, and a missing/empty/invalid file falls back to the built-in library template |
 | `CONV_RAG_SESSION_TOKEN_QUOTA` | `5700000` | Per-session token budget shown on the Step 5 Token usage panel (its % Usage). Display-only; never blocks a send |
 | `CONV_RAG_SESSION_COST_QUOTA` | `1.0` | Per-session USD cost budget shown beside the Step 5 token quota. Display-only; overridable per deploy |
+| `CONV_RAG_CHAT_PANEL_HEIGHT_PX` | `660` | Height (px) of the Step 5 scrollable conversation panel. Taller shows more of the chat at once but pushes the composer and the panels below it further down |
 | `SESSIONS_ROOT` | `outputs/streamlit_sessions` | Filesystem root for all per-session files (crawls, indexes, histories, logs). Relative paths resolve against the app's working directory; set an absolute path (e.g. a mounted volume) for a containerized/cloud deployment — see [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |

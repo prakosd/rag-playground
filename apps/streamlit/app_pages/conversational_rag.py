@@ -82,9 +82,6 @@ _CHAT_PANEL_KEY = "conversational_rag_panel"
 _SCROLL_REQUESTED_KEY = "conversational_rag_scroll_bottom"
 _FOCUS_INPUT_KEY = "conversational_rag_focus_input"
 _INPUT_DOCK_KEY = "conversational_rag_input_dock"
-# Fixed-height scrollable chat panel so the conversation reads like a messenger
-# thread; follow-ups, token usage, and Output Files sit below it.
-_CHAT_PANEL_HEIGHT_PX = 600
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
 _CHAT_ALIGN_CSS = (
     "<style>"
@@ -336,7 +333,8 @@ def render_page(context: RagPageContext) -> None:
     # Peek the scroll intent before the panel so a submitted turn can scroll to the
     # new question *before* the blocking stream (pinning it to the top as it streams).
     scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
-    with st.container(height=_CHAT_PANEL_HEIGHT_PX, key=_CHAT_PANEL_KEY):
+    panel_height = get_settings().conv_rag_chat_panel_height_px
+    with st.container(height=panel_height, key=_CHAT_PANEL_KEY):
         if not turns and not submitting:
             _render_welcome_bubble(strings, context.session_root())
         for position, turn in enumerate(turns):

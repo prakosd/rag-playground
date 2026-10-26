@@ -36,6 +36,9 @@ def _controls(**overrides) -> ConversationalControls:
         inspect=True,
         followup_drop=0.3,
         followup_keep=0.7,
+        followup_probe_k=3,
+        answerability_chunks=2,
+        state_summary_start_turn=4,
     )
     values.update(overrides)
     return ConversationalControls(**values)
@@ -56,6 +59,17 @@ def test_build_config_maps_controls() -> None:
     assert config.followup_drop_score == 0.3
     assert config.followup_min_score == 0.7
     assert config.tone == "Formal"
+
+
+def test_build_config_threads_answerability_and_memory_controls() -> None:
+    # The three expert knobs flow straight through to the library config.
+    config = build_conversational_config(
+        _controls(followup_probe_k=5, answerability_chunks=4, state_summary_start_turn=2)
+    )
+
+    assert config.followup_probe_k == 5
+    assert config.answerability_chunks == 4
+    assert config.state_summary_start_turn == 2
 
 
 def test_build_config_decomposition_limit_controls_planning() -> None:
@@ -304,13 +318,13 @@ def test_subquestion_provenance_rows_skips_queries_without_hits() -> None:
 
 
 def test_bullet_list_joins_items_into_one_markdown_block(monkeypatch) -> None:
-    # A single markdown block keeps the items tight (no per-item block gap between them).
+    # One `·`-prefixed block with hard line breaks keeps the items tight, one per line.
     fake_st = MagicMock()
     monkeypatch.setattr(form_ui, "st", fake_st)
 
     form_ui._bullet_list(["first", "second", "third"])
 
-    fake_st.markdown.assert_called_once_with("- first\n- second\n- third")
+    fake_st.markdown.assert_called_once_with("· first  \n· second  \n· third")
 
 
 def test_section_label_renders_bold_caption_with_hint(monkeypatch) -> None:
@@ -332,5 +346,5 @@ def test_render_decomposition_lists_subquestions_as_one_bullet_block(monkeypatch
 
     form_ui._render_decomposition(STRINGS_EN, plan)
 
-    fake_st.markdown.assert_called_once_with("- What is A?\n- What is B?")
+    fake_st.markdown.assert_called_once_with("· What is A?  \n· What is B?")
     assert fake_st.caption.call_args.kwargs.get("help")  # the label carries a hover hint

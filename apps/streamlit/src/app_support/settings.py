@@ -185,6 +185,15 @@ class Settings(BaseSettings):
     conv_rag_followup_drop_score: float
     # Number of validated follow-up buttons shown.
     conv_rag_followup_show_count: int
+    # When validating a suggested follow-up, how many passages its probe search pulls
+    # back (the depth checked for answerability). Users adjust it per session.
+    conv_rag_followup_probe_k: int
+    # How many of those top passages the model reads to judge a borderline follow-up's
+    # answerability (never more than the probe depth above).
+    conv_rag_answerability_chunks: int
+    # Turn from which the model starts summarising the rolling conversation memory;
+    # earlier turns just track recent questions verbatim.
+    conv_rag_state_summary_start_turn: int
     # Directory (relative to the repo root) holding the six Step 5 default prompt
     # files (answer/decompose/rerank/followups/answerability/state). Edit those to
     # reword a default without a code change; a per-session edit from the app's
@@ -204,6 +213,9 @@ class Settings(BaseSettings):
     # "ID" column of the Step 5 Token usage transaction table (e.g. p8dtwc_z50nla).
     # Use a URL-unreserved character so the combined id survives URL encode/decode.
     conv_rag_txn_id_delimiter: str
+    # Height (px) of the Step 5 scrollable conversation panel; taller shows more of
+    # the chat at once but pushes the composer and panels below it further down.
+    conv_rag_chat_panel_height_px: int
 
     # ── Session lifecycle ────────────────────────────────────────────────────
     # Filesystem root under which every browser session's files (crawls, indexes,
