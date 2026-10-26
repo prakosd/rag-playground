@@ -49,6 +49,7 @@ def test_http_search_rebuilds_result(monkeypatch: pytest.MonkeyPatch) -> None:
                 "score": 0.5,
                 "metadata": {"a": "b"},
                 "matched_queries": ["q1"],
+                "retrieval_rank": 4,
             }
         ],
         "warnings": [],
@@ -60,6 +61,7 @@ def test_http_search_rebuilds_result(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.chunks[0].source == "s.md"
     assert result.chunks[0].matched_queries == ("q1",)  # list rebuilt as a tuple
+    assert result.chunks[0].retrieval_rank == 4  # passage number threaded across the backend
     assert result.errors[0].code == "rag.no_context"  # LibraryMessage rebuilt by code
     assert client.calls[0][0] == "http://x/rag/search"
     assert client.calls[0][1]["top_k"] == 3  # RagConfig threaded into the request

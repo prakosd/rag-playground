@@ -196,6 +196,15 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
     "[data-testid='stExpanderDetails']"
     ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
     " [data-testid='stTabs'] [data-testid='stTabs']{margin-top:-0.75rem}"
+    # Hug the "Required placeholders" caption to its text area: lift it under the tab
+    # row and drop its own paragraph's default 16px bottom margin so it reads as a
+    # tight heading instead of floating between the tabs and the editor.
+    "[data-testid='stExpanderDetails']"
+    ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
+    " [data-testid='stCaptionContainer']{margin-top:-0.5rem}"
+    "[data-testid='stExpanderDetails']"
+    ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
+    " [data-testid='stCaptionContainer'] p{margin:0 0 0.25rem}"
     "</style>"
 )
 # Consistent rhythm inside each per-turn Inspect panel: a small, even space above the
@@ -218,11 +227,6 @@ _INSPECT_TABS_RHYTHM_CSS = (
     " [data-testid='stMarkdownContainer'] ul{margin-bottom:0.5rem}"
     "</style>"
 )
-# The "Follow-up limit" number input in Advanced options carries a label row, making its
-# column taller than the bare Inspect toggle beside it; centred in that taller row the
-# toggle rides above the input box. Nudge it down so it lines up with the box centre.
-# Scoped to the toggle widget key (prefix matches render_advanced_controls' key_prefix).
-_TOGGLE_ALIGN_CSS = "<style>.st-key-conversational_rag_inspect{margin-top:1.8rem}</style>"
 
 
 def _idle_input_border_css(border_color: str) -> str:
@@ -294,7 +298,6 @@ def render_page(context: RagPageContext) -> None:
     st.html(_idle_input_border_css(panel_border))
     st.html(_TABS_EXPANDER_TIGHTEN_CSS)
     st.html(_INSPECT_TABS_RHYTHM_CSS)
-    st.html(_TOGGLE_ALIGN_CSS)
 
     # Peek the queued question (a typed message or a follow-up click) before the
     # controls so every input can be locked while its answer streams — a mid-stream

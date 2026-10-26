@@ -42,6 +42,26 @@ def test_off_keeps_order_and_truncates() -> None:
     assert warnings == []
 
 
+def test_stamps_passage_number_in_incoming_order() -> None:
+    # Every strategy stamps retrieval_rank 1..N in the incoming (pre-rerank) order, so the
+    # UI shows a stable passage number that lines up with the LLM re-ranker's output.
+    for config in (
+        ConversationalConfig(reranker="off"),
+        ConversationalConfig(reranker="local"),
+        ConversationalConfig(reranker="llm"),
+    ):
+        top, overflow, _ = rerank_chunks(
+            ["q"],
+            _CHUNKS,
+            2,
+            config,
+            encoder_loader=lambda: _FakeEncoder([0.1, 0.9, 0.5]),
+            chat_model=_RankingModel(reply="[3, 1, 2]"),
+        )
+        ranks = {chunk.text: chunk.retrieval_rank for chunk in (*top, *overflow)}
+        assert ranks == {"c0": 1, "c1": 2, "c2": 3}
+
+
 def test_empty_chunks_returns_empty() -> None:
     top, overflow, warnings = rerank_chunks(["q"], [], 5, ConversationalConfig(reranker="local"))
 
@@ -100,7 +120,7 @@ def test_local_broken_dependency_stack_degrades() -> None:
 def test_llm_reorders_by_ranking() -> None:
     config = ConversationalConfig(reranker="llm")
     result, _, warnings = rerank_chunks(
-        ["q"], _CHUNKS, 3, config, chat_model=_RankingModel(reply="[2, 0, 1]")
+        ["q"], _CHUNKS, 3, config, chat_model=_RankingModel(reply="[3, 1, 2]")
     )
 
     assert [chunk.text for chunk in result] == ["c2", "c0", "c1"]
@@ -128,10 +148,10 @@ def test_llm_unparsable_degrades() -> None:
 def test_llm_appends_omitted_indices() -> None:
     config = ConversationalConfig(reranker="llm")
     result, _, warnings = rerank_chunks(
-        ["q"], _CHUNKS, 5, config, chat_model=_RankingModel(reply="[2]")
+        ["q"], _CHUNKS, 5, config, chat_model=_RankingModel(reply="[3]")
     )
 
-    # Model returned only index 2; the rest follow in search order.
+    # Model returned only passage 3; the rest follow in search order.
     assert [chunk.text for chunk in result] == ["c2", "c0", "c1"]
     assert warnings == []
 
@@ -139,7 +159,7 @@ def test_llm_appends_omitted_indices() -> None:
 def test_overflow_holds_reranked_chunks_beyond_top_n() -> None:
     config = ConversationalConfig(reranker="llm")
     top, overflow, warnings = rerank_chunks(
-        ["q"], _CHUNKS, 1, config, chat_model=_RankingModel(reply="[2, 0, 1]")
+        ["q"], _CHUNKS, 1, config, chat_model=_RankingModel(reply="[3, 1, 2]")
     )
 
     # top_n=1 → only the best is answer context; the rest are retained as display overflow.

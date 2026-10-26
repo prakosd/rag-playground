@@ -82,6 +82,7 @@ class Strings(TypedDict):
     SEARCH_TOP_N_LABEL: str
     SEARCH_TOP_N_HELP: str
     SEARCH_RESULT_PANEL_TITLE: str  # template: {rank}, {id}, {score}
+    RAG_RESULT_PASSAGE_BADGE: str  # template: {n}
     SEARCH_RESULT_TAB_PREVIEW: str
     SEARCH_RESULT_TAB_RAW: str
     SEARCH_RESULT_ID: str  # template: {id}
@@ -184,6 +185,12 @@ class Strings(TypedDict):
     CHAT_WELCOME_DEFAULT: str
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     CONV_ADVANCED_LABEL: str
+    CONV_ADV_GROUP_HELPER: str
+    CONV_ADV_GROUP_DECOMPOSE: str
+    CONV_ADV_GROUP_RERANK: str
+    CONV_ADV_GROUP_ANSWER: str
+    CONV_ADV_GROUP_FOLLOWUPS: str
+    CONV_ADV_GROUP_MEMORY: str
     CONV_RERANKER_LABEL: str
     CONV_RERANKER_HELP: str
     CONV_RERANKER_OFF: str

@@ -85,7 +85,7 @@ def test_turn_from_record_rebuilds_display_adequate_answer() -> None:
         state_summary="About X",
         sub_questions=("What is X exactly?",),
         follow_ups=("Tell me more?",),
-        results=(StoredResult(source="doc.md", score=0.9, text="body"),),
+        results=(StoredResult(source="doc.md", score=0.9, text="body", retrieval_rank=2),),
     )
 
     turn = turn_from_record(record)
@@ -99,6 +99,7 @@ def test_turn_from_record_rebuilds_display_adequate_answer() -> None:
     assert answer.model_used == "main"
     assert [chunk.source for chunk in answer.sources] == ["doc.md"]
     assert answer.sources[0].score == 0.9
+    assert answer.sources[0].retrieval_rank == 2  # passage number survives a reload
 
 
 def test_turn_from_record_rebuilds_followups_with_scores_and_verdicts() -> None:

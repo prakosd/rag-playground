@@ -18,6 +18,7 @@ model or touch a network.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -91,7 +92,7 @@ def rerank_chunks(
     context, and the rest (``overflow``) are retained for display only — the "not sent
     to the model" section in the Inspect panel — never fed to the answer.
     """
-    ordered = list(chunks)
+    ordered = [replace(chunk, retrieval_rank=rank) for rank, chunk in enumerate(chunks, start=1)]
     if not ordered or config.reranker == "off":
         top, overflow = _split_top(ordered, top_n)
         return top, overflow, []
@@ -153,7 +154,7 @@ def _rerank_llm(
         top, overflow = _split_top(chunks, top_n)
         return top, overflow, [messages.rerank_unavailable("llm", "no auxiliary model available")]
     query_text = " ".join(queries)
-    passages = "\n".join(f"[{index}] {chunk.text}" for index, chunk in enumerate(chunks))
+    passages = "\n".join(f"[{chunk.retrieval_rank}] {chunk.text}" for chunk in chunks)
     prompt = render_conversational_template(
         template, RERANK_TEMPLATE, query=query_text, passages=passages
     )
@@ -167,7 +168,7 @@ def _rerank_llm(
         record_usage("reranking", usage)
     if record_prompt is not None:
         record_prompt("reranking", prompt, reply)
-    order = parse_ranking(reply, len(chunks))
+    order = parse_ranking(reply, len(chunks), base=1)
     if not order:
         top, overflow = _split_top(chunks, top_n)
         return top, overflow, [messages.rerank_unavailable("llm", "unparsable ranking")]

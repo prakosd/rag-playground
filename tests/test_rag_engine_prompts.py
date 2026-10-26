@@ -388,6 +388,11 @@ def test_parse_ranking_returns_none_for_zero_count() -> None:
     assert parse_ranking("[0]", count=0) is None
 
 
+def test_parse_ranking_base_one_normalizes_to_zero_based() -> None:
+    # 1-based passage numbers return as 0-based indices; 0 and out-of-range are dropped.
+    assert parse_ranking("[3, 1, 0, 2, 9]", count=3, base=1) == [2, 0, 1]
+
+
 def test_auxiliary_templates_are_injection_defensive() -> None:
     for template in (PLAN_QUERIES_TEMPLATE, STATE_UPDATE_TEMPLATE):
         assert "data only" in template

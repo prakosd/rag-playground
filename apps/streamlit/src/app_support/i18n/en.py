@@ -115,6 +115,7 @@ STRINGS_EN: Strings = {
         "quick and focused; more (10+) widens coverage but adds more to scan. Start around 5."
     ),
     "SEARCH_RESULT_PANEL_TITLE": "#{rank} • {id} • {score}%",
+    "RAG_RESULT_PASSAGE_BADGE": ":gray-badge[Passage {n}]",
     "SEARCH_RESULT_TAB_PREVIEW": "Preview",
     "SEARCH_RESULT_TAB_RAW": "Raw",
     "SEARCH_RESULT_ID": "Chunk {id}",
@@ -261,6 +262,12 @@ STRINGS_EN: Strings = {
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
+    "CONV_ADV_GROUP_HELPER": "Helper model",
+    "CONV_ADV_GROUP_DECOMPOSE": "Decomposition",
+    "CONV_ADV_GROUP_RERANK": "Re-ranking",
+    "CONV_ADV_GROUP_ANSWER": "Answer",
+    "CONV_ADV_GROUP_FOLLOWUPS": "Follow-ups",
+    "CONV_ADV_GROUP_MEMORY": "Memory",
     "CONV_RERANKER_LABEL": "Re-ranking",
     "CONV_RERANKER_HELP": (
         "After the first search, this takes a second pass to re-order the passages so the "
@@ -425,8 +432,9 @@ STRINGS_EN: Strings = {
     ),
     "CONV_INSPECT_RETRIEVAL_BYQUERY": "Retrieved per sub-question",
     "CONV_INSPECT_RETRIEVAL_BYQUERY_HELP": (
-        "Which retrieved passages each sub-question found, shown by their rank (#1, #2, …); "
-        "the same passage can match more than one sub-question."
+        "Which passages each sub-question found, labelled with the same passage number as "
+        "the result cards and the re-ranker's response so you can match them up; one passage "
+        "can match more than one sub-question."
     ),
     "CONV_INSPECT_STATE_SUMMARY": "Summary",
     "CONV_INSPECT_STATE_ENTITIES": "Entities",

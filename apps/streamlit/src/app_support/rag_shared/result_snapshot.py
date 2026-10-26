@@ -27,6 +27,7 @@ class _ChunkLike(Protocol):
     source: str
     score: float
     metadata: dict[str, str]
+    retrieval_rank: int
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,9 @@ class StoredResult:
     score: float
     text: str
     metadata: dict[str, str] = field(default_factory=dict)
+    # Stable 1-based passage number from Step 5 re-ranking (0 when absent), so a reloaded
+    # turn's result cards keep the badge that ties them to the re-ranker's response.
+    retrieval_rank: int = 0
 
 
 def stored_results(chunks: Sequence[_ChunkLike]) -> tuple[StoredResult, ...]:
@@ -47,6 +51,7 @@ def stored_results(chunks: Sequence[_ChunkLike]) -> tuple[StoredResult, ...]:
             score=float(chunk.score),
             text=chunk.text,
             metadata=dict(chunk.metadata),
+            retrieval_rank=int(chunk.retrieval_rank),
         )
         for chunk in chunks
     )
@@ -66,6 +71,7 @@ def _stored_result_from_payload(payload: object) -> StoredResult | None:
                 if isinstance(metadata, dict)
                 else {}
             ),
+            retrieval_rank=int(payload.get("retrieval_rank", 0)),
         )
     except (TypeError, ValueError):
         return None

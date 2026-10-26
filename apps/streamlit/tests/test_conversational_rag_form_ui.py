@@ -285,23 +285,44 @@ def test_render_diagnostics_notes_a_clean_turn(monkeypatch) -> None:
     fake_st.error.assert_not_called()
 
 
-def _prov_chunk(matched: tuple[str, ...]) -> RetrievedChunk:
-    return RetrievedChunk(text="t", source="a.md", score=0.9, metadata={}, matched_queries=matched)
+def _prov_chunk(matched: tuple[str, ...], retrieval_rank: int = 0) -> RetrievedChunk:
+    return RetrievedChunk(
+        text="t",
+        source="a.md",
+        score=0.9,
+        metadata={},
+        matched_queries=matched,
+        retrieval_rank=retrieval_rank,
+    )
 
 
 def test_subquestion_provenance_rows_maps_ranks_by_query() -> None:
     # Each merged result is tagged (via matched_queries) with the sub-question(s)
-    # that retrieved it; the helper inverts that into query -> result ranks.
+    # that retrieved it; the helper inverts that into query -> sorted passage numbers.
     plan = QueryPlan(sub_questions=["What is A?", "What is B?"])
     sources = [
-        _prov_chunk(("What is A?",)),
-        _prov_chunk(("What is B?", "What is A?")),
-        _prov_chunk(("What is B?",)),
+        _prov_chunk(("What is A?",), retrieval_rank=1),
+        _prov_chunk(("What is B?", "What is A?"), retrieval_rank=2),
+        _prov_chunk(("What is B?",), retrieval_rank=3),
     ]
 
     rows = form_ui.subquestion_provenance_rows(sources, plan)
 
-    assert rows == [("What is A?", "#1, #2"), ("What is B?", "#2, #3")]
+    assert rows == [("What is A?", [1, 2]), ("What is B?", [2, 3])]
+
+
+def test_subquestion_provenance_rows_sorts_passage_numbers() -> None:
+    # Passage numbers are sorted ascending within a sub-question, independent of final order.
+    plan = QueryPlan(sub_questions=["q1", "q2"])
+    sources = [
+        _prov_chunk(("q1",), retrieval_rank=3),
+        _prov_chunk(("q2",), retrieval_rank=1),
+        _prov_chunk(("q1",), retrieval_rank=2),
+    ]
+
+    rows = form_ui.subquestion_provenance_rows(sources, plan)
+
+    assert rows == [("q1", [2, 3]), ("q2", [1])]
 
 
 def test_subquestion_provenance_rows_empty_for_single_subquestion() -> None:
@@ -315,20 +336,23 @@ def test_subquestion_provenance_includes_overflow_only_queries() -> None:
     # Point 3: provenance runs over sources + overflow, so a sub-question whose only
     # hit landed in the overflow (below the top-N) still appears, numbered across both.
     plan = QueryPlan(sub_questions=["top q", "overflow q"])
-    combined = [_prov_chunk(("top q",)), _prov_chunk(("overflow q",))]
+    combined = [
+        _prov_chunk(("top q",), retrieval_rank=1),
+        _prov_chunk(("overflow q",), retrieval_rank=2),
+    ]
 
     rows = form_ui.subquestion_provenance_rows(combined, plan)
 
-    assert rows == [("top q", "#1"), ("overflow q", "#2")]
+    assert rows == [("top q", [1]), ("overflow q", [2])]
 
 
 def test_subquestion_provenance_rows_skips_queries_without_hits() -> None:
     # A sub-question that retrieved nothing is omitted rather than shown empty.
     plan = QueryPlan(sub_questions=["hit me", "no hits"])
 
-    rows = form_ui.subquestion_provenance_rows([_prov_chunk(("hit me",))], plan)
+    rows = form_ui.subquestion_provenance_rows([_prov_chunk(("hit me",), retrieval_rank=1)], plan)
 
-    assert rows == [("hit me", "#1")]
+    assert rows == [("hit me", [1])]
 
 
 def test_bullet_list_joins_items_into_one_markdown_block(monkeypatch) -> None:

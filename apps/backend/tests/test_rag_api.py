@@ -16,7 +16,9 @@ def client() -> TestClient:
 
 
 def _chunk() -> RetrievedChunk:
-    return RetrievedChunk(text="body", source="doc.md", score=0.87, metadata={"k": "v"})
+    return RetrievedChunk(
+        text="body", source="doc.md", score=0.87, metadata={"k": "v"}, retrieval_rank=2
+    )
 
 
 def test_health_ok(client: TestClient) -> None:
@@ -37,6 +39,7 @@ def test_search_returns_chunks(client: TestClient, monkeypatch: pytest.MonkeyPat
     body = resp.json()
     assert body["chunks"][0]["source"] == "doc.md"
     assert body["chunks"][0]["matched_queries"] == []
+    assert body["chunks"][0]["retrieval_rank"] == 2
     assert body["errors"] == []
 
 

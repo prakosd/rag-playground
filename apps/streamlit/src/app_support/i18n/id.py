@@ -119,6 +119,7 @@ STRINGS_ID: Strings = {
         "menambah yang harus ditinjau. Mulai dari sekitar 5."
     ),
     "SEARCH_RESULT_PANEL_TITLE": "#{rank} • {id} • {score}%",
+    "RAG_RESULT_PASSAGE_BADGE": ":gray-badge[Bagian {n}]",
     "SEARCH_RESULT_TAB_PREVIEW": "Pratinjau",
     "SEARCH_RESULT_TAB_RAW": "Mentah",
     "SEARCH_RESULT_ID": "Chunk {id}",
@@ -268,6 +269,12 @@ STRINGS_ID: Strings = {
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
+    "CONV_ADV_GROUP_HELPER": "Model bantu",
+    "CONV_ADV_GROUP_DECOMPOSE": "Dekomposisi",
+    "CONV_ADV_GROUP_RERANK": "Pemeringkatan ulang",
+    "CONV_ADV_GROUP_ANSWER": "Jawaban",
+    "CONV_ADV_GROUP_FOLLOWUPS": "Tindak lanjut",
+    "CONV_ADV_GROUP_MEMORY": "Memori",
     "CONV_RERANKER_LABEL": "Pemeringkatan ulang",
     "CONV_RERANKER_HELP": (
         "Setelah pencarian pertama, ini melakukan putaran kedua untuk mengurutkan ulang bagian "
@@ -441,8 +448,9 @@ STRINGS_ID: Strings = {
     ),
     "CONV_INSPECT_RETRIEVAL_BYQUERY": "Diambil per sub-pertanyaan",
     "CONV_INSPECT_RETRIEVAL_BYQUERY_HELP": (
-        "Bagian teks yang ditemukan tiap sub-pertanyaan, ditampilkan menurut peringkatnya "
-        "(#1, #2, …); satu bagian teks bisa cocok untuk lebih dari satu sub-pertanyaan."
+        "Bagian teks yang ditemukan tiap sub-pertanyaan, diberi nomor bagian yang sama dengan "
+        "kartu hasil dan respons pemeringkat ulang agar bisa Anda cocokkan; satu bagian teks "
+        "bisa cocok untuk lebih dari satu sub-pertanyaan."
     ),
     "CONV_INSPECT_STATE_SUMMARY": "Ringkasan",
     "CONV_INSPECT_STATE_ENTITIES": "Entitas",

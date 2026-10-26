@@ -10,11 +10,19 @@ from app_support.rag_shared.result_snapshot import (
 
 
 class _Chunk:
-    def __init__(self, source: str, score: float, text: str, metadata: dict[str, str]) -> None:
+    def __init__(
+        self,
+        source: str,
+        score: float,
+        text: str,
+        metadata: dict[str, str],
+        retrieval_rank: int = 0,
+    ) -> None:
         self.source = source
         self.score = score
         self.text = text
         self.metadata = metadata
+        self.retrieval_rank = retrieval_rank
 
 
 def test_stored_results_copies_chunk_fields() -> None:
@@ -23,6 +31,23 @@ def test_stored_results_copies_chunk_fields() -> None:
     assert stored == (
         StoredResult(source="a.md", score=0.5, text="hello", metadata={"chunk_index": "1"}),
     )
+
+
+def test_stored_results_copies_retrieval_rank() -> None:
+    stored = stored_results([_Chunk("a.md", 0.5, "hello", {}, retrieval_rank=3)])
+
+    assert stored[0].retrieval_rank == 3
+
+
+def test_stored_results_from_payload_reads_retrieval_rank() -> None:
+    payload = [
+        {"source": "a.md", "score": 0.9, "text": "x", "metadata": {}, "retrieval_rank": 4},
+        {"source": "b.md", "score": 0.1, "text": "y", "metadata": {}},  # missing → 0
+    ]
+
+    stored = stored_results_from_payload(payload)
+
+    assert [item.retrieval_rank for item in stored] == [4, 0]
 
 
 def test_stored_results_from_payload_rebuilds_entries() -> None:

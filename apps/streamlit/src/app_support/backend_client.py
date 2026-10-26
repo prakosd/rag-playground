@@ -60,6 +60,7 @@ def _chunk(data: dict[str, Any]) -> RetrievedChunk:
         score=data["score"],
         metadata=data.get("metadata", {}),
         matched_queries=tuple(data.get("matched_queries", ())),
+        retrieval_rank=int(data.get("retrieval_rank", 0)),
     )
 
 

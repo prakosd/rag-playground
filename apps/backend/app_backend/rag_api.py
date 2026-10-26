@@ -60,6 +60,7 @@ def _chunk_dict(chunk: RetrievedChunk) -> dict[str, Any]:
         "score": chunk.score,
         "metadata": chunk.metadata,
         "matched_queries": list(chunk.matched_queries),
+        "retrieval_rank": chunk.retrieval_rank,
     }
 
 

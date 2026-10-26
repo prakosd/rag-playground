@@ -35,6 +35,10 @@ class RetrievedChunk:
     metadata: dict[str, str]
     # Sub-questions (from a decomposed query) this chunk was retrieved for.
     matched_queries: tuple[str, ...] = ()
+    # 1-based position among the merged retrieval candidates the re-ranker saw — the
+    # stable "passage number" a UI shows so the re-ranker's output lines up with the
+    # per-sub-question list and the result cards; 0 when not re-ranked (Steps 3-4).
+    retrieval_rank: int = 0
 
 
 @dataclass(frozen=True)

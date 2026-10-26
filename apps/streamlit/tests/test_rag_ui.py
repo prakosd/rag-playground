@@ -181,6 +181,23 @@ def test_result_panel_title_includes_rank_source_chunk_and_score() -> None:
     assert "66%" in title
 
 
+def test_result_panel_title_adds_passage_badge_when_reranked() -> None:
+    # A Step 5 re-ranked chunk carries a 1-based passage number; the title gets a matching
+    # badge so it ties back to the re-ranker response and the per-sub-question list.
+    chunk = RetrievedChunk(
+        text="t", source="doc.md", score=0.5, metadata={"chunk_index": "7"}, retrieval_rank=3
+    )
+
+    assert "Passage 3" in result_panel_title(STRINGS_EN, 1, chunk)
+
+
+def test_result_panel_title_omits_passage_badge_without_rerank() -> None:
+    # Steps 3-4 chunks have no passage number (0), so no badge is shown.
+    chunk = RetrievedChunk(text="t", source="doc.md", score=0.5, metadata={"chunk_index": "7"})
+
+    assert "Passage" not in result_panel_title(STRINGS_EN, 1, chunk)
+
+
 def test_index_metadata_rows_include_key_manifest_fields() -> None:
     manifest = IndexManifest(
         embedding_model_requested="amazon.titan-embed-text-v2:0",

@@ -107,9 +107,6 @@ _PLAN_RECENT_TURNS_MAX = 10
 # Ask the model for a few more candidates than will be shown, so validation (which
 # drops unanswerable or duplicate suggestions) still has enough left to fill the limit.
 _FOLLOWUP_CANDIDATE_BUFFER = 2
-# Keep the follow-up count field narrow (it holds a single digit) so it doesn't crowd the
-# toggles beside it, but wide enough that the +/- steppers stay visible.
-_FOLLOWUP_COUNT_WIDTH_PX = 150
 _PROMPT_EDITOR_HEIGHT = 240  # px height of each prompt-template text area
 # ConversationalPrompts field name → its editor tab's i18n label key.
 _PROMPT_TAB_KEYS = {
@@ -284,50 +281,38 @@ def render_advanced_controls(
             settings.conv_rag_reranker if settings.conv_rag_reranker in _RERANKER_KEYS else "local"
         )
         aux_options, aux_default = aux_model_choices()
-        # One row: reranking (compact) · auxiliary model (wide enough for the full
-        # label) · thresholds slider (the remaining space).
-        rerank_col, aux_col, threshold_col = st.columns(
-            [2.4, 4.3, 3.3], vertical_alignment="bottom"
+        # Inspect is a view option (it reveals the per-turn glass-box panel), so it leads
+        # the panel on its own row, above the pipeline-stage groups below.
+        # Persist the preference in a plain key so it survives a session switch's page-less
+        # reruns (which can drop the toggle's own widget state, leaving it shown on but
+        # reading off): the toggle re-seeds from the plain key, mirrored back each run, and
+        # drives the per-turn Inspect render.
+        inspect_pref_key = f"{key_prefix}_inspect_on"
+        inspect = st.toggle(
+            strings["CONV_INSPECT_LABEL"],
+            value=st.session_state.get(inspect_pref_key, False),
+            help=strings["CONV_INSPECT_HELP"],
+            disabled=disabled,
+            key=f"{key_prefix}_inspect",
         )
-        with rerank_col:
-            reranker = (
-                st.segmented_control(
-                    strings["CONV_RERANKER_LABEL"],
-                    options=list(_RERANKER_KEYS),
-                    format_func=lambda key: reranker_labels[key],
-                    default=default_reranker,
-                    help=strings["CONV_RERANKER_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_reranker",
-                )
-                or "off"
-            )
-        with aux_col:
-            aux_model_id = st.selectbox(
-                strings["CONV_AUX_MODEL_LABEL"],
-                options=aux_options,
-                index=aux_default,
-                format_func=lambda model_id: chat_model_label(model_id, strings),
-                help=strings["CONV_AUX_MODEL_HELP"],
-                disabled=disabled,
-                key=f"{key_prefix}_aux_model",
-            )
-        with threshold_col:
-            drop, keep = st.slider(
-                strings["CONV_THRESHOLD_LABEL"],
-                min_value=0.0,
-                max_value=1.0,
-                value=(
-                    settings.conv_rag_followup_drop_score,
-                    settings.conv_rag_followup_min_score,
-                ),
-                step=0.05,
-                help=strings["CONV_THRESHOLD_HELP"],
-                disabled=disabled,
-                key=f"{key_prefix}_thresholds",
-            )
-        toggles_left, toggles_right = st.columns([3, 1], vertical_alignment="center")
-        with toggles_left, st.container(horizontal=True, vertical_alignment="center"):
+        st.session_state[inspect_pref_key] = bool(inspect)
+
+        # The groups below follow the turn pipeline: a shared helper model, then
+        # decompose → re-rank → answer → follow-ups → memory, each under its own heading.
+        _section_label(strings["CONV_ADV_GROUP_HELPER"])
+        aux_model_id = st.selectbox(
+            strings["CONV_AUX_MODEL_LABEL"],
+            options=aux_options,
+            index=aux_default,
+            format_func=lambda model_id: chat_model_label(model_id, strings),
+            help=strings["CONV_AUX_MODEL_HELP"],
+            disabled=disabled,
+            key=f"{key_prefix}_aux_model",
+        )
+
+        _section_label(strings["CONV_ADV_GROUP_DECOMPOSE"])
+        decompose_col, plan_turns_col, _ = st.columns(3)
+        with decompose_col:
             decomposition_limit = int(
                 st.number_input(
                     strings["CONV_DECOMPOSITION_LABEL"],
@@ -340,11 +325,63 @@ def render_advanced_controls(
                     step=1,
                     help=strings["CONV_DECOMPOSITION_HELP"],
                     disabled=disabled,
-                    width=_FOLLOWUP_COUNT_WIDTH_PX,
                     key=f"{key_prefix}_decomposition",
                 )
             )
-            decomposition_on = decomposition_limit > _DECOMPOSITION_LIMIT_MIN
+        decomposition_on = decomposition_limit > _DECOMPOSITION_LIMIT_MIN
+        with plan_turns_col:
+            plan_recent_turns = int(
+                st.number_input(
+                    strings["CONV_PLAN_RECENT_TURNS_LABEL"],
+                    min_value=_PLAN_RECENT_TURNS_MIN,
+                    max_value=_PLAN_RECENT_TURNS_MAX,
+                    value=min(
+                        max(settings.conv_rag_plan_recent_turns, _PLAN_RECENT_TURNS_MIN),
+                        _PLAN_RECENT_TURNS_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_PLAN_RECENT_TURNS_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_plan_recent_turns",
+                )
+            )
+
+        _section_label(strings["CONV_ADV_GROUP_RERANK"])
+        reranker = (
+            st.segmented_control(
+                strings["CONV_RERANKER_LABEL"],
+                options=list(_RERANKER_KEYS),
+                format_func=lambda key: reranker_labels[key],
+                default=default_reranker,
+                help=strings["CONV_RERANKER_HELP"],
+                disabled=disabled,
+                key=f"{key_prefix}_reranker",
+            )
+            or "off"
+        )
+
+        _section_label(strings["CONV_ADV_GROUP_ANSWER"])
+        answer_turns_col, _, _ = st.columns(3)
+        with answer_turns_col:
+            answer_recent_turns = int(
+                st.number_input(
+                    strings["CONV_ANSWER_RECENT_TURNS_LABEL"],
+                    min_value=_ANSWER_RECENT_TURNS_MIN,
+                    max_value=_ANSWER_RECENT_TURNS_MAX,
+                    value=min(
+                        max(settings.conv_rag_answer_recent_turns, _ANSWER_RECENT_TURNS_MIN),
+                        _ANSWER_RECENT_TURNS_MAX,
+                    ),
+                    step=1,
+                    help=strings["CONV_ANSWER_RECENT_TURNS_HELP"],
+                    disabled=disabled,
+                    key=f"{key_prefix}_answer_recent_turns",
+                )
+            )
+
+        _section_label(strings["CONV_ADV_GROUP_FOLLOWUPS"])
+        followup_limit_col, threshold_col = st.columns([1, 2], vertical_alignment="bottom")
+        with followup_limit_col:
             # The follow-up limit doubles as the on/off switch: 0 = off, 1-5 = show at
             # most that many. The deployment "start off" setting folds into the default.
             followup_default = (
@@ -361,27 +398,25 @@ def render_advanced_controls(
                     step=1,
                     help=strings["CONV_FOLLOWUPS_COUNT_HELP"],
                     disabled=disabled,
-                    width=_FOLLOWUP_COUNT_WIDTH_PX,
                     key=f"{key_prefix}_followup_count",
                 )
             )
             followups = followup_show_count > 0
-        with toggles_right, st.container(horizontal_alignment="right"):
-            # Persist the Inspect preference in a plain key so it survives a session
-            # switch's page-less reruns (which can drop the toggle's own widget state,
-            # leaving it shown on but reading off): the toggle re-seeds from the plain key,
-            # which is then mirrored back each run and drives the per-turn Inspect render.
-            inspect_pref_key = f"{key_prefix}_inspect_on"
-            inspect = st.toggle(
-                strings["CONV_INSPECT_LABEL"],
-                value=st.session_state.get(inspect_pref_key, False),
-                help=strings["CONV_INSPECT_HELP"],
+        with threshold_col:
+            drop, keep = st.slider(
+                strings["CONV_THRESHOLD_LABEL"],
+                min_value=0.0,
+                max_value=1.0,
+                value=(
+                    settings.conv_rag_followup_drop_score,
+                    settings.conv_rag_followup_min_score,
+                ),
+                step=0.05,
+                help=strings["CONV_THRESHOLD_HELP"],
                 disabled=disabled,
-                key=f"{key_prefix}_inspect",
+                key=f"{key_prefix}_thresholds",
             )
-            st.session_state[inspect_pref_key] = bool(inspect)
-        # Expert tuning: how deeply follow-ups are probed/judged and when memory summarises.
-        probe_col, answerability_col, memory_col = st.columns(3)
+        probe_col, answerability_col, _ = st.columns(3)
         with probe_col:
             followup_probe_k = int(
                 st.number_input(
@@ -411,7 +446,10 @@ def render_advanced_controls(
                     key=f"{key_prefix}_answerability_chunks",
                 )
             )
-        with memory_col:
+
+        _section_label(strings["CONV_ADV_GROUP_MEMORY"])
+        memory_start_col, summary_words_col, _ = st.columns(3)
+        with memory_start_col:
             state_summary_start_turn = int(
                 st.number_input(
                     strings["CONV_STATE_START_TURN_LABEL"],
@@ -425,41 +463,6 @@ def render_advanced_controls(
                     help=strings["CONV_STATE_START_TURN_HELP"],
                     disabled=disabled,
                     key=f"{key_prefix}_state_start_turn",
-                )
-            )
-        # Memory/history windows: how much recent chat the answer and planner prompts
-        # see, and the rolling summary's length cap.
-        answer_turns_col, plan_turns_col, summary_words_col = st.columns(3)
-        with answer_turns_col:
-            answer_recent_turns = int(
-                st.number_input(
-                    strings["CONV_ANSWER_RECENT_TURNS_LABEL"],
-                    min_value=_ANSWER_RECENT_TURNS_MIN,
-                    max_value=_ANSWER_RECENT_TURNS_MAX,
-                    value=min(
-                        max(settings.conv_rag_answer_recent_turns, _ANSWER_RECENT_TURNS_MIN),
-                        _ANSWER_RECENT_TURNS_MAX,
-                    ),
-                    step=1,
-                    help=strings["CONV_ANSWER_RECENT_TURNS_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_answer_recent_turns",
-                )
-            )
-        with plan_turns_col:
-            plan_recent_turns = int(
-                st.number_input(
-                    strings["CONV_PLAN_RECENT_TURNS_LABEL"],
-                    min_value=_PLAN_RECENT_TURNS_MIN,
-                    max_value=_PLAN_RECENT_TURNS_MAX,
-                    value=min(
-                        max(settings.conv_rag_plan_recent_turns, _PLAN_RECENT_TURNS_MIN),
-                        _PLAN_RECENT_TURNS_MAX,
-                    ),
-                    step=1,
-                    help=strings["CONV_PLAN_RECENT_TURNS_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_plan_recent_turns",
                 )
             )
         with summary_words_col:
@@ -957,21 +960,22 @@ def _render_decomposition(strings: Strings, plan: QueryPlan) -> None:
 
 def subquestion_provenance_rows(
     sources: Sequence[RetrievedChunk], plan: QueryPlan
-) -> list[tuple[str, str]]:
-    """Map each sub-question to the result ranks (#N) it retrieved.
+) -> list[tuple[str, list[int]]]:
+    """Map each sub-question to the sorted passage numbers (retrieval_rank) it retrieved.
 
-    Lets the merged Retrieval tab show which sub-question each result came from.
-    Returns [] when planning produced a single sub-question (no per-query provenance
-    is recorded) or when no chunk carries matched-query provenance.
+    The passage number is the stable value shown on the result cards and returned by the
+    re-ranker, so the merged Retrieval tab, the cards, and the re-ranker response line up.
+    Returns [] when planning produced a single sub-question (no per-query provenance is
+    recorded) or when no chunk carries matched-query provenance.
     """
     if len(plan.sub_questions) <= 1:
         return []
-    ranks: dict[str, list[str]] = {question: [] for question in plan.sub_questions}
-    for rank, chunk in enumerate(sources, start=1):
+    numbers: dict[str, list[int]] = {question: [] for question in plan.sub_questions}
+    for chunk in sources:
         for question in chunk.matched_queries:
-            if question in ranks:
-                ranks[question].append(f"#{rank}")
-    return [(question, ", ".join(hits)) for question, hits in ranks.items() if hits]
+            if question in numbers:
+                numbers[question].append(chunk.retrieval_rank)
+    return [(question, sorted(hits)) for question, hits in numbers.items() if hits]
 
 
 def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default_tab: str) -> None:
@@ -1000,7 +1004,13 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
     if rerank_note:
         st.caption(rerank_note)
     if rows:
-        _bullet_list([f"{question} → {hits}" for question, hits in rows])
+        badge = strings["RAG_RESULT_PASSAGE_BADGE"]
+        _bullet_list(
+            [
+                f"{question} → " + " ".join(badge.format(n=n) for n in numbers)
+                for question, numbers in rows
+            ]
+        )
     render_result_cards(strings, answer.sources, default_tab=default_tab, preserve_order=True)
     if answer.overflow_sources:
         with st.expander(

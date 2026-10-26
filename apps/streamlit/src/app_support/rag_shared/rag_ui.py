@@ -132,6 +132,7 @@ def chunks_from_stored(stored: Sequence[StoredResult]) -> list[RetrievedChunk]:
             source=item.source,
             score=item.score,
             metadata=dict(item.metadata),
+            retrieval_rank=item.retrieval_rank,
         )
         for item in stored
     ]
@@ -301,13 +302,21 @@ def ordered_result_tabs(default_tab: str) -> tuple[str, str]:
 
 
 def result_panel_title(strings: Strings, rank: int, chunk: RetrievedChunk) -> str:
-    """Build a result card's collapsed-panel title: rank, chunk id, and similarity."""
+    """Build a result card's collapsed title: rank, chunk id, similarity, passage badge.
+
+    When the chunk carries a re-ranking passage number (Step 5; ``0`` elsewhere), a trailing
+    ``Passage N`` badge is appended so the card ties back to the re-ranker's response and the
+    per-sub-question list, which show the same number.
+    """
     chunk_index = chunk.metadata.get("chunk_index", "?")
-    return strings["SEARCH_RESULT_PANEL_TITLE"].format(
+    title = strings["SEARCH_RESULT_PANEL_TITLE"].format(
         rank=rank,
         id=f"{chunk.source or '?'}#{chunk_index}",
         score=format_score_percent(chunk.score),
     )
+    if chunk.retrieval_rank > 0:
+        title = f"{title} {strings['RAG_RESULT_PASSAGE_BADGE'].format(n=chunk.retrieval_rank)}"
+    return title
 
 
 def render_result_cards(

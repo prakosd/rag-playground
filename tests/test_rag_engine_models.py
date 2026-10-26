@@ -27,6 +27,12 @@ def test_retrieved_chunk_accepts_matched_queries() -> None:
     assert chunk.matched_queries == ("q1", "q2")
 
 
+def test_retrieved_chunk_retrieval_rank_defaults_zero() -> None:
+    chunk = RetrievedChunk(text="t", source="a.md", score=0.5, metadata={})
+
+    assert chunk.retrieval_rank == 0
+
+
 def test_query_plan_defaults() -> None:
     plan = QueryPlan()
 

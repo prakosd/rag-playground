@@ -100,6 +100,7 @@ def _chunks_from_results(results: tuple[StoredResult, ...]) -> list[RetrievedChu
             source=item.source,
             score=item.score,
             metadata=dict(item.metadata),
+            retrieval_rank=item.retrieval_rank,
         )
         for item in results
     ]

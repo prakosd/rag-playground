@@ -125,7 +125,7 @@ def test_conversational_answer_basic_flow(tmp_path: Path) -> None:
     )
 
     assert result.answer == "ANSWER"
-    assert result.sources == _CHUNKS
+    assert [chunk.text for chunk in result.sources] == [chunk.text for chunk in _CHUNKS]
     assert result.model_used == "main"
     assert result.aux_model_used == "echo"
     assert result.reranker_used == "off"
@@ -145,7 +145,7 @@ def test_conversational_answer_runs_llm_rerank_for_single_query(tmp_path: Path) 
 
     def aux_resolver(config):
         # The LLM re-ranker orders b before a and reports usage.
-        return ResolvedChatModel(model=_UsageModel(reply="[1, 0]"), model_id="aux"), []
+        return ResolvedChatModel(model=_UsageModel(reply="[2, 1]"), model_id="aux"), []
 
     result = conversational_answer(
         tmp_path,
@@ -175,7 +175,7 @@ def test_conversational_answer_keeps_overflow_beyond_top_n(tmp_path: Path) -> No
 
     def aux_resolver(config):
         # The LLM re-ranker orders b before a.
-        return ResolvedChatModel(model=_UsageModel(reply="[1, 0]"), model_id="aux"), []
+        return ResolvedChatModel(model=_UsageModel(reply="[2, 1]"), model_id="aux"), []
 
     result = conversational_answer(
         tmp_path,
@@ -425,7 +425,7 @@ def test_conversational_answer_stream_streams_tokens_and_finalizes(tmp_path: Pat
     assert tokens == ["AN", "SWER"]  # streamed token-by-token
     assert generation.answer is not None
     assert generation.answer.answer == "ANSWER"
-    assert generation.answer.sources == _CHUNKS
+    assert [chunk.text for chunk in generation.answer.sources] == [chunk.text for chunk in _CHUNKS]
     assert {"retrieve", "answer", "state"} <= set(generation.answer.timings)
 
 

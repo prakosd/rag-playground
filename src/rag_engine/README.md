@@ -182,9 +182,9 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | `qa.py` | `answer_question` / `generate_answer` / `stream_answer`; `stream_prompt` / `generate_from_prompt` (raw editable prompt, Step 4) |
 | `chat.py` | `chat_answer` / `condense_question` / `generate_chat_answer` (+ `generate_chat_answer_with_usage` / streaming `stream_chat_answer_with_usage` → `ChatAnswerStream`); `conversational_answer` + streaming `conversational_answer_stream` → `ConversationalGeneration` (advanced Step 5 pipeline, per-stage `token_usage` + `prompt_traces`) |
 | `decompose.py` | `plan_queries` (reference resolution + decomposition) + `update_state` (rolling conversation state + capped `asked_questions` history) |
-| `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM) → `(top, overflow, warnings)` (overflow is display-only), lazy `load_cross_encoder` |
+| `rerank.py` | `rerank_chunks` (off / local cross-encoder / LLM) → `(top, overflow, warnings)` (overflow is display-only), lazy `load_cross_encoder`; stamps each chunk's 1-based `retrieval_rank` passage number (LLM path labels passages `[1]…` and reads them back via `parse_ranking(base=1)`) |
 | `followups.py` | `suggest_followups` + `validate_followups` (probe-retrieve + threshold gate + drop already-asked; `record_evaluation` surfaces dropped candidates) + `answerability_check` |
-| `models.py` | `RetrievedChunk`, `RagAnswer`, `ChatTurn`, `TokenUsage`, `StageTokenUsage`; `QueryPlan`, `ConversationState`, `ValidatedFollowup`, `ConversationalAnswer` |
+| `models.py` | `RetrievedChunk` (with `matched_queries` + 1-based `retrieval_rank` passage number), `RagAnswer`, `ChatTurn`, `TokenUsage`, `StageTokenUsage`; `QueryPlan`, `ConversationState`, `ValidatedFollowup`, `ConversationalAnswer` |
 | `messages.py` | stable `rag.*` message codes + builders |
 
 ## Constraints
