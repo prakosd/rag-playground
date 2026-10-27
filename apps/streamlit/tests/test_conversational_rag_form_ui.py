@@ -130,7 +130,7 @@ def test_aux_model_choices_offers_only_small_priced_models() -> None:
         assert price is not None, model_id  # unpriced models are filtered out
         assert price.size_band in {"XS", "Small"}, (model_id, price.size_band)
     assert "apac.amazon.nova-micro-v1:0" in options  # the pre-selected micro model
-    assert "mistral.ministral-3-3b-instruct" in options  # a cheap cross-provider (Mistral) helper
+    assert "gpt-4o-mini" in options  # a cheap cross-provider (OpenAI) helper
     # Claude Haiku is not a micro/mini/lite model and must not be offered here.
     assert "apac.anthropic.claude-haiku-4-5-20251001-v1:0" not in options
 

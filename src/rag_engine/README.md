@@ -174,7 +174,7 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 | Module | Responsibility |
 |---|---|
 | `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter`; `ConversationalConfig` (Step 5 stage flags + thresholds + answer `tone` + `language` + `ConversationalPrompts` per-stage prompt overrides, wraps a `RagConfig`) |
-| `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock Nova/Claude APAC profiles + Qwen3/Ministral/NVIDIA in-Region + OpenAI Direct API, echo; sorted by cloud → provider → size → name), `DEFAULT_CHAT_MODEL` (pinned to Bedrock Claude), `ECHO_MODEL` |
+| `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock Nova/Claude APAC profiles + Qwen3/NVIDIA in-Region + OpenAI Direct API, echo; sorted by cloud → provider → size → name), `DEFAULT_CHAT_MODEL` (pinned to Bedrock Claude), `ECHO_MODEL` |
 | `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), `resolve_auxiliary_model` (small helper model for Step 5), `thinking_disabled_model_kwargs`, lazy echo model |
 | `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, post-filter by score threshold (Step 3); `retrieve_multi` (parallel per-sub-question, deduped, sharing one warmed searcher) |
 | `search.py` | `VectorSearcher` interface (+ `ensure_ready` warm hook) + `ChromaSearcher` (thread-safe lazy open behind a module lock) + backend-neutral `SearchHit` |

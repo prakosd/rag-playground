@@ -34,28 +34,6 @@ models:
     size_band: Small
     price_in_per_1m: 0.063
     price_out_per_1m: 0.252
-  # ── Amazon Bedrock · Mistral AI ──
-  - model_id: mistral.ministral-3-14b-instruct
-    display_name: Ministral 14B 3.0
-    provider: Mistral AI
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.206
-    price_out_per_1m: 0.206
-  - model_id: mistral.ministral-3-3b-instruct
-    display_name: Ministral 3B 3.0
-    provider: Mistral AI
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.103
-    price_out_per_1m: 0.103
-  - model_id: mistral.ministral-3-8b-instruct
-    display_name: Ministral 8B 3.0
-    provider: Mistral AI
-    cloud_service: Amazon Bedrock
-    size_band: Small
-    price_in_per_1m: 0.154
-    price_out_per_1m: 0.154
   # ── Amazon Bedrock · NVIDIA ──
   - model_id: nvidia.nemotron-nano-3-30b
     display_name: Nemotron Nano 3 30B

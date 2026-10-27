@@ -54,20 +54,23 @@ def test_broken_apac_models_removed_and_replacements_present() -> None:
 
 
 def test_deprecated_bedrock_models_removed() -> None:
-    # Models AWS moved to Legacy (deprecation began 2026-09-30) are dropped from the catalog.
+    # Models AWS moved to Legacy are dropped from the catalog (deprecation waves
+    # began 2026-09-30 and 2026-10-25, the latter retiring the Ministral 3 family).
     ids = {info.model_id for info in CHAT_MODEL_OPTIONS}
     for model_id in (
         "google.gemma-3-4b-it",
         "google.gemma-3-12b-it",
         "google.gemma-3-27b-it",
         "mistral.mistral-7b-instruct-v0:2",
+        "mistral.ministral-3-14b-instruct",
+        "mistral.ministral-3-3b-instruct",
+        "mistral.ministral-3-8b-instruct",
         "nvidia.nemotron-nano-9b-v2",
         "qwen.qwen3-coder-30b-a3b-v1:0",
         "zai.glm-4.7-flash",
     ):
         assert model_id not in ids
     # Non-deprecated small replacements remain available.
-    assert "mistral.ministral-3-3b-instruct" in ids
     assert "nvidia.nemotron-nano-3-30b" in ids
 
 

@@ -48,7 +48,7 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
     # and name for easy scanning. Display names, pricing, and size bands live in
     # apps/streamlit/config/model_pricing.yaml (keep model_id in sync). Bedrock
     # Nova/Claude use the `apac.` cross-Region inference-profile IDs required in
-    # ap-southeast-2; in-Region models (Qwen3, Ministral, NVIDIA, gpt-oss) use
+    # ap-southeast-2; in-Region models (Qwen3, NVIDIA, gpt-oss) use
     # plain IDs. rag_engine.llm suppresses reasoning best-effort: Qwen3 via a
     # request-field flag, Nemotron via a `/no_think` system directive; gpt-oss
     # always reasons and cannot be disabled.
@@ -108,30 +108,6 @@ CHAT_MODEL_OPTIONS: tuple[ChatModelInfo, ...] = (
         provider="bedrock_converse",
         label="Claude Sonnet 4.5 (Bedrock · APAC)",
         size="medium",
-        kind="cloud",
-        requires_api_key=True,
-    ),
-    ChatModelInfo(
-        model_id="mistral.ministral-3-14b-instruct",
-        provider="bedrock_converse",
-        label="Ministral 14B 3.0 (Bedrock)",
-        size="small",
-        kind="cloud",
-        requires_api_key=True,
-    ),
-    ChatModelInfo(
-        model_id="mistral.ministral-3-3b-instruct",
-        provider="bedrock_converse",
-        label="Ministral 3B 3.0 (Bedrock)",
-        size="small",
-        kind="cloud",
-        requires_api_key=True,
-    ),
-    ChatModelInfo(
-        model_id="mistral.ministral-3-8b-instruct",
-        provider="bedrock_converse",
-        label="Ministral 8B 3.0 (Bedrock)",
-        size="small",
         kind="cloud",
         requires_api_key=True,
     ),
