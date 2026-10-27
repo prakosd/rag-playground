@@ -262,12 +262,11 @@ STRINGS_EN: Strings = {
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
-    "CONV_ADV_GROUP_HELPER": "Helper model",
-    "CONV_ADV_GROUP_DECOMPOSE": "Decomposition",
-    "CONV_ADV_GROUP_RERANK": "Re-ranking",
-    "CONV_ADV_GROUP_ANSWER": "Answer",
-    "CONV_ADV_GROUP_FOLLOWUPS": "Follow-ups",
-    "CONV_ADV_GROUP_MEMORY": "Memory",
+    "CONV_ADV_GROUP_HELPER": ":material/smart_toy: Helper model",
+    "CONV_ADV_GROUP_RETRIEVAL": ":material/manage_search: Retrieval",
+    "CONV_ADV_GROUP_ANSWER": ":material/chat: Answer",
+    "CONV_ADV_GROUP_FOLLOWUPS": ":material/lightbulb: Follow-ups",
+    "CONV_ADV_GROUP_MEMORY": ":material/psychology: Memory",
     "CONV_RERANKER_LABEL": "Re-ranking",
     "CONV_RERANKER_HELP": (
         "After the first search, this takes a second pass to re-order the passages so the "

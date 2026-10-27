@@ -186,8 +186,7 @@ class Strings(TypedDict):
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     CONV_ADVANCED_LABEL: str
     CONV_ADV_GROUP_HELPER: str
-    CONV_ADV_GROUP_DECOMPOSE: str
-    CONV_ADV_GROUP_RERANK: str
+    CONV_ADV_GROUP_RETRIEVAL: str
     CONV_ADV_GROUP_ANSWER: str
     CONV_ADV_GROUP_FOLLOWUPS: str
     CONV_ADV_GROUP_MEMORY: str

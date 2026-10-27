@@ -297,112 +297,145 @@ def render_advanced_controls(
         )
         st.session_state[inspect_pref_key] = bool(inspect)
 
-        # The groups below follow the turn pipeline: a shared helper model, then
-        # decompose → re-rank → answer → follow-ups → memory, each under its own heading.
-        _section_label(strings["CONV_ADV_GROUP_HELPER"])
-        aux_model_id = st.selectbox(
-            strings["CONV_AUX_MODEL_LABEL"],
-            options=aux_options,
-            index=aux_default,
-            format_func=lambda model_id: chat_model_label(model_id, strings),
-            help=strings["CONV_AUX_MODEL_HELP"],
-            disabled=disabled,
-            key=f"{key_prefix}_aux_model",
-        )
-
-        _section_label(strings["CONV_ADV_GROUP_DECOMPOSE"])
-        decompose_col, plan_turns_col, _ = st.columns(3)
-        with decompose_col:
-            decomposition_limit = int(
-                st.number_input(
-                    strings["CONV_DECOMPOSITION_LABEL"],
-                    min_value=_DECOMPOSITION_LIMIT_MIN,
-                    max_value=_DECOMPOSITION_LIMIT_MAX,
-                    value=min(
-                        max(settings.conv_rag_decomposition_limit, _DECOMPOSITION_LIMIT_MIN),
-                        _DECOMPOSITION_LIMIT_MAX,
-                    ),
-                    step=1,
-                    help=strings["CONV_DECOMPOSITION_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_decomposition",
-                )
-            )
-        decomposition_on = decomposition_limit > _DECOMPOSITION_LIMIT_MIN
-        with plan_turns_col:
-            plan_recent_turns = int(
-                st.number_input(
-                    strings["CONV_PLAN_RECENT_TURNS_LABEL"],
-                    min_value=_PLAN_RECENT_TURNS_MIN,
-                    max_value=_PLAN_RECENT_TURNS_MAX,
-                    value=min(
-                        max(settings.conv_rag_plan_recent_turns, _PLAN_RECENT_TURNS_MIN),
-                        _PLAN_RECENT_TURNS_MAX,
-                    ),
-                    step=1,
-                    help=strings["CONV_PLAN_RECENT_TURNS_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_plan_recent_turns",
-                )
-            )
-
-        _section_label(strings["CONV_ADV_GROUP_RERANK"])
-        reranker = (
-            st.segmented_control(
-                strings["CONV_RERANKER_LABEL"],
-                options=list(_RERANKER_KEYS),
-                format_func=lambda key: reranker_labels[key],
-                default=default_reranker,
-                help=strings["CONV_RERANKER_HELP"],
+        # Each pipeline stage gets its own collapsed expander: a shared helper model,
+        # then retrieval (decompose + re-rank) → answer → follow-ups → memory.
+        with st.expander(strings["CONV_ADV_GROUP_HELPER"], expanded=False):
+            aux_model_id = st.selectbox(
+                strings["CONV_AUX_MODEL_LABEL"],
+                options=aux_options,
+                index=aux_default,
+                format_func=lambda model_id: chat_model_label(model_id, strings),
+                help=strings["CONV_AUX_MODEL_HELP"],
                 disabled=disabled,
-                key=f"{key_prefix}_reranker",
-            )
-            or "off"
-        )
-
-        _section_label(strings["CONV_ADV_GROUP_ANSWER"])
-        answer_turns_col, _, _ = st.columns(3)
-        with answer_turns_col:
-            answer_recent_turns = int(
-                st.number_input(
-                    strings["CONV_ANSWER_RECENT_TURNS_LABEL"],
-                    min_value=_ANSWER_RECENT_TURNS_MIN,
-                    max_value=_ANSWER_RECENT_TURNS_MAX,
-                    value=min(
-                        max(settings.conv_rag_answer_recent_turns, _ANSWER_RECENT_TURNS_MIN),
-                        _ANSWER_RECENT_TURNS_MAX,
-                    ),
-                    step=1,
-                    help=strings["CONV_ANSWER_RECENT_TURNS_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_answer_recent_turns",
-                )
+                key=f"{key_prefix}_aux_model",
             )
 
-        _section_label(strings["CONV_ADV_GROUP_FOLLOWUPS"])
-        followup_limit_col, threshold_col = st.columns([1, 2], vertical_alignment="bottom")
-        with followup_limit_col:
-            # The follow-up limit doubles as the on/off switch: 0 = off, 1-5 = show at
-            # most that many. The deployment "start off" setting folds into the default.
-            followup_default = (
-                settings.conv_rag_followup_show_count
-                if settings.conv_rag_followups_enabled
-                else _FOLLOWUP_SHOW_MIN
-            )
-            followup_show_count = int(
-                st.number_input(
-                    strings["CONV_FOLLOWUPS_COUNT_LABEL"],
-                    min_value=_FOLLOWUP_SHOW_MIN,
-                    max_value=_FOLLOWUP_SHOW_MAX,
-                    value=min(max(followup_default, _FOLLOWUP_SHOW_MIN), _FOLLOWUP_SHOW_MAX),
-                    step=1,
-                    help=strings["CONV_FOLLOWUPS_COUNT_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_followup_count",
+        with st.expander(strings["CONV_ADV_GROUP_RETRIEVAL"], expanded=False):
+            # Re-ranking's segmented control needs more room than the two number
+            # inputs, so it takes the wider last share of the row.
+            decompose_col, plan_turns_col, rerank_col = st.columns([1, 1, 2])
+            with decompose_col:
+                decomposition_limit = int(
+                    st.number_input(
+                        strings["CONV_DECOMPOSITION_LABEL"],
+                        min_value=_DECOMPOSITION_LIMIT_MIN,
+                        max_value=_DECOMPOSITION_LIMIT_MAX,
+                        value=min(
+                            max(settings.conv_rag_decomposition_limit, _DECOMPOSITION_LIMIT_MIN),
+                            _DECOMPOSITION_LIMIT_MAX,
+                        ),
+                        step=1,
+                        help=strings["CONV_DECOMPOSITION_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_decomposition",
+                    )
                 )
-            )
-            followups = followup_show_count > 0
-        with threshold_col:
+            decomposition_on = decomposition_limit > _DECOMPOSITION_LIMIT_MIN
+            with plan_turns_col:
+                plan_recent_turns = int(
+                    st.number_input(
+                        strings["CONV_PLAN_RECENT_TURNS_LABEL"],
+                        min_value=_PLAN_RECENT_TURNS_MIN,
+                        max_value=_PLAN_RECENT_TURNS_MAX,
+                        value=min(
+                            max(settings.conv_rag_plan_recent_turns, _PLAN_RECENT_TURNS_MIN),
+                            _PLAN_RECENT_TURNS_MAX,
+                        ),
+                        step=1,
+                        help=strings["CONV_PLAN_RECENT_TURNS_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_plan_recent_turns",
+                    )
+                )
+            with rerank_col:
+                reranker = (
+                    st.segmented_control(
+                        strings["CONV_RERANKER_LABEL"],
+                        options=list(_RERANKER_KEYS),
+                        format_func=lambda key: reranker_labels[key],
+                        default=default_reranker,
+                        help=strings["CONV_RERANKER_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_reranker",
+                    )
+                    or "off"
+                )
+
+        with st.expander(strings["CONV_ADV_GROUP_ANSWER"], expanded=False):
+            answer_turns_col, _, _ = st.columns(3)
+            with answer_turns_col:
+                answer_recent_turns = int(
+                    st.number_input(
+                        strings["CONV_ANSWER_RECENT_TURNS_LABEL"],
+                        min_value=_ANSWER_RECENT_TURNS_MIN,
+                        max_value=_ANSWER_RECENT_TURNS_MAX,
+                        value=min(
+                            max(settings.conv_rag_answer_recent_turns, _ANSWER_RECENT_TURNS_MIN),
+                            _ANSWER_RECENT_TURNS_MAX,
+                        ),
+                        step=1,
+                        help=strings["CONV_ANSWER_RECENT_TURNS_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_answer_recent_turns",
+                    )
+                )
+
+        with st.expander(strings["CONV_ADV_GROUP_FOLLOWUPS"], expanded=False):
+            # The three "how many" knobs share one 4-wide row; the keep/drop range
+            # slider sits full-width below it (a range slider needs the room).
+            followup_limit_col, probe_col, answerability_col, _ = st.columns(4)
+            with followup_limit_col:
+                # The follow-up limit doubles as the on/off switch: 0 = off, 1-5 = show at
+                # most that many. The deployment "start off" setting folds into the default.
+                followup_default = (
+                    settings.conv_rag_followup_show_count
+                    if settings.conv_rag_followups_enabled
+                    else _FOLLOWUP_SHOW_MIN
+                )
+                followup_show_count = int(
+                    st.number_input(
+                        strings["CONV_FOLLOWUPS_COUNT_LABEL"],
+                        min_value=_FOLLOWUP_SHOW_MIN,
+                        max_value=_FOLLOWUP_SHOW_MAX,
+                        value=min(max(followup_default, _FOLLOWUP_SHOW_MIN), _FOLLOWUP_SHOW_MAX),
+                        step=1,
+                        help=strings["CONV_FOLLOWUPS_COUNT_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_followup_count",
+                    )
+                )
+                followups = followup_show_count > 0
+            with probe_col:
+                followup_probe_k = int(
+                    st.number_input(
+                        strings["CONV_PROBE_K_LABEL"],
+                        min_value=_PROBE_K_MIN,
+                        max_value=_PROBE_K_MAX,
+                        value=min(
+                            max(settings.conv_rag_followup_probe_k, _PROBE_K_MIN), _PROBE_K_MAX
+                        ),
+                        step=1,
+                        help=strings["CONV_PROBE_K_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_followup_probe_k",
+                    )
+                )
+            with answerability_col:
+                answerability_chunks = int(
+                    st.number_input(
+                        strings["CONV_ANSWERABILITY_CHUNKS_LABEL"],
+                        min_value=_ANSWERABILITY_CHUNKS_MIN,
+                        max_value=_ANSWERABILITY_CHUNKS_MAX,
+                        value=min(
+                            max(settings.conv_rag_answerability_chunks, _ANSWERABILITY_CHUNKS_MIN),
+                            _ANSWERABILITY_CHUNKS_MAX,
+                        ),
+                        step=1,
+                        help=strings["CONV_ANSWERABILITY_CHUNKS_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_answerability_chunks",
+                    )
+                )
             drop, keep = st.slider(
                 strings["CONV_THRESHOLD_LABEL"],
                 min_value=0.0,
@@ -416,71 +449,41 @@ def render_advanced_controls(
                 disabled=disabled,
                 key=f"{key_prefix}_thresholds",
             )
-        probe_col, answerability_col, _ = st.columns(3)
-        with probe_col:
-            followup_probe_k = int(
-                st.number_input(
-                    strings["CONV_PROBE_K_LABEL"],
-                    min_value=_PROBE_K_MIN,
-                    max_value=_PROBE_K_MAX,
-                    value=min(max(settings.conv_rag_followup_probe_k, _PROBE_K_MIN), _PROBE_K_MAX),
-                    step=1,
-                    help=strings["CONV_PROBE_K_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_followup_probe_k",
-                )
-            )
-        with answerability_col:
-            answerability_chunks = int(
-                st.number_input(
-                    strings["CONV_ANSWERABILITY_CHUNKS_LABEL"],
-                    min_value=_ANSWERABILITY_CHUNKS_MIN,
-                    max_value=_ANSWERABILITY_CHUNKS_MAX,
-                    value=min(
-                        max(settings.conv_rag_answerability_chunks, _ANSWERABILITY_CHUNKS_MIN),
-                        _ANSWERABILITY_CHUNKS_MAX,
-                    ),
-                    step=1,
-                    help=strings["CONV_ANSWERABILITY_CHUNKS_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_answerability_chunks",
-                )
-            )
 
-        _section_label(strings["CONV_ADV_GROUP_MEMORY"])
-        memory_start_col, summary_words_col, _ = st.columns(3)
-        with memory_start_col:
-            state_summary_start_turn = int(
-                st.number_input(
-                    strings["CONV_STATE_START_TURN_LABEL"],
-                    min_value=_STATE_START_TURN_MIN,
-                    max_value=_STATE_START_TURN_MAX,
-                    value=min(
-                        max(settings.conv_rag_state_summary_start_turn, _STATE_START_TURN_MIN),
-                        _STATE_START_TURN_MAX,
-                    ),
-                    step=1,
-                    help=strings["CONV_STATE_START_TURN_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_state_start_turn",
+        with st.expander(strings["CONV_ADV_GROUP_MEMORY"], expanded=False):
+            memory_start_col, summary_words_col, _ = st.columns(3)
+            with memory_start_col:
+                state_summary_start_turn = int(
+                    st.number_input(
+                        strings["CONV_STATE_START_TURN_LABEL"],
+                        min_value=_STATE_START_TURN_MIN,
+                        max_value=_STATE_START_TURN_MAX,
+                        value=min(
+                            max(settings.conv_rag_state_summary_start_turn, _STATE_START_TURN_MIN),
+                            _STATE_START_TURN_MAX,
+                        ),
+                        step=1,
+                        help=strings["CONV_STATE_START_TURN_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_state_start_turn",
+                    )
                 )
-            )
-        with summary_words_col:
-            state_summary_max_words = int(
-                st.number_input(
-                    strings["CONV_STATE_MAX_WORDS_LABEL"],
-                    min_value=_STATE_MAX_WORDS_MIN,
-                    max_value=_STATE_MAX_WORDS_MAX,
-                    value=min(
-                        max(settings.conv_rag_state_summary_max_words, _STATE_MAX_WORDS_MIN),
-                        _STATE_MAX_WORDS_MAX,
-                    ),
-                    step=_STATE_MAX_WORDS_STEP,
-                    help=strings["CONV_STATE_MAX_WORDS_HELP"],
-                    disabled=disabled,
-                    key=f"{key_prefix}_state_max_words",
+            with summary_words_col:
+                state_summary_max_words = int(
+                    st.number_input(
+                        strings["CONV_STATE_MAX_WORDS_LABEL"],
+                        min_value=_STATE_MAX_WORDS_MIN,
+                        max_value=_STATE_MAX_WORDS_MAX,
+                        value=min(
+                            max(settings.conv_rag_state_summary_max_words, _STATE_MAX_WORDS_MIN),
+                            _STATE_MAX_WORDS_MAX,
+                        ),
+                        step=_STATE_MAX_WORDS_STEP,
+                        help=strings["CONV_STATE_MAX_WORDS_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_state_max_words",
+                    )
                 )
-            )
         _render_prompt_editor(
             strings,
             key_prefix,

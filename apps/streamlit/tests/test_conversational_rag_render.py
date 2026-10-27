@@ -161,6 +161,9 @@ def _render_inspect_controls(session_dir: str) -> None:
     )
     controls = render_advanced_controls(STRINGS_EN, "conversational_rag", [ref], root)
     st.session_state["_inspect_result"] = controls.inspect
+    # Snapshot the merged Retrieval group's outputs so a test can confirm they thread through.
+    st.session_state["_reranker_result"] = controls.reranker
+    st.session_state["_decomposition_result"] = controls.decomposition_limit
 
 
 # The Inspect toggle is off by default on a fresh render. Type: unit (AppTest).
@@ -195,3 +198,16 @@ def test_inspect_reads_persisted_preference_after_switch(
     assert app.session_state["_inspect_result"] is True  # Inspect still reads on (was off)
     assert app.session_state["conversational_rag_inspect"] is True  # the toggle re-seeds on
     assert app.session_state["conversational_rag_inspect_on"] is True  # the preference is kept
+
+
+# The merged "Retrieval" expander still renders the decomposition and re-ranking controls and
+# threads their values into the returned ConversationalControls. Type: unit (AppTest).
+def test_retrieval_group_controls_thread_through(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(_APP_DIR))
+    app = AppTest.from_function(_render_inspect_controls, kwargs={"session_dir": str(tmp_path)})
+    app.run(timeout=10)
+
+    assert not app.exception
+    assert app.session_state["_reranker_result"] in {"off", "local", "llm"}
+    assert app.session_state["_decomposition_result"] >= 1

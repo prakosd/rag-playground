@@ -32,7 +32,7 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 - **Size-limited, sorted output** — pages are never split across files; final files are sorted by URL path
 - **Real-time progress** — browser charts in Streamlit, plain-text ETA in terminal
 - **Stop-safe output** — stopping a crawl still writes final output for completed pages
-- **Vector indexing (Step 2)** — index `.md` / `.txt` / `.zip` outputs into a langchain-chroma (ChromaDB) vector store with configurable chunking and embedding backends (Amazon Titan, OpenAI, or an offline default); crawl run metadata is dropped and every chunk is stamped with its page `Source: [title](url)`
+- **Vector indexing (Step 2)** — index `.md` / `.txt` / `.zip` outputs into a langchain-chroma (ChromaDB) vector store with configurable chunking and embedding backends (Amazon Titan, OpenAI, or an offline default); crawl run metadata is dropped and each chunk keeps its page title/URL as metadata for source citation
 - **RAG Q&A (Steps 3–4)** — semantic search plus a Basic RAG Q&A page that retrieves knowledge, builds an editable, grounded prompt, and streams a language-model answer with token/latency stats
 - **Conversational RAG (Step 5)** — history-aware chat that decomposes each question, retrieves and re-ranks across the sub-questions, then **streams** a grounded answer with validated follow-ups (both in the app's language) while keeping in-session memory; per-stage prompt templates are editable and a token-usage panel tracks cost
 - **Start from sample data** — a one-click **Sample data** panel imports a ready-made crawl or vector index from `data/fixtures/`, so you can skip Steps 1–2 (crawling and indexing) and jump straight to semantic search and RAG

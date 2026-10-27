@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from vector_indexer.page_source import extract_crawl_date, format_source_line, split_into_pages
+from vector_indexer.page_source import extract_crawl_date, split_into_pages
 
 
 def _crawl_output(*pages: tuple[str | None, str, str]) -> str:
@@ -62,13 +62,6 @@ def test_split_without_markers_returns_single_untitled_page() -> None:
 
 def test_split_blank_input_returns_no_pages() -> None:
     assert split_into_pages("   \n\n") == []
-
-
-def test_format_source_line_variants() -> None:
-    assert format_source_line("Title", "https://x.test/a") == "Source: [Title](https://x.test/a)"
-    assert format_source_line(None, "https://x.test/a") == "Source: https://x.test/a"
-    assert format_source_line("Title", None) == ""
-    assert format_source_line(None, None) == ""
 
 
 def test_extract_crawl_date_reads_front_matter() -> None:

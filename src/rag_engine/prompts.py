@@ -115,47 +115,59 @@ _USER_MARKER = "[user]"
 _DEFAULT_USER_SECTION = "{question}"
 
 _NO_CONTEXT_PLACEHOLDER = "(no relevant context was retrieved)"
-# Chunk metadata key holding the page URL (stamped by vector_indexer.chunking);
-# surfaced into the prompt so the model can cite a supporting link when present.
+# Chunk metadata keys stamped by vector_indexer.chunking: the page title and URL
+# (surfaced so the model can attribute a fact and cite a supporting link) and the
+# crawl capture date (surfaced so it can prefer fresher sources).
+_SOURCE_TITLE_METADATA_KEY = "source_title"
 _SOURCE_URL_METADATA_KEY = "source_url"
-_SOURCE_URL_LABEL = "URL:"
-# Chunk metadata key holding the crawl capture date (stamped by
-# vector_indexer.chunking); surfaced so the model can prefer fresher sources.
 _CRAWL_DATE_METADATA_KEY = "crawl_date"
-_CAPTURE_DATE_LABEL = "Captured:"
+# Each chunk opens with a title-led citation block; its URL and origin lines are
+# indented under the title, and the capture date trails the origin line.
+_CITATION_INDENT = "    "
+_CAPTURE_PREFIX = "captured"
 
 
-def _chunk_source_url(chunk: RetrievedChunk) -> str:
-    """Return the chunk's source URL from metadata, or an empty string if absent."""
-    return (chunk.metadata.get(_SOURCE_URL_METADATA_KEY) or "").strip()
+def _chunk_meta(chunk: RetrievedChunk, key: str) -> str:
+    """Return a stripped chunk-metadata string value for *key*, or '' if absent."""
+    return (chunk.metadata.get(key) or "").strip()
 
 
-def _chunk_capture_date(chunk: RetrievedChunk) -> str:
-    """Return the chunk's crawl capture date from metadata, or '' if absent."""
-    return (chunk.metadata.get(_CRAWL_DATE_METADATA_KEY) or "").strip()
+def _citation_block(index: int, chunk: RetrievedChunk) -> str:
+    """Render one retrieved *chunk* as a title-led, numbered citation block.
+
+    The first line is ``[n] <title>`` (falling back to the source filename when no
+    title is known). Any source URL and a ``<source> · captured <date>`` origin line
+    are indented beneath it, then a blank line and the chunk body. The bare-source
+    origin line is dropped when the title already fell back to the filename and no
+    capture date is known, so a title-less chunk never repeats its filename. Keeping
+    all provenance in this header lets the body stay pure content.
+    """
+    source = chunk.source or "unknown"
+    title = _chunk_meta(chunk, _SOURCE_TITLE_METADATA_KEY)
+    lines = [f"[{index}] {title or source}"]
+    url = _chunk_meta(chunk, _SOURCE_URL_METADATA_KEY)
+    if url:
+        lines.append(f"{_CITATION_INDENT}{url}")
+    captured = _chunk_meta(chunk, _CRAWL_DATE_METADATA_KEY)
+    if captured:
+        lines.append(f"{_CITATION_INDENT}{source} · {_CAPTURE_PREFIX} {captured}")
+    elif title:
+        # The source filename gets its own line only when the title already took line 1.
+        lines.append(f"{_CITATION_INDENT}{source}")
+    return "\n".join([*lines, "", chunk.text])
 
 
 def format_context(chunks: Sequence[RetrievedChunk]) -> str:
-    """Render retrieved *chunks* into a labelled block for the prompt.
+    """Render retrieved *chunks* into title-led citation blocks for the prompt.
 
-    Each chunk is prefixed with its source (plus its URL and crawl capture date
-    when known) so the model can cite it and prefer fresher sources; an empty
-    sequence yields an explicit placeholder rather than an empty string.
+    Each chunk opens with a numbered, title-led header carrying its URL and crawl
+    capture date (when known) so the model can attribute it, cite a link, and prefer
+    fresher sources; an empty sequence yields an explicit placeholder rather than an
+    empty string. See :func:`_citation_block` for the per-chunk layout.
     """
     if not chunks:
         return _NO_CONTEXT_PLACEHOLDER
-    blocks = []
-    for index, chunk in enumerate(chunks, start=1):
-        source = chunk.source or "unknown"
-        label = f"[{index}] source: {source}"
-        url = _chunk_source_url(chunk)
-        if url:
-            label += f" {_SOURCE_URL_LABEL} {url}"
-        captured = _chunk_capture_date(chunk)
-        if captured:
-            label += f" {_CAPTURE_DATE_LABEL} {captured}"
-        blocks.append(f"{label}\n{chunk.text}")
-    return "\n\n".join(blocks)
+    return "\n\n".join(_citation_block(index, chunk) for index, chunk in enumerate(chunks, start=1))
 
 
 def conversation_history_labels(system_prompt: str) -> tuple[str, str]:
@@ -233,7 +245,6 @@ def split_chat_sections(template: str) -> tuple[str, str]:
 # so instructions embedded inside a crawled page cannot hijack the request.
 _KNOWLEDGE_START_DELIMITER = "<<< BEGIN RETRIEVED KNOWLEDGE >>>"
 _KNOWLEDGE_END_DELIMITER = "<<< END RETRIEVED KNOWLEDGE >>>"
-_KNOWLEDGE_SOURCE_HEADING = "--- [Source {index}: {source}] ---"
 _NO_KNOWLEDGE_PLACEHOLDER = "(no relevant knowledge was retrieved)"
 _DEFAULT_TONE = "Neutral"
 # Default answer language (free-form name) when a caller does not request one; the
@@ -276,27 +287,17 @@ RAG_PROMPT_TEMPLATE = (
 
 
 def format_knowledge(chunks: Sequence[RetrievedChunk]) -> str:
-    """Render retrieved *chunks* as a source-labelled knowledge block.
+    """Render retrieved *chunks* as title-led citation blocks for the Step 4 prompt.
 
-    Each chunk is introduced by a ``--- [Source N: name] ---`` heading (plus a
-    ``URL:`` line and a ``Captured:`` date when known) so the model can attribute
-    facts, cite links, and prefer fresher sources, and the boundary between chunks
-    stays explicit; an empty sequence yields a placeholder rather than a blank block.
+    Shares the per-chunk layout with :func:`format_context` (see
+    :func:`_citation_block`): a numbered, title-led header carrying the URL and crawl
+    capture date when known, so the model can attribute facts, cite links, and prefer
+    fresher sources while the body stays pure content. An empty sequence yields a
+    placeholder rather than a blank block.
     """
     if not chunks:
         return _NO_KNOWLEDGE_PLACEHOLDER
-    blocks = []
-    for index, chunk in enumerate(chunks, start=1):
-        heading = _KNOWLEDGE_SOURCE_HEADING.format(index=index, source=chunk.source or "unknown")
-        header_lines = [heading]
-        url = _chunk_source_url(chunk)
-        if url:
-            header_lines.append(f"{_SOURCE_URL_LABEL} {url}")
-        captured = _chunk_capture_date(chunk)
-        if captured:
-            header_lines.append(f"{_CAPTURE_DATE_LABEL} {captured}")
-        blocks.append("\n".join([*header_lines, chunk.text]))
-    return "\n\n".join(blocks)
+    return "\n\n".join(_citation_block(index, chunk) for index, chunk in enumerate(chunks, start=1))
 
 
 def build_rag_prompt(

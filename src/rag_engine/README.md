@@ -19,7 +19,7 @@ answer_question(run_dir, question, config)  # Step 4 (one-call convenience)
   └─ prompt | model | StrOutputParser        → RagAnswer(answer, sources, warnings, errors)
 
 build_rag_prompt(question, chunks, tone, *, template=RAG_PROMPT_TEMPLATE, language="English")  # Step 4 editable prompt; template overridable, answer language injected
-  └─ format_knowledge(chunks)                → source-labelled, delimiter-fenced knowledge
+  └─ format_knowledge(chunks)                → title-led citation blocks, delimiter-fenced
 stream_prompt(chat_model, prompt)           # Step 4 (send the raw prompt, streamed)
   └─ PromptGeneration                        → streams answer text; exposes TokenUsage after
 
@@ -127,8 +127,10 @@ no "the retrieved knowledge…" / "the context…" meta-phrasing — and to weav
 source's URL into the reply the way a helpful person would (mentioning it in
 passing, not as a stiff labelled "Sources" list) only when it genuinely
 supports the answer, never invented; `format_context` / `format_knowledge`
-surface each chunk's `source_url` and `crawl_date` from its metadata so a link is
-available to cite and the model can prefer the most recently captured source. `build_rag_prompt` (Step 4) assembles a complete, human-readable
+open each chunk with a title-led citation block (page title, then its indented
+`source_url` and `source` · captured `crawl_date` lines, all from metadata) so a
+link is available to cite and the model can prefer the most recently captured
+source, while the chunk body stays pure content. `build_rag_prompt` (Step 4) assembles a complete, human-readable
 prompt whose retrieved knowledge is fenced between explicit delimiters and marked
 data-only, so a UI can show and edit exactly what the model receives. Its outer
 wording is overridable via the `template` keyword and a `language` argument (default

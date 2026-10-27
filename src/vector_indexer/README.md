@@ -11,7 +11,7 @@ VectorIndexer.run(config, inputs, output_base)
   ├─ resolve_embedding()      → LangChain Embeddings (or raises if unavailable)
   ├─ load_documents()         → .md / .txt files and .zip members (via artifact_store)
   ├─ split_into_pages()       → drop crawl run metadata, recover per-page title/url (page_source)
-  ├─ chunk_documents()        → overlapping chunks, each stamped with a Source line (langchain-text-splitters)
+  ├─ chunk_documents()        → overlapping chunks + page title/URL metadata (langchain-text-splitters)
   └─ embed batches (parallel for cloud models) → ChromaVectorStore.add_embeddings / persist
         → vector_<id>/<timestamp>/chroma  +  manifest.json
 ```
@@ -72,12 +72,12 @@ crawl4md output begins with a YAML *front matter* block (crawl run metadata) and
 each page's human-readable header (title + `*Source: <url>*`) in render-invisible markers
 (`<!-- crawl4md:source -->` … `<!-- /crawl4md:source -->`). `page_source.split_into_pages`
 strips the front matter so run metadata never reaches a chunk, splits the body into pages,
-and recovers each page's title/URL. `chunk_documents` then prepends a
-`Source: [title](url)` line to every chunk and copies the title/URL into chunk metadata
-(`source_title`, `source_url`, plus `crawl_date` when the file's front matter carries
-`crawl_start_datetime`) so retrieval can cite the page and prefer fresher sources. Inputs without markers
-(plain `.txt` or non-crawl4md Markdown) degrade to a single untitled page and get no Source
-prefix. The marker strings are duplicated in `crawl4md.writer` with a "keep in sync" note;
+and recovers each page's title/URL. `chunk_documents` then records the title/URL as chunk
+metadata (`source_title`, `source_url`, plus `crawl_date` when the file's front matter carries
+`crawl_start_datetime`) so retrieval can cite the page and prefer fresher sources — the chunk
+body stays pure page content. Inputs without markers (plain `.txt` or non-crawl4md Markdown)
+degrade to a single untitled page with no title/URL metadata. The marker strings are duplicated
+in `crawl4md.writer` with a "keep in sync" note;
 `vector_indexer` does **not** import `crawl4md`.
 
 ## Progress reporting
@@ -173,8 +173,8 @@ to reopen an index with the same embeddings and run retrieval (Steps 3-5).
 | `manifest.py` | `IndexManifest`, `load_manifest` / `write_manifest`, collection + layout constants |
 | `languages.py` | `LUCENE_LANGUAGES`, `DEFAULT_LANGUAGE` |
 | `document_loader.py` | load `.md` / `.txt` / `.zip` into documents |
-| `page_source.py` | strip crawl run metadata, split crawl4md output into per-page sections, build the `Source: [title](url)` line (pure stdlib) |
-| `chunking.py` | overlapping chunks via langchain-text-splitters, each stamped with its page Source line |
+| `page_source.py` | strip crawl run metadata, split crawl4md output into per-page sections, recover each page's title/URL (pure stdlib) |
+| `chunking.py` | overlapping chunks via langchain-text-splitters, each tagged with its page title/URL metadata |
 | `embeddings/` | LangChain `Embeddings` builders, catalog, registry, resolution policy |
 | `vector_store/` | `VectorStore` interface and `ChromaVectorStore` (langchain-chroma) |
 | `indexer.py` | `VectorIndexer.run` orchestration |

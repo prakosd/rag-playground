@@ -87,57 +87,84 @@ _CHUNK_WITH_DATE = RetrievedChunk(
     metadata={"source_url": "https://example.com/paris", "crawl_date": "2026-09-02"},
 )
 
+_CHUNK_WITH_TITLE = RetrievedChunk(
+    text="Paris is the capital.",
+    source="a.md",
+    score=0.9,
+    metadata={
+        "source_title": "How to pay | Australian Taxation Office",
+        "source_url": "https://example.com/paris",
+        "crawl_date": "2026-09-02",
+    },
+)
 
-def test_format_knowledge_labels_each_source() -> None:
+
+def test_format_knowledge_titles_each_source() -> None:
     block = format_knowledge(_CHUNKS)
 
-    assert "--- [Source 1: a.md] ---" in block
+    # No page title in metadata → the header falls back to the source filename.
+    assert "[1] a.md" in block
     assert "Paris is the capital." in block
-    assert "--- [Source 2: b.md] ---" in block
+    assert "[2] b.md" in block
     assert "Berlin is in Germany." in block
+
+
+def test_format_knowledge_title_less_chunk_names_source_once() -> None:
+    # A title-less, date-less chunk must not repeat its filename on an origin line.
+    assert format_knowledge(_CHUNKS).count("a.md") == 1
 
 
 def test_format_knowledge_empty_returns_placeholder() -> None:
     assert "no relevant knowledge" in format_knowledge([])
 
 
+def test_format_knowledge_leads_with_page_title_when_present() -> None:
+    block = format_knowledge([_CHUNK_WITH_TITLE])
+
+    # The page title leads the citation; the filename trails on the origin line.
+    assert "[1] How to pay | Australian Taxation Office" in block
+    assert "a.md" in block
+
+
 def test_format_knowledge_includes_source_url_when_present() -> None:
-    block = format_knowledge([_CHUNK_WITH_URL])
-
-    assert "--- [Source 1: a.md] ---" in block
-    assert "URL: https://example.com/paris" in block
+    assert "https://example.com/paris" in format_knowledge([_CHUNK_WITH_URL])
 
 
-def test_format_knowledge_omits_url_line_when_absent() -> None:
-    # Chunks whose metadata carries no source_url must not gain an empty URL line.
-    assert "URL:" not in format_knowledge(_CHUNKS)
+def test_format_knowledge_omits_url_when_absent() -> None:
+    # Chunks whose metadata carries no source_url must not gain a URL line.
+    assert "https://" not in format_knowledge(_CHUNKS)
 
 
 def test_format_context_includes_source_url_when_present() -> None:
     block = format_context([_CHUNK_WITH_URL])
 
-    assert "source: a.md" in block
-    assert "URL: https://example.com/paris" in block
+    assert "[1] a.md" in block
+    assert "https://example.com/paris" in block
 
 
 def test_format_context_omits_url_when_absent() -> None:
-    assert "URL:" not in format_context(_CHUNKS)
+    assert "https://" not in format_context(_CHUNKS)
 
 
 def test_format_knowledge_includes_capture_date_when_present() -> None:
-    assert "Captured: 2026-09-02" in format_knowledge([_CHUNK_WITH_DATE])
+    assert "captured 2026-09-02" in format_knowledge([_CHUNK_WITH_DATE])
 
 
 def test_format_knowledge_omits_capture_date_when_absent() -> None:
-    assert "Captured:" not in format_knowledge([_CHUNK_WITH_URL])
+    assert "captured" not in format_knowledge([_CHUNK_WITH_URL])
 
 
 def test_format_context_includes_capture_date_when_present() -> None:
-    assert "Captured: 2026-09-02" in format_context([_CHUNK_WITH_DATE])
+    assert "captured 2026-09-02" in format_context([_CHUNK_WITH_DATE])
 
 
 def test_format_context_omits_capture_date_when_absent() -> None:
-    assert "Captured:" not in format_context([_CHUNK_WITH_URL])
+    assert "captured" not in format_context([_CHUNK_WITH_URL])
+
+
+def test_format_context_and_knowledge_share_citation_layout() -> None:
+    # Both formatters render each chunk with the same title-led citation block.
+    assert format_context([_CHUNK_WITH_TITLE]) == format_knowledge([_CHUNK_WITH_TITLE])
 
 
 def test_build_rag_prompt_includes_question_knowledge_and_tone() -> None:
@@ -182,7 +209,7 @@ def test_build_rag_prompt_defaults_blank_tone_to_neutral() -> None:
 def test_build_rag_prompt_surfaces_supporting_source_url() -> None:
     prompt = build_rag_prompt("q", [_CHUNK_WITH_URL], "Neutral")
 
-    assert "URL: https://example.com/paris" in prompt
+    assert "https://example.com/paris" in prompt
 
 
 def test_build_rag_prompt_defaults_language_to_english() -> None:

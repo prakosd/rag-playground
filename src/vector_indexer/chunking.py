@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from vector_indexer.models import Chunk, Document
-from vector_indexer.page_source import format_source_line, split_into_pages
+from vector_indexer.page_source import split_into_pages
 
 __all__ = ["chunk_documents"]
 
@@ -24,15 +24,14 @@ def chunk_documents(
 ) -> list[Chunk]:
     """Split *documents* into overlapping chunks, dropping empty fragments.
 
-    Run metadata (the crawl4md front matter) is excluded, and every chunk is
-    stamped with a ``Source: [title](url)`` line recovered from its page header.
+    Run metadata (the crawl4md front matter) is excluded, and each page's title/URL
+    are recorded as chunk metadata (not injected into the chunk text).
     """
     splitter = _build_splitter(chunk_size, chunk_overlap)
     chunks: list[Chunk] = []
     for document in documents:
         index = 0
         for page in split_into_pages(document.text):
-            source_line = format_source_line(page.title, page.url)
             for piece in splitter.split_text(page.body):
                 if not piece.strip():
                     continue
@@ -51,7 +50,7 @@ def chunk_documents(
                     Chunk(
                         document_source=document.source,
                         index=index,
-                        text=f"{source_line}\n\n{piece}" if source_line else piece,
+                        text=piece,
                         metadata=metadata,
                     )
                 )

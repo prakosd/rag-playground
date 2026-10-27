@@ -14,8 +14,8 @@ line) is bracketed by render-invisible markers:
 
 This module is pure stdlib (no heavy imports). It strips the metadata front
 matter so it never reaches indexed chunks, splits the remaining text into pages,
-and recovers each page's title/URL so the chunker can stamp every chunk with a
-``Source: [title](url)`` line. Files without markers (plain ``.txt`` or
+and recovers each page's title/URL so the chunker can record them as chunk
+metadata. Files without markers (plain ``.txt`` or
 non-crawl4md Markdown) degrade to a single untitled page. The marker strings must
 stay in sync with ``crawl4md.writer``.
 """
@@ -25,7 +25,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-__all__ = ["PageSection", "extract_crawl_date", "format_source_line", "split_into_pages"]
+__all__ = ["PageSection", "extract_crawl_date", "split_into_pages"]
 
 _PAGE_HEADER_START_MARKER = "<!-- crawl4md:source -->"
 _PAGE_HEADER_END_MARKER = "<!-- /crawl4md:source -->"
@@ -83,19 +83,6 @@ def split_into_pages(text: str) -> list[PageSection]:
             )
         )
     return sections
-
-
-def format_source_line(title: str | None, url: str | None) -> str:
-    """Build the ``Source: [title](url)`` line stamped onto every chunk.
-
-    Falls back to a bare URL when the title is missing, and to an empty string
-    when there is no URL (so non-crawl4md documents get no prefix).
-    """
-    if url and title:
-        return f"Source: [{title}]({url})"
-    if url:
-        return f"Source: {url}"
-    return ""
 
 
 def extract_crawl_date(text: str) -> str | None:

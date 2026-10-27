@@ -269,12 +269,11 @@ STRINGS_ID: Strings = {
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
-    "CONV_ADV_GROUP_HELPER": "Model bantu",
-    "CONV_ADV_GROUP_DECOMPOSE": "Dekomposisi",
-    "CONV_ADV_GROUP_RERANK": "Pemeringkatan ulang",
-    "CONV_ADV_GROUP_ANSWER": "Jawaban",
-    "CONV_ADV_GROUP_FOLLOWUPS": "Tindak lanjut",
-    "CONV_ADV_GROUP_MEMORY": "Memori",
+    "CONV_ADV_GROUP_HELPER": ":material/smart_toy: Model bantu",
+    "CONV_ADV_GROUP_RETRIEVAL": ":material/manage_search: Retrieval",
+    "CONV_ADV_GROUP_ANSWER": ":material/chat: Jawaban",
+    "CONV_ADV_GROUP_FOLLOWUPS": ":material/lightbulb: Tindak lanjut",
+    "CONV_ADV_GROUP_MEMORY": ":material/psychology: Memori",
     "CONV_RERANKER_LABEL": "Pemeringkatan ulang",
     "CONV_RERANKER_HELP": (
         "Setelah pencarian pertama, ini melakukan putaran kedua untuk mengurutkan ulang bagian "

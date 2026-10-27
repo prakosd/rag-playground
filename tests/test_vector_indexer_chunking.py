@@ -40,14 +40,16 @@ def test_chunking_drops_empty_documents() -> None:
     assert chunks == []
 
 
-def test_chunking_stamps_source_line_and_excludes_run_metadata() -> None:
+def test_chunking_records_source_metadata_without_body_prefix() -> None:
     text = _crawl_output("Page One", "https://x.test/a", "Alpha beta gamma delta. " * 20)
     documents = [Document(source="c.md", text=text)]
 
     chunks = chunk_documents(documents, chunk_size=120, chunk_overlap=20, language="english")
 
     assert chunks
-    assert all(chunk.text.startswith("Source: [Page One](https://x.test/a)") for chunk in chunks)
+    # Provenance lives in metadata now; the body is pure content (no injected Source: line).
+    assert all(not chunk.text.startswith("Source:") for chunk in chunks)
+    assert all("Source: [Page One]" not in chunk.text for chunk in chunks)
     assert all(chunk.metadata["source_title"] == "Page One" for chunk in chunks)
     assert all(chunk.metadata["source_url"] == "https://x.test/a" for chunk in chunks)
     # The crawl4md run metadata must never reach indexed chunk text.
