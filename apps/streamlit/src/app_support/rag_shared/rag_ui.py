@@ -11,7 +11,7 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import streamlit as st
@@ -186,7 +186,7 @@ def local_time_label(
     except ValueError:
         return timestamp_utc
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return format_local_datetime(
         parsed, abbreviate_month=abbreviate_month, with_seconds=with_seconds
     )

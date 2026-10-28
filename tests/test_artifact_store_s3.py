@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ class FakeS3Client:
         self.store: dict[str, tuple[bytes, datetime]] = {}
 
     def put_object(self, Bucket: str, Key: str, Body: bytes) -> dict[str, Any]:
-        self.store[Key] = (Body, datetime.now(timezone.utc))
+        self.store[Key] = (Body, datetime.now(UTC))
         return {}
 
     def get_object(self, Bucket: str, Key: str) -> dict[str, Any]:

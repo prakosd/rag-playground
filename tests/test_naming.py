@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -65,5 +65,5 @@ def test_format_utc_timestamp_slug_treats_naive_datetime_as_utc() -> None:
 def test_parse_utc_timestamp_slug_returns_aware_utc_datetime() -> None:
     parsed = parse_utc_timestamp_slug("2026-06-01_11-58-32")
 
-    assert parsed == datetime(2026, 6, 1, 11, 58, 32, tzinfo=timezone.utc)
+    assert parsed == datetime(2026, 6, 1, 11, 58, 32, tzinfo=UTC)
     assert parse_utc_timestamp_slug("not-a-timestamp") is None

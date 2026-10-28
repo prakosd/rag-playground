@@ -15,7 +15,7 @@ import html
 import mimetypes
 from collections.abc import Mapping
 from contextlib import nullcontext
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -93,7 +93,7 @@ def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
     if timestamp is None:
         return None
     try:
-        return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(_UTC_DISPLAY_FORMAT)
+        return datetime.fromtimestamp(timestamp, tz=UTC).strftime(_UTC_DISPLAY_FORMAT)
     except (OverflowError, OSError, ValueError):
         return None
 
@@ -730,7 +730,7 @@ def _session_log_generated_file() -> GeneratedFile | None:
         relative_path=relative_path,
         name=log_path.name,
         size_bytes=stat_result.st_size,
-        modified_at=datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc),
+        modified_at=datetime.fromtimestamp(stat_result.st_mtime, tz=UTC),
         file_type="log",
         download_allowed=stat_result.st_size <= _DOWNLOAD_LIMIT_BYTES,
     )

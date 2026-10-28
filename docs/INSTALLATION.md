@@ -2,7 +2,7 @@
 
 ← Back to [README](../README.md)
 
-Requires Python 3.10+ (3.12 or 3.13 recommended).
+Requires Python 3.11+ (3.12 or 3.13 recommended).
 
 ## Try the hosted demo (no install)
 
@@ -65,7 +65,7 @@ Work in an isolated virtualenv so the editable installs stay separate from any
 system or Conda environment:
 
 ```bash
-python3 -m venv .venv          # Python 3.10+ (3.12/3.13 recommended)
+python3 -m venv .venv          # Python 3.11+ (3.12/3.13 recommended)
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 ```
@@ -150,18 +150,3 @@ default embedding model needs no credentials, and without chat credentials
 > first, so the pin is the reliable fix (which is why module imports in that file follow
 > the env-var statement and ruff `E402` is ignored there). Both are handled for you — no
 > action needed.
-
-> **Warning — Python 3.14 users (discovered 2026-04-20):**
-> `crawl4ai==0.8.6` pins `lxml~=5.3`, but no `lxml` 5.x pre-built wheel exists for Python 3.14.
-> pip will try to compile lxml from source and fail with:
-> `error: Microsoft Visual C++ 14.0 or greater is required.`
->
-> **Recommended fix:** use Python 3.12 or 3.13, where lxml 5.x wheels are available.
->
-> **Workaround if you must use Python 3.14:**
-> ```bash
-> pip install -e ".[crawl]" --no-deps
-> pip install --only-binary lxml crawl4ai trafilatura markdownify pydantic "chardet<6,>=5.2.0" beautifulsoup4 mdformat mdformat-gfm pymupdf4llm httpx --no-deps
-> # then install the remaining transitive deps via pip as needed
-> ```
-> lxml 6.x (already available for 3.14) is API-compatible and works at runtime despite the version conflict warning.

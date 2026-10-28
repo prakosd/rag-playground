@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -151,7 +151,7 @@ class TestSiteCrawler:
 
         parsed = datetime.fromisoformat(str(metadata["crawl_start_datetime"]))
         assert parsed.tzinfo is not None
-        assert parsed.utcoffset() == timezone.utc.utcoffset(parsed)
+        assert parsed.utcoffset() == UTC.utcoffset(parsed)
 
     def test_secret_headers_absent_from_run_metadata(self, tmp_path: Path):
         config = CrawlerConfig(

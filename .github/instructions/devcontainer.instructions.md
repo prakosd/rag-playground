@@ -25,7 +25,7 @@ every library is an opt-in extra in the root `pyproject.toml` so installs stay
 lightweight and atomic:
 
 - `crawl` → `crawl4ai`, `trafilatura`, `markdownify`, `beautifulsoup4`, `mdformat`,
-  `mdformat-gfm`, `nest-asyncio`, `httpx`, `truststore`, `pydantic`, `pymupdf4llm`, `mammoth`
+  `mdformat-gfm`, `httpx`, `truststore`, `pydantic`, `pymupdf4llm`, `mammoth`
   (the crawler; `truststore` lets direct PDF/DOCX downloads trust the OS certificate store
   — like the browser — so they verify behind a corporate TLS-intercepting proxy; `mammoth`
   converts `.docx` and is pure Python, so it needs no system package).

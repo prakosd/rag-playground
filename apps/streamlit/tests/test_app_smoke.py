@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from queue import Queue
@@ -22,12 +22,24 @@ from app_support.support import (
 )
 
 _STREAMLIT_APP_FILE = Path(__file__).resolve().parents[1] / "streamlit_app.py"
-_CONVERSATIONAL_PAGE_PATH = "app_pages/conversational_rag.py"
+_CONVERSATIONAL_PAGE_KEY = next(
+    spec.url_path for spec in APP_PAGE_SPECS if spec.module_name == "app_pages.conversational_rag"
+)
 _EVENT_PAGE_PROCESSED = "page_processed"
 
 
-def _page_path_from_module(module_name: str) -> str:
-    return f"{module_name.replace('.', '/')}.py"
+def _switch_to_page(app: AppTest, url_path: str) -> None:
+    """Navigate AppTest to a callable-based ``st.navigation`` page by its url_path.
+
+    ``AppTest.switch_page()`` (streamlit >= 1.66) resolves only file-based pages via
+    their ``script_path``; ``st.Page(callable, url_path=...)`` entries expose only a
+    ``url_pathname``, so select the page hash directly. Call ``app.run()`` afterward.
+    """
+    app._page_hash = next(
+        page_hash
+        for page_hash, info in app._registered_pages.items()
+        if info.get("url_pathname") == url_path
+    )
 
 
 def _running_fake_job(session_id: str, output_base: Path) -> tuple[CrawlJob, Event, Thread]:
@@ -129,7 +141,7 @@ def test_conversational_page_renders_output_files_panel(
     with patch("streamlit.components.v2.component", _storage_component_factory):
         app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
         app.run(timeout=10)
-        app.switch_page(_CONVERSATIONAL_PAGE_PATH)
+        _switch_to_page(app, _CONVERSATIONAL_PAGE_KEY)
         app.run(timeout=10)
 
     assert not app.exception
@@ -150,7 +162,7 @@ def test_streamlit_app_switches_through_registered_workflow_pages(
         for page_spec in APP_PAGE_SPECS:
             if page_spec.page_id == DEFAULT_PAGE_ID:
                 continue
-            app.switch_page(_page_path_from_module(page_spec.module_name))
+            _switch_to_page(app, page_spec.url_path)
             app.run(timeout=10)
             assert not app.exception
 
@@ -164,7 +176,7 @@ def test_session_storage_hydrates_portfolio_modal_timestamps(
     last_shown_at = "2026-05-20T12:00:00Z"
     last_dismissed_at = "2026-05-20T12:01:00Z"
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 5, 20, 12, 0, tzinfo=UTC))]
     )
     (tmp_path / "outputs" / "streamlit_sessions" / f"session_{session_id}").mkdir(parents=True)
 
@@ -200,7 +212,7 @@ def test_streamlit_preview_keeps_long_lines_unwrapped(
         [
             SessionRecord(
                 session_id,
-                datetime(2026, 5, 15, 10, 0, 0, tzinfo=timezone.utc),
+                datetime(2026, 5, 15, 10, 0, 0, tzinfo=UTC),
                 "EN",
             )
         ]
@@ -281,7 +293,7 @@ def test_new_session_not_reverted_when_component_records_are_stale(
 ) -> None:
     old_session_id = "old_abc"
     initial_records = serialize_session_records(
-        [SessionRecord(old_session_id, datetime(2026, 1, 1, tzinfo=timezone.utc))]
+        [SessionRecord(old_session_id, datetime(2026, 1, 1, tzinfo=UTC))]
     )
     (tmp_path / "outputs" / "streamlit_sessions" / f"session_{old_session_id}").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
@@ -297,9 +309,7 @@ def test_new_session_not_reverted_when_component_records_are_stale(
         # Simulate what _create_new_session() sets in state (without clicking the real button,
         # which also triggers st.rerun and a pending-confirmation round that clears pending).
         new_session_id = "new_xyz"
-        new_record = SessionRecord(
-            new_session_id, datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
-        )
+        new_record = SessionRecord(new_session_id, datetime(2026, 5, 20, 12, 0, 0, tzinfo=UTC))
         existing_records = getattr(app.session_state, "browser_session_records", [])
         app.session_state.browser_session_records = normalize_session_records(
             serialize_session_records([new_record, *existing_records])
@@ -324,7 +334,7 @@ def test_pending_session_clears_when_component_records_already_include_it(
 ) -> None:
     session_id = "pending_ack"
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 5, 30, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 5, 30, tzinfo=UTC))]
     )
     (tmp_path / "outputs" / "streamlit_sessions" / f"session_{session_id}").mkdir(parents=True)
 
@@ -359,7 +369,7 @@ def test_refresh_reattaches_running_crawl_from_registry(
 ) -> None:
     session_id = "sess_reattach"
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 6, 1, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 6, 1, tzinfo=UTC))]
     )
 
     # output_base must be inside the app's sessions root so ensure_within_root passes.
@@ -380,7 +390,7 @@ def test_refresh_reattaches_running_crawl_from_registry(
     snapshot = JobSnapshot(
         job=fake_job,
         crawl_id=fake_job.crawl_id,
-        started_at=datetime(2026, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+        started_at=datetime(2026, 6, 1, 10, 0, 0, tzinfo=UTC),
         activity_log_size=50,
         job_state="running",
         latest_event={"successful_pages": 3, "failed_pages": 0, "queued_discovered_urls": 5},
@@ -419,7 +429,7 @@ def test_crawl_progress_toasts_emit_from_shell_on_other_pages(
 ) -> None:
     session_id = "toast_cross_page"
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 6, 3, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 6, 3, tzinfo=UTC))]
     )
     sessions_root = tmp_path / "outputs" / "streamlit_sessions"
     output_base = sessions_root / f"session_{session_id}" / "crawl_1_toast"
@@ -445,11 +455,11 @@ def test_crawl_progress_toasts_emit_from_shell_on_other_pages(
         ):
             app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
             app.run(timeout=10)
-            app.switch_page(_CONVERSATIONAL_PAGE_PATH)
+            _switch_to_page(app, _CONVERSATIONAL_PAGE_KEY)
             app.run(timeout=10)
             app.session_state.job = fake_job
             app.session_state.job_state = "running"
-            app.session_state.started_at = datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc)
+            app.session_state.started_at = datetime(2026, 6, 3, 12, 0, tzinfo=UTC)
             app.session_state.latest_event = {}
             app.session_state.prev_successful_pages = 0
             app.session_state.prev_failed_pages = 0
@@ -477,7 +487,7 @@ def test_starting_new_crawl_resets_progress_toast_counters(
 ) -> None:
     session_id = "toast_second_crawl"
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 6, 5, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 6, 5, tzinfo=UTC))]
     )
     sessions_root = tmp_path / "outputs" / "streamlit_sessions"
     output_base = sessions_root / f"session_{session_id}" / "crawl_2_toast"
@@ -540,7 +550,7 @@ def test_crawl_progress_toasts_are_suppressed_during_file_preview(
 ) -> None:
     session_id = "toast_preview"
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 6, 4, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 6, 4, tzinfo=UTC))]
     )
     sessions_root = tmp_path / "outputs" / "streamlit_sessions"
     output_base = sessions_root / f"session_{session_id}" / "crawl_1_toast"
@@ -566,11 +576,11 @@ def test_crawl_progress_toasts_are_suppressed_during_file_preview(
         ):
             app = AppTest.from_file(str(_STREAMLIT_APP_FILE))
             app.run(timeout=10)
-            app.switch_page(_CONVERSATIONAL_PAGE_PATH)
+            _switch_to_page(app, _CONVERSATIONAL_PAGE_KEY)
             app.run(timeout=10)
             app.session_state.job = fake_job
             app.session_state.job_state = "running"
-            app.session_state.started_at = datetime(2026, 6, 4, 12, 0, tzinfo=timezone.utc)
+            app.session_state.started_at = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
             app.session_state.latest_event = {}
             app.session_state.preview_file_relative_path = "preview.md"
             app.session_state.prev_successful_pages = 0
@@ -598,7 +608,7 @@ def test_progress_chart_renders_with_cumulative_history(
 ) -> None:
     session_id = "chart_schema"
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 6, 2, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 6, 2, tzinfo=UTC))]
     )
     (tmp_path / "outputs" / "streamlit_sessions" / f"session_{session_id}").mkdir(parents=True)
 

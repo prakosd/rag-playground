@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from queue import Queue
 from threading import Event, Thread
@@ -204,7 +204,7 @@ def test_touch_session_raises_for_invalid_id(tmp_path: Path) -> None:
 # ── session_time_remaining ────────────────────────────────────────────────────
 
 
-_NOW = datetime(2026, 5, 24, 12, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 5, 24, 12, 0, 0, tzinfo=UTC)
 
 
 def test_session_time_remaining_no_dir_returns_full_retention(tmp_path: Path) -> None:
@@ -307,7 +307,7 @@ def test_create_session_record_uses_safe_id_and_utc_time() -> None:
 
     assert record == SessionRecord(
         session_id="abc123",
-        created_at=datetime(2026, 5, 13, 10, 30, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 13, 10, 30, tzinfo=UTC),
     )
 
 
@@ -398,8 +398,8 @@ def test_portfolio_modal_ignores_invalid_timestamps() -> None:
 
 def test_serialize_session_records_formats_utc_iso_strings() -> None:
     records = [
-        SessionRecord("older", datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc)),
-        SessionRecord("newer", datetime(2026, 5, 13, 11, 0, tzinfo=timezone.utc)),
+        SessionRecord("older", datetime(2026, 5, 13, 10, 0, tzinfo=UTC)),
+        SessionRecord("newer", datetime(2026, 5, 13, 11, 0, tzinfo=UTC)),
     ]
 
     serialized = serialize_session_records(records)
@@ -454,7 +454,7 @@ def test_latest_session_id_returns_newest_or_empty() -> None:
 
 
 def test_session_record_defaults_language_to_en() -> None:
-    record = SessionRecord("abc123", datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc))
+    record = SessionRecord("abc123", datetime(2026, 5, 13, 10, 0, tzinfo=UTC))
 
     assert record.language == "EN"
 
@@ -478,7 +478,7 @@ def test_create_session_record_rejects_invalid_language() -> None:
 
 
 def test_serialize_session_records_includes_language() -> None:
-    records = [SessionRecord("abc", datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc), "ID")]
+    records = [SessionRecord("abc", datetime(2026, 5, 13, 10, 0, tzinfo=UTC), "ID")]
 
     serialized = serialize_session_records(records)
 
@@ -552,8 +552,8 @@ def test_estimate_progress_handles_unknown_limit_and_clamps() -> None:
 
 
 def test_elapsed_time_display_shows_duration_for_running_state() -> None:
-    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
-    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=UTC)
+    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=UTC)
 
     elapsed = elapsed_time_display(started_at=started_at, job_state="running", now=now)
 
@@ -561,8 +561,8 @@ def test_elapsed_time_display_shows_duration_for_running_state() -> None:
 
 
 def test_elapsed_time_display_hides_when_crawl_is_not_active() -> None:
-    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
-    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=UTC)
+    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=UTC)
 
     elapsed = elapsed_time_display(started_at=started_at, job_state="stopped", now=now)
 
@@ -570,7 +570,7 @@ def test_elapsed_time_display_hides_when_crawl_is_not_active() -> None:
 
 
 def test_elapsed_time_display_hides_when_started_at_missing() -> None:
-    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 13, 10, 0, 5, tzinfo=UTC)
 
     elapsed = elapsed_time_display(started_at=None, job_state="running", now=now)
 
@@ -578,9 +578,9 @@ def test_elapsed_time_display_hides_when_started_at_missing() -> None:
 
 
 def test_elapsed_time_display_restarts_from_zero_for_new_crawl() -> None:
-    now = datetime(2026, 5, 13, 10, 0, 10, tzinfo=timezone.utc)
-    previous_start = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
-    restarted_start = datetime(2026, 5, 13, 10, 0, 10, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 13, 10, 0, 10, tzinfo=UTC)
+    previous_start = datetime(2026, 5, 13, 10, 0, 0, tzinfo=UTC)
+    restarted_start = datetime(2026, 5, 13, 10, 0, 10, tzinfo=UTC)
 
     previous_elapsed = elapsed_time_display(
         started_at=previous_start,
@@ -598,8 +598,8 @@ def test_elapsed_time_display_restarts_from_zero_for_new_crawl() -> None:
 
 
 def test_elapsed_time_display_shows_duration_when_cancel_requested() -> None:
-    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
-    now = datetime(2026, 5, 13, 10, 0, 7, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=UTC)
+    now = datetime(2026, 5, 13, 10, 0, 7, tzinfo=UTC)
 
     elapsed = elapsed_time_display(
         started_at=started_at,
@@ -611,8 +611,8 @@ def test_elapsed_time_display_shows_duration_when_cancel_requested() -> None:
 
 
 def test_elapsed_time_display_shows_frozen_value_when_stopped() -> None:
-    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
-    now = datetime(2026, 5, 13, 10, 0, 7, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 13, 10, 0, 0, tzinfo=UTC)
+    now = datetime(2026, 5, 13, 10, 0, 7, tzinfo=UTC)
 
     elapsed = elapsed_time_display(
         started_at=started_at,
@@ -843,7 +843,7 @@ def test_read_recent_lines_handles_missing_file_and_non_positive_limit(tmp_path:
 def test_cleanup_old_sessions_removes_only_expired_safe_sessions(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    now = datetime(2026, 5, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, tzinfo=UTC)
     old_session = prepare_session_dir(tmp_path, "old123")
     active_session = prepare_session_dir(tmp_path, "active123")
     fresh_session = prepare_session_dir(tmp_path, "fresh123")
@@ -906,7 +906,7 @@ def test_cleanup_old_sessions_with_lock_replaces_stale_lock(tmp_path: Path) -> N
     lock_path = tmp_path / ".cleanup.lock"
     lock_path.write_text("stale", encoding="utf-8")
 
-    stale_time = (datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()
+    stale_time = (datetime.now(UTC) - timedelta(hours=2)).timestamp()
     os.utime(lock_path, (stale_time, stale_time))
     os.utime(old_session, (stale_time, stale_time))
 
@@ -957,7 +957,7 @@ def test_next_crawl_sequence_uses_highest_existing_number(tmp_path: Path) -> Non
 
 
 def test_generate_crawl_id_includes_timestamp() -> None:
-    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=UTC)
 
     assert generate_crawl_id(now).startswith("20260504_123045_")
 
@@ -965,7 +965,7 @@ def test_generate_crawl_id_includes_timestamp() -> None:
 def test_generate_crawl_id_uses_single_word_suffix_when_toggle_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=UTC)
     monkeypatch.setattr(session_manager, "_USE_READABLE_IDS", True)
     monkeypatch.setattr(session_manager, "_readable_word_pool", lambda: ("boulder",))
     monkeypatch.setattr(session_manager.secrets, "choice", lambda words: words[0])
@@ -976,7 +976,7 @@ def test_generate_crawl_id_uses_single_word_suffix_when_toggle_enabled(
 def test_generate_crawl_id_uses_legacy_suffix_when_toggle_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 30, 45, tzinfo=UTC)
     monkeypatch.setattr(session_manager, "_USE_READABLE_IDS", False)
 
     def _fake_token_urlsafe(size: int) -> str:
@@ -992,8 +992,8 @@ def test_find_latest_crawl_dir_and_activity_log_path(tmp_path: Path) -> None:
     crawl_a = prepare_crawl_output_base(tmp_path, "abc123", "run123")
     crawl_b = prepare_crawl_output_base(tmp_path, "abc123", "run124")
 
-    old_time = (datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp()
-    new_time = datetime.now(timezone.utc).timestamp()
+    old_time = (datetime.now(UTC) - timedelta(minutes=10)).timestamp()
+    new_time = datetime.now(UTC).timestamp()
     os.utime(crawl_a, (old_time, old_time))
     os.utime(crawl_b, (new_time, new_time))
 
@@ -1522,7 +1522,7 @@ def _alive_snapshot(
     snap = JobSnapshot(
         job=job,
         crawl_id=job.crawl_id,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         activity_log_size=50,
         job_state=job_state,
     )
@@ -1558,7 +1558,7 @@ def test_get_active_job_snapshot_returns_none_for_dead_thread(
     snap = JobSnapshot(
         job=dead_job,
         crawl_id=dead_job.crawl_id,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         activity_log_size=50,
         job_state="running",
     )
@@ -1576,7 +1576,7 @@ def test_active_registry_session_ids_returns_only_alive(
     snap_dead = JobSnapshot(
         job=_make_dead_job("sess_d"),
         crawl_id="cr_d",
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         activity_log_size=50,
         job_state="running",
     )

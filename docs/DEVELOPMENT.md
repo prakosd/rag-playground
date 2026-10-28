@@ -64,7 +64,7 @@ Raise a floor whenever you add coverage so it never slips back.
 
 ## Conventions
 
-- Python 3.10+, type hints on all public APIs, Pydantic v2.
+- Python 3.11+, type hints on all public APIs, Pydantic v2.
 - No inline magic values — use `_UPPER_SNAKE_CASE` constants and module-level
   compiled regexes.
 - Keep the libraries UI-independent: `log4py`, `crawl4md`, `artifact_store`,

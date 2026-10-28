@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app_support.auth.auth_ui import (
     auth_type_label,
@@ -18,7 +18,7 @@ def _row(row_id: str, name: str, auth_type: str) -> CredentialRow:
         id=row_id,
         kind="http",
         name=name,
-        created_at=datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 7, 1, 12, 0, tzinfo=UTC),
         auth_type=auth_type,
     )
 

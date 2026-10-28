@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import secrets
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -47,7 +47,7 @@ def parse_url_prefixes(value: Any) -> list[str]:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _require(value: str, message: str) -> str:

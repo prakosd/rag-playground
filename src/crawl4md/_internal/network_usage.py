@@ -12,7 +12,7 @@ Proxy credentials are never written here — only the neutral method label
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 __all__ = ["NETWORK_USAGE_FILE", "NetworkUsageRecorder"]
@@ -52,7 +52,7 @@ class NetworkUsageRecorder:
                 writer.writerow(_NETWORK_USAGE_HEADER)
             writer.writerow(
                 [
-                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    datetime.now(UTC).isoformat(timespec="seconds"),
                     round_num,
                     method,
                     url,

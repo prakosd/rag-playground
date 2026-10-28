@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import streamlit as st
@@ -145,7 +145,7 @@ def render_page(context: RagPageContext) -> None:
         append_search_record(
             session_root,
             SearchRecord(
-                timestamp_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                timestamp_utc=datetime.now(UTC).isoformat(timespec="seconds"),
                 index_folder=ref.vector_folder,
                 index_run=ref.run_name,
                 embedding_model=ref.manifest.embedding_model_used or "",

@@ -110,14 +110,14 @@ def test_apply_vector_index_event_terminal_builds_result(
 
 def _render_progress(*, state: str = "running", processed: int = 5, discovered: int = 10) -> None:
     # Self-contained render for AppTest.from_function (isolated namespace).
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     import streamlit as st
 
     from app_support.progress_ui import render_progress_and_files
 
     st.session_state["language"] = "EN"
-    st.session_state["started_at"] = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
+    st.session_state["started_at"] = datetime(2026, 5, 1, 10, 0, tzinfo=UTC)
     st.session_state["job_state"] = state
     st.session_state["last_elapsed"] = "00:05"
     st.session_state["latest_event"] = {"eta_remaining_seconds": 12.0}

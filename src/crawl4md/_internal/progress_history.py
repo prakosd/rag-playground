@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 __all__ = ["PROGRESS_HISTORY_FILE", "ProgressHistoryRecorder"]
@@ -65,7 +65,7 @@ class ProgressHistoryRecorder:
             return
 
         payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
             "elapsed_seconds": max(time.monotonic() - self._start_monotonic, 0.0),
             "event": event_name,
             "round": self._current_round,

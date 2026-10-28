@@ -13,7 +13,7 @@ import tempfile
 import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone, tzinfo
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -495,7 +495,7 @@ def _scan_generated_files(root: Path, target_root: Path) -> list[_ScannedGenerat
                     relative_path=relative.as_posix(),
                     name=safe_path.name,
                     size_bytes=stat.st_size,
-                    modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                    modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
                     file_type=file_type,
                 )
             )
@@ -664,7 +664,7 @@ def find_site_graph_for_result(
         relative_path=candidate.relative_to(root).as_posix(),
         name=candidate.name,
         size_bytes=stat.st_size,
-        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
         file_type=candidate.suffix.lower().lstrip(".") or "file",
         download_allowed=stat.st_size <= download_limit_bytes,
     )
@@ -822,8 +822,8 @@ def _format_local_timestamp(
     abbreviate_month: bool = False,
     with_seconds: bool = False,
 ) -> str:
-    target_timezone = local_timezone or datetime.now().astimezone().tzinfo or timezone.utc
-    local_value = value.astimezone(timezone.utc).astimezone(target_timezone)
+    target_timezone = local_timezone or datetime.now().astimezone().tzinfo or UTC
+    local_value = value.astimezone(UTC).astimezone(target_timezone)
     zone_name = local_value.tzname() or "local"
     months = calendar.month_abbr if abbreviate_month else calendar.month_name
     month_name = months[local_value.month]
@@ -875,8 +875,8 @@ def _parse_iso_utc(value: object) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _timestamp_from_progress_history_line(line: str) -> datetime | None:
@@ -990,7 +990,7 @@ def build_ready_download(
         relative_path=relative.as_posix(),
         name=download_path.name,
         size_bytes=stat.st_size,
-        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
         file_type=download_path.suffix.lower().lstrip(".") or "file",
         download_allowed=stat.st_size <= download_limit_bytes,
     )

@@ -8,7 +8,7 @@ import queue
 import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -210,7 +210,7 @@ def elapsed_time_display(
     """Return elapsed time, live while active and frozen after terminal states."""
     if started_at is None or job_state not in _ELAPSED_ACTIVE_STATES:
         return frozen_elapsed
-    elapsed = (now or datetime.now(timezone.utc)) - started_at
+    elapsed = (now or datetime.now(UTC)) - started_at
     return str(elapsed).split(".")[0]
 
 
@@ -328,7 +328,7 @@ def start_crawl_job(
     output_base = prepare_crawl_output_base(sessions_root, session_id, crawl_id)
     event_queue: queue.Queue[dict[str, object]] = queue.Queue()
     cancel_event = threading.Event()
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
 
     def emit(event: Mapping[str, object]) -> None:
         raw = dict(event)
@@ -337,7 +337,7 @@ def start_crawl_job(
         raw.setdefault("output_base", str(output_base))
         raw.setdefault(
             "elapsed_seconds",
-            max((datetime.now(timezone.utc) - started_at).total_seconds(), 0.0),
+            max((datetime.now(UTC) - started_at).total_seconds(), 0.0),
         )
         event_queue.put(raw)
         event_name = str(raw.get("event", ""))

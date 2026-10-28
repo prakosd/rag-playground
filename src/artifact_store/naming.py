@@ -8,7 +8,7 @@ artifact directories such as crawl outputs (``crawl_``) and vector indexes
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import cache
 
 __all__ = [
@@ -83,7 +83,7 @@ def sequence_sort_key(folder: str, *, prefix: str = CRAWL_FOLDER_PREFIX) -> tupl
 
 def format_utc_timestamp_slug(value: datetime | None = None) -> str:
     """Return a UTC timestamp slug for artifact output directories."""
-    normalized = _normalize_utc_datetime(value or datetime.now(timezone.utc))
+    normalized = _normalize_utc_datetime(value or datetime.now(UTC))
     return normalized.strftime(UTC_TIMESTAMP_SLUG_FORMAT)
 
 
@@ -93,10 +93,10 @@ def parse_utc_timestamp_slug(value: str) -> datetime | None:
         parsed = datetime.strptime(value, UTC_TIMESTAMP_SLUG_FORMAT)
     except ValueError:
         return None
-    return parsed.replace(tzinfo=timezone.utc)
+    return parsed.replace(tzinfo=UTC)
 
 
 def _normalize_utc_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

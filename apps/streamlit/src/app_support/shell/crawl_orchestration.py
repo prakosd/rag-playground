@@ -7,7 +7,7 @@ toasts, and the auto-refresh event loop. Reads/writes ``st.session_state`` direc
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import streamlit as st
@@ -86,7 +86,7 @@ def _drain_job_events(job: CrawlJob | None) -> bool:
         if next_state in _TERMINAL_STATES:
             started_at = st.session_state.started_at
             if started_at is not None:
-                elapsed = datetime.now(timezone.utc) - started_at
+                elapsed = datetime.now(UTC) - started_at
                 st.session_state.last_elapsed = str(elapsed).split(".")[0]
             st.session_state.started_at = None
             st.session_state.job = None
@@ -166,7 +166,7 @@ def _start_job(values: dict[str, Any]) -> None:
     st.session_state.job = job
     st.session_state.crawl_id = crawl_id
     st.session_state.job_state = _STATE_RUNNING
-    st.session_state.started_at = datetime.now(timezone.utc)
+    st.session_state.started_at = datetime.now(UTC)
     st.session_state.last_elapsed = ""
     st.session_state.latest_event = {"limit": crawler_config.limit}
     st.session_state.progress_chart_history = []

@@ -6,7 +6,7 @@ import os
 import secrets
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
@@ -123,7 +123,7 @@ def should_show_portfolio_modal(
     if dismissed_at is None:
         return True
 
-    current_time = _normalize_utc_datetime(now or datetime.now(timezone.utc))
+    current_time = _normalize_utc_datetime(now or datetime.now(UTC))
     return current_time - dismissed_at >= timedelta(hours=repeat_after_hours)
 
 
@@ -144,8 +144,8 @@ def _parse_utc_timestamp(value: str | None) -> datetime | None:
 
 def _normalize_utc_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 @lru_cache(maxsize=1)
@@ -212,12 +212,12 @@ def create_session_record(
 ) -> SessionRecord:
     """Create a session record with a path-safe ID and UTC creation time."""
     safe_session_id = validate_safe_id(session_id) if session_id is not None else generate_safe_id()
-    created_at = now or datetime.now(timezone.utc)
+    created_at = now or datetime.now(UTC)
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
     return SessionRecord(
         session_id=safe_session_id,
-        created_at=created_at.astimezone(timezone.utc),
+        created_at=created_at.astimezone(UTC),
         language=_normalize_language(language),
     )
 
@@ -295,22 +295,22 @@ def _parse_session_created_at(value: str) -> datetime:
     except ValueError as exc:
         raise ValueError("Session creation time is invalid.") from exc
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _format_session_created_at(value: datetime) -> str:
     normalized = value
     if normalized.tzinfo is None:
-        normalized = normalized.replace(tzinfo=timezone.utc)
-    return normalized.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        normalized = normalized.replace(tzinfo=UTC)
+    return normalized.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def generate_crawl_id(now: datetime | None = None, *, seq: int | None = None) -> str:
     """Return a crawl ID. With seq, returns a zero-padded '{seq}_{word}' ID."""
     if seq is not None:
         return format_crawl_id(seq, _generate_readable_crawl_suffix())
-    timestamp = (now or datetime.now(timezone.utc)).strftime(_TIMESTAMP_FORMAT)
+    timestamp = (now or datetime.now(UTC)).strftime(_TIMESTAMP_FORMAT)
     if not _USE_READABLE_IDS:
         return f"{timestamp}_{_legacy_safe_id()}"
     return f"{timestamp}_{_generate_readable_crawl_suffix()}"
@@ -376,10 +376,10 @@ def session_time_remaining(
     returned with zero remainder hours.
     """
     sdir = session_dir(sessions_root, session_id)
-    _now = now or datetime.now(timezone.utc)
+    _now = now or datetime.now(UTC)
     if not sdir.is_dir():
         return (retention_days, 0)
-    modified_at = datetime.fromtimestamp(sdir.stat().st_mtime, tz=timezone.utc)
+    modified_at = datetime.fromtimestamp(sdir.stat().st_mtime, tz=UTC)
     remaining_seconds = max(
         0.0, (timedelta(days=retention_days) - (_now - modified_at)).total_seconds()
     )
@@ -457,7 +457,7 @@ def cleanup_old_sessions(
     if not store.exists(root):
         return []
     active_ids = {validate_safe_id(session_id) for session_id in active_session_ids}
-    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=retention_days)
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=retention_days)
     removed: list[Path] = []
     for path in store.iterdir(root):
         if not store.is_dir(path) or not path.name.startswith(_SESSION_PREFIX):
@@ -469,14 +469,14 @@ def cleanup_old_sessions(
             continue
         if session_id in active_ids:
             continue
-        modified_at = datetime.fromtimestamp(store.mtime(path), tz=timezone.utc)
+        modified_at = datetime.fromtimestamp(store.mtime(path), tz=UTC)
         if modified_at >= cutoff:
             continue
         store.remove_tree(path)
         removed.append(path)
     if removed:
         log_path = root / _CLEANUP_LOG_FILE
-        timestamp = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
+        timestamp = (now or datetime.now(UTC)).isoformat(timespec="seconds")
         lines = [f"{timestamp} removed {path.name}" for path in removed]
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
@@ -505,7 +505,7 @@ def cleanup_old_sessions_with_lock(
         return []
     try:
         with os.fdopen(lock_fd, "w", encoding="utf-8") as handle:
-            handle.write(datetime.now(timezone.utc).isoformat(timespec="seconds"))
+            handle.write(datetime.now(UTC).isoformat(timespec="seconds"))
         return cleanup_old_sessions(
             root,
             active_session_ids=active_session_ids,
@@ -519,6 +519,6 @@ def cleanup_old_sessions_with_lock(
 def _lock_is_stale(lock_path: Path) -> bool:
     if not lock_path.exists():
         return False
-    modified_at = datetime.fromtimestamp(lock_path.stat().st_mtime, tz=timezone.utc)
-    age = datetime.now(timezone.utc) - modified_at
+    modified_at = datetime.fromtimestamp(lock_path.stat().st_mtime, tz=UTC)
+    age = datetime.now(UTC) - modified_at
     return age.total_seconds() > _LOCK_STALE_SECONDS

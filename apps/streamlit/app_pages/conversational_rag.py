@@ -11,7 +11,7 @@ rag_shared UI.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from time import perf_counter
 
 import streamlit as st
@@ -670,7 +670,7 @@ def _append_history(
         or ""
     )
     record = ConversationalTurnRecord(
-        timestamp_utc=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        timestamp_utc=datetime.now(UTC).isoformat(timespec="milliseconds"),
         index_folder=index.vector_folder,
         index_run=index.run_name,
         embedding_model=embedding_model,

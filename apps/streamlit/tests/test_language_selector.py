@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -17,7 +17,7 @@ from app_support.support import (
 )
 
 _STREAMLIT_APP_FILE = Path(__file__).resolve().parents[1] / "streamlit_app.py"
-_FIXED_CREATED_AT = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
+_FIXED_CREATED_AT = datetime(2026, 5, 13, 10, 0, 0, tzinfo=UTC)
 
 
 def _storage_component_factory(

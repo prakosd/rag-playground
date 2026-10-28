@@ -7,7 +7,7 @@ the Step-2 page uses. Reads/writes ``st.session_state`` directly.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import streamlit as st
@@ -107,7 +107,7 @@ def _start_vector_index_job(values: dict[str, Any]) -> None:
     st.session_state.vector_index_progress = {}
     st.session_state.vector_index_stage = ""
     st.session_state.vector_index_result = {}
-    st.session_state.vector_index_started_at = datetime.now(timezone.utc)
+    st.session_state.vector_index_started_at = datetime.now(UTC)
     st.rerun()
 
 

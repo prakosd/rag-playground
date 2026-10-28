@@ -11,7 +11,7 @@ import queue
 import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from log4py import get_logger
@@ -210,7 +210,7 @@ def start_vector_index_job(
             failure = messages.classify_embedding_failure(f"{type(exc).__name__}: {exc}")
             emit({"event": _EVENT_FAILED, "errors": [failure.as_dict()]})
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     thread = threading.Thread(target=run, name=f"vector-index-{vector_id}", daemon=True)
     job = VectorIndexJob(
         session_id=session_id,

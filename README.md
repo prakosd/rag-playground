@@ -55,7 +55,7 @@ python dev.py run       # launch the Streamlit app at http://localhost:8501
 
 ### 1. Prerequisites
 
-- **Python 3.10+** (3.12 recommended).
+- **Python 3.11+** (3.12 or 3.13 recommended).
 - **Tesseract OCR** — only needed to read scanned/image PDFs while crawling:
   - macOS: `brew install tesseract tesseract-lang`
   - Debian/Ubuntu: `sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa`

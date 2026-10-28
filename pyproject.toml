@@ -7,7 +7,7 @@ name = "rag-playground"
 version = "0.1.0"
 description = "RAG playground: crawl websites to Markdown (crawl4md), build vector indexes (vector_indexer), answer questions over them (rag_engine), and shared artifact utilities (artifact_store)"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "rag-playground contributors" }]
 keywords = ["crawling", "markdown", "extraction", "web-scraping", "rag", "embeddings", "vector-search"]
@@ -16,9 +16,9 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 # The base install carries no third-party dependencies: the artifact_store
@@ -29,14 +29,14 @@ dependencies = []
 [project.optional-dependencies]
 # crawl4md — crawl websites and extract Markdown (Step 1).
 crawl = [
-    "crawl4ai>=0.8.6",
+    "crawl4ai>=0.9.5",
     # Capped below 2.1: trafilatura 2.1.0 (lxml bump) + 2.2.0 (extraction revamp)
     # regressed inline <ref>→Markdown links with output_format="markdown"
     # (include_links=True) — href dropped, anchor text kept — which the extractor
     # relies on. Still broken on 2.2.0 (2026-09). See docs/DEVELOPMENT.md
     # "Dependency pins" for the re-verify recipe before raising the cap.
     "trafilatura>=1.6.0,<2.1",
-    "markdownify>=0.11.0",
+    "markdownify>=1.0",
     "beautifulsoup4>=4.12.0",
     "mdformat>=0.7.19",
     "mdformat-gfm>=0.3.6",
@@ -83,17 +83,17 @@ api = ["fastapi>=0.110", "uvicorn>=0.29"]
 # Convenience meta-extra: every library and backend (no dev tools).
 all = ["rag-playground[crawl,vector,bedrock,openai,rag,rerank,s3]"]
 dev = [
-    "pytest>=7.4",
-    "pytest-asyncio>=0.21",
-    "pytest-cov>=4.1",
-    "ruff>=0.4.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=1.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
 # Vendored agent-skill templates are managed by skills-lock.json, not linted here.

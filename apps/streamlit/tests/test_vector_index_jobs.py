@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from queue import Queue
 from threading import Event, Thread
@@ -299,7 +299,7 @@ def _alive_vector_snapshot(session_id: str = "sess_alive") -> tuple[VectorJobSna
     snap = VectorJobSnapshot(
         job=job,
         vector_id=job.vector_id,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         job_state="running",
     )
     return snap, gate
@@ -333,7 +333,7 @@ def test_get_active_vector_job_snapshot_returns_none_for_dead_thread(
     snap = VectorJobSnapshot(
         job=dead_job,
         vector_id=dead_job.vector_id,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         job_state="running",
     )
     monkeypatch.setattr(
@@ -350,7 +350,7 @@ def test_active_vector_registry_session_ids_returns_only_alive(
     snap_dead = VectorJobSnapshot(
         job=_make_dead_vector_job("sess_d"),
         vector_id="01_d",
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         job_state="running",
     )
     try:

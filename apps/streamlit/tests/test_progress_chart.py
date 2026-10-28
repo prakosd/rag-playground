@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -21,7 +21,7 @@ from app_support.progress_chart import (
 
 
 def test_append_live_progress_sample_tracks_event_counters() -> None:
-    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=UTC)
     now = started_at + timedelta(seconds=4)
     history: list[dict[str, object]] = []
 
@@ -56,7 +56,7 @@ def test_append_live_progress_sample_tracks_event_counters() -> None:
 
 
 def test_append_live_progress_sample_carries_previous_values_for_sparse_events() -> None:
-    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=UTC)
     history: list[dict[str, object]] = []
 
     append_live_progress_sample(
@@ -91,7 +91,7 @@ def test_append_live_progress_sample_carries_previous_values_for_sparse_events()
 
 
 def test_append_live_progress_sample_prefers_worker_elapsed_seconds() -> None:
-    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=UTC)
     drain_time = started_at + timedelta(seconds=60)
     history: list[dict[str, object]] = []
 
@@ -114,7 +114,7 @@ def test_append_live_progress_sample_prefers_worker_elapsed_seconds() -> None:
 
 
 def test_append_live_progress_sample_keeps_burst_events_on_worker_time() -> None:
-    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+    started_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=UTC)
     drain_time = started_at + timedelta(seconds=90)
     history: list[dict[str, object]] = []
 

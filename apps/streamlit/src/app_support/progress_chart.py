@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -75,7 +75,7 @@ def append_live_progress_sample(
     if not has_counter and not history:
         return history
 
-    resolved_now = now or datetime.now(timezone.utc)
+    resolved_now = now or datetime.now(UTC)
     elapsed_seconds = _coerce_float(previous.get("elapsed_seconds"), 0.0)
     if "elapsed_seconds" in event:
         elapsed_seconds = max(_coerce_float(event.get("elapsed_seconds"), elapsed_seconds), 0.0)

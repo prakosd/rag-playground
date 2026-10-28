@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import os
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -40,7 +40,7 @@ from app_support.generated_files import (
     list_sample_fixtures,
 )
 
-_MODIFIED_AT = datetime(2026, 5, 17, 10, 0, tzinfo=timezone.utc)
+_MODIFIED_AT = datetime(2026, 5, 17, 10, 0, tzinfo=UTC)
 
 
 def _generated_file(relative_path: str) -> GeneratedFile:

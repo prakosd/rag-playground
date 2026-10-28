@@ -5,7 +5,7 @@ Each session ID is unique across tests (prefixed) to avoid @st.cache_data collis
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -56,7 +56,7 @@ def test_valid_sessions_kept_in_browser_records(
     session_id = "ssv_valid_kept001"
     _create_session_dir(tmp_path, session_id)
     initial_records = serialize_session_records(
-        [SessionRecord(session_id, datetime(2026, 5, 1, tzinfo=timezone.utc))]
+        [SessionRecord(session_id, datetime(2026, 5, 1, tzinfo=UTC))]
     )
 
     monkeypatch.chdir(tmp_path)
@@ -83,8 +83,8 @@ def test_missing_server_session_removed_from_browser_records(
     # ghost directory deliberately not created
     initial_records = serialize_session_records(
         [
-            SessionRecord(valid_id, datetime(2026, 5, 1, tzinfo=timezone.utc)),
-            SessionRecord(ghost_id, datetime(2026, 5, 2, tzinfo=timezone.utc)),
+            SessionRecord(valid_id, datetime(2026, 5, 1, tzinfo=UTC)),
+            SessionRecord(ghost_id, datetime(2026, 5, 2, tzinfo=UTC)),
         ]
     )
 
@@ -109,8 +109,8 @@ def test_missing_server_session_added_to_purge_list(
     _create_session_dir(tmp_path, valid_id)
     initial_records = serialize_session_records(
         [
-            SessionRecord(valid_id, datetime(2026, 5, 1, tzinfo=timezone.utc)),
-            SessionRecord(ghost_id, datetime(2026, 5, 2, tzinfo=timezone.utc)),
+            SessionRecord(valid_id, datetime(2026, 5, 1, tzinfo=UTC)),
+            SessionRecord(ghost_id, datetime(2026, 5, 2, tzinfo=UTC)),
         ]
     )
 
@@ -132,7 +132,7 @@ def test_app_boots_cleanly_when_all_localStorage_sessions_missing(
     ghost_id = "ssv_ghost_allgone004"
     # no session directories created
     initial_records = serialize_session_records(
-        [SessionRecord(ghost_id, datetime(2026, 5, 1, tzinfo=timezone.utc))]
+        [SessionRecord(ghost_id, datetime(2026, 5, 1, tzinfo=UTC))]
     )
 
     monkeypatch.chdir(tmp_path)

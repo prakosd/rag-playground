@@ -17,7 +17,7 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import altair as alt
@@ -123,7 +123,7 @@ def _render_vector_index_timing(strings: Mapping[str, Any], processed: int, tota
     started_at = st.session_state.get("vector_index_started_at")
     if started_at is None:
         return
-    elapsed = datetime.now(timezone.utc) - started_at
+    elapsed = datetime.now(UTC) - started_at
     elapsed_text = str(elapsed).split(".")[0]
     eta_text = format_eta_seconds(
         vector_eta_seconds(processed, total, elapsed.total_seconds()), strings

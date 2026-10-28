@@ -10,7 +10,7 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -2711,7 +2711,7 @@ class SiteCrawler:
 
     def _create_output_dir(self) -> Path:
         """Create and return a timestamped output directory."""
-        self._run_started_at_utc = datetime.now(timezone.utc)
+        self._run_started_at_utc = datetime.now(UTC)
         folder_name = format_utc_timestamp_slug(self._run_started_at_utc)
         output_dir = self._output_base / folder_name
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -2720,7 +2720,7 @@ class SiteCrawler:
     def _build_run_metadata(self) -> dict[str, object]:
         """Build run-level metadata used in output-file YAML front matter."""
         assert self.output_dir is not None
-        run_started_at = self._run_started_at_utc or datetime.now(timezone.utc)
+        run_started_at = self._run_started_at_utc or datetime.now(UTC)
         crawl_parameters: dict[str, object] = {
             "crawler_config": self.config.model_dump(mode="json"),
             "page_config": self.page_config.model_dump(mode="json"),

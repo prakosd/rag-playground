@@ -6,7 +6,7 @@ cache-key derivation and the memoized normalization with its bounded eviction.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app_support.shell.session_records import (
     SESSION_RECORDS_CACHE_MAX_ENTRIES,
@@ -15,7 +15,7 @@ from app_support.shell.session_records import (
 )
 from app_support.support import SessionRecord
 
-_CREATED_AT = datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc)
+_CREATED_AT = datetime(2026, 5, 13, 10, 0, tzinfo=UTC)
 
 
 # Risk: an unstable or colliding cache key would defeat memoization or mix records.

@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -628,7 +628,7 @@ def _record_send(
     append_basic_rag_qa_record(
         session_root,
         BasicQaRecord(
-            timestamp_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            timestamp_utc=datetime.now(UTC).isoformat(timespec="seconds"),
             index_folder=index.vector_folder,
             index_run=index.run_name,
             embedding_model=index.manifest.embedding_model_used or "",

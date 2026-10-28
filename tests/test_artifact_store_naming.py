@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -66,7 +66,7 @@ def test_format_utc_timestamp_slug_normalizes_aware_datetime() -> None:
 def test_parse_utc_timestamp_slug_round_trips() -> None:
     parsed = parse_utc_timestamp_slug("2026-06-01_11-58-32")
 
-    assert parsed == datetime(2026, 6, 1, 11, 58, 32, tzinfo=timezone.utc)
+    assert parsed == datetime(2026, 6, 1, 11, 58, 32, tzinfo=UTC)
 
 
 def test_parse_utc_timestamp_slug_rejects_invalid_value() -> None:

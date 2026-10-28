@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +45,7 @@ AUTH_DIR_NAME = "authentication"
 _CREDENTIALS_FILE_NAME = "credentials.json"
 _SCHEMA_VERSION = 1
 _PAYLOAD_KEY = "payload"
-_MIN_UTC = datetime.min.replace(tzinfo=timezone.utc)
+_MIN_UTC = datetime.min.replace(tzinfo=UTC)
 
 
 @dataclass(frozen=True)

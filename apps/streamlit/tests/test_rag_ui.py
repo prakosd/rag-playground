@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from rag_engine import RetrievedChunk
@@ -221,7 +221,7 @@ def test_index_metadata_rows_include_key_manifest_fields() -> None:
     assert rows[STRINGS_EN["SEARCH_META_DIMENSION_CHUNKS"]] == "512 / 42"
     assert rows[STRINGS_EN["SEARCH_META_CHUNK_SIZE_OVERLAP"]] == "600 / 100"
     assert rows[STRINGS_EN["SEARCH_META_COLLECTION"]] == "crawl4md_documents"
-    expected_created = format_local_datetime(datetime(2026, 6, 22, 10, 30, tzinfo=timezone.utc))
+    expected_created = format_local_datetime(datetime(2026, 6, 22, 10, 30, tzinfo=UTC))
     assert rows[STRINGS_EN["SEARCH_META_CREATED"]] == expected_created
 
 
