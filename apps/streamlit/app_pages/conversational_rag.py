@@ -10,6 +10,7 @@ rag_shared UI.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,7 +44,7 @@ from app_support.conversational_rag.conversational_prompts import (
 from app_support.conversational_rag.conversational_rag_build_ui import (
     apply_pending_load,
     render_build_launch_button,
-    render_builds_list,
+    render_build_load_dialog,
 )
 from app_support.conversational_rag.conversational_rag_form_ui import (
     FOLLOWUP_BUBBLE_KEY_PREFIX,
@@ -77,6 +78,7 @@ from app_support.rag_shared.resource_cache import (
 )
 from app_support.rag_shared.result_snapshot import stored_results
 from app_support.settings import get_settings
+from app_support.shell.constants import _FORM_MAX_WIDTH_PX
 
 _TURNS_KEY = "conversational_rag_turns"
 _STATE_KEY = "conversational_rag_state"
@@ -91,6 +93,19 @@ _CHAT_PANEL_KEY = "conversational_rag_panel"
 _SCROLL_REQUESTED_KEY = "conversational_rag_scroll_bottom"
 _FOCUS_INPUT_KEY = "conversational_rag_focus_input"
 _INPUT_DOCK_KEY = "conversational_rag_input_dock"
+# The showcase renders outside the shell, so mirror the shell's content max-width
+# (streamlit_app._render_shared_styles) to match Steps 1-5, and trim the top padding
+# so the chrome-less chat sits near the top.
+_SHOWCASE_WIDTH_CSS = (
+    "<style>"
+    'div[data-testid="stMainBlockContainer"],section.main .block-container'
+    f"{{max-width:{_FORM_MAX_WIDTH_PX}px!important;margin-left:auto;margin-right:auto;"
+    "padding-top:1rem!important}"
+    "</style>"
+)
+# The showcase is chrome-less (no heading/tuning controls), so its chat panel is
+# shorter than the full Step 5 panel.
+_SHOWCASE_CHAT_PANEL_HEIGHT_PX = 460
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
 _CHAT_ALIGN_CSS = (
     "<style>"
@@ -263,11 +278,11 @@ def _turn_failed(answer: ConversationalAnswer) -> bool:
     return bool(answer.errors) or not answer.answer.strip()
 
 
-def _error_reply(strings, session_root, turn_id: int) -> str:
+def _error_reply(strings, session_root, turn_id: int, overrides=None) -> str:
     """One natural, non-technical reply for a failed turn; varies per turn, editable."""
     return pick_random_line(
         resolve_app_message(
-            session_root, ERROR_REPLY_PROMPT_KEY, strings["CONV_ERROR_REPLY_DEFAULT"]
+            session_root, ERROR_REPLY_PROMPT_KEY, strings["CONV_ERROR_REPLY_DEFAULT"], overrides
         ),
         turn_id,
     )
@@ -290,21 +305,34 @@ def _inspect_deferred(is_latest: bool, followups_enabled: bool) -> bool:
 
 
 def render_page(
-    context: RagPageContext, *, showcase_controls: ConversationalControls | None = None
+    context: RagPageContext,
+    *,
+    showcase_controls: ConversationalControls | None = None,
+    show_token_panel: bool = True,
+    showcase_prompts: Mapping[str, str] | None = None,
 ) -> None:
     """Render the conversational RAG page content area.
 
-    In showcase mode (*showcase_controls* set) the tuning controls, build section, and
-    Output Files are hidden and the frozen controls drive a chat-only, read-only page;
-    the conversation picker is filtered to the visitor's own conversations.
+    In showcase mode (*showcase_controls* set) the tuning controls, build section,
+    Output Files, and the page heading are hidden and the frozen controls drive a
+    chat-only, read-only page; the conversation picker is filtered to the visitor's
+    own conversations. The showcase renders outside the shell, so it mirrors the
+    shell's content width here. *show_token_panel* lets the showcase hide the Token
+    usage panel unless the launch URL opts in (``?showToken``); Inspect is likewise
+    opt-in (``?inspect``) via the frozen controls' ``inspect``, set by the route.
+    *showcase_prompts* injects a launched build's frozen prompts (6 model + app
+    messages) so the showcase reproduces them without any prompt files on disk.
     """
     showcase = showcase_controls is not None
     strings = get_strings(st.session_state.get("language", context.default_language))
-    if not showcase:
+    if showcase:
+        st.html(_SHOWCASE_WIDTH_CSS)
+    else:
         apply_pending_load(strings, context.session_root())
     on_entry = entered_page("conversational_rag")
-    st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
-    st.caption(strings["CHAT_SECTION_CAPTION"])
+    if not showcase:
+        st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
+        st.caption(strings["CHAT_SECTION_CAPTION"])
     theme_dark = st.context.theme.type == "dark"
     bubble_fill = _BUBBLE_FILL_DARK if theme_dark else _BUBBLE_FILL_LIGHT
     panel_border = _PANEL_BORDER_DARK if theme_dark else _PANEL_BORDER_LIGHT
@@ -371,10 +399,12 @@ def render_page(
     # Peek the scroll intent before the panel so a submitted turn can scroll to the
     # new question *before* the blocking stream (pinning it to the top as it streams).
     scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
-    panel_height = get_settings().conv_rag_chat_panel_height_px
+    panel_height = (
+        _SHOWCASE_CHAT_PANEL_HEIGHT_PX if showcase else get_settings().conv_rag_chat_panel_height_px
+    )
     with st.container(height=panel_height, key=_CHAT_PANEL_KEY):
         if not turns and not submitting:
-            _render_welcome_bubble(strings, context.session_root())
+            _render_welcome_bubble(strings, context.session_root(), showcase_prompts)
         for position, turn in enumerate(turns):
             is_latest = position == len(turns) - 1
             # The latest turn's Inspect panel renders below its follow-ups (see the
@@ -387,6 +417,7 @@ def render_page(
                 turn,
                 inspect=controls.inspect and not defer_inspect,
                 default_tab=default_tab,
+                overrides=showcase_prompts,
             )
         # Fixed-position slot for the latest turn's follow-ups and its deferred Inspect
         # panel, so the next turn can wipe them the instant it starts streaming. An
@@ -402,6 +433,7 @@ def render_page(
                 language=answer_language_name(
                     st.session_state.get("language", context.default_language)
                 ),
+                prompt_overrides=showcase_prompts,
             )
             followup_slot.empty()  # wipe the prior turn's follow-ups + Inspect now
             answer, elapsed = _stream_pending_turn(
@@ -415,6 +447,7 @@ def render_page(
                 _history_from_turns(turns),
                 get_cached_chunks(cache, question),
                 scroll=scroll_requested,
+                overrides=showcase_prompts,
             )
         elif turns and controls.followup_show_count > 0:
             # Suggested follow-ups read as a continuation of the latest answer, so
@@ -424,7 +457,11 @@ def render_page(
             latest = turns[-1]
             with followup_slot.container():
                 clicked = render_followup_bubble(
-                    strings, context.session_root(), latest["answer"].follow_ups, latest["turn_id"]
+                    strings,
+                    context.session_root(),
+                    latest["answer"].follow_ups,
+                    latest["turn_id"],
+                    overrides=showcase_prompts,
                 )
                 if controls.inspect:
                     render_turn_inspection(
@@ -461,10 +498,11 @@ def render_page(
         st.session_state[_SCROLL_REQUESTED_KEY] = True
         st.rerun()
 
-    render_conversational_token_panel(strings, records)
+    if show_token_panel:
+        render_conversational_token_panel(strings, records)
     if not showcase:
-        render_builds_list(strings, context.session_root(), disabled=in_flight)
         context.render_downloads()
+        render_build_load_dialog(strings, context.session_root())
 
     if on_entry or st.session_state.pop(_FOCUS_INPUT_KEY, False):
         focus_chat_input()
@@ -491,10 +529,10 @@ def render_page(
         st.rerun()
 
 
-def _render_welcome_bubble(strings, session_root) -> None:
+def _render_welcome_bubble(strings, session_root, overrides=None) -> None:
     """Show the editable assistant greeting at the start of a fresh conversation."""
     greeting = pick_random_line(
-        resolve_welcome_message(session_root, strings["CHAT_WELCOME_DEFAULT"]),
+        resolve_welcome_message(session_root, strings["CHAT_WELCOME_DEFAULT"], overrides),
         st.session_state.get(_CONV_ID_KEY, ""),
     )
     with st.chat_message("assistant"):
@@ -502,7 +540,13 @@ def _render_welcome_bubble(strings, session_root) -> None:
 
 
 def _render_stored_turn(
-    strings, session_root, turn: dict, *, inspect: bool, default_tab: str
+    strings,
+    session_root,
+    turn: dict,
+    *,
+    inspect: bool,
+    default_tab: str,
+    overrides: Mapping[str, str] | None = None,
 ) -> None:
     """Render one persisted turn: the user bubble and the assistant's answer."""
     _render_user_message(turn["question"], turn["turn_id"])
@@ -510,7 +554,7 @@ def _render_stored_turn(
     key = f"{_ASSISTANT_TURN_KEY_PREFIX}{turn['turn_id']}"
     with st.container(key=key), st.chat_message("assistant"):
         if _turn_failed(answer):
-            st.write(_error_reply(strings, session_root, turn["turn_id"]))
+            st.write(_error_reply(strings, session_root, turn["turn_id"], overrides))
         else:
             st.write(answer.answer)
     if inspect:
@@ -529,6 +573,7 @@ def _stream_pending_turn(
     cached,
     *,
     scroll=False,
+    overrides: Mapping[str, str] | None = None,
 ):
     """Stream the pending turn's answer into the chat panel; return (answer, seconds).
 
@@ -572,7 +617,7 @@ def _stream_pending_turn(
         elapsed = perf_counter() - start
         answer = generation.answer or ConversationalAnswer(answer="", state=state)
         if _turn_failed(answer):
-            st.write(_error_reply(strings, session_root, turn_id))
+            st.write(_error_reply(strings, session_root, turn_id, overrides))
     status.update(state="complete")
     return answer, elapsed
 

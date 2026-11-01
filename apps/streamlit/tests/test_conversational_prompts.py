@@ -170,3 +170,19 @@ def test_shipped_default_prompt_files_are_valid() -> None:
     # Each shipped config .txt must keep the placeholders its prompt fills.
     for key in CONVERSATIONAL_PROMPT_KEYS:
         assert conversational_prompt_is_valid(key, resolve_conversational_prompt(key))
+
+
+def test_resolve_conversational_prompt_override_wins(tmp_path: Path) -> None:
+    # A frozen-build override (showcase) beats the session edit and library default.
+    save_conversational_prompt(tmp_path, "answer", "session edit")
+    assert resolve_conversational_prompt("answer", tmp_path, {"answer": "frozen"}) == "frozen"
+    # A blank override falls through to the saved edit.
+    assert resolve_conversational_prompt("answer", tmp_path, {"answer": "  "}) == "session edit"
+    assert resolve_conversational_prompt("answer", tmp_path) == "session edit"
+
+
+def test_resolve_app_message_override_wins(tmp_path: Path) -> None:
+    save_conversational_prompt(tmp_path, WELCOME_PROMPT_KEY, "saved welcome")
+    assert resolve_welcome_message(tmp_path, "default", {WELCOME_PROMPT_KEY: "frozen"}) == "frozen"
+    assert resolve_app_message(tmp_path, WELCOME_PROMPT_KEY, "default") == "saved welcome"
+    assert resolve_app_message(None, "missing", "default", {"other": "x"}) == "default"

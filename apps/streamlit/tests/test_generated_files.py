@@ -147,10 +147,24 @@ def test_collapse_artifact_run_folder_merges_vector_timestamp_child() -> None:
     assert folder_node == vector_tree["2026-05-19_18-17-52"]
 
 
+def test_collapse_artifact_run_folder_merges_rag_build_timestamp_child() -> None:
+    build_tree = {
+        "2026-05-19_18-17-52": {
+            "build.json": _generated_file("rag_build_01_garden/2026-05-19_18-17-52/build.json"),
+        }
+    }
+
+    label, folder_node = collapse_artifact_run_folder("rag_build_01_garden", build_tree)
+
+    assert label.startswith("rag_build_01_garden/2026-05-19_18-17-52")
+    assert folder_node == build_tree["2026-05-19_18-17-52"]
+
+
 def test_download_folder_icon_maps_artifact_type_to_material_icon() -> None:
     assert download_folder_icon("crawl_1_parlor") == ":material/travel_explore:"
     assert download_folder_icon("vector_01_pentagram") == ":material/database:"
     assert download_folder_icon("search_history") == ":material/search:"
+    assert download_folder_icon("rag_build_01_garden") == ":material/rocket_launch:"
     assert download_folder_icon("final") == ":material/folder_open:"
     assert download_folder_icon("2026-05-19_18-17-52") == ":material/folder_open:"
 
@@ -203,6 +217,23 @@ def test_download_tree_entry_sort_key_orders_vector_folders_after_crawl_newest_f
             key=lambda item: download_tree_entry_sort_key(item[0], item[1], top_level=True),
         )
     ] == ["crawl_02_river", "vector_10_omega", "vector_01_alpha", "summary.md"]
+
+
+def test_download_tree_entry_sort_key_orders_rag_build_after_vector() -> None:
+    entries = {
+        "vector_01_alpha": {},
+        "rag_build_02_river": {},
+        "rag_build_10_oak": {},
+        "notes": {},
+    }
+
+    assert [
+        name
+        for name, entry in sorted(
+            entries.items(),
+            key=lambda item: download_tree_entry_sort_key(item[0], item[1], top_level=True),
+        )
+    ] == ["vector_01_alpha", "rag_build_10_oak", "rag_build_02_river", "notes"]
 
 
 def test_format_run_timestamp_label_prefers_progress_history_timestamp(tmp_path: Path) -> None:

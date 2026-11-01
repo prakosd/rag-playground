@@ -1,11 +1,11 @@
-"""Step 5 build management: the Build & launch button and the Builds list.
+"""Step 5 build management: the Build & launch button and per-build tree actions.
 
-A "build" freezes the current Conversational RAG settings into a self-contained
-session folder that can be relaunched as a read-only showcase. This module maps the
-live controls to a :class:`BuildSnapshot`, freezes the effective prompts, and renders
-the Builds section (each build's settings-file preview/download, delete, and the
-reused Token usage panel). The pure mapping helpers are unit-tested; the ``render_*``
-functions are thin Streamlit wrappers that reuse the shared file dialogs.
+A "build" freezes the current Conversational RAG settings and all 10 prompts into a
+single ``build.json`` that can be relaunched as a read-only showcase. This module maps
+the live controls to a :class:`BuildSnapshot`, freezes the effective prompts, and
+renders each build's actions (Launch/Load/Preview/Download/Export/Delete + Token usage)
+inside its Output Files tree folder. The pure mapping helpers are unit-tested; the
+``render_*`` functions are thin Streamlit wrappers that reuse the shared file dialogs.
 """
 
 from __future__ import annotations
@@ -20,21 +20,18 @@ from app_support.conversational_rag.build_manager import (
     SCHEMA_VERSION,
     BuildSnapshot,
     allocate_build_name,
+    allocate_showcase_slug,
     build_dir,
+    build_run_dir,
     create_build,
-    format_built_at,
-    list_builds,
     load_build,
-    make_showcase_token,
 )
 from app_support.conversational_rag.conversational_prompts import (
-    APP_MESSAGE_PROMPT_KEYS,
     CONVERSATIONAL_PROMPT_KEYS,
     ERROR_REPLY_PROMPT_KEY,
     FOLLOWUP_INTRO_PROMPT_KEY,
     NO_FOLLOWUPS_PROMPT_KEY,
     WELCOME_PROMPT_KEY,
-    load_saved_conversational_prompt,
     resolve_app_message,
     resolve_conversational_prompt,
     save_conversational_prompt,
@@ -53,7 +50,6 @@ from app_support.rag_shared.index_catalog import (
     embedding_model_of,
     list_session_indexes,
 )
-from app_support.settings import get_settings
 
 __all__ = [
     "apply_pending_load",
@@ -61,7 +57,8 @@ __all__ = [
     "frozen_prompt_texts",
     "load_build_as_controls",
     "render_build_launch_button",
-    "render_builds_list",
+    "render_build_load_dialog",
+    "render_build_tree_actions",
     "snapshot_from_controls",
 ]
 
@@ -86,13 +83,19 @@ def frozen_prompt_texts(strings: Strings, session_root: Path | str) -> dict[str,
 
 
 def snapshot_from_controls(
-    controls: ConversationalControls, *, language: str, name: str
+    controls: ConversationalControls,
+    *,
+    language: str,
+    name: str,
+    slug: str,
+    prompts: dict[str, str],
 ) -> BuildSnapshot:
-    """Map the live Step 5 controls to a persistable :class:`BuildSnapshot`."""
+    """Map the live Step 5 controls + frozen prompts to a persistable :class:`BuildSnapshot`."""
     return BuildSnapshot(
         schema_version=SCHEMA_VERSION,
         created_at_utc=datetime.now(UTC).isoformat(timespec="seconds"),
         name=name,
+        slug=slug,
         language=language,
         answer_model=controls.answer_model,
         top_k=controls.top_k,
@@ -101,7 +104,6 @@ def snapshot_from_controls(
         aux_model_id=controls.aux_model_id,
         decomposition_limit=controls.decomposition_limit,
         followup_show_count=controls.followup_show_count,
-        inspect=controls.inspect,
         followup_drop=controls.followup_drop,
         followup_keep=controls.followup_keep,
         followup_probe_k=controls.followup_probe_k,
@@ -113,6 +115,7 @@ def snapshot_from_controls(
         index_vector_folder=controls.index.vector_folder,
         index_run_name=controls.index.run_name,
         embedding_model=embedding_model_of(controls.index),
+        prompts=dict(prompts),
     )
 
 
@@ -123,9 +126,10 @@ def load_build_as_controls(build_root: Path | str) -> ConversationalControls | N
     caller can show a friendly error instead of a broken chat.
     """
     snapshot = load_build(build_root)
-    if snapshot is None:
+    run_dir = build_run_dir(build_root)
+    if snapshot is None or run_dir is None:
         return None
-    indexes = list_session_indexes(build_root)
+    indexes = list_session_indexes(run_dir)
     if not indexes:
         return None
     return ConversationalControls(
@@ -137,7 +141,7 @@ def load_build_as_controls(build_root: Path | str) -> ConversationalControls | N
         aux_model_id=snapshot.aux_model_id,
         decomposition_limit=snapshot.decomposition_limit,
         followup_show_count=snapshot.followup_show_count,
-        inspect=snapshot.inspect,
+        inspect=False,
         followup_drop=snapshot.followup_drop,
         followup_keep=snapshot.followup_keep,
         followup_probe_k=snapshot.followup_probe_k,
@@ -176,7 +180,6 @@ def control_widget_values(snapshot: BuildSnapshot) -> dict[str, object]:
         f"{prefix}_thresholds": (snapshot.followup_drop, snapshot.followup_keep),
         f"{prefix}_state_start_turn": snapshot.state_summary_start_turn,
         f"{prefix}_state_max_words": snapshot.state_summary_max_words,
-        f"{prefix}_inspect": snapshot.inspect,
     }
 
 
@@ -192,21 +195,19 @@ def _matching_index(session_root: Path | str, snapshot: BuildSnapshot) -> IndexR
 
 
 def _apply_load(session_root: Path | str, snapshot: BuildSnapshot) -> None:
-    """Write a build's settings + prompts into the live Step 5 control state.
+    """Write a build's settings + frozen prompts into the live Step 5 control state.
 
     Runs before the controls instantiate (see ``apply_pending_load``): Streamlit
-    forbids setting a widget's state key once its widget has rendered.
+    forbids setting a widget's state key once its widget has rendered. Prompts come
+    from the snapshot (build.json), not disk.
     """
     for key, value in control_widget_values(snapshot).items():
         st.session_state[key] = value
-    st.session_state[f"{_CONTROL_KEY_PREFIX}_inspect_on"] = snapshot.inspect
     ref = _matching_index(session_root, snapshot)
     if ref is not None:
         st.session_state[f"{_CONTROL_KEY_PREFIX}_index"] = ref
-    build_root = build_dir(session_root, snapshot.name)
-    for key in (*CONVERSATIONAL_PROMPT_KEYS, *APP_MESSAGE_PROMPT_KEYS):
-        text = load_saved_conversational_prompt(build_root, key)
-        if text is not None:
+    for key, text in snapshot.prompts.items():
+        if text and text.strip():
             save_conversational_prompt(session_root, key, text)
             st.session_state[f"{_CONTROL_KEY_PREFIX}_prompt_{key}"] = text
 
@@ -228,10 +229,12 @@ def _build_now(
 ) -> str:
     """Freeze the current settings into a new build; return its folder name."""
     name = allocate_build_name(session_root)
-    snapshot = snapshot_from_controls(controls, language=language, name=name)
-    create_build(
-        session_root, snapshot, controls.index.run_dir, frozen_prompt_texts(strings, session_root)
+    slug = allocate_showcase_slug(Path(session_root).parent)
+    prompts = frozen_prompt_texts(strings, session_root)
+    snapshot = snapshot_from_controls(
+        controls, language=language, name=name, slug=slug, prompts=prompts
     )
+    create_build(session_root, snapshot, controls.index.run_dir)
     return name
 
 
@@ -259,54 +262,40 @@ def render_build_launch_button(
         st.rerun()
 
 
-def render_builds_list(
-    strings: Strings, session_root: Path | str, *, disabled: bool = False
+def render_build_tree_actions(
+    strings: Strings, session_root: Path | str, name: str, *, disabled: bool = False
 ) -> None:
-    """Render the Builds section: one collapsible card list of saved builds, newest first."""
-    builds = list_builds(session_root)
-    if not builds:
+    """Render a build's actions inside its Output Files tree folder.
+
+    The run-folder tree already lists build.json, the copied index, and the showcase
+    chat history; this adds the slug caption, the Launch link, the Load/Preview/
+    Download/Export/Delete row, and the Token-usage panel built from that history.
+    """
+    build_root = build_dir(session_root, name)
+    snapshot = load_build(build_root)
+    run_dir = build_run_dir(build_root)
+    if snapshot is None or run_dir is None:
         return
-    just_built = str(st.session_state.pop(_JUST_BUILT_KEY, ""))
-    with st.expander(
-        strings["CONV_BUILDS_LABEL"], icon=":material/inventory_2:", expanded=bool(just_built)
-    ):
-        for snapshot in builds:
-            _render_build_row(
-                strings,
-                snapshot,
-                session_root,
-                disabled=disabled,
-                auto_open=snapshot.name == just_built,
-            )
-    _render_open_load_dialog(strings, session_root)
+    # The just-built build auto-opens its showcase tab once (set by the Build button).
+    just_built = st.session_state.get(_JUST_BUILT_KEY) == name
+    if just_built:
+        st.session_state.pop(_JUST_BUILT_KEY, None)
+    st.caption(strings["CONV_BUILD_SLUG_CAPTION"].format(slug=snapshot.slug))
+    _launch_button(strings, snapshot, auto_open=just_built)
+    with st.container(horizontal=True, vertical_alignment="center", gap="xxsmall"):
+        _load_button(strings, snapshot, disabled=disabled)
+        _preview_button(strings, snapshot, run_dir.name, disabled=disabled)
+        _download_button(strings, snapshot, run_dir, disabled=disabled)
+        _export_button(strings, snapshot, disabled=disabled)
+        _delete_button(strings, snapshot, disabled=disabled)
+    records = load_conversational_rag_history(run_dir)
+    if records:
+        render_conversational_token_panel(strings, records, key_suffix=f"_{snapshot.name}")
 
 
-def _render_build_row(
-    strings: Strings,
-    snapshot: BuildSnapshot,
-    session_root: Path | str,
-    *,
-    disabled: bool,
-    auto_open: bool = False,
+def _preview_button(
+    strings: Strings, snapshot: BuildSnapshot, run_dir_name: str, *, disabled: bool
 ) -> None:
-    with st.container(border=True):
-        st.markdown(f"**{snapshot.name}**")
-        st.caption(
-            strings["CONV_BUILD_BUILT_AT"].format(when=format_built_at(snapshot.created_at_utc))
-        )
-        _launch_button(strings, snapshot, auto_open=auto_open)
-        with st.container(horizontal=True, vertical_alignment="center", gap="xxsmall"):
-            _export_button(strings, snapshot, disabled=disabled)
-            _load_button(strings, snapshot, disabled=disabled)
-            _preview_button(strings, snapshot, disabled=disabled)
-            _download_button(strings, snapshot, session_root, disabled=disabled)
-            _delete_button(strings, snapshot, disabled=disabled)
-        records = load_conversational_rag_history(build_dir(session_root, snapshot.name))
-        if records:
-            render_conversational_token_panel(strings, records, key_suffix=f"_{snapshot.name}")
-
-
-def _preview_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
     if st.button(
         "",
         icon=":material/visibility:",
@@ -314,15 +303,17 @@ def _preview_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool
         disabled=disabled,
         key=f"build_preview_{snapshot.name}",
     ):
-        st.session_state.preview_file_relative_path = f"{snapshot.name}/{BUILD_MANIFEST_FILENAME}"
+        st.session_state.preview_file_relative_path = (
+            f"{snapshot.name}/{run_dir_name}/{BUILD_MANIFEST_FILENAME}"
+        )
         st.rerun()
 
 
 def _download_button(
-    strings: Strings, snapshot: BuildSnapshot, session_root: Path | str, *, disabled: bool
+    strings: Strings, snapshot: BuildSnapshot, run_dir: Path, *, disabled: bool
 ) -> None:
     try:
-        data = (build_dir(session_root, snapshot.name) / BUILD_MANIFEST_FILENAME).read_bytes()
+        data = (run_dir / BUILD_MANIFEST_FILENAME).read_bytes()
     except OSError:
         return
     st.download_button(
@@ -396,7 +387,8 @@ def _load_confirm_dialog(strings: Strings, name: str) -> None:
             st.rerun()
 
 
-def _render_open_load_dialog(strings: Strings, session_root: Path | str) -> None:
+def render_build_load_dialog(strings: Strings, session_root: Path | str) -> None:
+    """Show the Load-confirm dialog when a build's Load button set the trigger."""
     name = str(st.session_state.get(_LOAD_TRIGGER, ""))
     if not name:
         return
@@ -407,10 +399,8 @@ def _render_open_load_dialog(strings: Strings, session_root: Path | str) -> None
 
 
 def _launch_button(strings: Strings, snapshot: BuildSnapshot, *, auto_open: bool) -> None:
-    session_id = str(st.session_state.get("session_id", ""))
-    token = make_showcase_token(session_id, snapshot.name, get_settings().zip_signing_secret)
     render_launch_button(
-        f"?show={token}",
+        f"?show={snapshot.slug}",
         label=strings["CONV_BUILD_OPEN_LABEL"],
         help=strings["CONV_BUILD_OPEN_HELP"],
         key=f"build_launch_{snapshot.name}",

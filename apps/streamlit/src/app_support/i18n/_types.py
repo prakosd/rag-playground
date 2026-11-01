@@ -187,8 +187,7 @@ class Strings(TypedDict):
     CONV_BUILD_LAUNCH_BUTTON: str
     CONV_BUILD_LAUNCH_HELP: str
     CONV_BUILD_CREATED_TOAST: str  # template: {name}
-    CONV_BUILDS_LABEL: str
-    CONV_BUILD_BUILT_AT: str  # template: {when}
+    CONV_BUILD_SLUG_CAPTION: str  # template: {slug}
     CONV_BUILD_PREVIEW_HELP: str
     CONV_BUILD_DOWNLOAD_HELP: str
     CONV_BUILD_DELETE_HELP: str

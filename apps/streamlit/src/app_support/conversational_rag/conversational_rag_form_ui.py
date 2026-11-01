@@ -9,7 +9,7 @@ helpers (``render_result_cards``, ``kv_grid_html``).
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -179,18 +179,20 @@ def build_conversational_config(
     session_root: Path | str | None = None,
     *,
     language: str = "English",
+    prompt_overrides: Mapping[str, str] | None = None,
 ) -> ConversationalConfig:
     """Build the library config from the UI *controls* and deployment settings.
 
-    Prompt overrides resolve from the session's saved edits → the shipped config
-    files → the built-in library templates via ``resolve_conversational_prompts``.
-    *language* is the answer language (a free-form name) threaded into the answer
-    prompt so the reply matches the active UI language.
+    Prompt overrides resolve from *prompt_overrides* (a launched build's frozen
+    prompts) → the session's saved edits → the shipped config files → the built-in
+    library templates via ``resolve_conversational_prompts``. *language* is the answer
+    language (a free-form name) threaded into the answer prompt so the reply matches
+    the active UI language.
     """
     settings = get_settings()
     return ConversationalConfig(
         rag=RagConfig(llm_model=controls.answer_model, top_k=controls.top_k),
-        prompts=resolve_conversational_prompts(session_root),
+        prompts=resolve_conversational_prompts(session_root, prompt_overrides),
         aux_model_id=controls.aux_model_id or None,
         plan_enabled=controls.decomposition_limit > _DECOMPOSITION_LIMIT_MIN,
         plan_max_subquestions=controls.decomposition_limit,
@@ -891,23 +893,32 @@ def render_followup_bubble(
     session_root: Path,
     follow_ups: Sequence[ValidatedFollowup],
     turn_id: int,
+    *,
+    overrides: Mapping[str, str] | None = None,
 ) -> str | None:
     """Render the follow-up suggestions as a continuation bubble under the answer.
 
     Shows an editable intro line followed by the suggestions as inline text links
     (tertiary buttons); when a turn produced none, a gentle nudge stands in. The
-    intro/nudge wording is a per-session template with one alternate per line, a
-    random one chosen per turn. Returns the clicked question, or None.
+    intro/nudge wording is a per-session template (or *overrides* on a showcase) with
+    one alternate per line, a random one chosen per turn. Returns the clicked
+    question, or None.
     """
     with st.container(key=f"{FOLLOWUP_BUBBLE_KEY_PREFIX}{turn_id}"), st.chat_message("assistant"):
         if not follow_ups:
             nudge = resolve_app_message(
-                session_root, NO_FOLLOWUPS_PROMPT_KEY, strings["CONV_NO_FOLLOWUPS_DEFAULT"]
+                session_root,
+                NO_FOLLOWUPS_PROMPT_KEY,
+                strings["CONV_NO_FOLLOWUPS_DEFAULT"],
+                overrides,
             )
             st.markdown(pick_random_line(nudge, turn_id))
             return None
         intro = resolve_app_message(
-            session_root, FOLLOWUP_INTRO_PROMPT_KEY, strings["CONV_FOLLOWUP_INTRO_DEFAULT"]
+            session_root,
+            FOLLOWUP_INTRO_PROMPT_KEY,
+            strings["CONV_FOLLOWUP_INTRO_DEFAULT"],
+            overrides,
         )
         st.markdown(pick_random_line(intro, turn_id))
         clicked: str | None = None

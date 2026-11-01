@@ -9,7 +9,12 @@ from vector_indexer import IndexManifest
 from vector_indexer.manifest import write_manifest
 
 import app_support.conversational_rag.conversational_rag_build_ui as build_ui
-from app_support.conversational_rag.build_manager import BuildSnapshot, create_build, list_builds
+from app_support.conversational_rag.build_manager import (
+    BuildSnapshot,
+    build_run_dir,
+    create_build,
+    list_builds,
+)
 from app_support.conversational_rag.conversational_prompts import (
     CONVERSATIONAL_PROMPT_KEYS,
     WELCOME_PROMPT_KEY,
@@ -97,8 +102,11 @@ def _real_index(root: Path) -> IndexRef:
 
 
 def test_snapshot_from_controls_maps_fields() -> None:
-    snapshot = snapshot_from_controls(_controls(), language="EN", name="rag_build_01_garden")
+    snapshot = snapshot_from_controls(
+        _controls(), language="EN", name="rag_build_01_garden", slug="a_b_c_d_e", prompts={}
+    )
     assert snapshot.name == "rag_build_01_garden"
+    assert snapshot.slug == "a_b_c_d_e"
     assert snapshot.language == "EN"
     assert snapshot.answer_model == "gpt-4o"
     assert snapshot.top_k == 6
@@ -111,7 +119,9 @@ def test_snapshot_from_controls_maps_fields() -> None:
 
 
 def test_snapshot_round_trips_through_json() -> None:
-    snapshot = snapshot_from_controls(_controls(), language="ID", name="rag_build_02_river")
+    snapshot = snapshot_from_controls(
+        _controls(), language="ID", name="rag_build_02_river", slug="a_b_c_d_e", prompts={}
+    )
     assert BuildSnapshot.from_json(snapshot.to_json()) == snapshot
 
 
@@ -132,7 +142,9 @@ def test_build_now_creates_discoverable_build(tmp_path: Path) -> None:
     name = build_ui._build_now(STRINGS_EN, controls, tmp_path, "EN")
     assert name.startswith("rag_build_01_")
     assert [snapshot.name for snapshot in list_builds(tmp_path)] == [name]
-    assert list_session_indexes(tmp_path / name)[0].vector_folder == "vector_01_slate"
+    run_dir = build_run_dir(tmp_path / name)
+    assert run_dir is not None
+    assert list_session_indexes(run_dir)[0].vector_folder == "vector_01_slate"
 
 
 def _apply_load_script(session_dir: str, build_name: str) -> None:
@@ -153,11 +165,12 @@ def test_control_widget_values_maps_snapshot() -> None:
         _controls(top_k=9, answer_model="x-model", inspect=True),
         language="EN",
         name="rag_build_01_garden",
+        slug="a_b_c_d_e",
+        prompts={},
     )
     values = control_widget_values(snapshot)
     assert values["conversational_rag_top_k"] == 9
     assert values["conversational_rag_llm_model"] == "x-model"
-    assert values["conversational_rag_inspect"] is True
     assert values["conversational_rag_reranker"] == snapshot.reranker
     assert values["conversational_rag_thresholds"] == (
         snapshot.followup_drop,
@@ -167,14 +180,18 @@ def test_control_widget_values_maps_snapshot() -> None:
 
 def test_matching_index_finds_live_index(tmp_path: Path) -> None:
     _real_index(tmp_path)
-    snapshot = snapshot_from_controls(_controls(), language="EN", name="rag_build_01_garden")
+    snapshot = snapshot_from_controls(
+        _controls(), language="EN", name="rag_build_01_garden", slug="a_b_c_d_e", prompts={}
+    )
     ref = build_ui._matching_index(tmp_path, snapshot)
     assert ref is not None
     assert ref.vector_folder == "vector_01_slate"
 
 
 def test_matching_index_none_when_absent(tmp_path: Path) -> None:
-    snapshot = snapshot_from_controls(_controls(), language="EN", name="rag_build_01_garden")
+    snapshot = snapshot_from_controls(
+        _controls(), language="EN", name="rag_build_01_garden", slug="a_b_c_d_e", prompts={}
+    )
     assert build_ui._matching_index(tmp_path, snapshot) is None
 
 
@@ -184,8 +201,10 @@ def test_apply_pending_load_restores_settings_and_prompts(tmp_path: Path) -> Non
         _controls(index=source, top_k=9, answer_model="x-model"),
         language="EN",
         name="rag_build_01_garden",
+        slug="a_b_c_d_e",
+        prompts={"answer": "FROZEN ANSWER"},
     )
-    create_build(tmp_path, snapshot, source.run_dir, {"answer": "FROZEN ANSWER"})
+    create_build(tmp_path, snapshot, source.run_dir)
 
     at = AppTest.from_function(
         _apply_load_script,
@@ -202,9 +221,13 @@ def test_apply_pending_load_restores_settings_and_prompts(tmp_path: Path) -> Non
 def test_load_build_as_controls_reconstructs(tmp_path: Path) -> None:
     source = _real_index(tmp_path / "src")
     snapshot = snapshot_from_controls(
-        _controls(index=source, top_k=7), language="EN", name="rag_build_01_garden"
+        _controls(index=source, top_k=7),
+        language="EN",
+        name="rag_build_01_garden",
+        slug="a_b_c_d_e",
+        prompts={},
     )
-    create_build(tmp_path, snapshot, source.run_dir, {})
+    create_build(tmp_path, snapshot, source.run_dir)
     controls = load_build_as_controls(tmp_path / "rag_build_01_garden")
     assert controls is not None
     assert controls.top_k == 7
@@ -214,3 +237,32 @@ def test_load_build_as_controls_reconstructs(tmp_path: Path) -> None:
 
 def test_load_build_as_controls_none_when_missing(tmp_path: Path) -> None:
     assert load_build_as_controls(tmp_path / "nope") is None
+
+
+def _build_actions_script(session_dir: str, name: str) -> None:
+    from pathlib import Path as _Path
+
+    from app_support.conversational_rag.conversational_rag_build_ui import render_build_tree_actions
+    from app_support.i18n import STRINGS_EN as _STRINGS_EN
+
+    render_build_tree_actions(_STRINGS_EN, _Path(session_dir), name)
+
+
+def test_render_build_tree_actions_shows_slug(tmp_path: Path) -> None:
+    source = _real_index(tmp_path / "src")
+    snapshot = snapshot_from_controls(
+        _controls(index=source),
+        language="EN",
+        name="rag_build_01_garden",
+        slug="alpha_beta_gamma_delta_epsilon",
+        prompts={},
+    )
+    create_build(tmp_path, snapshot, source.run_dir)
+
+    at = AppTest.from_function(
+        _build_actions_script,
+        kwargs={"session_dir": str(tmp_path), "name": "rag_build_01_garden"},
+    ).run()
+
+    assert not at.exception
+    assert any("alpha_beta_gamma_delta_epsilon" in caption.value for caption in at.caption)

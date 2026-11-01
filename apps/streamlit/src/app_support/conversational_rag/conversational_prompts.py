@@ -12,6 +12,7 @@ unit-testable and the page module stays thin.
 from __future__ import annotations
 
 import zlib
+from collections.abc import Mapping
 from pathlib import Path
 
 from rag_engine import CONVERSATIONAL_PROMPT_FIELDS, ConversationalPrompts, template_has_fields
@@ -134,8 +135,20 @@ def reset_conversational_prompt(session_root: Path | str, key: str) -> None:
     _session_prompt_path(session_root, key).unlink(missing_ok=True)
 
 
-def resolve_conversational_prompt(key: str, session_root: Path | str | None = None) -> str:
-    """Return the effective *key* prompt: session edit → config file → library default."""
+def resolve_conversational_prompt(
+    key: str,
+    session_root: Path | str | None = None,
+    overrides: Mapping[str, str] | None = None,
+) -> str:
+    """Return the effective *key* prompt: override → session edit → config → library default.
+
+    *overrides* (a build's frozen prompts on the showcase) wins over everything so a
+    launched build reproduces its exact behavior without writing prompt files.
+    """
+    if overrides is not None:
+        override = overrides.get(key)
+        if override and override.strip():
+            return override
     if session_root is not None:
         saved = load_saved_conversational_prompt(session_root, key)
         if saved is not None:
@@ -163,24 +176,34 @@ def editor_prompt_text(
 
 def resolve_conversational_prompts(
     session_root: Path | str | None = None,
+    overrides: Mapping[str, str] | None = None,
 ) -> ConversationalPrompts:
     """Resolve all six prompts into a bundle for ``conversational_answer``."""
     return ConversationalPrompts(
         **{
-            key: resolve_conversational_prompt(key, session_root)
+            key: resolve_conversational_prompt(key, session_root, overrides)
             for key in CONVERSATIONAL_PROMPT_KEYS
         }
     )
 
 
-def resolve_app_message(session_root: Path | str | None, key: str, default: str) -> str:
+def resolve_app_message(
+    session_root: Path | str | None,
+    key: str,
+    default: str,
+    overrides: Mapping[str, str] | None = None,
+) -> str:
     """Return the session's saved app-only message for *key*, or *default*.
 
     App-only display text (welcome greeting, follow-up intro, no-suggestions nudge)
-    resolves from just the session's saved edit, falling back to the caller-supplied
-    localized *default* (keeping this module UI-agnostic). A blank saved file falls
-    through to *default*.
+    resolves from a frozen-build *override*, then the session's saved edit, falling
+    back to the caller-supplied localized *default* (keeping this module UI-agnostic).
+    A blank saved file falls through to *default*.
     """
+    if overrides is not None:
+        override = overrides.get(key)
+        if override and override.strip():
+            return override
     if session_root is not None:
         saved = load_saved_conversational_prompt(session_root, key)
         if saved is not None:
@@ -188,9 +211,11 @@ def resolve_app_message(session_root: Path | str | None, key: str, default: str)
     return default
 
 
-def resolve_welcome_message(session_root: Path | str | None, default: str) -> str:
+def resolve_welcome_message(
+    session_root: Path | str | None, default: str, overrides: Mapping[str, str] | None = None
+) -> str:
     """Return the session's saved welcome greeting, or the localized *default*."""
-    return resolve_app_message(session_root, WELCOME_PROMPT_KEY, default)
+    return resolve_app_message(session_root, WELCOME_PROMPT_KEY, default, overrides)
 
 
 def pick_random_line(text: str, seed: object) -> str:

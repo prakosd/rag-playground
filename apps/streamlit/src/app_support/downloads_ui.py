@@ -46,6 +46,7 @@ from app_support.app_runtime import (
     _session_root,
     _vector_job_active,
 )
+from app_support.conversational_rag.conversational_rag_build_ui import render_build_tree_actions
 from app_support.dialog_ui import (
     SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX,
     render_confirm_dialog,
@@ -69,6 +70,7 @@ from app_support.generated_files import (
     import_sample_fixture,
     import_signed_zip,
     import_target_name,
+    is_build_folder,
     is_history_folder,
     is_run_folder,
     list_sample_fixtures,
@@ -440,7 +442,14 @@ def render_download_tree(
                     folder_node,
                     allow_run_folder_collapse=False,
                 )
-                if allow_run_folder_collapse and (is_run_folder(name) or is_history_folder(name)):
+                if allow_run_folder_collapse and is_build_folder(name):
+                    render_build_tree_actions(
+                        get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE)),
+                        _session_root(),
+                        name,
+                        disabled=_files_actions_busy(),
+                    )
+                elif allow_run_folder_collapse and (is_run_folder(name) or is_history_folder(name)):
                     with st.container(
                         horizontal=True,
                         vertical_alignment="center",

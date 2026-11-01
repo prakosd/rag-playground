@@ -267,8 +267,7 @@ STRINGS_EN: Strings = {
         "shareable, read-only chat page in a new tab. Choose an index first."
     ),
     "CONV_BUILD_CREATED_TOAST": "Build {name} created.",
-    "CONV_BUILDS_LABEL": "Builds",
-    "CONV_BUILD_BUILT_AT": "Built {when}",
+    "CONV_BUILD_SLUG_CAPTION": "Showcase link: `?show={slug}`",
     "CONV_BUILD_PREVIEW_HELP": "Preview this build's settings file",
     "CONV_BUILD_DOWNLOAD_HELP": "Download this build's settings file",
     "CONV_BUILD_DELETE_HELP": "Delete this build",

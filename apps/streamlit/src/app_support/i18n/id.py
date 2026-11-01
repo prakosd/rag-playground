@@ -274,8 +274,7 @@ STRINGS_ID: Strings = {
         "sebagai halaman obrolan hanya-baca yang dapat dibagikan di tab baru. Pilih indeks dulu."
     ),
     "CONV_BUILD_CREATED_TOAST": "Build {name} dibuat.",
-    "CONV_BUILDS_LABEL": "Build",
-    "CONV_BUILD_BUILT_AT": "Dibuat {when}",
+    "CONV_BUILD_SLUG_CAPTION": "Tautan showcase: `?show={slug}`",
     "CONV_BUILD_PREVIEW_HELP": "Pratinjau berkas pengaturan build ini",
     "CONV_BUILD_DOWNLOAD_HELP": "Unduh berkas pengaturan build ini",
     "CONV_BUILD_DELETE_HELP": "Hapus build ini",

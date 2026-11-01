@@ -39,6 +39,9 @@ _DEFAULT_RETENTION_DAYS = 7
 _DEFAULT_SESSIONS_ROOT = Path(get_settings().sessions_root)
 _ID_BYTES = 9
 _READABLE_CRAWL_WORD_COUNT = 1
+# Showcase-link slug: EFF words joined by "_". 5 words ≈ 65 bits — unguessable for a
+# no-secrets build showcase (see docs/SECURITY.md).
+_READABLE_SHOWCASE_SLUG_WORD_COUNT = 5
 # --- Readable session ID pattern (edit these two to change the format) ---
 # _READABLE_SESSION_WORD_COUNT — number of EFF words per session ID (≥1)
 # _READABLE_ID_DIGITS          — digits appended after words; 0 = words only
@@ -188,6 +191,12 @@ def _generate_readable_session_id() -> str:
 def _generate_readable_crawl_suffix() -> str:
     words = [secrets.choice(_readable_word_pool()) for _ in range(_READABLE_CRAWL_WORD_COUNT)]
     return "_".join(words)
+
+
+def generate_showcase_slug() -> str:
+    """Return a readable, unguessable showcase-link slug (EFF words joined by "_")."""
+    pool = _readable_word_pool()
+    return "_".join(secrets.choice(pool) for _ in range(_READABLE_SHOWCASE_SLUG_WORD_COUNT))
 
 
 def generate_safe_id() -> str:

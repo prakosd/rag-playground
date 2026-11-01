@@ -27,24 +27,27 @@ place, and a deployment hardening checklist. It complements the operational
 ### H-1 · Shared default signing / encryption secret
 
 `ZIP_SIGNING_SECRET` ships a committed development default in
-[.env.defaults](../.env.defaults) and is used for **three** purposes:
+[.env.defaults](../.env.defaults) and is used for **two** purposes:
 
 - HMAC-SHA256 **signing/verification** of downloadable zip exports
-  ([artifact_store.archives](../src/artifact_store/archives.py)),
+  ([artifact_store.archives](../src/artifact_store/archives.py)), and
 - deriving the per-session **Fernet key** that encrypts stored crawl credentials at rest
-  ([auth/crypto.py](../apps/streamlit/src/app_support/auth/crypto.py)), and
-- signing the Step 5 **showcase launch token** (`?show=<token>`) so a build's read-only
-  showcase link cannot be forged or enumerated
-  ([build_manager.py](../apps/streamlit/src/app_support/conversational_rag/build_manager.py)).
+  ([auth/crypto.py](../apps/streamlit/src/app_support/auth/crypto.py)).
 
 **Impact.** On any deployment that does not override the default, the publicly-known value
 lets an attacker (i) forge a zip that passes `verify_zip_bytes` and have it accepted by the
 signed-import path, and (ii) decrypt stored crawl credentials if they also obtain the
 session's `credentials.json` and session id. Imports remain contained to the session folder
-(zip-slip + path-containment guards hold), so the blast radius is one session. A forged
-**showcase token** could likewise open a guessed build's read-only chat, but it exposes only
-that one build folder's indexed chunks and chats — never an API key or secret, which are
-resolved from server-side env at request time and are never written into a build or the URL.
+(zip-slip + path-containment guards hold), so the blast radius is one session.
+
+**Showcase links.** The Step 5 **showcase link** (`?show=<five_words>`) is a readable 5-word
+slug drawn with `secrets.choice` from the EFF large wordlist (7776 words → ~65 bits), stored in
+the build and resolved by scanning builds server-side. Like the zip/credential paths it is a
+bearer capability, but — unlike the signed zip export — it is **not** HMAC-signed: its safety
+rests on the slug's entropy (online enumeration is infeasible), not on the signing secret. A
+build and its URL never contain an API key or secret (those resolve from server-side env at
+request time), so a guessed slug exposes only that one build's indexed chunks and showcase
+chats.
 
 **Fix / status.** A startup **warning** now fires when the shipped default is detected
 (`Settings._warn_on_default_signing_secret` in

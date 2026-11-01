@@ -70,6 +70,7 @@ _FOLDER_ICON_VECTOR = ":material/database:"
 _FOLDER_ICON_SEARCH = ":material/search:"
 _FOLDER_ICON_BASIC_RAG_QA = ":material/question_answer:"
 _FOLDER_ICON_CONVERSATIONAL_RAG = ":material/forum:"
+_FOLDER_ICON_RAG_BUILD = ":material/rocket_launch:"
 _DEFAULT_DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 _DEFAULT_PREVIEW_MAX_BYTES = 256 * 1024
 _BYTES_PER_KB = 1024
@@ -188,6 +189,11 @@ def generated_files_cache_token(path: Path | str) -> tuple[float, int]:
 def is_run_folder(name: str) -> bool:
     """Return ``True`` when *name* is a top-level crawl/vector run folder."""
     return name.startswith(_CRAWL_DIR_PREFIX) or name.startswith(_VECTOR_DIR_PREFIX)
+
+
+def is_build_folder(name: str) -> bool:
+    """Return ``True`` when *name* is a top-level ``rag_build_`` snapshot folder."""
+    return name.startswith(_RAG_BUILD_DIR_PREFIX)
 
 
 def is_history_folder(name: str) -> bool:
@@ -690,7 +696,7 @@ def download_tree_entry_sort_key(
     *,
     top_level: bool = False,
 ) -> tuple[int, int, str]:
-    """Return a tree-entry sort key with newest numbered crawl/vector folders first."""
+    """Return a tree-entry sort key with newest numbered crawl/vector/build folders first."""
     if isinstance(entry, dict):
         if top_level and parse_crawl_folder_sequence(name) is not None:
             _, sequence_key, name_key = crawl_sequence_sort_key(name)
@@ -698,8 +704,11 @@ def download_tree_entry_sort_key(
         if top_level and parse_folder_sequence(name, prefix=_VECTOR_DIR_PREFIX) is not None:
             _, sequence_key, name_key = sequence_sort_key(name, prefix=_VECTOR_DIR_PREFIX)
             return (1, sequence_key, name_key)
-        return (2, 0, name.lower())
-    return (3, 0, name.lower())
+        if top_level and parse_folder_sequence(name, prefix=_RAG_BUILD_DIR_PREFIX) is not None:
+            _, sequence_key, name_key = sequence_sort_key(name, prefix=_RAG_BUILD_DIR_PREFIX)
+            return (2, sequence_key, name_key)
+        return (3, 0, name.lower())
+    return (4, 0, name.lower())
 
 
 def collapse_artifact_run_folder(
@@ -708,10 +717,12 @@ def collapse_artifact_run_folder(
     *,
     local_timezone: tzinfo | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Merge a crawl/vector folder and its single timestamp child into one label."""
+    """Merge a crawl/vector/build folder and its single timestamp child into one label."""
     label = folder_name
-    is_artifact_dir = folder_name.startswith(_CRAWL_DIR_PREFIX) or folder_name.startswith(
-        _VECTOR_DIR_PREFIX
+    is_artifact_dir = (
+        folder_name.startswith(_CRAWL_DIR_PREFIX)
+        or folder_name.startswith(_VECTOR_DIR_PREFIX)
+        or folder_name.startswith(_RAG_BUILD_DIR_PREFIX)
     )
     if not is_artifact_dir or len(folder_node) != 1:
         return label, folder_node
@@ -732,8 +743,9 @@ def download_folder_icon(folder_name: str) -> str:
     """Return the Material icon for a download-tree folder by its artifact type.
 
     Crawl runs (``crawl_*``), vector indexes (``vector_*``), search history
-    (``search_*``), and prompt history (``basic_rag_qa_*``) get distinct icons so the
-    tree is scannable; every other folder keeps the neutral folder icon.
+    (``search_*``), prompt history (``basic_rag_qa_*``), and build snapshots
+    (``rag_build_*``) get distinct icons so the tree is scannable; every other folder
+    keeps the neutral folder icon.
     """
     if folder_name.startswith(_CRAWL_DIR_PREFIX):
         return _FOLDER_ICON_CRAWL
@@ -745,6 +757,8 @@ def download_folder_icon(folder_name: str) -> str:
         return _FOLDER_ICON_BASIC_RAG_QA
     if folder_name.startswith(_CONVERSATIONAL_RAG_DIR_PREFIX):
         return _FOLDER_ICON_CONVERSATIONAL_RAG
+    if folder_name.startswith(_RAG_BUILD_DIR_PREFIX):
+        return _FOLDER_ICON_RAG_BUILD
     return _FOLDER_ICON_DEFAULT
 
 

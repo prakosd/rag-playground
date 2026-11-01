@@ -343,6 +343,7 @@ def _render_shared_styles() -> None:
             max-width: {_FORM_MAX_WIDTH_PX}px !important;
             margin-left: auto;
             margin-right: auto;
+            padding-top: 2rem !important;
         }}
         div[data-testid="stForm"] {{
             max-width: {_FORM_MAX_WIDTH_PX}px;

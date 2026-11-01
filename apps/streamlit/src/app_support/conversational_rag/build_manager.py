@@ -1,67 +1,56 @@
-"""Create, name, list, and sign Step 5 (Conversational RAG) build snapshots.
+"""Create, name, list, and resolve Step 5 (Conversational RAG) build snapshots.
 
-A "build" freezes the current Step 5 settings into a self-contained folder at the
-session root (``rag_build_<NN>_<word>``, mirroring ``crawl_``/``vector_``) so it can
-be launched as a read-only showcase, exported, or reloaded. This module owns the
-build naming, the :class:`BuildSnapshot` on-disk model (``build.json``), discovery
-and deletion, and the HMAC-signed showcase-link token. It is pure (no Streamlit) so
-it stays unit-testable; the UI adapter maps it to/from the live controls.
+A "build" freezes the current Step 5 settings and all 10 prompts into a single
+``build.json`` under a timestamped run subdir (``rag_build_<NN>_<word>/<timestamp>/``,
+mirroring ``crawl_``/``vector_``), beside a copy of the chosen index, so it can be
+launched as a read-only showcase, exported, or reloaded. This module owns the build
+naming, the :class:`BuildSnapshot` on-disk model, discovery/deletion, and the readable
+5-word showcase slug (allocated unique, resolved by scanning builds — no signing). It
+is pure (no Streamlit) so it stays unit-testable; the UI adapter maps it to/from the
+live controls.
 """
 
 from __future__ import annotations
 
-import base64
 import dataclasses
-import hashlib
-import hmac
 import json
-import re
 import shutil
-from collections.abc import Mapping
+from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from artifact_store.naming import (
     RAG_BUILD_FOLDER_PREFIX,
     folder_name,
     format_sequence_id,
+    format_utc_timestamp_slug,
     parse_folder_sequence,
+    parse_utc_timestamp_slug,
     sequence_sort_key,
 )
 from artifact_store.paths import ensure_within_root
 
-from app_support.conversational_rag.conversational_prompts import save_conversational_prompt
 from app_support.generated_files import delete_generated_folder
-from app_support.session_manager import _generate_readable_crawl_suffix
+from app_support.session_manager import _generate_readable_crawl_suffix, generate_showcase_slug
 
 __all__ = [
     "BUILD_MANIFEST_FILENAME",
     "SCHEMA_VERSION",
     "BuildSnapshot",
     "allocate_build_name",
+    "allocate_showcase_slug",
     "build_dir",
+    "build_run_dir",
     "create_build",
     "delete_build",
-    "format_built_at",
     "is_build_name",
     "list_builds",
     "load_build",
-    "make_showcase_token",
-    "parse_showcase_token",
+    "resolve_slug",
 ]
 
 BUILD_MANIFEST_FILENAME = "build.json"
 SCHEMA_VERSION = 1
-
-# "30 October 2026 07:48 UTC" — the caption shown on each build row.
-_BUILT_AT_FORMAT = "%d %B %Y %H:%M UTC"
-# Signed showcase token = urlsafe-b64("<session>:<build>") + "." + HMAC-SHA256 hex.
-_PAYLOAD_SEPARATOR = ":"
-_TOKEN_SEPARATOR = "."
-# Domain-separates the showcase HMAC from other uses of the shared signing secret.
-_HMAC_DOMAIN = b"rag-playground.showcase.v1:"
-_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass(frozen=True)
@@ -71,6 +60,7 @@ class BuildSnapshot:
     schema_version: int
     created_at_utc: str
     name: str
+    slug: str
     language: str
     answer_model: str
     top_k: int
@@ -79,7 +69,6 @@ class BuildSnapshot:
     aux_model_id: str
     decomposition_limit: int
     followup_show_count: int
-    inspect: bool
     followup_drop: float
     followup_keep: float
     followup_probe_k: int
@@ -91,6 +80,7 @@ class BuildSnapshot:
     index_vector_folder: str
     index_run_name: str
     embedding_model: str
+    prompts: dict[str, str]
 
     def to_json(self) -> str:
         """Serialize the snapshot as pretty JSON for ``build.json``."""
@@ -150,31 +140,44 @@ def create_build(
     session_root: Path | str,
     snapshot: BuildSnapshot,
     source_index_dir: Path | str,
-    prompt_texts: Mapping[str, str],
 ) -> Path:
-    """Materialize a self-contained build folder and return its path.
+    """Materialize a self-contained build folder and return it (``rag_build_<NN>_<word>``).
 
-    Copies the selected index into ``<build>/<vector_folder>/<run_name>`` (so the
-    showcase rediscovers it via ``list_session_indexes``), freezes each effective
-    prompt as ``conversational_rag_history/prompt_<key>.txt`` (read back when the
-    build root is used as the effective session root), and writes ``build.json``.
+    Everything lives under a single timestamped run subdir
+    (``<build>/<timestamp>/…``, mirroring ``crawl_``/``vector_``): the copied index
+    at ``<run>/<vector_folder>/<run_name>`` (so the showcase rediscovers it via
+    ``list_session_indexes``) and ``build.json``, which carries the frozen prompts
+    inline — a build is one manifest plus its index, with no separate prompt files.
     """
     target = build_dir(session_root, snapshot.name)
-    target.mkdir(parents=True, exist_ok=True)
+    run_dir = ensure_within_root(target, target / format_utc_timestamp_slug())
+    run_dir.mkdir(parents=True, exist_ok=True)
     index_target = ensure_within_root(
-        target, target / snapshot.index_vector_folder / snapshot.index_run_name
+        run_dir, run_dir / snapshot.index_vector_folder / snapshot.index_run_name
     )
     shutil.copytree(source_index_dir, index_target)
-    for key, text in prompt_texts.items():
-        save_conversational_prompt(target, key, text)
-    (target / BUILD_MANIFEST_FILENAME).write_text(snapshot.to_json(), encoding="utf-8")
+    (run_dir / BUILD_MANIFEST_FILENAME).write_text(snapshot.to_json(), encoding="utf-8")
     return target
 
 
+def build_run_dir(build_root: Path | str) -> Path | None:
+    """Return the build's single timestamped run subdir (holds build.json + index)."""
+    root = Path(build_root)
+    if not root.is_dir():
+        return None
+    for child in sorted(root.iterdir()):
+        if child.is_dir() and parse_utc_timestamp_slug(child.name) is not None:
+            return child
+    return None
+
+
 def load_build(build_root: Path | str) -> BuildSnapshot | None:
-    """Return the snapshot stored in *build_root*/``build.json``, or None."""
+    """Return the snapshot in *build_root*'s run dir ``build.json``, or None."""
+    run_dir = build_run_dir(build_root)
+    if run_dir is None:
+        return None
     try:
-        text = (Path(build_root) / BUILD_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        text = (run_dir / BUILD_MANIFEST_FILENAME).read_text(encoding="utf-8")
     except OSError:
         return None
     return BuildSnapshot.from_json(text)
@@ -205,58 +208,35 @@ def delete_build(session_root: Path | str, name: str) -> bool:
     return delete_generated_folder(session_root, name)
 
 
-def format_built_at(created_at_utc: str) -> str:
-    """Render an ISO-8601 build timestamp as ``30 October 2026 07:48 UTC``."""
-    try:
-        parsed = datetime.fromisoformat(created_at_utc)
-    except ValueError:
-        return created_at_utc
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).strftime(_BUILT_AT_FORMAT)
+def _iter_builds(sessions_root: Path) -> Iterator[tuple[Path, BuildSnapshot]]:
+    """Yield (build_root, snapshot) for every readable build under *sessions_root*."""
+    if not sessions_root.is_dir():
+        return
+    for session in sorted(sessions_root.iterdir()):
+        if session.is_dir():
+            for snapshot in list_builds(session):
+                yield build_dir(session, snapshot.name), snapshot
 
 
-def _is_safe_segment(value: str) -> bool:
-    return bool(_SAFE_SEGMENT.match(value)) and ".." not in value
+def allocate_showcase_slug(sessions_root: Path | str) -> str:
+    """Return a fresh showcase-link slug not already claimed by any build."""
+    existing = {snapshot.slug for _, snapshot in _iter_builds(Path(sessions_root))}
+    slug = generate_showcase_slug()
+    while slug in existing:
+        slug = generate_showcase_slug()
+    return slug
 
 
-def _restore_padding(encoded: str) -> str:
-    return encoded + "=" * (-len(encoded) % 4)
+def resolve_slug(sessions_root: Path | str, slug: str) -> Path | None:
+    """Return the build folder whose ``build.json`` stores *slug*, or None.
 
-
-def make_showcase_token(session_id: str, build_name: str, secret: str) -> str:
-    """Return a tamper-proof showcase-link token binding *session_id* + *build_name*.
-
-    The token carries ``urlsafe-b64("<session>:<build>")`` plus an HMAC-SHA256
-    signature over the same payload, so only this instance's *secret* can mint a
-    link and the ids cannot be altered to point at another build.
+    Slugs are unique at creation, so the first match is the only one. Returns None
+    for an empty or unknown slug, and never builds a path from the slug itself (it
+    only compares), so a crafted slug cannot escape the sessions root.
     """
-    raw = f"{session_id}{_PAYLOAD_SEPARATOR}{build_name}".encode()
-    signature = hmac.new(secret.encode("utf-8"), _HMAC_DOMAIN + raw, hashlib.sha256).hexdigest()
-    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-    return f"{encoded}{_TOKEN_SEPARATOR}{signature}"
-
-
-def parse_showcase_token(token: str, secret: str) -> tuple[str, str] | None:
-    """Return ``(session_id, build_name)`` from a valid token, else None.
-
-    Returns None for a malformed token, a bad signature (wrong key or tampered
-    payload), or ids that fail the path-safety check — never raises.
-    """
-    encoded, separator, signature = token.partition(_TOKEN_SEPARATOR)
-    if not separator or not encoded or not signature:
+    if not slug:
         return None
-    try:
-        raw = base64.urlsafe_b64decode(_restore_padding(encoded))
-    except ValueError:
-        return None
-    expected = hmac.new(secret.encode("utf-8"), _HMAC_DOMAIN + raw, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, signature):
-        return None
-    session_id, payload_separator, build_name = raw.decode("utf-8", "replace").partition(
-        _PAYLOAD_SEPARATOR
-    )
-    safe = _is_safe_segment(session_id) and _is_safe_segment(build_name)
-    if not payload_separator or not safe:
-        return None
-    return session_id, build_name
+    for build_root, snapshot in _iter_builds(Path(sessions_root)):
+        if snapshot.slug == slug:
+            return build_root
+    return None
