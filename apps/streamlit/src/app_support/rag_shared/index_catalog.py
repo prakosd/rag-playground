@@ -16,7 +16,7 @@ from pathlib import Path
 from artifact_store.naming import VECTOR_FOLDER_PREFIX
 from vector_indexer import CHROMA_SUBDIR, IndexManifest, load_manifest
 
-__all__ = ["IndexRef", "list_session_indexes"]
+__all__ = ["IndexRef", "embedding_model_of", "list_session_indexes"]
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,16 @@ def list_session_indexes(session_root: Path | str) -> list[IndexRef]:
     refs = [ref for folder in _vector_folders(root) for ref in _indexes_in(folder)]
     refs.sort(key=lambda ref: (ref.run_name, ref.vector_folder), reverse=True)
     return refs
+
+
+def embedding_model_of(ref: IndexRef) -> str:
+    """Return the index's used (or requested) embedding-model name, or ``""``."""
+    manifest = ref.manifest
+    return (
+        getattr(manifest, "embedding_model_used", "")
+        or getattr(manifest, "embedding_model_requested", "")
+        or ""
+    )
 
 
 def _vector_folders(root: Path) -> Iterable[Path]:

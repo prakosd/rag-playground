@@ -10,6 +10,7 @@ _APP_PAGES_SRC = _REPO_ROOT / "apps" / "streamlit" / "app_pages"
 _STREAMLIT_SUPPORT_SRC = _REPO_ROOT / "apps" / "streamlit" / "src" / "app_support"
 _PURE_HELPER_MODULES = frozenset(
     {
+        "build_manager.py",
         "controls.py",
         "crawl_jobs.py",
         "crawl_runtime.py",

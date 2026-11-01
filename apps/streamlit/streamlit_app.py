@@ -34,6 +34,7 @@ from app_support.app_runtime import (
     _current_crawl_runtime,
     _session_log_path,
 )
+from app_support.conversational_rag.showcase_route import maybe_render_showcase
 from app_support.crawl.form_defaults import default_form_values
 from app_support.i18n import get_strings
 from app_support.log_context import set_log_session_id
@@ -383,6 +384,10 @@ def _render_shared_styles() -> None:
 
 
 _init_state()
+# A showcase tab (?show=<signed token>) reads one build folder and renders a chat-only
+# page; it must take over before the normal browser-session bootstrap below.
+if maybe_render_showcase():
+    st.stop()
 _mount_session_storage()
 active_strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
 

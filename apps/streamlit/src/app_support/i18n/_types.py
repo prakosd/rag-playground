@@ -184,6 +184,26 @@ class Strings(TypedDict):
     CHAT_CONVERSATION_SELECT: str
     CHAT_WELCOME_DEFAULT: str
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
+    CONV_BUILD_LAUNCH_BUTTON: str
+    CONV_BUILD_LAUNCH_HELP: str
+    CONV_BUILD_CREATED_TOAST: str  # template: {name}
+    CONV_BUILDS_LABEL: str
+    CONV_BUILD_BUILT_AT: str  # template: {when}
+    CONV_BUILD_PREVIEW_HELP: str
+    CONV_BUILD_DOWNLOAD_HELP: str
+    CONV_BUILD_DELETE_HELP: str
+    CONV_BUILD_EXPORT_HELP: str
+    CONV_BUILD_LOAD_HELP: str
+    CONV_BUILD_LOAD_TITLE: str
+    CONV_BUILD_LOAD_CONFIRM: str  # template: {name}
+    CONV_BUILD_LOAD_CANCEL: str
+    CONV_BUILD_LOAD_CONFIRM_BUTTON: str
+    CONV_BUILD_LOADED_TOAST: str  # template: {name}
+    CONV_BUILD_OPEN_LABEL: str
+    CONV_BUILD_OPEN_HELP: str
+    CONV_SHOWCASE_PAGE_TITLE: str
+    CONV_SHOWCASE_UNAVAILABLE_TITLE: str
+    CONV_SHOWCASE_UNAVAILABLE_BODY: str
     CONV_ADVANCED_LABEL: str
     CONV_ADV_GROUP_HELPER: str
     CONV_ADV_GROUP_RETRIEVAL: str

@@ -1,0 +1,41 @@
+/* Launch button styling for the CCv2 showcase launcher. Mirrors Streamlit's
+ * secondary button so it sits cleanly in a build card, with a primary-coloured icon.
+ * Uses Streamlit's --st-* theme variables (they inherit into the component's shadow
+ * root) with dark-theme fallbacks. */
+
+.sc-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  margin: 0;
+  padding: 0.25rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--st-border-color, rgba(250, 250, 250, 0.2));
+  background-color: var(--st-secondary-background-color, #1a1d29);
+  color: var(--st-text-color, inherit);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.sc-launch-btn:hover,
+.sc-launch-btn:focus-visible {
+  background-color: rgba(125, 182, 255, 0.14);
+  border-color: var(--st-primary-color, #7db6ff);
+}
+
+.sc-launch-btn svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+  color: var(--st-primary-color, #7db6ff);
+}

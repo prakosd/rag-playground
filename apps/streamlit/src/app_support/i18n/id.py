@@ -268,6 +268,32 @@ STRINGS_ID: Strings = {
         "Hai! Dengan senang hati saya bantu — apa yang ingin Anda ketahui?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
+    "CONV_BUILD_LAUNCH_BUTTON": "Bangun & luncurkan",
+    "CONV_BUILD_LAUNCH_HELP": (
+        "Bekukan pengaturan, indeks, dan prompt saat ini menjadi build tersimpan, lalu buka "
+        "sebagai halaman obrolan hanya-baca yang dapat dibagikan di tab baru. Pilih indeks dulu."
+    ),
+    "CONV_BUILD_CREATED_TOAST": "Build {name} dibuat.",
+    "CONV_BUILDS_LABEL": "Build",
+    "CONV_BUILD_BUILT_AT": "Dibuat {when}",
+    "CONV_BUILD_PREVIEW_HELP": "Pratinjau berkas pengaturan build ini",
+    "CONV_BUILD_DOWNLOAD_HELP": "Unduh berkas pengaturan build ini",
+    "CONV_BUILD_DELETE_HELP": "Hapus build ini",
+    "CONV_BUILD_EXPORT_HELP": "Ekspor build ini sebagai zip bertanda tangan yang bisa diimpor ulang",
+    "CONV_BUILD_LOAD_HELP": "Muat pengaturan dan prompt build ini kembali ke kontrol di atas",
+    "CONV_BUILD_LOAD_TITLE": "Muat pengaturan build?",
+    "CONV_BUILD_LOAD_CONFIRM": (
+        "Ini menggantikan pengaturan dan templat prompt Langkah 5 saat ini dengan yang "
+        "tersimpan di {name}. Percakapan Anda saat ini tetap ada."
+    ),
+    "CONV_BUILD_LOAD_CANCEL": "Batal",
+    "CONV_BUILD_LOAD_CONFIRM_BUTTON": "Muat",
+    "CONV_BUILD_LOADED_TOAST": "Memuat pengaturan dari {name}.",
+    "CONV_BUILD_OPEN_LABEL": "Luncurkan",
+    "CONV_BUILD_OPEN_HELP": "Buka obrolan showcase build ini di tab browser baru",
+    "CONV_SHOWCASE_PAGE_TITLE": "RAG Percakapan",
+    "CONV_SHOWCASE_UNAVAILABLE_TITLE": "Showcase tidak tersedia",
+    "CONV_SHOWCASE_UNAVAILABLE_BODY": "Tautan showcase ini tidak valid atau build telah dihapus.",
     "CONV_ADVANCED_LABEL": ":material/tune: Opsi lanjutan",
     "CONV_ADV_GROUP_HELPER": ":material/smart_toy: Model bantu",
     "CONV_ADV_GROUP_RETRIEVAL": ":material/manage_search: Retrieval",

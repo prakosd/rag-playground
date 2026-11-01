@@ -15,6 +15,7 @@ __all__ = [
     "CRAWL_FOLDER_PREFIX",
     "BASIC_RAG_QA_FOLDER_PREFIX",
     "CONVERSATIONAL_RAG_FOLDER_PREFIX",
+    "RAG_BUILD_FOLDER_PREFIX",
     "SEARCH_FOLDER_PREFIX",
     "UTC_TIMESTAMP_SLUG_FORMAT",
     "VECTOR_FOLDER_PREFIX",
@@ -31,6 +32,8 @@ VECTOR_FOLDER_PREFIX = "vector_"
 SEARCH_FOLDER_PREFIX = "search_"
 BASIC_RAG_QA_FOLDER_PREFIX = "basic_rag_qa_"
 CONVERSATIONAL_RAG_FOLDER_PREFIX = "conversational_rag_"
+# Streamlit "Build & launch" showcase snapshots (app-level artifact folders).
+RAG_BUILD_FOLDER_PREFIX = "rag_build_"
 UTC_TIMESTAMP_SLUG_FORMAT = "%Y-%m-%d_%H-%M-%S"
 
 _SEQUENCE_ID_PADDING = 2

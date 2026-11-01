@@ -194,7 +194,9 @@ def conversational_token_panel_data(
 
 
 def render_conversational_token_panel(
-    strings: Strings, records: Sequence[ConversationalTurnRecord]
+    strings: Strings, records: Sequence[ConversationalTurnRecord], *, key_suffix: str = ""
 ) -> None:
     """Render the Step 5 Token usage panel aggregated over the conversation."""
-    render_token_usage_panel(strings, conversational_token_panel_data(strings, records))
+    render_token_usage_panel(
+        strings, conversational_token_panel_data(strings, records), key_suffix=key_suffix
+    )

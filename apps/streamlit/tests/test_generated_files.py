@@ -315,9 +315,11 @@ def test_import_target_name_advances_sequence_keeping_kind_and_word(tmp_path: Pa
     (tmp_path / "crawl_01_river").mkdir()
     (tmp_path / "crawl_02_lake").mkdir()
     (tmp_path / "vector_01_alpha").mkdir()
+    (tmp_path / "rag_build_01_garden").mkdir()
 
     assert import_target_name(tmp_path, "crawl_02_lake") == "crawl_03_lake"
     assert import_target_name(tmp_path, "vector_01_alpha") == "vector_02_alpha"
+    assert import_target_name(tmp_path, "rag_build_01_garden") == "rag_build_02_garden"
     assert import_target_name(tmp_path, "random_export") == "import_01_upload"
 
 

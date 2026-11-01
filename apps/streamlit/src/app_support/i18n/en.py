@@ -261,6 +261,34 @@ STRINGS_EN: Strings = {
         "Hi there! I'm happy to help — what would you like to know?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
+    "CONV_BUILD_LAUNCH_BUTTON": "Build & launch",
+    "CONV_BUILD_LAUNCH_HELP": (
+        "Freeze the current settings, index, and prompts into a saved build, then open it as a "
+        "shareable, read-only chat page in a new tab. Choose an index first."
+    ),
+    "CONV_BUILD_CREATED_TOAST": "Build {name} created.",
+    "CONV_BUILDS_LABEL": "Builds",
+    "CONV_BUILD_BUILT_AT": "Built {when}",
+    "CONV_BUILD_PREVIEW_HELP": "Preview this build's settings file",
+    "CONV_BUILD_DOWNLOAD_HELP": "Download this build's settings file",
+    "CONV_BUILD_DELETE_HELP": "Delete this build",
+    "CONV_BUILD_EXPORT_HELP": "Export this build as a signed zip you can re-import later",
+    "CONV_BUILD_LOAD_HELP": "Load this build's settings and prompts back into the controls above",
+    "CONV_BUILD_LOAD_TITLE": "Load build settings?",
+    "CONV_BUILD_LOAD_CONFIRM": (
+        "This replaces the current Step 5 settings and prompt templates with those saved in "
+        "{name}. Your current conversation is kept."
+    ),
+    "CONV_BUILD_LOAD_CANCEL": "Cancel",
+    "CONV_BUILD_LOAD_CONFIRM_BUTTON": "Load",
+    "CONV_BUILD_LOADED_TOAST": "Loaded settings from {name}.",
+    "CONV_BUILD_OPEN_LABEL": "Launch",
+    "CONV_BUILD_OPEN_HELP": "Open this build's showcase chat in a new browser tab",
+    "CONV_SHOWCASE_PAGE_TITLE": "Conversational RAG",
+    "CONV_SHOWCASE_UNAVAILABLE_TITLE": "Showcase unavailable",
+    "CONV_SHOWCASE_UNAVAILABLE_BODY": (
+        "This showcase link is invalid or the build has been removed."
+    ),
     "CONV_ADVANCED_LABEL": ":material/tune: Advanced options",
     "CONV_ADV_GROUP_HELPER": ":material/smart_toy: Helper model",
     "CONV_ADV_GROUP_RETRIEVAL": ":material/manage_search: Retrieval",

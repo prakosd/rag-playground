@@ -85,6 +85,7 @@ def render_token_usage_panel(
     data: TokenPanelData,
     *,
     extra_txn_controls: Callable[[], None] | None = None,
+    key_suffix: str = "",
 ) -> None:
     """Render the collapsible Token usage panel from prepared *data*.
 
@@ -134,13 +135,14 @@ def render_token_usage_panel(
             delta_color="off",
             icon=":material/percent:",
         )
-        _render_transaction_history(strings, data, extra_txn_controls)
+        _render_transaction_history(strings, data, extra_txn_controls, key_suffix)
 
 
 def _render_transaction_history(
     strings: Strings,
     data: TokenPanelData,
     extra_txn_controls: Callable[[], None] | None,
+    key_suffix: str = "",
 ) -> None:
     """Render the nested per-request/process token log inside the panel."""
     with st.expander(strings["BASIC_QA_TXN_PANEL_TITLE"], expanded=False):
@@ -160,6 +162,7 @@ def _render_transaction_history(
                 mime="text/csv",
                 icon=":material/download:",
                 help=strings["BASIC_QA_TXN_CSV_HELP"],
+                key=f"txn_csv{key_suffix}",
             )
         st.dataframe(rows, hide_index=True, width="stretch", lazy=True)
         _render_cost_disclaimer(strings)

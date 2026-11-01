@@ -5,7 +5,11 @@ from pathlib import Path
 from artifact_store.naming import VECTOR_FOLDER_PREFIX
 from vector_indexer.manifest import write_manifest
 
-from app_support.rag_shared.index_catalog import IndexRef, list_session_indexes
+from app_support.rag_shared.index_catalog import (
+    IndexRef,
+    embedding_model_of,
+    list_session_indexes,
+)
 
 
 def _make_index(
@@ -53,6 +57,13 @@ def test_skips_unsuccessful_or_empty_indexes(tmp_path: Path) -> None:
     _make_index(root, f"{VECTOR_FOLDER_PREFIX}2_b", "r2", chunks=0)
 
     assert list_session_indexes(root) == []
+
+
+def test_embedding_model_of_returns_used_model(tmp_path: Path) -> None:
+    root = tmp_path / "session_x"
+    root.mkdir()
+    _make_index(root, f"{VECTOR_FOLDER_PREFIX}1_a", "r1")
+    assert embedding_model_of(list_session_indexes(root)[0]) == "all-MiniLM-L6-v2"
 
 
 def test_skips_dirs_without_chroma_or_manifest(tmp_path: Path) -> None:

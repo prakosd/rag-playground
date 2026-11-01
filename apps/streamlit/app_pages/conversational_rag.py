@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from time import perf_counter
 
 import streamlit as st
@@ -39,9 +40,15 @@ from app_support.conversational_rag.conversational_prompts import (
     resolve_app_message,
     resolve_welcome_message,
 )
+from app_support.conversational_rag.conversational_rag_build_ui import (
+    apply_pending_load,
+    render_build_launch_button,
+    render_builds_list,
+)
 from app_support.conversational_rag.conversational_rag_form_ui import (
     FOLLOWUP_BUBBLE_KEY_PREFIX,
     INSPECT_BUBBLE_KEY_PREFIX,
+    ConversationalControls,
     build_conversational_config,
     render_advanced_controls,
     render_followup_bubble,
@@ -61,6 +68,7 @@ from app_support.conversational_rag.conversational_token_ui import (
 from app_support.conversational_rag.followup_cache import get_cached_chunks, replace_followups
 from app_support.focus import entered_page, focus_chat_input, scroll_message_into_view
 from app_support.i18n import answer_language_name, get_strings, localize_message
+from app_support.rag_shared.index_catalog import embedding_model_of
 from app_support.rag_shared.rag_ui import RagPageContext
 from app_support.rag_shared.resource_cache import (
     cached_aux_resolver,
@@ -75,6 +83,7 @@ _STATE_KEY = "conversational_rag_state"
 _CACHE_KEY = "conversational_rag_followup_cache"
 _PENDING_KEY = "conversational_rag_pending"
 _CONV_ID_KEY = "conversational_rag_current_id"
+_SHOWCASE_CONV_IDS_KEY = "showcase_my_conversation_ids"
 _USER_TURN_KEY_PREFIX = "conv-user-"
 _ASSISTANT_TURN_KEY_PREFIX = "conv-assistant-"
 _CHAT_INPUT_KEY = "conversational_rag_input"
@@ -280,9 +289,19 @@ def _inspect_deferred(is_latest: bool, followups_enabled: bool) -> bool:
     return is_latest and followups_enabled
 
 
-def render_page(context: RagPageContext) -> None:
-    """Render the conversational RAG page content area."""
+def render_page(
+    context: RagPageContext, *, showcase_controls: ConversationalControls | None = None
+) -> None:
+    """Render the conversational RAG page content area.
+
+    In showcase mode (*showcase_controls* set) the tuning controls, build section, and
+    Output Files are hidden and the frozen controls drive a chat-only, read-only page;
+    the conversation picker is filtered to the visitor's own conversations.
+    """
+    showcase = showcase_controls is not None
     strings = get_strings(st.session_state.get("language", context.default_language))
+    if not showcase:
+        apply_pending_load(strings, context.session_root())
     on_entry = entered_page("conversational_rag")
     st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
     st.caption(strings["CHAT_SECTION_CAPTION"])
@@ -305,19 +324,35 @@ def render_page(context: RagPageContext) -> None:
     pending = st.session_state.get(_PENDING_KEY)
     in_flight = _turn_in_flight(st.session_state)
 
-    controls = render_advanced_controls(
-        strings,
-        "conversational_rag",
-        list(context.list_indexes()),
-        context.session_root(),
-        disabled=in_flight,
-    )
+    if showcase:
+        controls = showcase_controls
+    else:
+        controls = render_advanced_controls(
+            strings,
+            "conversational_rag",
+            list(context.list_indexes()),
+            context.session_root(),
+            disabled=in_flight,
+        )
     index = controls.index
 
     records = load_conversational_rag_history(context.session_root())
     summaries = conversation_summaries(records)
+    if showcase:
+        summaries = _showcase_visible_summaries(summaries)
     _ensure_active_conversation(records, summaries)
-    _render_conversation_controls(strings, records, summaries, disabled=in_flight)
+    if showcase:
+        _register_showcase_conversation()
+    _render_conversation_controls(
+        strings,
+        records,
+        summaries,
+        controls,
+        context.session_root(),
+        st.session_state.get("language", context.default_language),
+        show_build=not showcase,
+        disabled=in_flight,
+    )
 
     turns: list[dict] = st.session_state[_TURNS_KEY]
     state: ConversationState = st.session_state[_STATE_KEY]
@@ -427,7 +462,9 @@ def render_page(context: RagPageContext) -> None:
         st.rerun()
 
     render_conversational_token_panel(strings, records)
-    context.render_downloads()
+    if not showcase:
+        render_builds_list(strings, context.session_root(), disabled=in_flight)
+        context.render_downloads()
 
     if on_entry or st.session_state.pop(_FOCUS_INPUT_KEY, False):
         focus_chat_input()
@@ -582,14 +619,34 @@ def _start_new_conversation() -> None:
     st.session_state.pop(_PENDING_KEY, None)
 
 
+def _showcase_visible_summaries(
+    summaries: list[ConversationSummary],
+) -> list[ConversationSummary]:
+    """Filter the picker to the conversations this showcase visitor started."""
+    mine = st.session_state.get(_SHOWCASE_CONV_IDS_KEY, set())
+    return [summary for summary in summaries if summary.conversation_id in mine]
+
+
+def _register_showcase_conversation() -> None:
+    """Record the active conversation as the visitor's own (keeps the picker private)."""
+    mine = st.session_state.setdefault(_SHOWCASE_CONV_IDS_KEY, set())
+    current = st.session_state.get(_CONV_ID_KEY)
+    if current:
+        mine.add(current)
+
+
 def _render_conversation_controls(
     strings,
     records: list[ConversationalTurnRecord],
     summaries: list[ConversationSummary],
+    controls: ConversationalControls,
+    session_root: Path,
+    language: str,
     *,
+    show_build: bool = True,
     disabled: bool = False,
 ) -> None:
-    """Render the New-conversation button and a picker over saved conversations."""
+    """Render the New-conversation button, the conversation picker, and Build & launch."""
     current_id = st.session_state[_CONV_ID_KEY]
     option_ids = [summary.conversation_id for summary in summaries]
     if current_id not in option_ids:
@@ -620,6 +677,8 @@ def _render_conversation_controls(
             label_visibility="collapsed",
             disabled=disabled,
         )
+        if show_build:
+            render_build_launch_button(strings, controls, session_root, language, disabled=disabled)
     if selected != current_id:
         _activate_conversation(selected, records)
         st.rerun()
@@ -663,12 +722,7 @@ def _append_history(
     elapsed: float,
 ) -> None:
     timings = answer.timings
-    manifest = index.manifest
-    embedding_model = (
-        getattr(manifest, "embedding_model_used", "")
-        or getattr(manifest, "embedding_model_requested", "")
-        or ""
-    )
+    embedding_model = embedding_model_of(index)
     record = ConversationalTurnRecord(
         timestamp_utc=datetime.now(UTC).isoformat(timespec="milliseconds"),
         index_folder=index.vector_folder,

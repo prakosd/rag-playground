@@ -26,6 +26,7 @@ from artifact_store.archives import (
 from artifact_store.naming import (
     BASIC_RAG_QA_FOLDER_PREFIX,
     CONVERSATIONAL_RAG_FOLDER_PREFIX,
+    RAG_BUILD_FOLDER_PREFIX,
     SEARCH_FOLDER_PREFIX,
     VECTOR_FOLDER_PREFIX,
     folder_name,
@@ -53,6 +54,7 @@ _CRAWL_DIR_PREFIX = CRAWL_FOLDER_PREFIX
 _VECTOR_DIR_PREFIX = VECTOR_FOLDER_PREFIX
 _SEARCH_DIR_PREFIX = SEARCH_FOLDER_PREFIX
 _BASIC_RAG_QA_DIR_PREFIX = BASIC_RAG_QA_FOLDER_PREFIX
+_RAG_BUILD_DIR_PREFIX = RAG_BUILD_FOLDER_PREFIX
 _CONVERSATIONAL_RAG_DIR_PREFIX = CONVERSATIONAL_RAG_FOLDER_PREFIX
 # Fixed per-session history folders (not timestamped runs). They get the same
 # Export + Delete controls as run folders so a user can download or clear their
@@ -282,7 +284,7 @@ def import_target_name(session_root: Path | str, top_folder: str) -> str:
     free sequence number; anything else lands under a numbered ``import_`` folder.
     """
     root = Path(session_root).resolve()
-    for prefix in (_CRAWL_DIR_PREFIX, _VECTOR_DIR_PREFIX):
+    for prefix in (_CRAWL_DIR_PREFIX, _VECTOR_DIR_PREFIX, _RAG_BUILD_DIR_PREFIX):
         if top_folder.startswith(prefix) and parse_folder_sequence(top_folder, prefix=prefix):
             suffix = top_folder[len(prefix) :].split("_", 1)
             word = suffix[1] if len(suffix) > 1 else "import"
