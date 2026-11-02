@@ -152,7 +152,7 @@ _configure_app_logging()
 _logger = get_logger("app_support.app")
 
 st.set_page_config(
-    page_title="crawl4md — Website Crawler",
+    page_title="RAG Playground ↔ Crawl · Index · Chat",
     page_icon=":material/travel_explore:",
     layout="wide",
 )

@@ -127,7 +127,7 @@ def test_showcase_page_served_at_root() -> None:
 
 
 def _seed_full_build(tmp_path: Path) -> str:
-    """Seed a full build (with a copied index) under *tmp_path*; return its slug."""
+    """Seed a build referencing a session index under *tmp_path*; return its slug."""
     from vector_indexer.manifest import write_manifest
 
     from app_support.conversational_rag.build_manager import create_build
@@ -146,7 +146,7 @@ def _seed_full_build(tmp_path: Path) -> str:
         },
     )
     snapshot = _snapshot("garden_river_stone_oak_cedar")
-    create_build(session_root, snapshot, run)
+    create_build(session_root, snapshot)
     return snapshot.slug
 
 

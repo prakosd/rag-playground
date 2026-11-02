@@ -226,16 +226,22 @@ def delete_generated_folder(session_root: Path | str, relative_path: str) -> boo
 
 
 def build_folder_zip_bytes(
-    session_root: Path | str, relative_path: str, *, signing_secret: str | None = None
+    session_root: Path | str,
+    relative_path: str,
+    *,
+    signing_secret: str | None = None,
+    extra_dirs: Mapping[str, Path] | None = None,
 ) -> bytes:
     """Return a zip archive of one session folder's full contents.
 
     Every file under *relative_path* is added recursively, nested under the
-    folder's own name so extracting the archive recreates the named folder. When
-    *signing_secret* is given, an HMAC ``.crawl4md.sig`` sidecar is added so the
-    zip can later be verified on upload. Raises ``ValueError`` when *relative_path*
-    is the session root, is not a folder, or escapes it (containment via
-    :func:`ensure_within_root`).
+    folder's own name so extracting the archive recreates the named folder.
+    *extra_dirs* maps an archive-path prefix to a source directory whose files are
+    added under that prefix too — used to re-bundle a build's referenced index so an
+    exported build stays self-contained. When *signing_secret* is given, an HMAC
+    ``.crawl4md.sig`` sidecar is added so the zip can later be verified on upload.
+    Raises ``ValueError`` when *relative_path* is the session root, is not a folder,
+    or escapes it (containment via :func:`ensure_within_root`).
     """
     root = Path(session_root).resolve()
     target = ensure_within_root(root, root / relative_path)
@@ -247,6 +253,11 @@ def build_folder_zip_bytes(
             if path.is_file() and not path.is_symlink():
                 arcname = f"{target.name}/{path.relative_to(target).as_posix()}"
                 archive.write(path, arcname)
+        for arc_prefix, source_dir in (extra_dirs or {}).items():
+            source = Path(source_dir)
+            for path in sorted(source.rglob("*")):
+                if path.is_file() and not path.is_symlink():
+                    archive.write(path, f"{arc_prefix}/{path.relative_to(source).as_posix()}")
     raw = buffer.getvalue()
     return sign_zip_bytes(raw, signing_secret) if signing_secret else raw
 

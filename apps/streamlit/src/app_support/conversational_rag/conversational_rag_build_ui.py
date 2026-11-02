@@ -21,10 +21,12 @@ from app_support.conversational_rag.build_manager import (
     BuildSnapshot,
     allocate_build_name,
     allocate_showcase_slug,
+    build_config_signature,
     build_dir,
     build_run_dir,
     create_build,
     load_build,
+    newest_build,
 )
 from app_support.conversational_rag.conversational_prompts import (
     CONVERSATIONAL_PROMPT_KEYS,
@@ -59,6 +61,7 @@ __all__ = [
     "render_build_launch_button",
     "render_build_load_dialog",
     "render_build_tree_actions",
+    "resolve_build_index",
     "snapshot_from_controls",
 ]
 
@@ -122,18 +125,17 @@ def snapshot_from_controls(
 def load_build_as_controls(build_root: Path | str) -> ConversationalControls | None:
     """Reconstruct the frozen Step 5 controls from a build, for showcase rendering.
 
-    Returns None when the build is unreadable or its copied index is missing, so the
-    caller can show a friendly error instead of a broken chat.
+    Returns None when the build is unreadable or its referenced index is missing, so
+    the caller can show a friendly error instead of a broken chat.
     """
     snapshot = load_build(build_root)
-    run_dir = build_run_dir(build_root)
-    if snapshot is None or run_dir is None:
+    if snapshot is None:
         return None
-    indexes = list_session_indexes(run_dir)
-    if not indexes:
+    index = resolve_build_index(build_root, snapshot)
+    if index is None:
         return None
     return ConversationalControls(
-        index=indexes[0],
+        index=index,
         answer_model=snapshot.answer_model,
         top_k=snapshot.top_k,
         tone=snapshot.tone,
@@ -194,6 +196,25 @@ def _matching_index(session_root: Path | str, snapshot: BuildSnapshot) -> IndexR
     return None
 
 
+def resolve_build_index(build_root: Path | str, snapshot: BuildSnapshot) -> IndexRef | None:
+    """Resolve the index a build uses.
+
+    Prefers the shared index still living in the build's owner session (the current
+    reference model — builds point at the session's index rather than copying it),
+    and falls back to an index copied inside the build for older self-contained
+    builds. Returns None when neither is present.
+    """
+    root = Path(build_root)
+    shared = _matching_index(root.parent, snapshot)
+    if shared is not None:
+        return shared
+    run_dir = build_run_dir(root)
+    if run_dir is None:
+        return None
+    copied = list_session_indexes(run_dir)
+    return copied[0] if copied else None
+
+
 def _apply_load(session_root: Path | str, snapshot: BuildSnapshot) -> None:
     """Write a build's settings + frozen prompts into the live Step 5 control state.
 
@@ -234,8 +255,19 @@ def _build_now(
     snapshot = snapshot_from_controls(
         controls, language=language, name=name, slug=slug, prompts=prompts
     )
-    create_build(session_root, snapshot, controls.index.run_dir)
+    create_build(session_root, snapshot)
     return name
+
+
+def _current_build_snapshot(
+    strings: Strings, controls: ConversationalControls, session_root: Path | str, language: str
+) -> BuildSnapshot:
+    """Freeze the live controls + prompts into a snapshot for signature comparison.
+
+    Name/slug are placeholders — ``build_config_signature`` ignores them.
+    """
+    prompts = frozen_prompt_texts(strings, session_root)
+    return snapshot_from_controls(controls, language=language, name="", slug="", prompts=prompts)
 
 
 def render_build_launch_button(
@@ -246,8 +278,19 @@ def render_build_launch_button(
     *,
     disabled: bool = False,
 ) -> None:
-    """Render the primary Build & launch button beneath the conversation picker."""
+    """Render the primary build control beneath the conversation picker.
+
+    Shows 'Launch' (re-open the most recent build) while the live settings, prompts,
+    and index still match that build, so a click can't create a duplicate; any change
+    flips it back to 'Build & launch', which freezes a new build.
+    """
     build_disabled = disabled or controls.index is None
+    latest = None if build_disabled else newest_build(session_root)
+    if latest is not None and build_config_signature(
+        _current_build_snapshot(strings, controls, session_root, language)
+    ) == build_config_signature(latest):
+        _render_relaunch_button(strings, latest, disabled=build_disabled)
+        return
     if st.button(
         strings["CONV_BUILD_LAUNCH_BUTTON"],
         icon=":material/rocket_launch:",
@@ -262,14 +305,32 @@ def render_build_launch_button(
         st.rerun()
 
 
+def _render_relaunch_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
+    """Re-open the most recent build's showcase, reusing the just-built auto-open path."""
+    if st.button(
+        strings["CONV_BUILD_RELAUNCH_BUTTON"],
+        icon=":material/rocket_launch:",
+        type="primary",
+        help=strings["CONV_BUILD_RELAUNCH_HELP"].format(name=snapshot.name),
+        disabled=disabled,
+        key="conversational_rag_build",
+    ):
+        st.session_state[_JUST_BUILT_KEY] = snapshot.name
+        st.toast(
+            strings["CONV_BUILD_RELAUNCH_TOAST"].format(name=snapshot.name),
+            icon=":material/rocket_launch:",
+        )
+        st.rerun()
+
+
 def render_build_tree_actions(
     strings: Strings, session_root: Path | str, name: str, *, disabled: bool = False
 ) -> None:
     """Render a build's actions inside its Output Files tree folder.
 
-    The run-folder tree already lists build.json, the copied index, and the showcase
-    chat history; this adds the slug caption, the Launch link, the Load/Preview/
-    Download/Export/Delete row, and the Token-usage panel built from that history.
+    The run-folder tree already lists build.json and the showcase chat history; this
+    adds the slug caption, the Launch link, the Load/Preview/Download/Export/Delete
+    row, and the Token-usage panel built from that history.
     """
     build_root = build_dir(session_root, name)
     snapshot = load_build(build_root)

@@ -137,14 +137,58 @@ def test_frozen_prompt_texts_prefers_saved_edit(tmp_path: Path) -> None:
     assert texts[WELCOME_PROMPT_KEY] == "Custom welcome"
 
 
-def test_build_now_creates_discoverable_build(tmp_path: Path) -> None:
+def test_build_now_creates_build_referencing_index(tmp_path: Path) -> None:
     controls = _controls(index=_real_index(tmp_path / "src"))
     name = build_ui._build_now(STRINGS_EN, controls, tmp_path, "EN")
     assert name.startswith("rag_build_01_")
-    assert [snapshot.name for snapshot in list_builds(tmp_path)] == [name]
+    builds = list_builds(tmp_path)
+    assert [snapshot.name for snapshot in builds] == [name]
+    assert builds[0].index_vector_folder == "vector_01_slate"
     run_dir = build_run_dir(tmp_path / name)
     assert run_dir is not None
-    assert list_session_indexes(run_dir)[0].vector_folder == "vector_01_slate"
+    # The index is referenced, not copied into the build.
+    assert list_session_indexes(run_dir) == []
+
+
+def _launch_button_script(session_dir: str, build_name: str, change_top_k: bool) -> None:
+    # Self-contained for AppTest.from_function (isolated namespace).
+    from dataclasses import replace
+    from pathlib import Path as _Path
+
+    from app_support.conversational_rag.conversational_rag_build_ui import (
+        load_build_as_controls,
+        render_build_launch_button,
+    )
+    from app_support.i18n import STRINGS_EN as _STRINGS_EN
+
+    session_root = _Path(session_dir)
+    controls = load_build_as_controls(session_root / build_name)
+    assert controls is not None
+    if change_top_k:
+        controls = replace(controls, top_k=controls.top_k + 1)
+    render_build_launch_button(_STRINGS_EN, controls, session_root, "EN")
+
+
+def test_launch_button_shows_relaunch_when_config_matches_latest_build(tmp_path: Path) -> None:
+    controls = _controls(index=_real_index(tmp_path))
+    name = build_ui._build_now(STRINGS_EN, controls, tmp_path, "EN")
+    at = AppTest.from_function(
+        _launch_button_script,
+        kwargs={"session_dir": str(tmp_path), "build_name": name, "change_top_k": False},
+    ).run()
+    assert not at.exception
+    assert at.button[0].label == STRINGS_EN["CONV_BUILD_RELAUNCH_BUTTON"]
+
+
+def test_launch_button_reverts_to_build_when_config_changes(tmp_path: Path) -> None:
+    controls = _controls(index=_real_index(tmp_path))
+    name = build_ui._build_now(STRINGS_EN, controls, tmp_path, "EN")
+    at = AppTest.from_function(
+        _launch_button_script,
+        kwargs={"session_dir": str(tmp_path), "build_name": name, "change_top_k": True},
+    ).run()
+    assert not at.exception
+    assert at.button[0].label == STRINGS_EN["CONV_BUILD_LAUNCH_BUTTON"]
 
 
 def _apply_load_script(session_dir: str, build_name: str) -> None:
@@ -204,7 +248,7 @@ def test_apply_pending_load_restores_settings_and_prompts(tmp_path: Path) -> Non
         slug="a_b_c_d_e",
         prompts={"answer": "FROZEN ANSWER"},
     )
-    create_build(tmp_path, snapshot, source.run_dir)
+    create_build(tmp_path, snapshot)
 
     at = AppTest.from_function(
         _apply_load_script,
@@ -219,7 +263,7 @@ def test_apply_pending_load_restores_settings_and_prompts(tmp_path: Path) -> Non
 
 
 def test_load_build_as_controls_reconstructs(tmp_path: Path) -> None:
-    source = _real_index(tmp_path / "src")
+    source = _real_index(tmp_path)
     snapshot = snapshot_from_controls(
         _controls(index=source, top_k=7),
         language="EN",
@@ -227,7 +271,7 @@ def test_load_build_as_controls_reconstructs(tmp_path: Path) -> None:
         slug="a_b_c_d_e",
         prompts={},
     )
-    create_build(tmp_path, snapshot, source.run_dir)
+    create_build(tmp_path, snapshot)
     controls = load_build_as_controls(tmp_path / "rag_build_01_garden")
     assert controls is not None
     assert controls.top_k == 7
@@ -237,6 +281,27 @@ def test_load_build_as_controls_reconstructs(tmp_path: Path) -> None:
 
 def test_load_build_as_controls_none_when_missing(tmp_path: Path) -> None:
     assert load_build_as_controls(tmp_path / "nope") is None
+
+
+def test_resolve_build_index_falls_back_to_copied_index(tmp_path: Path) -> None:
+    # Older self-contained build: the index is copied under the build's run dir and the
+    # owner session has no matching index, so resolution uses the copied one.
+    build_root = tmp_path / "rag_build_01_garden"
+    run_dir = build_root / "2026-10-28_10-00-00"
+    run_dir.mkdir(parents=True)
+    copied = _real_index(run_dir)
+    snapshot = snapshot_from_controls(
+        _controls(index=copied),
+        language="EN",
+        name="rag_build_01_garden",
+        slug="a_b_c_d_e",
+        prompts={},
+    )
+    (run_dir / "build.json").write_text(snapshot.to_json(), encoding="utf-8")
+
+    ref = build_ui.resolve_build_index(build_root, snapshot)
+    assert ref is not None
+    assert ref.run_dir == copied.run_dir
 
 
 def _build_actions_script(session_dir: str, name: str) -> None:
@@ -257,7 +322,7 @@ def test_render_build_tree_actions_shows_slug(tmp_path: Path) -> None:
         slug="alpha_beta_gamma_delta_epsilon",
         prompts={},
     )
-    create_build(tmp_path, snapshot, source.run_dir)
+    create_build(tmp_path, snapshot)
 
     at = AppTest.from_function(
         _build_actions_script,

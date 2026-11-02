@@ -142,7 +142,7 @@ STRINGS_ID: Strings = {
         "Cari pengetahuan di indeks Anda, susun prompt, dan hasilkan jawaban yang "
         "berlandaskan konteks."
     ),
-    "BASIC_QA_LLM_LABEL": "Model bahasa",
+    "BASIC_QA_LLM_LABEL": "Model jawaban",
     "BASIC_QA_LLM_HELP": (
         "Model bahasa yang membaca prompt dan menulis jawaban. Model cloud (☁️‣🔑) "
         "memerlukan API key di file konfigurasi — lihat README untuk cara mengaturnya. "
@@ -274,6 +274,13 @@ STRINGS_ID: Strings = {
         "sebagai halaman obrolan hanya-baca yang dapat dibagikan di tab baru. Pilih indeks dulu."
     ),
     "CONV_BUILD_CREATED_TOAST": "Build {name} dibuat.",
+    "CONV_BUILD_RELAUNCH_BUTTON": "Luncurkan",
+    "CONV_BUILD_RELAUNCH_HELP": (
+        "Buka kembali build terbaru ({name}) sebagai halaman obrolan hanya-baca yang dapat "
+        "dibagikan di tab baru. Tidak ada build baru dibuat \u2014 ubah pengaturan atau prompt "
+        "mana pun di atas untuk membuat yang baru."
+    ),
+    "CONV_BUILD_RELAUNCH_TOAST": "Meluncurkan ulang {name}.",
     "CONV_BUILD_SLUG_CAPTION": "Tautan showcase: `?show={slug}`",
     "CONV_BUILD_PREVIEW_HELP": "Pratinjau berkas pengaturan build ini",
     "CONV_BUILD_DOWNLOAD_HELP": "Unduh berkas pengaturan build ini",
@@ -775,6 +782,13 @@ STRINGS_ID: Strings = {
         "bisa dibatalkan — pastikan Anda sudah mengunduh yang ingin disimpan."
     ),
     "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Hapus folder",
+    "FILES_DELETE_BLOCKED_TITLE": "Tidak bisa menghapus indeks ini",
+    "FILES_DELETE_BLOCKED_BODY": (
+        "Vector index ini dipakai oleh {count} build dari Langkah 5. Hapus build tersebut "
+        "dulu, lalu coba lagi \u2014 menghapus indeks sekarang akan merusaknya."
+    ),
+    "FILES_DELETE_BLOCKED_ITEM": "{name} \u00b7 showcase `{slug}`",
+    "FILES_DELETE_BLOCKED_CLOSE": "Tutup",
     "FILES_UPLOAD_BUTTON": ":material/upload: Impor",
     "FILES_UPLOAD_BUTTON_HELP": "Impor zip folder yang diekspor dari aplikasi ini",
     "FILES_UPLOAD_DIALOG_TITLE": "Unggah zip folder",

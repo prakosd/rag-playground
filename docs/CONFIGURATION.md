@@ -54,7 +54,7 @@ crawl/index/RAG config models.
 | `VECTOR_INDEX_WORKERS` | `4` | Parallel embedding workers (1-8); cloud models only — local ONNX forced to 1 |
 | `VECTOR_EMBEDDING_DIMENSION` | `512` | Default embedding vector size |
 | `VECTOR_EMBEDDING_MODELS` | `all-MiniLM-L6-v2,amazon.titan-embed-text-v2:0,text-embedding-3-small` | Embedding models offered in the dropdown, in display order |
-| `VECTOR_DEFAULT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model pre-selected in the dropdown |
+| `VECTOR_DEFAULT_EMBEDDING_MODEL` | `amazon.titan-embed-text-v2:0` | Embedding model pre-selected in the dropdown. Titan is a cloud (AWS Bedrock) model and needs credentials; set `all-MiniLM-L6-v2` for an offline, no-setup default |
 | `RAG_TOP_K` | `5` | Chunks retrieved as context (Step 5 conversational) |
 | `BASIC_RAG_QA_TOP_RESULTS` | `5` | Top matches retrieved as knowledge on Step 4 (Basic RAG Q&A) |
 | `BASIC_RAG_QA_TONES` | `Neutral,Formal,Friendly,…` | Tones offered on the Step 4 and Step 5 Tone selectors (comma-separated, in order) |
@@ -89,7 +89,7 @@ crawl/index/RAG config models.
 | `CONV_RAG_PROMPT_TEMPLATE_DIR` | `apps/streamlit/config` | Directory (relative to the repo root) holding the six Step 5 default prompt files (`conversational_{answer,decompose,rerank,followups,answerability,state}_prompt.txt`). Edit them to reword a default without a code change; a per-session edit from the app's prompt editor takes precedence, and a missing/empty/invalid file falls back to the built-in library template |
 | `CONV_RAG_SESSION_TOKEN_QUOTA` | `5700000` | Per-session token budget shown on the Step 5 Token usage panel (its % Usage). Display-only; never blocks a send |
 | `CONV_RAG_SESSION_COST_QUOTA` | `1.0` | Per-session USD cost budget shown beside the Step 5 token quota. Display-only; overridable per deploy |
-| `CONV_RAG_CHAT_PANEL_HEIGHT_PX` | `660` | Height (px) of the Step 5 scrollable conversation panel. Taller shows more of the chat at once but pushes the composer and the panels below it further down |
+| `CONV_RAG_CHAT_PANEL_HEIGHT_PX` | `460` | Height (px) of the Step 5 scrollable conversation panel (also used by the launched showcase). Taller shows more of the chat at once but pushes the composer and the panels below it further down |
 | `SESSIONS_ROOT` | `outputs/streamlit_sessions` | Filesystem root for all per-session files (crawls, indexes, histories, logs). Relative paths resolve against the app's working directory; set an absolute path (e.g. a mounted volume) for a containerized/cloud deployment — see [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) |
 | `SESSION_RETENTION_DAYS` | `7` | Days an inactive browser session's files are kept before startup cleanup deletes them (loading or crawling resets the clock) |
 | `UI_DOWNLOAD_LIMIT_MB` | `500` | Largest file or folder-zip served as a download |

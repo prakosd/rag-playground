@@ -187,6 +187,9 @@ class Strings(TypedDict):
     CONV_BUILD_LAUNCH_BUTTON: str
     CONV_BUILD_LAUNCH_HELP: str
     CONV_BUILD_CREATED_TOAST: str  # template: {name}
+    CONV_BUILD_RELAUNCH_BUTTON: str
+    CONV_BUILD_RELAUNCH_HELP: str  # template: {name}
+    CONV_BUILD_RELAUNCH_TOAST: str  # template: {name}
     CONV_BUILD_SLUG_CAPTION: str  # template: {slug}
     CONV_BUILD_PREVIEW_HELP: str
     CONV_BUILD_DOWNLOAD_HELP: str
@@ -512,6 +515,10 @@ class Strings(TypedDict):
     FILES_DELETE_FOLDER_DIALOG_TITLE: str
     FILES_DELETE_FOLDER_DIALOG_BODY: str  # template: {folder}
     FILES_DELETE_FOLDER_DIALOG_CONFIRM: str
+    FILES_DELETE_BLOCKED_TITLE: str
+    FILES_DELETE_BLOCKED_BODY: str  # template: {count}
+    FILES_DELETE_BLOCKED_ITEM: str  # template: {name}, {slug}
+    FILES_DELETE_BLOCKED_CLOSE: str
     FILES_UPLOAD_BUTTON: str
     FILES_UPLOAD_BUTTON_HELP: str
     FILES_UPLOAD_DIALOG_TITLE: str

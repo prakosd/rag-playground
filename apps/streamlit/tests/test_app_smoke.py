@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.util import calc_hash
 from vector_indexer import DEFAULT_LOCAL_MODEL, EMBEDDING_MODEL_OPTIONS
 
 from app_support.pages import APP_PAGE_SPECS, DEFAULT_PAGE_ID
@@ -31,15 +32,12 @@ _EVENT_PAGE_PROCESSED = "page_processed"
 def _switch_to_page(app: AppTest, url_path: str) -> None:
     """Navigate AppTest to a callable-based ``st.navigation`` page by its url_path.
 
-    ``AppTest.switch_page()`` (streamlit >= 1.66) resolves only file-based pages via
-    their ``script_path``; ``st.Page(callable, url_path=...)`` entries expose only a
-    ``url_pathname``, so select the page hash directly. Call ``app.run()`` afterward.
+    ``AppTest.switch_page()`` resolves only file-based pages via their script_path;
+    for ``st.Page(callable, url_path=...)`` entries Streamlit derives the page hash as
+    ``calc_hash(url_path)`` (navigation/page.py ``_script_hash``), so set it directly.
+    Call ``app.run()`` afterward.
     """
-    app._page_hash = next(
-        page_hash
-        for page_hash, info in app._registered_pages.items()
-        if info.get("url_pathname") == url_path
-    )
+    app._page_hash = calc_hash(url_path)
 
 
 def _running_fake_job(session_id: str, output_base: Path) -> tuple[CrawlJob, Event, Thread]:

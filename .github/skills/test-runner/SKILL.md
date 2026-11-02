@@ -12,6 +12,15 @@ Run pytest and ruff checks, then return a structured report. Two-pass strategy: 
 
 This is the most important section.
 
+### Interpreter — use the project virtualenv
+
+Run every command below with the project's `.venv` interpreter, never bare `python`:
+`.venv/bin/python` on macOS/Linux, `.venv\Scripts\python.exe` on Windows. Plain
+`python` can resolve to a different interpreter (e.g. a conda `base`) that lacks the
+project's dependencies and fails to import the app. `dev.py` installs everything into
+`.venv`, so it is the only interpreter guaranteed to work; if `.venv` is missing, run
+`python dev.py install` first.
+
 ### Pytest user-confirmation strategy (Steps 1 & 2)
 
 Pytest runs take minutes. Run in a background terminal and ask the user to confirm when it's done:
@@ -52,7 +61,7 @@ This project has core library tests plus a separated Streamlit app test suite. V
 ### Step 1 — core pytest quick pass
 
 ```
-python -m pytest tests/ -q
+.venv/bin/python -m pytest tests/ -q
 ```
 
 Run using the **pytest user-confirmation strategy** above.
@@ -65,7 +74,7 @@ Run using the **pytest user-confirmation strategy** above.
 Only run this if Step 1 reported failures:
 
 ```
-python -m pytest tests/ --lf -v --tb=long
+.venv/bin/python -m pytest tests/ --lf -v --tb=long
 ```
 
 Run using the **pytest user-confirmation strategy** above. This re-runs only the last-failed tests with full tracebacks. Record each failure with its full traceback.
@@ -75,7 +84,7 @@ If tests still fail after Step 2, **skip Steps 3–8** and go directly to Step 9
 ### Step 3 — app pytest quick pass
 
 ```
-python -m pytest apps/streamlit/tests/ -q
+.venv/bin/python -m pytest apps/streamlit/tests/ -q
 ```
 
 Run using the **pytest user-confirmation strategy** above.
@@ -88,7 +97,7 @@ Run using the **pytest user-confirmation strategy** above.
 Only run this if Step 3 reported failures:
 
 ```
-python -m pytest apps/streamlit/tests/ --lf -v --tb=long
+.venv/bin/python -m pytest apps/streamlit/tests/ --lf -v --tb=long
 ```
 
 Run using the **pytest user-confirmation strategy** above. Record each failure with its full traceback.
@@ -100,7 +109,7 @@ If tests still fail after Step 4, **skip Steps 5–8** and go directly to Step 9
 **Only proceed if all tests passed.** If any tests failed, skip to Step 9.
 
 ```
-python -m ruff check src/ tests/
+.venv/bin/python -m ruff check src/ tests/
 ```
 
 Run using the **ruff direct strategy** above.
@@ -108,7 +117,7 @@ Run using the **ruff direct strategy** above.
 ### Step 6 — core ruff format check
 
 ```
-python -m ruff format --check src/ tests/
+.venv/bin/python -m ruff format --check src/ tests/
 ```
 
 Run using the **ruff direct strategy** above.
@@ -116,7 +125,7 @@ Run using the **ruff direct strategy** above.
 ### Step 7 — app ruff lint check
 
 ```
-python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
+.venv/bin/python -m ruff check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 ```
 
 Run using the **ruff direct strategy** above.
@@ -124,7 +133,7 @@ Run using the **ruff direct strategy** above.
 ### Step 8 — app ruff format check
 
 ```
-python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
+.venv/bin/python -m ruff format --check apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/
 ```
 
 Run using the **ruff direct strategy** above.
@@ -161,5 +170,5 @@ Run using the **ruff direct strategy** above.
 - ALWAYS wait for pytest to fully complete before starting any ruff commands
 - Only run ruff if all tests passed — if any tests failed, skip ruff and go to Step 9
 - NEVER run `python -m pytest tests/ -v` without `--lf` — the full verbose output is too large
-- ALWAYS use `python -m pytest` instead of bare `pytest` — ensures the correct environment is used
-- ALWAYS prefer `python -m ruff` instead of bare `ruff` — ensures the correct environment is used
+- ALWAYS use `.venv/bin/python -m pytest` instead of bare `pytest` or `python -m pytest` — ensures the project virtualenv is used
+- ALWAYS use `.venv/bin/python -m ruff` instead of bare `ruff` or `python -m ruff` — ensures the project virtualenv is used

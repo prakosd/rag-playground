@@ -89,3 +89,36 @@ def test_render_confirm_dialog_cancel_invokes_callback() -> None:
     next(button for button in app.button if button.key == "cancel_btn").click()
     app.run()
     assert app.session_state["confirm_outcome"] == "cancelled"
+
+
+def _render_notice() -> None:
+    # Self-contained render for AppTest.from_function (isolated namespace).
+    import streamlit as st
+
+    from app_support.dialog_ui import render_notice_dialog
+
+    def _close() -> None:
+        st.session_state["notice_outcome"] = "closed"
+
+    render_notice_dialog(
+        title="Can't delete this index",
+        body="Used by 2 builds.",
+        items=["rag_build_01_garden · showcase `a_b_c_d_e`"],
+        close_label="Close",
+        close_key="notice_close_btn",
+        on_close=_close,
+    )
+
+
+# Risk: the notice dialog must render its warning + item list, and the Close button
+# must invoke on_close. Type: unit (AppTest).
+def test_render_notice_dialog_close_invokes_callback() -> None:
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_render_notice).run()
+    assert not app.exception
+    assert any(warning.value == "Used by 2 builds." for warning in app.warning)
+    assert any("rag_build_01_garden" in markdown.value for markdown in app.markdown)
+    next(button for button in app.button if button.key == "notice_close_btn").click()
+    app.run()
+    assert app.session_state["notice_outcome"] == "closed"

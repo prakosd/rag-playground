@@ -8,6 +8,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from app_support import downloads_ui
+from app_support.conversational_rag.build_manager import BuildSnapshot, create_build
 
 
 class _State(dict):
@@ -151,3 +152,109 @@ def test_downloads_panel_renders_output_files(
     app.run(timeout=10)
 
     assert not app.exception
+
+
+def _build_snapshot(name: str, vector_folder: str) -> BuildSnapshot:
+    return BuildSnapshot(
+        schema_version=1,
+        created_at_utc="2026-10-30T00:00:00+00:00",
+        name=name,
+        slug="a_b_c_d_e",
+        language="EN",
+        answer_model="m",
+        top_k=5,
+        tone="Neutral",
+        reranker="off",
+        aux_model_id="echo",
+        decomposition_limit=1,
+        followup_show_count=0,
+        followup_drop=0.3,
+        followup_keep=0.6,
+        followup_probe_k=3,
+        answerability_chunks=2,
+        state_summary_start_turn=4,
+        state_summary_max_words=150,
+        answer_recent_turns=5,
+        plan_recent_turns=2,
+        index_vector_folder=vector_folder,
+        index_run_name="2026-10-28_10-00-00",
+        embedding_model="titan",
+        prompts={},
+    )
+
+
+# Risk: deleting a vector index that a Step 5 build still references must be blocked.
+# Type: unit.
+def test_builds_blocking_index_delete_lists_referencing_builds(tmp_path: Path) -> None:
+    create_build(tmp_path, _build_snapshot("rag_build_01_garden", "vector_01_slate"))
+    blocking = downloads_ui._builds_blocking_index_delete(tmp_path, "vector_01_slate")
+    assert [snapshot.name for snapshot in blocking] == ["rag_build_01_garden"]
+
+
+def test_builds_blocking_index_delete_empty_when_unreferenced(tmp_path: Path) -> None:
+    create_build(tmp_path, _build_snapshot("rag_build_01_garden", "vector_02_other"))
+    assert downloads_ui._builds_blocking_index_delete(tmp_path, "vector_01_slate") == []
+
+
+def test_builds_blocking_index_delete_ignores_non_vector_targets(tmp_path: Path) -> None:
+    create_build(tmp_path, _build_snapshot("rag_build_01_garden", "vector_01_slate"))
+    # Crawl runs, builds, and nested paths are never guarded.
+    assert downloads_ui._builds_blocking_index_delete(tmp_path, "crawl_01_run") == []
+    assert downloads_ui._builds_blocking_index_delete(tmp_path, "rag_build_01_garden") == []
+    assert downloads_ui._builds_blocking_index_delete(tmp_path, "vector_01_slate/2026-10-28") == []
+
+
+# Risk: exporting a build must re-bundle its shared index so the zip stays portable.
+# Type: unit.
+def test_build_index_export_dirs_maps_shared_index(tmp_path: Path) -> None:
+    from vector_indexer.manifest import write_manifest
+
+    run = tmp_path / "vector_01_slate" / "2026-10-28_10-00-00"
+    (run / "chroma").mkdir(parents=True)
+    write_manifest(
+        run,
+        {
+            "success": True,
+            "indexed_chunk_count": 5,
+            "embedding_model_used": "titan",
+            "collection_name": "c",
+        },
+    )
+    create_build(tmp_path, _build_snapshot("rag_build_01_garden", "vector_01_slate"))
+
+    dirs = downloads_ui._build_index_export_dirs(tmp_path, "rag_build_01_garden")
+
+    assert len(dirs) == 1
+    [(prefix, source)] = dirs.items()
+    assert source == run
+    assert prefix.startswith("rag_build_01_garden/")
+    assert prefix.endswith("vector_01_slate/2026-10-28_10-00-00")
+
+
+def test_build_index_export_dirs_empty_for_non_build(tmp_path: Path) -> None:
+    assert downloads_ui._build_index_export_dirs(tmp_path, "crawl_01_x") == {}
+    assert downloads_ui._build_index_export_dirs(tmp_path, "vector_01_slate") == {}
+
+
+def test_build_index_export_dirs_empty_for_old_self_contained_build(tmp_path: Path) -> None:
+    # Old build with the index copied inside it (no shared session index) — already in
+    # the zip, so there is nothing extra to re-bundle.
+    from vector_indexer.manifest import write_manifest
+
+    run_dir = tmp_path / "rag_build_01_garden" / "2026-10-28_10-00-00"
+    copied = run_dir / "vector_01_slate" / "2026-10-28_10-00-00"
+    (copied / "chroma").mkdir(parents=True)
+    write_manifest(
+        copied,
+        {
+            "success": True,
+            "indexed_chunk_count": 5,
+            "embedding_model_used": "titan",
+            "collection_name": "c",
+        },
+    )
+    (run_dir / "build.json").write_text(
+        _build_snapshot("rag_build_01_garden", "vector_01_slate").to_json(), encoding="utf-8"
+    )
+
+    assert downloads_ui._build_index_export_dirs(tmp_path, "rag_build_01_garden") == {}

@@ -2,8 +2,9 @@
 
 A "build" freezes the current Step 5 settings and all 10 prompts into a single
 ``build.json`` under a timestamped run subdir (``rag_build_<NN>_<word>/<timestamp>/``,
-mirroring ``crawl_``/``vector_``), beside a copy of the chosen index, so it can be
-launched as a read-only showcase, exported, or reloaded. This module owns the build
+mirroring ``crawl_``/``vector_``), referencing the owner session's chosen index
+rather than copying it, so it can be launched as a read-only showcase, exported, or
+reloaded. This module owns the build
 naming, the :class:`BuildSnapshot` on-disk model, discovery/deletion, and the readable
 5-word showcase slug (allocated unique, resolved by scanning builds — no signing). It
 is pure (no Streamlit) so it stays unit-testable; the UI adapter maps it to/from the
@@ -14,7 +15,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import shutil
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,13 +39,16 @@ __all__ = [
     "BuildSnapshot",
     "allocate_build_name",
     "allocate_showcase_slug",
+    "build_config_signature",
     "build_dir",
     "build_run_dir",
+    "builds_referencing_folder",
     "create_build",
     "delete_build",
     "is_build_name",
     "list_builds",
     "load_build",
+    "newest_build",
     "resolve_slug",
 ]
 
@@ -136,26 +139,20 @@ def build_dir(session_root: Path | str, name: str) -> Path:
     return ensure_within_root(root, root / name)
 
 
-def create_build(
-    session_root: Path | str,
-    snapshot: BuildSnapshot,
-    source_index_dir: Path | str,
-) -> Path:
-    """Materialize a self-contained build folder and return it (``rag_build_<NN>_<word>``).
+def create_build(session_root: Path | str, snapshot: BuildSnapshot) -> Path:
+    """Materialize a build folder and return it (``rag_build_<NN>_<word>``).
 
-    Everything lives under a single timestamped run subdir
-    (``<build>/<timestamp>/…``, mirroring ``crawl_``/``vector_``): the copied index
-    at ``<run>/<vector_folder>/<run_name>`` (so the showcase rediscovers it via
-    ``list_session_indexes``) and ``build.json``, which carries the frozen prompts
-    inline — a build is one manifest plus its index, with no separate prompt files.
+    The build is a single ``build.json`` under a timestamped run subdir
+    (``<build>/<timestamp>/build.json``, mirroring ``crawl_``/``vector_``), carrying
+    the frozen prompts inline. It does **not** copy the vector index: ``build.json``
+    records the index reference (``index_vector_folder``/``index_run_name``) and the
+    showcase resolves the shared index from the owner session (see
+    ``resolve_build_index``). Export re-bundles a copy on demand so an exported build
+    stays portable.
     """
     target = build_dir(session_root, snapshot.name)
     run_dir = ensure_within_root(target, target / format_utc_timestamp_slug())
     run_dir.mkdir(parents=True, exist_ok=True)
-    index_target = ensure_within_root(
-        run_dir, run_dir / snapshot.index_vector_folder / snapshot.index_run_name
-    )
-    shutil.copytree(source_index_dir, index_target)
     (run_dir / BUILD_MANIFEST_FILENAME).write_text(snapshot.to_json(), encoding="utf-8")
     return target
 
@@ -199,6 +196,42 @@ def list_builds(session_root: Path | str) -> list[BuildSnapshot]:
         key=lambda snapshot: sequence_sort_key(snapshot.name, prefix=RAG_BUILD_FOLDER_PREFIX)
     )
     return snapshots
+
+
+def newest_build(session_root: Path | str) -> BuildSnapshot | None:
+    """Return the session's most recent build, or None when there are none."""
+    builds = list_builds(session_root)
+    return builds[0] if builds else None
+
+
+def build_config_signature(snapshot: BuildSnapshot) -> tuple[object, ...]:
+    """Return a build's configuration identity, for change detection.
+
+    Covers every setting, the index reference, and the frozen prompts, but excludes
+    the volatile name/slug/timestamp/schema so two builds with identical settings
+    compare equal. The Step 5 control uses it to offer 'Launch' (re-open the latest
+    build) instead of silently creating a duplicate when nothing has changed.
+    """
+    data = dataclasses.asdict(snapshot)
+    for volatile in ("schema_version", "created_at_utc", "name", "slug"):
+        data.pop(volatile, None)
+    prompts = data.pop("prompts", {})
+    return (tuple(sorted(data.items())), tuple(sorted(prompts.items())))
+
+
+def builds_referencing_folder(session_root: Path | str, vector_folder: str) -> list[BuildSnapshot]:
+    """Return the session's builds that reference the vector-index *vector_folder*.
+
+    Derived by scanning each build's recorded index reference, so it is always
+    accurate: deleting a build simply drops it from the scan, with no reference file
+    to keep in sync. The delete flow uses it to block removing an index that builds
+    still point at.
+    """
+    return [
+        snapshot
+        for snapshot in list_builds(session_root)
+        if snapshot.index_vector_folder == vector_folder
+    ]
 
 
 def delete_build(session_root: Path | str, name: str) -> bool:

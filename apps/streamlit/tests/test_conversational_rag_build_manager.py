@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-from vector_indexer.manifest import write_manifest
 
 from app_support.conversational_rag import build_manager
 from app_support.conversational_rag.build_manager import (
@@ -21,7 +20,6 @@ from app_support.conversational_rag.build_manager import (
     load_build,
     resolve_slug,
 )
-from app_support.rag_shared.index_catalog import list_session_indexes
 
 
 def _snapshot(name: str = "rag_build_01_garden", **overrides: object) -> BuildSnapshot:
@@ -108,6 +106,54 @@ def test_list_builds_newest_first_and_skips_invalid(tmp_path: Path) -> None:
     assert names == ["rag_build_02_river", "rag_build_01_garden"]
 
 
+def test_newest_build_returns_most_recent(tmp_path: Path) -> None:
+    _write_build(tmp_path, _snapshot(name="rag_build_01_garden"))
+    _write_build(tmp_path, _snapshot(name="rag_build_02_river"))
+    newest = build_manager.newest_build(tmp_path)
+    assert newest is not None
+    assert newest.name == "rag_build_02_river"
+
+
+def test_newest_build_none_when_empty(tmp_path: Path) -> None:
+    assert build_manager.newest_build(tmp_path) is None
+
+
+def test_build_config_signature_ignores_name_slug_and_timestamp() -> None:
+    first = _snapshot(
+        name="rag_build_01_garden",
+        slug="a_b_c_d_e",
+        created_at_utc="2026-01-01T00:00:00+00:00",
+    )
+    second = _snapshot(
+        name="rag_build_09_river",
+        slug="v_w_x_y_z",
+        created_at_utc="2026-12-31T23:59:59+00:00",
+    )
+    assert build_manager.build_config_signature(first) == build_manager.build_config_signature(
+        second
+    )
+
+
+def test_build_config_signature_differs_on_setting_change() -> None:
+    assert build_manager.build_config_signature(
+        _snapshot()
+    ) != build_manager.build_config_signature(_snapshot(top_k=99))
+
+
+def test_build_config_signature_differs_on_index_change() -> None:
+    assert build_manager.build_config_signature(
+        _snapshot()
+    ) != build_manager.build_config_signature(_snapshot(index_vector_folder="vector_02_other"))
+
+
+def test_build_config_signature_differs_on_prompt_change() -> None:
+    assert build_manager.build_config_signature(
+        _snapshot()
+    ) != build_manager.build_config_signature(
+        _snapshot(prompts={"answer": "DIFFERENT", "welcome": "hello"})
+    )
+
+
 def test_load_build_returns_none_when_missing(tmp_path: Path) -> None:
     assert load_build(tmp_path / "nope") is None
 
@@ -149,47 +195,34 @@ def test_resolve_slug_unknown_or_empty_is_none(tmp_path: Path) -> None:
     assert resolve_slug(tmp_path, "") is None
 
 
-def _make_source_index(root: Path) -> Path:
-    run_dir = root / "vector_01_slate" / "2026-10-28_10-00-00"
-    run_dir.mkdir(parents=True)
-    (run_dir / "chroma").mkdir()
-    write_manifest(
-        run_dir,
-        {
-            "success": True,
-            "indexed_chunk_count": 5,
-            "embedding_model_used": "amazon.titan",
-            "collection_name": "crawl4md_documents",
-        },
-    )
-    return run_dir
-
-
-def test_create_build_writes_manifest_and_index_with_inline_prompts(tmp_path: Path) -> None:
-    source_index = _make_source_index(tmp_path / "src")
+def test_create_build_writes_manifest_with_inline_prompts(tmp_path: Path) -> None:
     snapshot = _snapshot(prompts={"answer": "ANSWER PROMPT", "welcome": "Hi there"})
-    target = create_build(tmp_path, snapshot, source_index)
+    target = create_build(tmp_path, snapshot)
     loaded = load_build(target)
     assert loaded is not None
     assert loaded == snapshot
     assert loaded.prompts == {"answer": "ANSWER PROMPT", "welcome": "Hi there"}
     run_dir = build_run_dir(target)
     assert run_dir is not None
-    copied = run_dir / "vector_01_slate" / "2026-10-28_10-00-00"
-    assert (copied / "chroma").is_dir()
-    assert (copied / "manifest.json").is_file()
-    # Prompts live inline in build.json, never as separate files.
-    assert not (run_dir / "conversational_rag_history").exists()
+    # The index is referenced, not copied: only build.json lives under the run dir.
+    assert (run_dir / "build.json").is_file()
+    assert not (run_dir / "vector_01_slate").exists()
 
 
-def test_create_build_index_is_discoverable(tmp_path: Path) -> None:
-    source_index = _make_source_index(tmp_path / "src")
-    target = create_build(tmp_path, _snapshot(), source_index)
-    run_dir = build_run_dir(target)
-    assert run_dir is not None
-    refs = list_session_indexes(run_dir)
-    assert [ref.run_name for ref in refs] == ["2026-10-28_10-00-00"]
-    assert refs[0].vector_folder == "vector_01_slate"
+def test_builds_referencing_folder_lists_only_matching_builds(tmp_path: Path) -> None:
+    create_build(
+        tmp_path, _snapshot(name="rag_build_01_garden", index_vector_folder="vector_01_slate")
+    )
+    create_build(
+        tmp_path, _snapshot(name="rag_build_02_river", index_vector_folder="vector_02_other")
+    )
+    names = [s.name for s in build_manager.builds_referencing_folder(tmp_path, "vector_01_slate")]
+    assert names == ["rag_build_01_garden"]
+
+
+def test_builds_referencing_folder_empty_when_none_match(tmp_path: Path) -> None:
+    create_build(tmp_path, _snapshot(index_vector_folder="vector_01_slate"))
+    assert build_manager.builds_referencing_folder(tmp_path, "vector_99_none") == []
 
 
 def test_build_run_dir_none_without_timestamp_child(tmp_path: Path) -> None:

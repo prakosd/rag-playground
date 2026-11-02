@@ -137,7 +137,7 @@ STRINGS_EN: Strings = {
     "BASIC_QA_SECTION_CAPTION": (
         "Search your index for knowledge, assemble the prompt, and generate a grounded answer."
     ),
-    "BASIC_QA_LLM_LABEL": "Language model",
+    "BASIC_QA_LLM_LABEL": "Answer model",
     "BASIC_QA_LLM_HELP": (
         "The language model that reads the prompt and writes the answer. Cloud models "
         "(☁️‣🔑) need an API key set in the config file — see the README for how to "
@@ -267,6 +267,12 @@ STRINGS_EN: Strings = {
         "shareable, read-only chat page in a new tab. Choose an index first."
     ),
     "CONV_BUILD_CREATED_TOAST": "Build {name} created.",
+    "CONV_BUILD_RELAUNCH_BUTTON": "Launch",
+    "CONV_BUILD_RELAUNCH_HELP": (
+        "Re-open the most recent build ({name}) as a shareable, read-only chat page in a new "
+        "tab. No new build is made \u2014 change any setting or prompt above to build a fresh one."
+    ),
+    "CONV_BUILD_RELAUNCH_TOAST": "Re-launching {name}.",
     "CONV_BUILD_SLUG_CAPTION": "Showcase link: `?show={slug}`",
     "CONV_BUILD_PREVIEW_HELP": "Preview this build's settings file",
     "CONV_BUILD_DOWNLOAD_HELP": "Download this build's settings file",
@@ -752,6 +758,13 @@ STRINGS_EN: Strings = {
         "make sure you've downloaded anything you want to keep first."
     ),
     "FILES_DELETE_FOLDER_DIALOG_CONFIRM": "Delete folder",
+    "FILES_DELETE_BLOCKED_TITLE": "Can't delete this index",
+    "FILES_DELETE_BLOCKED_BODY": (
+        "This vector index is used by {count} build(s) from Step 5. Delete those builds "
+        "first, then try again \u2014 removing the index now would break them."
+    ),
+    "FILES_DELETE_BLOCKED_ITEM": "{name} \u00b7 showcase `{slug}`",
+    "FILES_DELETE_BLOCKED_CLOSE": "Close",
     "FILES_UPLOAD_BUTTON": ":material/upload: Import",
     "FILES_UPLOAD_BUTTON_HELP": "Import a folder zip exported from this app",
     "FILES_UPLOAD_DIALOG_TITLE": "Upload a folder zip",

@@ -7,7 +7,7 @@ modal has the same layout, button colours, and right-docked confirm button.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import streamlit as st
 
@@ -15,6 +15,7 @@ __all__ = [
     "SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX",
     "confirm_dialog_css",
     "render_confirm_dialog",
+    "render_notice_dialog",
     "scrollable_dialog_css",
 ]
 
@@ -118,3 +119,25 @@ def render_confirm_dialog(
     with action_cols[1]:
         if st.button(confirm_label, type="secondary", icon=confirm_icon, key=confirm_key):
             on_confirm()
+
+
+def render_notice_dialog(
+    *,
+    title: str,
+    body: str,
+    close_label: str,
+    close_key: str,
+    on_close: Callable[[], None],
+    items: Sequence[str] | None = None,
+) -> None:
+    """Render a single-button notice modal inside an ``@st.dialog`` function.
+
+    Used to explain a blocked action: a title, a warning body, an optional bullet
+    list of details, and one Close button that invokes ``on_close``.
+    """
+    st.subheader(title)
+    st.warning(body)
+    if items:
+        st.markdown("\n".join(f"- {item}" for item in items))
+    if st.button(close_label, type="primary", key=close_key):
+        on_close()

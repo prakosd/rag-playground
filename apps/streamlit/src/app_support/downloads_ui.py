@@ -21,6 +21,7 @@ from typing import Any
 
 import streamlit as st
 from artifact_store.archives import verify_zip_bytes
+from artifact_store.naming import VECTOR_FOLDER_PREFIX
 
 from app_support.app_runtime import (
     _DEFAULT_LANGUAGE,
@@ -46,10 +47,21 @@ from app_support.app_runtime import (
     _session_root,
     _vector_job_active,
 )
-from app_support.conversational_rag.conversational_rag_build_ui import render_build_tree_actions
+from app_support.conversational_rag.build_manager import (
+    BuildSnapshot,
+    build_run_dir,
+    builds_referencing_folder,
+    is_build_name,
+    load_build,
+)
+from app_support.conversational_rag.conversational_rag_build_ui import (
+    render_build_tree_actions,
+    resolve_build_index,
+)
 from app_support.dialog_ui import (
     SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX,
     render_confirm_dialog,
+    render_notice_dialog,
     scrollable_dialog_css,
 )
 from app_support.focus import click_widget
@@ -218,6 +230,21 @@ def _on_delete_folder_dismiss() -> None:
     st.session_state.delete_folder_relative_path = ""
 
 
+def _builds_blocking_index_delete(
+    session_root: Path | str, relative_path: str
+) -> list[BuildSnapshot]:
+    """Return Step 5 builds referencing the vector index at *relative_path*.
+
+    Guards only a top-level vector-index folder delete; other deletes (crawl runs,
+    builds, nested paths) are never blocked. Derived by scanning the session's
+    builds, so it is always current.
+    """
+    name = relative_path.strip("/")
+    if "/" in name or not name.startswith(VECTOR_FOLDER_PREFIX):
+        return []
+    return builds_referencing_folder(session_root, name)
+
+
 @st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_delete_folder_dismiss)
 def _delete_folder_confirmation_dialog() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
@@ -229,6 +256,21 @@ def _delete_folder_confirmation_dialog() -> None:
     def _cancel() -> None:
         st.session_state.delete_folder_relative_path = ""
         st.rerun()
+
+    blocking = _builds_blocking_index_delete(_session_root(), relative_path)
+    if blocking:
+        render_notice_dialog(
+            title=strings["FILES_DELETE_BLOCKED_TITLE"],
+            body=strings["FILES_DELETE_BLOCKED_BODY"].format(count=len(blocking)),
+            items=[
+                strings["FILES_DELETE_BLOCKED_ITEM"].format(name=snapshot.name, slug=snapshot.slug)
+                for snapshot in blocking
+            ],
+            close_label=strings["FILES_DELETE_BLOCKED_CLOSE"],
+            close_key="delete_folder_blocked_close",
+            on_close=_cancel,
+        )
+        return
 
     render_confirm_dialog(
         title=strings["FILES_DELETE_FOLDER_DIALOG_TITLE"],
@@ -300,6 +342,28 @@ def _render_folder_zip_button(relative_path: str) -> None:
         st.rerun()
 
 
+def _build_index_export_dirs(session_root: Path | str, relative_path: str) -> dict[str, Path]:
+    """Map an archive prefix → the build's referenced-index source dir.
+
+    Lets a build export re-bundle a fresh copy of its shared index so the zip stays
+    self-contained and re-imports as a standalone build. Empty for non-build folders
+    and for older builds that already carry a copied index (already in the zip).
+    """
+    name = relative_path.strip("/")
+    if "/" in name or not is_build_name(name):
+        return {}
+    build_root = Path(session_root) / name
+    snapshot = load_build(build_root)
+    run_dir = build_run_dir(build_root)
+    if snapshot is None or run_dir is None:
+        return {}
+    index = resolve_build_index(build_root, snapshot)
+    if index is None or Path(index.run_dir).resolve().is_relative_to(build_root.resolve()):
+        return {}
+    arc_prefix = f"{name}/{run_dir.name}/{snapshot.index_vector_folder}/{snapshot.index_run_name}"
+    return {arc_prefix: index.run_dir}
+
+
 def _on_export_dismiss() -> None:
     st.session_state.export_folder_relative_path = ""
     st.session_state.pop("export_zip_payload", None)
@@ -326,6 +390,7 @@ def _export_folder_dialog() -> None:
                     session_folder,
                     relative_path,
                     signing_secret=get_settings().zip_signing_secret,
+                    extra_dirs=_build_index_export_dirs(session_folder, relative_path),
                 )
             except (OSError, ValueError):
                 st.error(strings["FILES_DOWNLOAD_ZIP_TOO_LARGE"].format(folder=folder_name))

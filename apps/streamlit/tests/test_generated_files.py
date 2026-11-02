@@ -387,6 +387,28 @@ def test_import_signed_zip_rejects_wrong_secret(tmp_path: Path) -> None:
     assert import_signed_zip(session, signed, "other") is None
 
 
+def test_build_folder_zip_bytes_includes_extra_dirs(tmp_path: Path) -> None:
+    # Risk: a build export must re-bundle its referenced index under the given archive
+    # prefix so the exported build stays self-contained. Type: unit.
+    session = tmp_path / "session"
+    build = session / "rag_build_01_garden"
+    build.mkdir(parents=True)
+    (build / "build.json").write_text("{}", encoding="utf-8")
+    index_src = session / "vector_01_slate" / "2026-10-28_10-00-00"
+    (index_src / "chroma").mkdir(parents=True)
+    (index_src / "chroma" / "data.bin").write_bytes(b"x")
+    (index_src / "manifest.json").write_text("{}", encoding="utf-8")
+    prefix = "rag_build_01_garden/2026-01-01_00-00-00/vector_01_slate/2026-10-28_10-00-00"
+
+    raw = build_folder_zip_bytes(session, "rag_build_01_garden", extra_dirs={prefix: index_src})
+
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        names = set(archive.namelist())
+    assert "rag_build_01_garden/build.json" in names
+    assert f"{prefix}/manifest.json" in names
+    assert f"{prefix}/chroma/data.bin" in names
+
+
 def test_import_history_zip_replaces_existing_folder(tmp_path: Path) -> None:
     source = tmp_path / "source"
     history = source / "basic_rag_qa_history"

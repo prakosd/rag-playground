@@ -27,7 +27,7 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.conv_rag_decomposition_limit == 3
     assert settings.conv_rag_max_live_turns == 30
     assert settings.conv_rag_txn_id_delimiter == "_"
-    assert settings.conv_rag_chat_panel_height_px == 660
+    assert settings.conv_rag_chat_panel_height_px == 460
     assert settings.conv_rag_followup_probe_k == 3
     assert settings.conv_rag_answerability_chunks == 2
     assert settings.conv_rag_state_summary_start_turn == 4
@@ -44,7 +44,7 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.semantic_search_default_tab == "raw"
     assert settings.vector_chunk_size == 600
     assert settings.vector_embedding_dimension == 512
-    assert settings.vector_default_embedding_model == "all-MiniLM-L6-v2"
+    assert settings.vector_default_embedding_model == "amazon.titan-embed-text-v2:0"
     assert "all-MiniLM-L6-v2" in settings.vector_embedding_models
     assert settings.crawl_timeout == 60.0
     assert settings.crawl_max_file_size_mb == 10.0

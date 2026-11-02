@@ -103,9 +103,6 @@ _SHOWCASE_WIDTH_CSS = (
     "padding-top:1rem!important}"
     "</style>"
 )
-# The showcase is chrome-less (no heading/tuning controls), so its chat panel is
-# shorter than the full Step 5 panel.
-_SHOWCASE_CHAT_PANEL_HEIGHT_PX = 460
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
 _CHAT_ALIGN_CSS = (
     "<style>"
@@ -399,9 +396,7 @@ def render_page(
     # Peek the scroll intent before the panel so a submitted turn can scroll to the
     # new question *before* the blocking stream (pinning it to the top as it streams).
     scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
-    panel_height = (
-        _SHOWCASE_CHAT_PANEL_HEIGHT_PX if showcase else get_settings().conv_rag_chat_panel_height_px
-    )
+    panel_height = get_settings().conv_rag_chat_panel_height_px
     with st.container(height=panel_height, key=_CHAT_PANEL_KEY):
         if not turns and not submitting:
             _render_welcome_bubble(strings, context.session_root(), showcase_prompts)
