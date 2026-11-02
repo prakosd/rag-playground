@@ -5,7 +5,7 @@ applyTo: ".devcontainer/**, pyproject.toml"
 
 # Dev Environment & Dependencies
 
-Dev container is defined in `.devcontainer/devcontainer.json` (Python 3.12 + Chromium via Playwright + Tesseract OCR + Streamlit app forwarding).
+Dev container is defined in `.devcontainer/devcontainer.json` (Python 3.14 + Chromium via Playwright + Tesseract OCR + Streamlit app forwarding).
 
 ## Constraints
 

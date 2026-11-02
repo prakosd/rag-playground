@@ -55,7 +55,9 @@ python dev.py run       # launch the Streamlit app at http://localhost:8501
 
 ### 1. Prerequisites
 
-- **Python 3.11+** (3.12 or 3.13 recommended).
+- **Python 3.11+** (3.14 recommended).
+- **Python 3.15 note:** current `crawl4ai` dependency chain (`fastuuid`/PyO3) does not yet build on
+  3.15, so use 3.14 for now.
 - **Tesseract OCR** — only needed to read scanned/image PDFs while crawling:
   - macOS: `brew install tesseract tesseract-lang`
   - Debian/Ubuntu: `sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa`

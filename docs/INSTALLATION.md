@@ -2,7 +2,10 @@
 
 ← Back to [README](../README.md)
 
-Requires Python 3.11+ (3.12 or 3.13 recommended).
+Requires Python 3.11+ (3.14 recommended).
+
+> Python 3.15 is not yet usable for this project because the `crawl4ai` dependency
+> chain currently pulls `fastuuid` (PyO3), which blocks 3.15 builds.
 
 ## Try the hosted demo (no install)
 
@@ -65,7 +68,7 @@ Work in an isolated virtualenv so the editable installs stay separate from any
 system or Conda environment:
 
 ```bash
-python3 -m venv .venv          # Python 3.11+ (3.12/3.13 recommended)
+python3 -m venv .venv          # Python 3.11+ (3.14 recommended)
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 ```

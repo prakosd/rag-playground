@@ -3,7 +3,7 @@
 #   docker build -t rag-playground-frontend .
 #   docker run --shm-size=2g -p 8501:8501 -v app-data:/data/sessions \
 #     -e SESSIONS_ROOT=/data/sessions rag-playground-frontend
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

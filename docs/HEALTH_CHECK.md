@@ -98,7 +98,7 @@ HTTPS `GET`; on failure it publishes to an SNS topic that emails you.
 ### 2. Create the Lambda function
 
 1. Open **AWS Lambda → Create function**. Author from scratch, runtime
-   **Python 3.13**, name e.g. `rag-playground-health-check`.
+   **Python 3.14**, name e.g. `rag-playground-health-check`.
 2. Under **Configuration → Environment variables**, add:
    - `HEALTH_URL` = `https://rag-playground-prakosd.streamlit.app/_stcore/health`
    - `SNS_TOPIC_ARN` = the ARN from step 1.
