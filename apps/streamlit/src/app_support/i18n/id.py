@@ -281,10 +281,10 @@ STRINGS_ID: Strings = {
         "mana pun di atas untuk membuat yang baru."
     ),
     "CONV_BUILD_RELAUNCH_TOAST": "Meluncurkan ulang {name}.",
-    "CONV_BUILD_SLUG_CAPTION": "Tautan showcase: `?show={slug}`",
-    "CONV_BUILD_PREVIEW_HELP": "Pratinjau berkas pengaturan build ini",
-    "CONV_BUILD_DOWNLOAD_HELP": "Unduh berkas pengaturan build ini",
-    "CONV_BUILD_DELETE_HELP": "Hapus build ini",
+    "CONV_BUILD_DELETE_BUTTON": "Hapus build ini",
+    "CONV_BUILD_DELETE_HELP": (
+        "Hapus build ini beserta tautan showcase-nya (indeks vektor bersama tetap disimpan)."
+    ),
     "CONV_BUILD_EXPORT_HELP": "Ekspor build ini sebagai zip bertanda tangan yang bisa diimpor ulang",
     "CONV_BUILD_LOAD_HELP": "Muat pengaturan dan prompt build ini kembali ke kontrol di atas",
     "CONV_BUILD_LOAD_TITLE": "Muat pengaturan build?",

@@ -190,9 +190,7 @@ class Strings(TypedDict):
     CONV_BUILD_RELAUNCH_BUTTON: str
     CONV_BUILD_RELAUNCH_HELP: str  # template: {name}
     CONV_BUILD_RELAUNCH_TOAST: str  # template: {name}
-    CONV_BUILD_SLUG_CAPTION: str  # template: {slug}
-    CONV_BUILD_PREVIEW_HELP: str
-    CONV_BUILD_DOWNLOAD_HELP: str
+    CONV_BUILD_DELETE_BUTTON: str
     CONV_BUILD_DELETE_HELP: str
     CONV_BUILD_EXPORT_HELP: str
     CONV_BUILD_LOAD_HELP: str

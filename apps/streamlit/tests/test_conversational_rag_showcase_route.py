@@ -191,6 +191,7 @@ def test_showcase_inspect_and_token_opt_in_via_query_params(
         showcase_controls: ConversationalControls,
         show_token_panel: bool,
         showcase_prompts: object = None,
+        showcase_slug: object = None,
     ) -> None:
         captured["inspect"] = showcase_controls.inspect
         captured["show_token_panel"] = show_token_panel

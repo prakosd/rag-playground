@@ -3,7 +3,7 @@
 A "build" freezes the current Conversational RAG settings and all 10 prompts into a
 single ``build.json`` that can be relaunched as a read-only showcase. This module maps
 the live controls to a :class:`BuildSnapshot`, freezes the effective prompts, and
-renders each build's actions (Launch/Load/Preview/Download/Export/Delete + Token usage)
+renders each build's actions (Launch/Load/Export/Delete + Token usage)
 inside its Output Files tree folder. The pure mapping helpers are unit-tested; the
 ``render_*`` functions are thin Streamlit wrappers that reuse the shared file dialogs.
 """
@@ -16,7 +16,6 @@ from pathlib import Path
 import streamlit as st
 
 from app_support.conversational_rag.build_manager import (
-    BUILD_MANIFEST_FILENAME,
     SCHEMA_VERSION,
     BuildSnapshot,
     allocate_build_name,
@@ -328,9 +327,9 @@ def render_build_tree_actions(
 ) -> None:
     """Render a build's actions inside its Output Files tree folder.
 
-    The run-folder tree already lists build.json and the showcase chat history; this
-    adds the slug caption, the Launch link, the Load/Preview/Download/Export/Delete
-    row, and the Token-usage panel built from that history.
+    The run-folder tree already lists build.json (with its own preview/download) and
+    the showcase chat history; this adds the Launch link, the Load/Export/Delete row,
+    and the Token-usage panel built from that history.
     """
     build_root = build_dir(session_root, name)
     snapshot = load_build(build_root)
@@ -341,12 +340,9 @@ def render_build_tree_actions(
     just_built = st.session_state.get(_JUST_BUILT_KEY) == name
     if just_built:
         st.session_state.pop(_JUST_BUILT_KEY, None)
-    st.caption(strings["CONV_BUILD_SLUG_CAPTION"].format(slug=snapshot.slug))
-    _launch_button(strings, snapshot, auto_open=just_built)
     with st.container(horizontal=True, vertical_alignment="center", gap="xxsmall"):
+        _launch_button(strings, snapshot, auto_open=just_built)
         _load_button(strings, snapshot, disabled=disabled)
-        _preview_button(strings, snapshot, run_dir.name, disabled=disabled)
-        _download_button(strings, snapshot, run_dir, disabled=disabled)
         _export_button(strings, snapshot, disabled=disabled)
         _delete_button(strings, snapshot, disabled=disabled)
     records = load_conversational_rag_history(run_dir)
@@ -354,45 +350,10 @@ def render_build_tree_actions(
         render_conversational_token_panel(strings, records, key_suffix=f"_{snapshot.name}")
 
 
-def _preview_button(
-    strings: Strings, snapshot: BuildSnapshot, run_dir_name: str, *, disabled: bool
-) -> None:
-    if st.button(
-        "",
-        icon=":material/visibility:",
-        help=strings["CONV_BUILD_PREVIEW_HELP"],
-        disabled=disabled,
-        key=f"build_preview_{snapshot.name}",
-    ):
-        st.session_state.preview_file_relative_path = (
-            f"{snapshot.name}/{run_dir_name}/{BUILD_MANIFEST_FILENAME}"
-        )
-        st.rerun()
-
-
-def _download_button(
-    strings: Strings, snapshot: BuildSnapshot, run_dir: Path, *, disabled: bool
-) -> None:
-    try:
-        data = (run_dir / BUILD_MANIFEST_FILENAME).read_bytes()
-    except OSError:
-        return
-    st.download_button(
-        "",
-        data=data,
-        file_name=f"{snapshot.name}.json",
-        mime="application/json",
-        icon=":material/download:",
-        help=strings["CONV_BUILD_DOWNLOAD_HELP"],
-        disabled=disabled,
-        key=f"build_download_{snapshot.name}",
-    )
-
-
 def _delete_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
     if st.button(
-        "",
-        icon=":material/delete:",
+        strings["CONV_BUILD_DELETE_BUTTON"],
+        icon=":material/delete_forever:",
         help=strings["CONV_BUILD_DELETE_HELP"],
         disabled=disabled,
         key=f"build_delete_{snapshot.name}",
@@ -403,8 +364,8 @@ def _delete_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool)
 
 def _export_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
     if st.button(
-        "",
-        icon=":material/archive:",
+        strings["FILES_DOWNLOAD_ZIP_BUTTON"],
+        width="content",
         help=strings["CONV_BUILD_EXPORT_HELP"],
         disabled=disabled,
         key=f"build_export_{snapshot.name}",
@@ -418,7 +379,7 @@ def _export_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool)
 def _load_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
     if st.button(
         "",
-        icon=":material/upload:",
+        icon=":material/settings_backup_restore:",
         help=strings["CONV_BUILD_LOAD_HELP"],
         disabled=disabled,
         key=f"build_load_{snapshot.name}",

@@ -9,6 +9,7 @@ from pytest import MonkeyPatch
 from rag_engine import ConversationalAnswer
 from rag_engine import messages as rag_messages
 
+from app_support.conversational_rag.conversation_manager import ConversationSummary
 from app_support.conversational_rag.conversational_rag_history import ConversationalTurnRecord
 
 _APP_DIR = Path(__file__).resolve().parents[1]
@@ -155,3 +156,96 @@ def test_inspect_deferred_only_for_latest_with_followups(monkeypatch: MonkeyPatc
     assert page._inspect_deferred(is_latest=True, followups_enabled=False) is False
     assert page._inspect_deferred(is_latest=False, followups_enabled=True) is False
     assert page._inspect_deferred(is_latest=False, followups_enabled=False) is False
+
+
+def test_showcase_visible_summaries_filters_to_owned(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    # A showcase visitor sees only the conversations they started (privacy boundary).
+    monkeypatch.setattr(page.st, "session_state", {page._SHOWCASE_CONV_IDS_KEY: {"mine1", "mine2"}})
+    summaries = [
+        ConversationSummary("mine1", "My first", 2, "2026-09-01T10:00:00+00:00"),
+        ConversationSummary("other", "Not mine", 1, "2026-09-01T11:00:00+00:00"),
+        ConversationSummary("mine2", "My second", 3, "2026-09-01T12:00:00+00:00"),
+    ]
+
+    visible = page._showcase_visible_summaries(summaries)
+
+    assert [summary.conversation_id for summary in visible] == ["mine1", "mine2"]
+
+
+def test_register_showcase_conversation_marks_active_as_owned(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {page._CONV_ID_KEY: "abc123"}
+    monkeypatch.setattr(page.st, "session_state", state)
+
+    page._register_showcase_conversation()
+
+    assert state[page._SHOWCASE_CONV_IDS_KEY] == {"abc123"}
+
+
+def test_register_showcase_conversation_ignores_empty_active(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {page._CONV_ID_KEY: ""}
+    monkeypatch.setattr(page.st, "session_state", state)
+
+    page._register_showcase_conversation()
+
+    assert state[page._SHOWCASE_CONV_IDS_KEY] == set()
+
+
+def test_sync_showcase_conversations_hydrates_and_persists(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {page._CONV_ID_KEY: "abc123"}
+    monkeypatch.setattr(page.st, "session_state", state)
+    captured: dict[str, object] = {}
+
+    def _fake_sync(slug: str, pending: list[str]) -> list[str]:
+        captured["slug"] = slug
+        captured["pending"] = pending
+        return ["stored1", "abc123"]
+
+    monkeypatch.setattr(page, "sync_showcase_conversation_ids", _fake_sync)
+    records = [_record("abc123", "2026-09-01T10:00:00.000+00:00", "q")]
+
+    page._sync_showcase_conversations("slug_one", records)
+
+    # The active conversation has a saved turn, so it is offered for persistence,
+    assert captured == {"slug": "slug_one", "pending": ["abc123"]}
+    # and the stored ids hydrate the visitor's private picker set.
+    assert state[page._SHOWCASE_CONV_IDS_KEY] == {"stored1", "abc123"}
+
+
+def test_sync_showcase_conversations_skips_unsaved_active_id(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {page._CONV_ID_KEY: "fresh1"}
+    monkeypatch.setattr(page.st, "session_state", state)
+    captured: dict[str, object] = {}
+
+    def _fake_sync(slug: str, pending: list[str]) -> list[str]:
+        captured["pending"] = pending
+        return ["stored1"]
+
+    monkeypatch.setattr(page, "sync_showcase_conversation_ids", _fake_sync)
+
+    # No saved turn yet for the active conversation, so it is not persisted.
+    page._sync_showcase_conversations("slug_one", [])
+
+    assert captured["pending"] == []
+    assert state[page._SHOWCASE_CONV_IDS_KEY] == {"stored1"}
+
+
+def test_sync_showcase_conversations_noop_without_slug(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {}
+    monkeypatch.setattr(page.st, "session_state", state)
+    calls: list[object] = []
+    monkeypatch.setattr(
+        page, "sync_showcase_conversation_ids", lambda *args: calls.append(args) or []
+    )
+
+    page._sync_showcase_conversations("", [])
+    page._sync_showcase_conversations(None, [])
+
+    # No slug means no bridge call and no storage-key write.
+    assert calls == []
+    assert page._SHOWCASE_CONV_IDS_KEY not in state

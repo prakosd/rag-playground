@@ -67,6 +67,9 @@ from app_support.conversational_rag.conversational_token_ui import (
     render_conversational_token_panel,
 )
 from app_support.conversational_rag.followup_cache import get_cached_chunks, replace_followups
+from app_support.conversational_rag.showcase_conversation_storage import (
+    sync_showcase_conversation_ids,
+)
 from app_support.focus import entered_page, focus_chat_input, scroll_message_into_view
 from app_support.i18n import answer_language_name, get_strings, localize_message
 from app_support.rag_shared.index_catalog import embedding_model_of
@@ -94,13 +97,14 @@ _SCROLL_REQUESTED_KEY = "conversational_rag_scroll_bottom"
 _FOCUS_INPUT_KEY = "conversational_rag_focus_input"
 _INPUT_DOCK_KEY = "conversational_rag_input_dock"
 # The showcase renders outside the shell, so mirror the shell's content max-width
-# (streamlit_app._render_shared_styles) to match Steps 1-5, and trim the top padding
-# so the chrome-less chat sits near the top.
+# (streamlit_app._render_shared_styles) to match Steps 1-5, and set the top padding
+# to clear Streamlit's ~60px toolbar so the first row (New conversation + picker) is
+# not hidden behind it, while keeping the chrome-less chat near the top.
 _SHOWCASE_WIDTH_CSS = (
     "<style>"
     'div[data-testid="stMainBlockContainer"],section.main .block-container'
     f"{{max-width:{_FORM_MAX_WIDTH_PX}px!important;margin-left:auto;margin-right:auto;"
-    "padding-top:1rem!important}"
+    "padding-top:3.5rem!important}"
     "</style>"
 )
 # Right-align the user's chat bubbles (messenger style); the assistant stays left.
@@ -307,6 +311,7 @@ def render_page(
     showcase_controls: ConversationalControls | None = None,
     show_token_panel: bool = True,
     showcase_prompts: Mapping[str, str] | None = None,
+    showcase_slug: str | None = None,
 ) -> None:
     """Render the conversational RAG page content area.
 
@@ -319,6 +324,8 @@ def render_page(
     opt-in (``?inspect``) via the frozen controls' ``inspect``, set by the route.
     *showcase_prompts* injects a launched build's frozen prompts (6 model + app
     messages) so the showcase reproduces them without any prompt files on disk.
+    *showcase_slug* scopes the visitor's conversation ids persisted in browser
+    localStorage so the New-conversation button and picker survive a reload.
     """
     showcase = showcase_controls is not None
     strings = get_strings(st.session_state.get("language", context.default_language))
@@ -364,6 +371,7 @@ def render_page(
     records = load_conversational_rag_history(context.session_root())
     summaries = conversation_summaries(records)
     if showcase:
+        _sync_showcase_conversations(showcase_slug, records)
         summaries = _showcase_visible_summaries(summaries)
     _ensure_active_conversation(records, summaries)
     if showcase:
@@ -665,6 +673,23 @@ def _showcase_visible_summaries(
     """Filter the picker to the conversations this showcase visitor started."""
     mine = st.session_state.get(_SHOWCASE_CONV_IDS_KEY, set())
     return [summary for summary in summaries if summary.conversation_id in mine]
+
+
+def _sync_showcase_conversations(slug: str | None, records: list[ConversationalTurnRecord]) -> None:
+    """Mirror the visitor's conversation ids to/from browser storage (per showcase link).
+
+    Hydrates the private picker set from localStorage so a visitor's own conversations
+    survive a reload, like session ids do. A conversation is persisted only once it has
+    a saved turn, so empty, abandoned ones never accumulate.
+    """
+    if not slug:
+        return
+    mine = st.session_state.setdefault(_SHOWCASE_CONV_IDS_KEY, set())
+    active = str(st.session_state.get(_CONV_ID_KEY, ""))
+    saved_ids = {record.conversation_id for record in records if record.conversation_id}
+    pending = [active] if active in saved_ids else []
+    stored = sync_showcase_conversation_ids(slug, pending)
+    st.session_state[_SHOWCASE_CONV_IDS_KEY] = set(stored) | mine
 
 
 def _register_showcase_conversation() -> None:

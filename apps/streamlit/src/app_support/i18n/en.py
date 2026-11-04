@@ -273,10 +273,10 @@ STRINGS_EN: Strings = {
         "tab. No new build is made \u2014 change any setting or prompt above to build a fresh one."
     ),
     "CONV_BUILD_RELAUNCH_TOAST": "Re-launching {name}.",
-    "CONV_BUILD_SLUG_CAPTION": "Showcase link: `?show={slug}`",
-    "CONV_BUILD_PREVIEW_HELP": "Preview this build's settings file",
-    "CONV_BUILD_DOWNLOAD_HELP": "Download this build's settings file",
-    "CONV_BUILD_DELETE_HELP": "Delete this build",
+    "CONV_BUILD_DELETE_BUTTON": "Delete this build",
+    "CONV_BUILD_DELETE_HELP": (
+        "Delete this build and its showcase link (the shared vector index is kept)."
+    ),
     "CONV_BUILD_EXPORT_HELP": "Export this build as a signed zip you can re-import later",
     "CONV_BUILD_LOAD_HELP": "Load this build's settings and prompts back into the controls above",
     "CONV_BUILD_LOAD_TITLE": "Load build settings?",

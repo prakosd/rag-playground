@@ -313,7 +313,7 @@ def _build_actions_script(session_dir: str, name: str) -> None:
     render_build_tree_actions(_STRINGS_EN, _Path(session_dir), name)
 
 
-def test_render_build_tree_actions_shows_slug(tmp_path: Path) -> None:
+def test_render_build_tree_actions_renders_action_row(tmp_path: Path) -> None:
     source = _real_index(tmp_path / "src")
     snapshot = snapshot_from_controls(
         _controls(index=source),
@@ -330,4 +330,8 @@ def test_render_build_tree_actions_shows_slug(tmp_path: Path) -> None:
     ).run()
 
     assert not at.exception
-    assert any("alpha_beta_gamma_delta_epsilon" in caption.value for caption in at.caption)
+    # The redundant slug caption was removed (the tree already lists build.json).
+    assert not any("alpha_beta_gamma_delta_epsilon" in caption.value for caption in at.caption)
+    labels = [button.label for button in at.button]
+    assert any("Export" in label for label in labels)
+    assert any("Delete this build" in label for label in labels)

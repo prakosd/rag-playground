@@ -88,6 +88,7 @@ def _showcase_render_fn(slug: str) -> Callable[[], None]:
         showcase_controls=controls,
         show_token_panel=show_token_panel,
         showcase_prompts=snapshot.prompts,
+        showcase_slug=slug,
     )
 
 
