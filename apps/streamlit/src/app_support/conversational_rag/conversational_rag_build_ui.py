@@ -3,7 +3,7 @@
 A "build" freezes the current Conversational RAG settings and all 10 prompts into a
 single ``build.json`` that can be relaunched as a read-only showcase. This module maps
 the live controls to a :class:`BuildSnapshot`, freezes the effective prompts, and
-renders each build's actions (Launch/Load/Export/Delete + Token usage)
+renders each build's actions (Export/Launch/Load/Delete + Token usage)
 inside its Output Files tree folder. The pure mapping helpers are unit-tested; the
 ``render_*`` functions are thin Streamlit wrappers that reuse the shared file dialogs.
 """
@@ -328,8 +328,9 @@ def render_build_tree_actions(
     """Render a build's actions inside its Output Files tree folder.
 
     The run-folder tree already lists build.json (with its own preview/download) and
-    the showcase chat history; this adds the Launch link, the Load/Export/Delete row,
-    and the Token-usage panel built from that history.
+    the showcase chat history; this adds the Token-usage panel built from that history
+    (above the actions, next to the content it summarizes) and the
+    Export/Launch/Load/Rename/Delete action row.
     """
     build_root = build_dir(session_root, name)
     snapshot = load_build(build_root)
@@ -340,23 +341,39 @@ def render_build_tree_actions(
     just_built = st.session_state.get(_JUST_BUILT_KEY) == name
     if just_built:
         st.session_state.pop(_JUST_BUILT_KEY, None)
-    with st.container(horizontal=True, vertical_alignment="center", gap="xxsmall"):
-        _launch_button(strings, snapshot, auto_open=just_built)
-        _load_button(strings, snapshot, disabled=disabled)
-        _export_button(strings, snapshot, disabled=disabled)
-        _delete_button(strings, snapshot, disabled=disabled)
     records = load_conversational_rag_history(run_dir)
     if records:
         render_conversational_token_panel(strings, records, key_suffix=f"_{snapshot.name}")
+    with st.container(horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"):
+        _export_button(strings, snapshot, disabled=disabled)
+        _launch_button(strings, snapshot, auto_open=just_built)
+        _load_button(strings, snapshot, disabled=disabled)
+        _rename_button(strings, snapshot, disabled=disabled)
+        _delete_button(strings, snapshot, disabled=disabled)
+
+
+def _rename_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
+    if st.button(
+        strings["FILES_RENAME_FOLDER_BUTTON"],
+        icon=":material/edit:",
+        help=strings["FILES_RENAME_FOLDER_HELP"].format(folder=snapshot.name),
+        disabled=disabled,
+        key=f"rename_folder_build_{snapshot.name}",
+    ):
+        # The shared rename dialog (downloads_ui) resets + auto-selects on a fresh open,
+        # so setting the path is enough; build folders route through rename_build there.
+        st.session_state.rename_folder_relative_path = snapshot.name
+        st.rerun()
 
 
 def _delete_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
     if st.button(
-        strings["CONV_BUILD_DELETE_BUTTON"],
+        strings["FILES_DELETE_FOLDER_BUTTON"],
         icon=":material/delete_forever:",
         help=strings["CONV_BUILD_DELETE_HELP"],
         disabled=disabled,
-        key=f"build_delete_{snapshot.name}",
+        # The delete_folder_ key prefix inherits the shared red styling (downloads_ui).
+        key=f"delete_folder_build_{snapshot.name}",
     ):
         st.session_state.delete_folder_relative_path = snapshot.name
         st.rerun()
@@ -378,7 +395,7 @@ def _export_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool)
 
 def _load_button(strings: Strings, snapshot: BuildSnapshot, *, disabled: bool) -> None:
     if st.button(
-        "",
+        strings["CONV_BUILD_LOAD_LABEL"],
         icon=":material/settings_backup_restore:",
         help=strings["CONV_BUILD_LOAD_HELP"],
         disabled=disabled,
@@ -422,7 +439,7 @@ def render_build_load_dialog(strings: Strings, session_root: Path | str) -> None
 
 def _launch_button(strings: Strings, snapshot: BuildSnapshot, *, auto_open: bool) -> None:
     render_launch_button(
-        f"?show={snapshot.slug}",
+        f"?showcase={snapshot.slug}",
         label=strings["CONV_BUILD_OPEN_LABEL"],
         help=strings["CONV_BUILD_OPEN_HELP"],
         key=f"build_launch_{snapshot.name}",

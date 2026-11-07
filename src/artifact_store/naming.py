@@ -25,6 +25,7 @@ __all__ = [
     "parse_folder_sequence",
     "parse_utc_timestamp_slug",
     "sequence_sort_key",
+    "split_sequence_label",
 ]
 
 CRAWL_FOLDER_PREFIX = "crawl_"
@@ -82,6 +83,26 @@ def sequence_sort_key(folder: str, *, prefix: str = CRAWL_FOLDER_PREFIX) -> tupl
     if sequence is None:
         return (1, 0, folder.lower())
     return (0, -sequence, folder.lower())
+
+
+def split_sequence_label(
+    folder: str, *, prefix: str = CRAWL_FOLDER_PREFIX
+) -> tuple[str, str] | None:
+    """Split ``<prefix>NN_label`` into its locked ``<prefix>NN_`` part and the label.
+
+    Returns ``None`` when *folder* is not a numbered run folder under *prefix*, so a
+    caller must not treat it as renamable. The locked part keeps the prefix *and* the
+    sequence number — the folder icon, collapsed label, and sort order all depend on
+    them — so only the trailing label is safe to change.
+    """
+    if parse_folder_sequence(folder, prefix=prefix) is None:
+        return None
+    match = _sequence_pattern(prefix).fullmatch(folder)
+    if match is None or match.group("rest") is None:
+        return None
+    label = match.group("rest")
+    locked = folder[: len(folder) - len(label)]
+    return locked, label
 
 
 def format_utc_timestamp_slug(value: datetime | None = None) -> str:

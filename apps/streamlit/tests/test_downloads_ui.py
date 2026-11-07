@@ -258,3 +258,262 @@ def test_build_index_export_dirs_empty_for_old_self_contained_build(tmp_path: Pa
     )
 
     assert downloads_ui._build_index_export_dirs(tmp_path, "rag_build_01_garden") == {}
+
+
+def _render_rename_dialog_view(rename_path: str) -> None:
+    # Self-contained render for AppTest with the rename dialog primed to open.
+    import streamlit as st
+
+    from app_support import downloads_ui as ui
+
+    defaults = {
+        "session_id": "s1",
+        "job": None,
+        "job_state": "idle",
+        "vector_index_job": None,
+        "vector_index_state": "idle",
+        "language": "EN",
+        "active_output_dir": "",
+        "preview_file_relative_path": "",
+        "delete_folder_relative_path": "",
+        "export_folder_relative_path": "",
+        "rename_folder_relative_path": rename_path,
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+    ui._render_downloads()
+
+
+def _render_delete_dialog_view(delete_path: str) -> None:
+    # Self-contained render for AppTest with the delete-folder dialog primed to open.
+    import streamlit as st
+
+    from app_support import downloads_ui as ui
+
+    defaults = {
+        "session_id": "s1",
+        "job": None,
+        "job_state": "idle",
+        "vector_index_job": None,
+        "vector_index_state": "idle",
+        "language": "EN",
+        "active_output_dir": "",
+        "preview_file_relative_path": "",
+        "delete_folder_relative_path": delete_path,
+        "export_folder_relative_path": "",
+        "rename_folder_relative_path": "",
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+    ui._render_downloads()
+
+
+def test_delete_blocked_close_button_avoids_red_delete_key_prefix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Regression: the red-delete CSS matches any "st-key-delete_folder_*" key, so the
+    # blocked-index notice's primary Close button must use a key without that prefix
+    # (otherwise its text renders dark-red-on-red and is unreadable).
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "vector_01_slate").mkdir(parents=True)
+    monkeypatch.setattr(
+        downloads_ui,
+        "_builds_blocking_index_delete",
+        lambda *_: [SimpleNamespace(name="rag_build_01_garden", slug="a_b_c_d_e")],
+    )
+
+    app = AppTest.from_function(
+        _render_delete_dialog_view, kwargs={"delete_path": "vector_01_slate"}
+    )
+    app.run(timeout=10)
+
+    assert not app.exception
+    assert any("Can't delete this index" in block.value for block in app.subheader)
+    close_buttons = [button for button in app.button if button.label == "Close"]
+    assert close_buttons
+    assert all(not button.key.startswith("delete_folder_") for button in close_buttons)
+
+
+def test_folder_rename_button_shown_before_delete_for_run_folder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    final_dir = (
+        tmp_path
+        / "outputs"
+        / "streamlit_sessions"
+        / "session_s1"
+        / "crawl_01_garden"
+        / "2026-07-01_09-00-00"
+        / "final"
+    )
+    final_dir.mkdir(parents=True)
+    (final_dir / "sorted_success_content_001.md").write_text("# hi", encoding="utf-8")
+
+    app = AppTest.from_function(_render_rename_dialog_view, kwargs={"rename_path": ""})
+    app.run(timeout=10)
+
+    assert not app.exception
+    keys = [button.key for button in app.button if button.key]
+    rename_keys = [key for key in keys if key.startswith("rename_folder_s1_crawl_01_garden")]
+    delete_keys = [key for key in keys if key.startswith("delete_folder_s1_crawl_01_garden")]
+    assert rename_keys and delete_keys
+    # Rename sits to the left of Delete in the action row.
+    assert keys.index(rename_keys[0]) < keys.index(delete_keys[0])
+
+
+def test_rename_dialog_renders_prefilled_input(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "crawl_01_garden" / "2026-07-01_09-00-00").mkdir(parents=True)
+
+    app = AppTest.from_function(
+        _render_rename_dialog_view, kwargs={"rename_path": "crawl_01_garden"}
+    )
+    app.run(timeout=10)
+
+    assert not app.exception
+    # The dialog prefills the editable label (the part after the locked crawl_01_ prefix).
+    assert any(widget.value == "garden" for widget in app.text_input)
+    # The locked prefix shows inline before the field (no explanatory caption anymore).
+    assert any("crawl_01_" in md.value for md in app.markdown)
+    assert not any("part stays" in md.value for md in app.markdown)
+    # Confirm button is labelled "Confirm" and is not stretched (delete-style right-dock).
+    confirm = next(b for b in app.button if b.key == "rename_folder_confirm_button")
+    assert confirm.label == "Confirm"
+    assert any("align-items: flex-end" in md.value for md in app.markdown)
+
+
+def test_rename_dialog_blocks_referenced_index(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "vector_01_slate").mkdir(parents=True)
+    # Stub the shared block check (its real logic is covered by the _builds_blocking_* tests)
+    # so the tree needs no build folder — which would pull in the CCv2 launch component.
+    monkeypatch.setattr(
+        downloads_ui,
+        "_builds_blocking_index_delete",
+        lambda *_: [SimpleNamespace(name="rag_build_01_garden", slug="a_b_c_d_e")],
+    )
+
+    app = AppTest.from_function(
+        _render_rename_dialog_view, kwargs={"rename_path": "vector_01_slate"}
+    )
+    app.run(timeout=10)
+
+    assert not app.exception
+    # A build references the index, so the blocked notice shows and no rename input renders.
+    assert any("Can't rename this index" in block.value for block in app.subheader)
+    assert not app.text_input
+
+
+def test_rename_dialog_confirm_renames_in_one_click(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "crawl_01_garden" / "2026-07-01_09-00-00").mkdir(parents=True)
+
+    app = AppTest.from_function(
+        _render_rename_dialog_view, kwargs={"rename_path": "crawl_01_garden"}
+    )
+    app.run(timeout=10)
+    assert not app.exception
+    # Edit the label and click Confirm once — the on_click callback applies it in one pass.
+    text_input = next(w for w in app.text_input if w.value == "garden")
+    text_input.set_value("beach")
+    next(b for b in app.button if b.key == "rename_folder_confirm_button").click()
+    app.run(timeout=10)
+
+    assert not app.exception
+    assert (session / "crawl_01_beach").is_dir()
+    assert not (session / "crawl_01_garden").exists()
+    assert app.session_state["rename_folder_relative_path"] == ""  # dialog closed
+
+
+def test_rename_dialog_cancel_closes_without_renaming(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "crawl_01_garden" / "2026-07-01_09-00-00").mkdir(parents=True)
+
+    app = AppTest.from_function(
+        _render_rename_dialog_view, kwargs={"rename_path": "crawl_01_garden"}
+    )
+    app.run(timeout=10)
+    text_input = next(w for w in app.text_input if w.value == "garden")
+    text_input.set_value("beach")
+    next(b for b in app.button if b.key == "rename_folder_cancel_button").click()
+    app.run(timeout=10)
+
+    assert not app.exception
+    # Cancel clears the dialog state and leaves the folder untouched.
+    assert (session / "crawl_01_garden").is_dir()
+    assert not (session / "crawl_01_beach").exists()
+    assert app.session_state["rename_folder_relative_path"] == ""
+
+
+def test_rename_dialog_invalid_label_keeps_dialog_open_with_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "crawl_01_garden" / "2026-07-01_09-00-00").mkdir(parents=True)
+
+    app = AppTest.from_function(
+        _render_rename_dialog_view, kwargs={"rename_path": "crawl_01_garden"}
+    )
+    app.run(timeout=10)
+    text_input = next(w for w in app.text_input if w.value == "garden")
+    text_input.set_value("with space")  # now invalid (underscore-only)
+    next(b for b in app.button if b.key == "rename_folder_confirm_button").click()
+    app.run(timeout=10)
+
+    assert not app.exception
+    # The folder is untouched, the dialog stays open, and an inline error shows.
+    assert (session / "crawl_01_garden").is_dir()
+    assert app.session_state["rename_folder_relative_path"] == "crawl_01_garden"
+    assert any("letters, numbers, and underscores" in err.value for err in app.error)
+
+
+def test_rename_dialog_renames_build_and_syncs_manifest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import app_support.conversational_rag.conversational_rag_build_ui as build_ui
+    from app_support.conversational_rag.build_manager import load_build
+
+    # Stub the CCv2 Launch component (its registration leaks across AppTest contexts) so
+    # rendering the tree with a build folder stays isolated.
+    monkeypatch.setattr(build_ui, "render_launch_button", lambda *a, **k: None)
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    run_dir = session / "rag_build_01_garden" / "2026-10-28_10-00-00"
+    run_dir.mkdir(parents=True)
+    (run_dir / "build.json").write_text(
+        _build_snapshot("rag_build_01_garden", "vector_01_slate").to_json(), encoding="utf-8"
+    )
+
+    app = AppTest.from_function(
+        _render_rename_dialog_view, kwargs={"rename_path": "rag_build_01_garden"}
+    )
+    app.run(timeout=10)
+    assert not app.exception
+    # A build folder prefills its label after the locked rag_build_01_ prefix.
+    text_input = next(w for w in app.text_input if w.value == "garden")
+    text_input.set_value("charter")
+    next(b for b in app.button if b.key == "rename_folder_confirm_button").click()
+    app.run(timeout=10)
+
+    assert not app.exception
+    assert (session / "rag_build_01_charter").is_dir()
+    assert not (session / "rag_build_01_garden").exists()
+    # build.json's name is kept in sync by rename_build.
+    snapshot = load_build(session / "rag_build_01_charter")
+    assert snapshot is not None
+    assert snapshot.name == "rag_build_01_charter"

@@ -13,6 +13,7 @@ import streamlit as st
 
 __all__ = [
     "SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX",
+    "confirm_column_right_dock_css",
     "confirm_dialog_css",
     "render_confirm_dialog",
     "render_notice_dialog",
@@ -79,6 +80,19 @@ def confirm_dialog_css(cancel_key: str, confirm_key: str) -> str:
         div[data-testid="stElementContainer"].st-key-{confirm_key} button:hover {{
             background-color: #c82333; border-color: #bd2130; color: white;
         }}
+        </style>
+    """ + confirm_column_right_dock_css(confirm_key)
+
+
+def confirm_column_right_dock_css(confirm_key: str) -> str:
+    """Return the ``<style>`` that right-docks a dialog's confirm-button column.
+
+    Shared by the destructive confirm dialog (green/red) and non-destructive dialogs
+    (e.g. rename) so every modal's action row keeps the same content-width,
+    Cancel-left / Confirm-right layout regardless of button colour.
+    """
+    return f"""
+        <style>
         div[data-testid="stColumn"]:has(.st-key-{confirm_key}) [data-testid="stVerticalBlock"] {{
             align-items: flex-end;
         }}

@@ -34,6 +34,7 @@ from artifact_store.naming import (
     format_utc_timestamp_slug,
     parse_folder_sequence,
     sequence_sort_key,
+    split_sequence_label,
 )
 from crawl4md.naming import (
     CRAWL_FOLDER_PREFIX,
@@ -84,6 +85,10 @@ _EMPTY_FOLDER_ZIP_TOKEN = (0, 0.0, 0)
 _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
 _SITE_GRAPH_FILENAME = "site_graph.jsonl"
 _RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+# Allowed characters for a user-entered folder label (the part after <prefix>NN_):
+# letters, numbers, and underscores only — no spaces, hyphens, or other symbols, so the
+# label stays filesystem/URL-safe and reads cleanly in the tree.
+_SAFE_LABEL_RE = re.compile(r"^[A-Za-z0-9_]+$")
 _FINAL_CONTENT_GLOB = "content_*"
 _SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
 _SUCCESS_CONTENT_GLOB = "success_content_*"
@@ -223,6 +228,57 @@ def delete_generated_folder(session_root: Path | str, relative_path: str) -> boo
     shutil.rmtree(target)
     _prune_empty_parents(target.parent, root)
     return True
+
+
+def run_folder_label_split(name: str) -> tuple[str, str] | None:
+    """Return the locked ``<prefix>NN_`` part and editable label of a renamable folder.
+
+    Handles numbered crawl, vector, and ``rag_build_`` run folders (all share the
+    ``<prefix>NN_label`` shape). Returns ``None`` for anything else (e.g. fixed history
+    folders), so it is not renamable. Shared by the rename backend and the rename dialog's
+    prefill so both agree on which part stays locked. (Build renames also update
+    ``build.json`` — see ``build_manager.rename_build``.)
+    """
+    for prefix in (_CRAWL_DIR_PREFIX, _VECTOR_DIR_PREFIX, _RAG_BUILD_DIR_PREFIX):
+        if name.startswith(prefix):
+            return split_sequence_label(name, prefix=prefix)
+    return None
+
+
+def rename_generated_folder(session_root: Path | str, relative_path: str, new_label: str) -> str:
+    """Rename a run folder's trailing label, keeping its ``<prefix>NN_`` part locked.
+
+    The prefix and sequence number stay fixed so the folder keeps its icon, collapsed
+    label, and sort order; only the human-readable label after them changes. Returns the
+    new top-level folder name. Raises ``ValueError`` for a non-numbered crawl/vector/build
+    folder, an empty or unsafe label, or a path escaping the session root; raises
+    ``FileExistsError`` when the new name already exists. A label equal to the current one
+    is a no-op that returns the unchanged name.
+    """
+    root = Path(session_root).resolve()
+    target = ensure_within_root(root, root / relative_path)
+    if target == root or not target.is_dir():
+        raise ValueError("Only a generated folder within the session can be renamed.")
+    split = run_folder_label_split(target.name)
+    if split is None:
+        raise ValueError("Only numbered crawl, vector, or build run folders can be renamed.")
+    locked, _current_label = split
+    label = new_label.strip()
+    if not _SAFE_LABEL_RE.fullmatch(label):
+        raise ValueError("Use only letters, numbers, and underscores.")
+    new_name = f"{locked}{label}"
+    if new_name == target.name:
+        return target.name
+    # Reject a label that would re-parse differently (e.g. a 6-digit label reads as a
+    # timestamp), which would silently break the folder's sort order and future renames.
+    if run_folder_label_split(new_name) != (locked, label):
+        raise ValueError("That label can't be used — try a different one.")
+    new_target = ensure_within_root(root, target.parent / new_name)
+    # ``samefile`` lets a case-only relabel through on case-insensitive filesystems.
+    if new_target.exists() and not new_target.samefile(target):
+        raise FileExistsError(new_name)
+    os.rename(target, new_target)
+    return new_name
 
 
 def build_folder_zip_bytes(

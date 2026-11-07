@@ -1,4 +1,4 @@
-"""Showcase route: render a build's read-only chat when a ?show slug is set.
+"""Showcase route: render a build's read-only chat when a ?showcase slug is set.
 
 A showcase tab is a fresh Streamlit session that must NOT run the normal browser-
 session bootstrap. This module is called at the very top of the app: if a known
@@ -29,18 +29,18 @@ __all__ = ["maybe_render_showcase", "resolve_build_root"]
 
 
 def maybe_render_showcase() -> bool:
-    """Take over the run to render a build showcase when ``?show`` is present.
+    """Take over the run to render a build showcase when ``?showcase`` is present.
 
     Returns True when it rendered (the caller then stops), so a showcase tab never
     falls through to the normal session bootstrap.
     """
-    slug = str(st.query_params.get("show", ""))
+    slug = str(st.query_params.get("showcase", ""))
     if not slug:
         return False
     render_fn = _showcase_render_fn(slug)
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     # One hidden default page served at the app root; the showcase link opens
-    # "/?show=…" (see launch.js) so Streamlit routes it to this default (url_path="").
+    # "/?showcase=…" (see launch.js) so Streamlit routes it to this default (url_path="").
     page = st.Page(
         render_fn,
         title=strings["CONV_SHOWCASE_PAGE_TITLE"],

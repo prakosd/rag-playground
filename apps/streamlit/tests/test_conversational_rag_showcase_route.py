@@ -1,4 +1,4 @@
-"""Tests for the showcase route: slug-based build resolution and the ?show branch."""
+"""Tests for the showcase route: slug-based build resolution and the ?showcase branch."""
 
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ def _page_kwargs_script() -> None:
 
 
 def test_maybe_render_showcase_is_inert_without_token() -> None:
-    # The normal app must not be hijacked when there is no ?show token.
+    # The normal app must not be hijacked when there is no ?showcase token.
     app = AppTest.from_function(_route_script).run()
     assert not app.exception
     assert app.session_state["_rendered"] is False
@@ -107,7 +107,7 @@ def test_maybe_render_showcase_is_inert_without_token() -> None:
 def test_maybe_render_showcase_invalid_token_shows_unavailable() -> None:
     # An invalid link renders the chrome-less "unavailable" page (nav hidden).
     app = AppTest.from_function(_route_script)
-    app.query_params["show"] = "garbage"
+    app.query_params["showcase"] = "garbage"
     app.run()
     assert not app.exception
     assert app.session_state["_rendered"] is True
@@ -116,10 +116,10 @@ def test_maybe_render_showcase_invalid_token_shows_unavailable() -> None:
 
 def test_showcase_page_served_at_root() -> None:
     # The showcase must register as the default page with an empty url_path so
-    # Streamlit routes the "/?show=…" link to it. Any token reaches st.Page, so a
+    # Streamlit routes the "/?showcase=…" link to it. Any token reaches st.Page, so a
     # garbage one suffices to capture the kwargs.
     app = AppTest.from_function(_page_kwargs_script)
-    app.query_params["show"] = "garbage"
+    app.query_params["showcase"] = "garbage"
     app.run()
     assert not app.exception
     assert app.session_state["_page_kwargs"]["url_path"] == ""
@@ -159,7 +159,7 @@ def test_maybe_render_showcase_valid_slug_renders(
     slug = _seed_full_build(tmp_path)
 
     app = AppTest.from_function(_route_script)
-    app.query_params["show"] = slug
+    app.query_params["showcase"] = slug
     app.run(timeout=10)
 
     assert not app.exception
@@ -200,7 +200,7 @@ def test_showcase_inspect_and_token_opt_in_via_query_params(
     monkeypatch.setattr(page_module, "render_page", _spy)
 
     opted_in = AppTest.from_function(_route_script)
-    opted_in.query_params["show"] = slug
+    opted_in.query_params["showcase"] = slug
     opted_in.query_params["inspect"] = "1"
     opted_in.query_params["showToken"] = "1"
     opted_in.run(timeout=10)
@@ -213,7 +213,7 @@ def test_showcase_inspect_and_token_opt_in_via_query_params(
 
     captured.clear()
     default_off = AppTest.from_function(_route_script)
-    default_off.query_params["show"] = slug
+    default_off.query_params["showcase"] = slug
     default_off.run(timeout=10)
     assert not default_off.exception
     assert captured == {

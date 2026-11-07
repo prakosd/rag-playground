@@ -58,3 +58,33 @@ def test_sync_merges_hydrated_ids_with_pending(monkeypatch) -> None:
     at.run()
     assert not at.exception
     assert at.session_state["_out"] == ["aaa111", "bbb222", "ccc333"]
+
+
+def _hydrated_script(slug: str, component_state: object) -> None:
+    import streamlit as st
+
+    from app_support.conversational_rag.showcase_conversation_storage import (
+        showcase_conversations_hydrated,
+    )
+
+    if component_state is not None:
+        # Key mirrors _COMPONENT_KEY_PREFIX in the module under test.
+        st.session_state[f"showcase_conv_storage_{slug}"] = component_state
+    st.session_state["_hydrated"] = showcase_conversations_hydrated(slug)
+
+
+def test_hydrated_is_false_before_bridge_mounts() -> None:
+    at = AppTest.from_function(_hydrated_script, kwargs={"slug": "slug_x", "component_state": None})
+    at.run()
+    assert not at.exception
+    assert at.session_state["_hydrated"] is False
+
+
+def test_hydrated_is_true_after_bridge_reports() -> None:
+    at = AppTest.from_function(
+        _hydrated_script,
+        kwargs={"slug": "slug_x", "component_state": {"ids": ["abc123"], "hydrated": True}},
+    )
+    at.run()
+    assert not at.exception
+    assert at.session_state["_hydrated"] is True

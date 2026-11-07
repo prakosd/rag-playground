@@ -15,7 +15,11 @@ import re
 import streamlit as st
 from streamlit.components import v2 as st_components_v2
 
-__all__ = ["merge_conversation_ids", "sync_showcase_conversation_ids"]
+__all__ = [
+    "merge_conversation_ids",
+    "showcase_conversations_hydrated",
+    "sync_showcase_conversation_ids",
+]
 
 _COMPONENT_NAME = "crawl4md_showcase_conversations"
 # One localStorage entry per showcase link; the slug scopes it (see build_manager).
@@ -127,3 +131,15 @@ def sync_showcase_conversation_ids(slug: str, pending_ids: list[str]) -> list[st
     if hydrated_ids is None and hasattr(state, "get"):
         hydrated_ids = state.get("ids")
     return merge_conversation_ids(hydrated_ids, pending)
+
+
+def showcase_conversations_hydrated(slug: str) -> bool:
+    """Return ``True`` once the browser bridge for *slug* has hydrated from localStorage.
+
+    The bridge sets a ``hydrated`` flag on its first client round-trip; until then the
+    visitor's stored conversation ids are still unknown. Callers use this to defer a
+    one-time initial selection (open the visitor's latest conversation) until their saved
+    list has actually arrived, instead of acting on the pre-hydration empty list.
+    """
+    state = st.session_state.get(f"{_COMPONENT_KEY_PREFIX}{slug}", {})
+    return bool(state.get("hydrated")) if hasattr(state, "get") else False

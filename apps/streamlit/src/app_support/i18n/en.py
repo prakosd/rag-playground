@@ -273,11 +273,11 @@ STRINGS_EN: Strings = {
         "tab. No new build is made \u2014 change any setting or prompt above to build a fresh one."
     ),
     "CONV_BUILD_RELAUNCH_TOAST": "Re-launching {name}.",
-    "CONV_BUILD_DELETE_BUTTON": "Delete this build",
     "CONV_BUILD_DELETE_HELP": (
         "Delete this build and its showcase link (the shared vector index is kept)."
     ),
     "CONV_BUILD_EXPORT_HELP": "Export this build as a signed zip you can re-import later",
+    "CONV_BUILD_LOAD_LABEL": "Load",
     "CONV_BUILD_LOAD_HELP": "Load this build's settings and prompts back into the controls above",
     "CONV_BUILD_LOAD_TITLE": "Load build settings?",
     "CONV_BUILD_LOAD_CONFIRM": (
@@ -765,6 +765,23 @@ STRINGS_EN: Strings = {
     ),
     "FILES_DELETE_BLOCKED_ITEM": "{name} \u00b7 showcase `{slug}`",
     "FILES_DELETE_BLOCKED_CLOSE": "Close",
+    "FILES_RENAME_FOLDER_BUTTON": "Rename this folder",
+    "FILES_RENAME_FOLDER_HELP": (
+        "Give the {folder} folder a clearer name. Its type and number stay the same."
+    ),
+    "FILES_RENAME_FOLDER_DIALOG_TITLE": "Rename folder?",
+    "FILES_RENAME_FOLDER_INPUT_LABEL": "New name",
+    "FILES_RENAME_FOLDER_DIALOG_CANCEL": "Cancel",
+    "FILES_RENAME_FOLDER_DIALOG_CONFIRM": "Confirm",
+    "FILES_RENAME_DUPLICATE_ERROR": (
+        "A folder named **{name}** already exists. Pick a different name."
+    ),
+    "FILES_RENAME_INVALID_ERROR": "Use only letters, numbers, and underscores.",
+    "FILES_RENAME_BLOCKED_TITLE": "Can't rename this index",
+    "FILES_RENAME_BLOCKED_BODY": (
+        "This vector index is used by {count} build(s) from Step 5. Renaming it would break "
+        "them \u2014 delete those builds first, then try again."
+    ),
     "FILES_UPLOAD_BUTTON": ":material/upload: Import",
     "FILES_UPLOAD_BUTTON_HELP": "Import a folder zip exported from this app",
     "FILES_UPLOAD_DIALOG_TITLE": "Upload a folder zip",

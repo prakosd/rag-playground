@@ -18,6 +18,7 @@ from app_support.conversational_rag.build_manager import (
     is_build_name,
     list_builds,
     load_build,
+    rename_build,
     resolve_slug,
 )
 
@@ -168,6 +169,38 @@ def test_delete_build_refuses_non_build_folder(tmp_path: Path) -> None:
     (tmp_path / "vector_01_slate").mkdir()
     assert delete_build(tmp_path, "vector_01_slate") is False
     assert (tmp_path / "vector_01_slate").is_dir()
+
+
+def test_rename_build_renames_folder_and_syncs_manifest_name(tmp_path: Path) -> None:
+    _write_build(tmp_path, _snapshot(name="rag_build_01_garden"))
+
+    new_name = rename_build(tmp_path, "rag_build_01_garden", "charter")
+
+    assert new_name == "rag_build_01_charter"
+    assert not (tmp_path / "rag_build_01_garden").exists()
+    assert (tmp_path / "rag_build_01_charter").is_dir()
+    # build.json's name field is rewritten so BuildSnapshot.name == folder name.
+    snapshot = load_build(tmp_path / "rag_build_01_charter")
+    assert snapshot is not None
+    assert snapshot.name == "rag_build_01_charter"
+    assert snapshot.slug == "garden_river_stone_oak_cedar"  # slug untouched
+
+
+def test_rename_build_noop_leaves_manifest_unchanged(tmp_path: Path) -> None:
+    _write_build(tmp_path, _snapshot(name="rag_build_01_garden"))
+
+    assert rename_build(tmp_path, "rag_build_01_garden", "garden") == "rag_build_01_garden"
+    snapshot = load_build(tmp_path / "rag_build_01_garden")
+    assert snapshot is not None
+    assert snapshot.name == "rag_build_01_garden"
+
+
+def test_rename_build_rejects_invalid_label(tmp_path: Path) -> None:
+    _write_build(tmp_path, _snapshot(name="rag_build_01_garden"))
+
+    with pytest.raises(ValueError):
+        rename_build(tmp_path, "rag_build_01_garden", "with space")
+    assert (tmp_path / "rag_build_01_garden").is_dir()  # untouched
 
 
 def test_allocate_showcase_slug_avoids_existing_build(

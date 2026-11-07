@@ -13,6 +13,7 @@ from artifact_store.naming import (
     parse_folder_sequence,
     parse_utc_timestamp_slug,
     sequence_sort_key,
+    split_sequence_label,
 )
 
 
@@ -71,3 +72,21 @@ def test_parse_utc_timestamp_slug_round_trips() -> None:
 
 def test_parse_utc_timestamp_slug_rejects_invalid_value() -> None:
     assert parse_utc_timestamp_slug("not-a-timestamp") is None
+
+
+def test_split_sequence_label_separates_locked_part_from_label() -> None:
+    assert split_sequence_label("crawl_01_boulder") == ("crawl_01_", "boulder")
+    assert split_sequence_label("crawl_1_boulder") == ("crawl_1_", "boulder")  # legacy unpadded
+    assert split_sequence_label("crawl_01_my_docs") == ("crawl_01_", "my_docs")  # label keeps "_"
+    assert split_sequence_label("vector_10_river", prefix=VECTOR_FOLDER_PREFIX) == (
+        "vector_10_",
+        "river",
+    )
+
+
+def test_split_sequence_label_returns_none_for_non_run_folders() -> None:
+    assert split_sequence_label("other_01_x") is None  # wrong prefix
+    assert split_sequence_label("crawl_00_x") is None  # sequence 0 is invalid
+    assert split_sequence_label("crawl_20260504_123045_x") is None  # timestamp, not a sequence
+    assert split_sequence_label("crawl_01") is None  # no label segment to edit
+    assert split_sequence_label("vector_01_x") is None  # default prefix is crawl_

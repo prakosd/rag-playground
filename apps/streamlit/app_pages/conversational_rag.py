@@ -68,6 +68,7 @@ from app_support.conversational_rag.conversational_token_ui import (
 )
 from app_support.conversational_rag.followup_cache import get_cached_chunks, replace_followups
 from app_support.conversational_rag.showcase_conversation_storage import (
+    showcase_conversations_hydrated,
     sync_showcase_conversation_ids,
 )
 from app_support.focus import entered_page, focus_chat_input, scroll_message_into_view
@@ -89,6 +90,8 @@ _CACHE_KEY = "conversational_rag_followup_cache"
 _PENDING_KEY = "conversational_rag_pending"
 _CONV_ID_KEY = "conversational_rag_current_id"
 _SHOWCASE_CONV_IDS_KEY = "showcase_my_conversation_ids"
+# One-shot guard so a showcase opens the visitor's latest conversation only on first load.
+_SHOWCASE_INIT_KEY = "showcase_initial_selection_done"
 _USER_TURN_KEY_PREFIX = "conv-user-"
 _ASSISTANT_TURN_KEY_PREFIX = "conv-assistant-"
 _CHAT_INPUT_KEY = "conversational_rag_input"
@@ -254,6 +257,26 @@ _INSPECT_TABS_RHYTHM_CSS = (
 )
 
 
+def _showcase_panel_css(border_color: str, height_px: int) -> str:
+    """Make the showcase chat panel a user-resizable scroll box (drag the bottom edge).
+
+    The showcase builds the panel with a plain ``st.container`` (no ``height=``), so
+    unlike Step 5's height-locked container the browser's ``resize`` handle can actually
+    change — and persist — the height (an inline drag height survives reruns and isn't
+    overridden). This CSS recreates the bordered, scrollable look ``st.container(height=)``
+    gives (the weld CSS still squares the bottom corners), starting at *height_px*.
+    """
+    return (
+        "<style>"
+        f".st-key-{_CHAT_PANEL_KEY}{{"
+        # flex:none so this stops being a flex-grow item and its own height applies
+        # (otherwise a plain container collapses to min-height); the drag then overrides it.
+        f"flex:none;height:{height_px}px;min-height:200px;overflow-y:auto;resize:vertical;"
+        f"border:1px solid {border_color};border-radius:0.5rem;padding:1rem}}"
+        "</style>"
+    )
+
+
 def _idle_input_border_css(border_color: str) -> str:
     """Border the docked chat input on its free sides when unfocused, matching the panel.
 
@@ -370,11 +393,13 @@ def render_page(
 
     records = load_conversational_rag_history(context.session_root())
     summaries = conversation_summaries(records)
+    showcase_hydrated = False
     if showcase:
-        _sync_showcase_conversations(showcase_slug, records)
+        showcase_hydrated = _sync_showcase_conversations(showcase_slug, records)
         summaries = _showcase_visible_summaries(summaries)
     _ensure_active_conversation(records, summaries)
     if showcase:
+        _ensure_showcase_initial_conversation(records, summaries, hydrated=showcase_hydrated)
         _register_showcase_conversation()
     _render_conversation_controls(
         strings,
@@ -405,7 +430,14 @@ def render_page(
     # new question *before* the blocking stream (pinning it to the top as it streams).
     scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
     panel_height = get_settings().conv_rag_chat_panel_height_px
-    with st.container(height=panel_height, key=_CHAT_PANEL_KEY):
+    # The showcase builds the panel without Streamlit's height= so the visitor can drag it
+    # taller/shorter (CSS recreates the bordered scroll box); Step 5 keeps the fixed height.
+    if showcase:
+        st.html(_showcase_panel_css(panel_border, panel_height))
+        panel_container = st.container(key=_CHAT_PANEL_KEY)
+    else:
+        panel_container = st.container(height=panel_height, key=_CHAT_PANEL_KEY)
+    with panel_container:
         if not turns and not submitting:
             _render_welcome_bubble(strings, context.session_root(), showcase_prompts)
         for position, turn in enumerate(turns):
@@ -675,21 +707,44 @@ def _showcase_visible_summaries(
     return [summary for summary in summaries if summary.conversation_id in mine]
 
 
-def _sync_showcase_conversations(slug: str | None, records: list[ConversationalTurnRecord]) -> None:
+def _sync_showcase_conversations(slug: str | None, records: list[ConversationalTurnRecord]) -> bool:
     """Mirror the visitor's conversation ids to/from browser storage (per showcase link).
 
     Hydrates the private picker set from localStorage so a visitor's own conversations
     survive a reload, like session ids do. A conversation is persisted only once it has
-    a saved turn, so empty, abandoned ones never accumulate.
+    a saved turn, so empty, abandoned ones never accumulate. Returns whether the browser
+    bridge has hydrated yet, so the caller can defer the initial latest-conversation pick.
     """
     if not slug:
-        return
+        return False
     mine = st.session_state.setdefault(_SHOWCASE_CONV_IDS_KEY, set())
     active = str(st.session_state.get(_CONV_ID_KEY, ""))
     saved_ids = {record.conversation_id for record in records if record.conversation_id}
     pending = [active] if active in saved_ids else []
     stored = sync_showcase_conversation_ids(slug, pending)
     st.session_state[_SHOWCASE_CONV_IDS_KEY] = set(stored) | mine
+    return showcase_conversations_hydrated(slug)
+
+
+def _ensure_showcase_initial_conversation(
+    records: list[ConversationalTurnRecord],
+    summaries: list[ConversationSummary],
+    *,
+    hydrated: bool,
+) -> None:
+    """On a showcase's first load, open the visitor's most recent conversation.
+
+    Runs once per showcase session, and only after the browser has hydrated the visitor's
+    saved-conversation list (localStorage). If they have saved conversations and are still
+    on the fresh empty one, switch to the latest so its history shows; a brand-new visitor
+    (no saved conversations) keeps the empty one. The one-shot guard means a later
+    "New conversation" click is never overridden.
+    """
+    if st.session_state.get(_SHOWCASE_INIT_KEY) or not hydrated:
+        return
+    st.session_state[_SHOWCASE_INIT_KEY] = True
+    if summaries and not st.session_state.get(_TURNS_KEY):
+        _activate_conversation(summaries[0].conversation_id, records)
 
 
 def _register_showcase_conversation() -> None:

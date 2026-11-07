@@ -53,6 +53,16 @@ def focus_widget(key: str) -> None:
     _focus_first(f".st-key-{key} input, .st-key-{key} textarea")
 
 
+def select_widget_text(key: str) -> None:
+    """Focus the input/textarea of the widget keyed ``key`` and select all its text.
+
+    Used by the rename dialog so the prefilled folder label starts selected, letting the
+    user type a replacement immediately. Inject it once (behind a one-shot flag) so it
+    never fights the user while they edit.
+    """
+    _focus_first(f".st-key-{key} input, .st-key-{key} textarea", select=True)
+
+
 def focus_chat_input() -> None:
     """Move browser focus to the page's chat input.
 
@@ -63,9 +73,10 @@ def focus_chat_input() -> None:
     _focus_first('[data-testid="stChatInput"] textarea')
 
 
-def _focus_first(selector_expr: str) -> None:
-    """Inject a one-shot script that focuses the first element matching a selector."""
+def _focus_first(selector_expr: str, *, select: bool = False) -> None:
+    """Inject a one-shot script focusing (and optionally selecting) the first match."""
     selector = json.dumps(selector_expr)
+    action = "target.focus(); target.select();" if select else "target.focus();"
     st.iframe(
         f"""
         <script>
@@ -76,7 +87,7 @@ def _focus_first(selector_expr: str) -> None:
             function tryFocus() {{
                 const target = doc.querySelector(selector);
                 if (target) {{
-                    target.focus();
+                    {action}
                     return;
                 }}
                 if (attempts++ < {_FOCUS_MAX_ATTEMPTS}) {{

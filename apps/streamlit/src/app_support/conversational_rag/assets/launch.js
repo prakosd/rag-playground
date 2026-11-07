@@ -1,5 +1,5 @@
-// CCv2 launcher for a build's read-only showcase. Renders an icon-only button that
-// opens the signed showcase URL (data.url, resolved against the app's base URL) in a
+// CCv2 launcher for a build's read-only showcase. Renders a rocket icon + label button
+// that opens the signed showcase URL (data.url, resolved against the app's base URL) in a
 // new browser tab on click; with data.auto_open it also opens on each fresh request
 // (a false->true transition, e.g. right after a Build & launch / Launch click, while
 // the browser's transient activation is still valid). The click handler runs inside
@@ -22,7 +22,10 @@ export default function (component) {
     button.type = "button";
     button.className = "sc-launch-btn";
     button.innerHTML = ICON;
-    instance = { button, data, lastAutoOpen: false };
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "sc-launch-label";
+    button.appendChild(labelSpan);
+    instance = { button, labelSpan, data, lastAutoOpen: false };
     instances.set(parentElement, instance);
     button.addEventListener("click", () => openTab(instance.data.url));
     parentElement.appendChild(button);
@@ -30,6 +33,7 @@ export default function (component) {
 
   instance.data = data;
   const label = data.label || "Launch";
+  instance.labelSpan.textContent = label;
   instance.button.title = data.help || label;
   instance.button.setAttribute("aria-label", label);
   // Open on a fresh auto_open request (false -> true transition), not only once: a
@@ -52,7 +56,7 @@ function openTab(path) {
   if (!path) return;
   const anchor = document.createElement("a");
   // Resolve against the app root (base dir), not the launching page: Streamlit
-  // sets no <base>, so document.baseURI is /<page>; opening /<page>?show=… makes
+  // sets no <base>, so document.baseURI is /<page>; opening /<page>?showcase=… makes
   // Streamlit's router 404 the unknown path before the showcase (root page) loads.
   const appRoot = new URL(".", document.baseURI).href;
   anchor.href = new URL(path, appRoot).href;

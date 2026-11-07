@@ -30,7 +30,7 @@ from artifact_store.naming import (
 )
 from artifact_store.paths import ensure_within_root
 
-from app_support.generated_files import delete_generated_folder
+from app_support.generated_files import delete_generated_folder, rename_generated_folder
 from app_support.session_manager import _generate_readable_crawl_suffix, generate_showcase_slug
 
 __all__ = [
@@ -49,6 +49,7 @@ __all__ = [
     "list_builds",
     "load_build",
     "newest_build",
+    "rename_build",
     "resolve_slug",
 ]
 
@@ -239,6 +240,32 @@ def delete_build(session_root: Path | str, name: str) -> bool:
     if not is_build_name(name):
         return False
     return delete_generated_folder(session_root, name)
+
+
+def rename_build(session_root: Path | str, name: str, new_label: str) -> str:
+    """Rename build folder *name*'s label and keep ``build.json``'s ``name`` in sync.
+
+    A build stores its own folder name inside ``build.json``; renaming the folder without
+    updating that field would desync :attr:`BuildSnapshot.name` (used for the tree's
+    delete/export/load keys). Delegates the dir rename + validation to
+    :func:`generated_files.rename_generated_folder` (locked ``rag_build_NN_`` prefix,
+    label rules, duplicate/escape guards), then rewrites the manifest's ``name``. The
+    showcase slug is unaffected (it is resolved by scanning, not by folder name).
+    """
+    new_name = rename_generated_folder(session_root, name, new_label)
+    if new_name == name:
+        return new_name
+    build_root = build_dir(session_root, new_name)
+    run_dir = build_run_dir(build_root)
+    # Read the manifest off the already-resolved run dir (avoids load_build re-scanning it).
+    if run_dir is not None:
+        snapshot = BuildSnapshot.from_json(
+            (run_dir / BUILD_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+        if snapshot is not None:
+            updated = dataclasses.replace(snapshot, name=new_name)
+            (run_dir / BUILD_MANIFEST_FILENAME).write_text(updated.to_json(), encoding="utf-8")
+    return new_name
 
 
 def _iter_builds(sessions_root: Path) -> Iterator[tuple[Path, BuildSnapshot]]:

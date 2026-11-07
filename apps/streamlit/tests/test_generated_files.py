@@ -38,6 +38,8 @@ from app_support.generated_files import (
     is_history_folder,
     is_run_folder,
     list_sample_fixtures,
+    rename_generated_folder,
+    run_folder_label_split,
 )
 
 _MODIFIED_AT = datetime(2026, 5, 17, 10, 0, tzinfo=UTC)
@@ -646,6 +648,123 @@ def test_delete_generated_folder_returns_false_for_file_target(tmp_path: Path) -
 def test_delete_generated_folder_rejects_path_escape(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         delete_generated_folder(tmp_path, "../outside_dir")
+
+
+# ── rename_generated_folder ──────────────────────────────────────────────────
+def test_rename_generated_folder_swaps_label_and_keeps_prefix(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_garden" / "2026-05-17_10-00-00").mkdir(parents=True)
+
+    new_name = rename_generated_folder(tmp_path, "crawl_01_garden", "beach")
+
+    assert new_name == "crawl_01_beach"
+    assert not (tmp_path / "crawl_01_garden").exists()
+    # The locked prefix + sequence move with the folder, timestamp child intact.
+    assert (tmp_path / "crawl_01_beach" / "2026-05-17_10-00-00").is_dir()
+
+
+def test_rename_generated_folder_preserves_sort_order(tmp_path: Path) -> None:
+    from artifact_store.naming import VECTOR_FOLDER_PREFIX, sequence_sort_key
+
+    (tmp_path / "vector_02_old").mkdir()
+
+    new_name = rename_generated_folder(tmp_path, "vector_02_old", "fresh_index")
+
+    assert new_name == "vector_02_fresh_index"
+    # Sequence 02 is retained, so it still sorts into the same position (the name is only
+    # a tiebreaker, so compare the ordering-relevant group + sequence).
+    assert (
+        sequence_sort_key(new_name, prefix=VECTOR_FOLDER_PREFIX)[:2]
+        == sequence_sort_key("vector_02_old", prefix=VECTOR_FOLDER_PREFIX)[:2]
+    )
+
+
+def test_rename_generated_folder_unchanged_label_is_noop(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_garden").mkdir()
+
+    assert rename_generated_folder(tmp_path, "crawl_01_garden", "garden") == "crawl_01_garden"
+    assert (tmp_path / "crawl_01_garden").is_dir()
+
+
+def test_rename_generated_folder_rejects_duplicate_name(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_garden").mkdir()
+    (tmp_path / "crawl_01_beach").mkdir()
+
+    with pytest.raises(FileExistsError):
+        rename_generated_folder(tmp_path, "crawl_01_garden", "beach")
+    assert (tmp_path / "crawl_01_garden").is_dir()  # left untouched
+
+
+def test_rename_generated_folder_rejects_unsafe_labels(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_garden").mkdir()
+
+    # Spaces, hyphens, slashes, dots, and other symbols are all rejected — only
+    # letters, numbers, and underscores are allowed.
+    for bad_label in ("", "   ", "a b", "a-b", "a/b", "..", "weird*name"):
+        with pytest.raises(ValueError):
+            rename_generated_folder(tmp_path, "crawl_01_garden", bad_label)
+    assert (tmp_path / "crawl_01_garden").is_dir()
+
+
+def test_rename_generated_folder_allows_underscore_label(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_garden").mkdir()
+
+    new_name = rename_generated_folder(tmp_path, "crawl_01_garden", "my_docs_v2")
+
+    assert new_name == "crawl_01_my_docs_v2"
+    assert (tmp_path / "crawl_01_my_docs_v2").is_dir()
+
+
+def test_rename_generated_folder_rejects_timestamp_like_label(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_garden").mkdir()
+
+    # A 6-digit label re-parses as a legacy timestamp id, which would silently break the
+    # folder's sort order and future renames — it must be rejected, not applied.
+    with pytest.raises(ValueError):
+        rename_generated_folder(tmp_path, "crawl_01_garden", "123456")
+    assert (tmp_path / "crawl_01_garden").is_dir()
+
+
+def test_rename_generated_folder_allows_case_only_relabel(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_Garden").mkdir()
+
+    # Fixing just the casing must not trip the "already exists" guard on a
+    # case-insensitive filesystem (the target resolves to the same directory).
+    new_name = rename_generated_folder(tmp_path, "crawl_01_Garden", "garden")
+
+    assert new_name == "crawl_01_garden"
+    assert (tmp_path / "crawl_01_garden").is_dir()
+
+
+def test_rename_generated_folder_rejects_non_run_folders(tmp_path: Path) -> None:
+    (tmp_path / "search_history").mkdir()
+
+    # Fixed history folders have no numbered prefix, so they are not renamable.
+    with pytest.raises(ValueError):
+        rename_generated_folder(tmp_path, "search_history", "renamed")
+
+
+def test_rename_generated_folder_renames_build_folder_dir(tmp_path: Path) -> None:
+    # The generic rename handles the build dir too (build.json sync is build_manager's job).
+    (tmp_path / "rag_build_01_apply" / "2026-10-28_10-00-00").mkdir(parents=True)
+
+    new_name = rename_generated_folder(tmp_path, "rag_build_01_apply", "charter")
+
+    assert new_name == "rag_build_01_charter"
+    assert (tmp_path / "rag_build_01_charter" / "2026-10-28_10-00-00").is_dir()
+
+
+def test_rename_generated_folder_rejects_session_root_and_escape(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        rename_generated_folder(tmp_path, "", "x")
+    with pytest.raises(ValueError):
+        rename_generated_folder(tmp_path, "../outside", "x")
+
+
+def test_run_folder_label_split_identifies_run_folders() -> None:
+    assert run_folder_label_split("crawl_01_garden") == ("crawl_01_", "garden")
+    assert run_folder_label_split("vector_03_my_index") == ("vector_03_", "my_index")
+    assert run_folder_label_split("rag_build_01_apply") == ("rag_build_01_", "apply")
+    assert run_folder_label_split("search_history") is None
 
 
 # ── collect_success_content_files ────────────────────────────────────────────

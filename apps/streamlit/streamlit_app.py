@@ -385,7 +385,7 @@ def _render_shared_styles() -> None:
 
 
 _init_state()
-# A showcase tab (?show=<signed token>) reads one build folder and renders a chat-only
+# A showcase tab (?showcase=<signed token>) reads one build folder and renders a chat-only
 # page; it must take over before the normal browser-session bootstrap below.
 if maybe_render_showcase():
     st.stop()

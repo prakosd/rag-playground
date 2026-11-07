@@ -40,7 +40,7 @@ signed-import path, and (ii) decrypt stored crawl credentials if they also obtai
 session's `credentials.json` and session id. Imports remain contained to the session folder
 (zip-slip + path-containment guards hold), so the blast radius is one session.
 
-**Showcase links.** The Step 5 **showcase link** (`?show=<five_words>`) is a readable 5-word
+**Showcase links.** The Step 5 **showcase link** (`?showcase=<five_words>`) is a readable 5-word
 slug drawn with `secrets.choice` from the EFF large wordlist (7776 words → ~65 bits), stored in
 the build and resolved by scanning builds server-side. Like the zip/credential paths it is a
 bearer capability, but — unlike the signed zip export — it is **not** HMAC-signed: its safety

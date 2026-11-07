@@ -333,5 +333,85 @@ def test_render_build_tree_actions_renders_action_row(tmp_path: Path) -> None:
     # The redundant slug caption was removed (the tree already lists build.json).
     assert not any("alpha_beta_gamma_delta_epsilon" in caption.value for caption in at.caption)
     labels = [button.label for button in at.button]
+    # Order (st.buttons only; Launch is a CCv2 component): Export, Load, Rename, Delete.
     assert any("Export" in label for label in labels)
-    assert any("Delete this build" in label for label in labels)
+    assert any(label == "Load" for label in labels)
+    assert any(label == "Rename this folder" for label in labels)
+    assert any("Delete this folder" in label for label in labels)
+    assert not any("Delete this build" in label for label in labels)
+    export_pos = next(i for i, label in enumerate(labels) if "Export" in label)
+    load_pos = next(i for i, label in enumerate(labels) if label == "Load")
+    rename_pos = next(i for i, label in enumerate(labels) if label == "Rename this folder")
+    delete_pos = next(i for i, label in enumerate(labels) if "Delete this folder" in label)
+    assert export_pos < load_pos < rename_pos < delete_pos
+    # Rename uses a rename_folder_ key; Delete uses delete_folder_ (inherits the red style).
+    rename_buttons = [button for button in at.button if button.key.startswith("rename_folder_")]
+    assert rename_buttons
+    delete_buttons = [button for button in at.button if button.key.startswith("delete_folder_")]
+    assert delete_buttons
+    assert all(button.label == "Delete this folder" for button in delete_buttons)
+
+
+def _block_has_buttons(node: object) -> bool:
+    try:
+        return len(node.button) > 0  # type: ignore[attr-defined]
+    except (AttributeError, TypeError):
+        return False
+
+
+def test_render_build_tree_actions_puts_token_panel_above_actions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from app_support.conversational_rag.conversational_rag_history import (
+        ConversationalTurnRecord,
+        append_conversational_rag_record,
+    )
+
+    # The Launch button is a CCv2 component whose registration leaks across AppTest
+    # contexts; stub it so this test (which renders a second build-action row) stays
+    # independent. The order check only needs the st.button actions + the token panel.
+    monkeypatch.setattr(build_ui, "render_launch_button", lambda *a, **k: None)
+
+    source = _real_index(tmp_path / "src")
+    snapshot = snapshot_from_controls(
+        _controls(index=source),
+        language="EN",
+        name="rag_build_01_garden",
+        slug="alpha_beta_gamma_delta_epsilon",
+        prompts={},
+    )
+    create_build(tmp_path, snapshot)
+    # Seed one history record so the Token-usage panel renders.
+    run_dir = build_run_dir(tmp_path / "rag_build_01_garden")
+    assert run_dir is not None
+    append_conversational_rag_record(
+        run_dir,
+        ConversationalTurnRecord(
+            timestamp_utc="2026-10-30T00:00:00.000+00:00",
+            index_folder="vector_01_garden",
+            index_run="2026-10-28_10-00-00",
+            embedding_model="titan",
+            llm_model="main",
+            aux_model="aux",
+            reranker="off",
+            raw_question="q",
+            sub_questions=(),
+            answer="a",
+            conversation_id="abc123",
+        ),
+    )
+
+    at = AppTest.from_function(
+        _build_actions_script,
+        kwargs={"session_dir": str(tmp_path), "name": "rag_build_01_garden"},
+    ).run()
+
+    assert not at.exception
+    children = list(at.main.children.values())
+    token_pos = next(
+        i
+        for i, node in enumerate(children)
+        if type(node).__name__ == "Expander" and "Token usage" in getattr(node, "label", "")
+    )
+    actions_pos = next(i for i, node in enumerate(children) if _block_has_buttons(node))
+    assert token_pos < actions_pos  # Token usage sits above the Export/Launch/Load/Delete row

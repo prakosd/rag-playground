@@ -281,11 +281,11 @@ STRINGS_ID: Strings = {
         "mana pun di atas untuk membuat yang baru."
     ),
     "CONV_BUILD_RELAUNCH_TOAST": "Meluncurkan ulang {name}.",
-    "CONV_BUILD_DELETE_BUTTON": "Hapus build ini",
     "CONV_BUILD_DELETE_HELP": (
         "Hapus build ini beserta tautan showcase-nya (indeks vektor bersama tetap disimpan)."
     ),
     "CONV_BUILD_EXPORT_HELP": "Ekspor build ini sebagai zip bertanda tangan yang bisa diimpor ulang",
+    "CONV_BUILD_LOAD_LABEL": "Muat",
     "CONV_BUILD_LOAD_HELP": "Muat pengaturan dan prompt build ini kembali ke kontrol di atas",
     "CONV_BUILD_LOAD_TITLE": "Muat pengaturan build?",
     "CONV_BUILD_LOAD_CONFIRM": (
@@ -789,6 +789,21 @@ STRINGS_ID: Strings = {
     ),
     "FILES_DELETE_BLOCKED_ITEM": "{name} \u00b7 showcase `{slug}`",
     "FILES_DELETE_BLOCKED_CLOSE": "Tutup",
+    "FILES_RENAME_FOLDER_BUTTON": "Ganti nama folder ini",
+    "FILES_RENAME_FOLDER_HELP": (
+        "Beri folder {folder} nama yang lebih jelas. Jenis dan nomornya tetap sama."
+    ),
+    "FILES_RENAME_FOLDER_DIALOG_TITLE": "Ganti nama folder?",
+    "FILES_RENAME_FOLDER_INPUT_LABEL": "Nama baru",
+    "FILES_RENAME_FOLDER_DIALOG_CANCEL": "Batal",
+    "FILES_RENAME_FOLDER_DIALOG_CONFIRM": "Konfirmasi",
+    "FILES_RENAME_DUPLICATE_ERROR": ("Folder bernama **{name}** sudah ada. Pilih nama lain."),
+    "FILES_RENAME_INVALID_ERROR": "Gunakan hanya huruf, angka, dan garis bawah.",
+    "FILES_RENAME_BLOCKED_TITLE": "Tidak bisa mengganti nama indeks ini",
+    "FILES_RENAME_BLOCKED_BODY": (
+        "Vector index ini dipakai oleh {count} build dari Langkah 5. Mengganti namanya akan "
+        "merusaknya \u2014 hapus build tersebut dulu, lalu coba lagi."
+    ),
     "FILES_UPLOAD_BUTTON": ":material/upload: Impor",
     "FILES_UPLOAD_BUTTON_HELP": "Impor zip folder yang diekspor dari aplikasi ini",
     "FILES_UPLOAD_DIALOG_TITLE": "Unggah zip folder",

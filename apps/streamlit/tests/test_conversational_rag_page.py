@@ -249,3 +249,107 @@ def test_sync_showcase_conversations_noop_without_slug(monkeypatch: MonkeyPatch)
     # No slug means no bridge call and no storage-key write.
     assert calls == []
     assert page._SHOWCASE_CONV_IDS_KEY not in state
+
+
+def test_sync_showcase_conversations_returns_hydration_flag(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {page._CONV_ID_KEY: "abc123"}
+    monkeypatch.setattr(page.st, "session_state", state)
+    monkeypatch.setattr(page, "sync_showcase_conversation_ids", lambda slug, pending: ["abc123"])
+    monkeypatch.setattr(page, "showcase_conversations_hydrated", lambda slug: True)
+    records = [_record("abc123", "2026-09-01T10:00:00.000+00:00", "q")]
+
+    assert page._sync_showcase_conversations("slug_one", records) is True
+    # Without a slug the bridge never mounts, so it reports not-hydrated.
+    assert page._sync_showcase_conversations(None, []) is False
+
+
+def test_showcase_initial_conversation_selects_latest_once_hydrated(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    page = _page(monkeypatch)
+    # First load started an empty conversation; the visitor owns saved ones.
+    state: dict[str, object] = {page._CONV_ID_KEY: "empty1", page._TURNS_KEY: []}
+    monkeypatch.setattr(page.st, "session_state", state)
+    records = [
+        _record("old", "2026-09-01T09:00:00.000+00:00", "old q"),
+        _record("recent", "2026-09-01T10:00:00.000+00:00", "recent q"),
+    ]
+    summaries = page.conversation_summaries(records)
+
+    page._ensure_showcase_initial_conversation(records, summaries, hydrated=True)
+
+    assert state[page._CONV_ID_KEY] == "recent"  # newest shown on first load
+    assert state[page._SHOWCASE_INIT_KEY] is True
+
+
+def test_showcase_initial_conversation_waits_for_hydration(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {page._CONV_ID_KEY: "empty1", page._TURNS_KEY: []}
+    monkeypatch.setattr(page.st, "session_state", state)
+    records = [_record("recent", "2026-09-01T10:00:00.000+00:00", "q")]
+    summaries = page.conversation_summaries(records)
+
+    # Pre-hydration: do nothing and stay un-initialised so a later run can act.
+    page._ensure_showcase_initial_conversation(records, summaries, hydrated=False)
+
+    assert state[page._CONV_ID_KEY] == "empty1"
+    assert page._SHOWCASE_INIT_KEY not in state
+
+
+def test_showcase_initial_conversation_new_visitor_stays_fresh(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    state: dict[str, object] = {page._CONV_ID_KEY: "empty1", page._TURNS_KEY: []}
+    monkeypatch.setattr(page.st, "session_state", state)
+
+    # No saved conversations for this visitor: keep the fresh empty one, mark done.
+    page._ensure_showcase_initial_conversation([], [], hydrated=True)
+
+    assert state[page._CONV_ID_KEY] == "empty1"
+    assert state[page._SHOWCASE_INIT_KEY] is True
+
+
+def test_showcase_initial_conversation_runs_once(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    # Already initialised and the visitor started a new conversation; don't override it.
+    state: dict[str, object] = {
+        page._CONV_ID_KEY: "mynew",
+        page._TURNS_KEY: [],
+        page._SHOWCASE_INIT_KEY: True,
+    }
+    monkeypatch.setattr(page.st, "session_state", state)
+    records = [_record("recent", "2026-09-01T10:00:00.000+00:00", "q")]
+    summaries = page.conversation_summaries(records)
+
+    page._ensure_showcase_initial_conversation(records, summaries, hydrated=True)
+
+    assert state[page._CONV_ID_KEY] == "mynew"  # the user's choice is preserved
+
+
+def test_showcase_initial_conversation_preserves_live_turns(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    # The visitor is already mid-conversation (has turns); don't swap it out.
+    state: dict[str, object] = {page._CONV_ID_KEY: "live1", page._TURNS_KEY: ["turn"]}
+    monkeypatch.setattr(page.st, "session_state", state)
+    records = [_record("recent", "2026-09-01T10:00:00.000+00:00", "q")]
+    summaries = page.conversation_summaries(records)
+
+    page._ensure_showcase_initial_conversation(records, summaries, hydrated=True)
+
+    assert state[page._CONV_ID_KEY] == "live1"  # not overridden
+    assert state[page._SHOWCASE_INIT_KEY] is True
+
+
+def test_showcase_panel_css_makes_panel_resizable(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    css = page._showcase_panel_css("rgba(0,0,0,0.2)", 460)
+    # The showcase panel is a CSS-built, user-resizable scroll box scoped to the panel key.
+    assert f".st-key-{page._CHAT_PANEL_KEY}" in css
+    assert "resize:vertical" in css
+    assert "overflow-y:auto" in css
+    assert "height:460px" in css
+    assert "min-height" in css
+    assert "flex:none" in css  # so the panel's own height applies (not a flex-grow item)
+    # The old Small/Medium/Large control is gone.
+    assert not hasattr(page, "_render_showcase_panel_height")
+    assert not hasattr(page, "_SHOWCASE_PANEL_HEIGHTS")

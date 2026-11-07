@@ -53,6 +53,7 @@ from app_support.conversational_rag.build_manager import (
     builds_referencing_folder,
     is_build_name,
     load_build,
+    rename_build,
 )
 from app_support.conversational_rag.conversational_rag_build_ui import (
     render_build_tree_actions,
@@ -60,11 +61,12 @@ from app_support.conversational_rag.conversational_rag_build_ui import (
 )
 from app_support.dialog_ui import (
     SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX,
+    confirm_column_right_dock_css,
     render_confirm_dialog,
     render_notice_dialog,
     scrollable_dialog_css,
 )
-from app_support.focus import click_widget
+from app_support.focus import click_widget, select_widget_text
 from app_support.generated_files import (
     build_folder_zip_bytes,
     collapse_artifact_run_folder,
@@ -86,6 +88,8 @@ from app_support.generated_files import (
     is_history_folder,
     is_run_folder,
     list_sample_fixtures,
+    rename_generated_folder,
+    run_folder_label_split,
     zip_top_folder,
 )
 from app_support.i18n import get_strings
@@ -101,6 +105,16 @@ from app_support.support import (
     preview_created_timestamp,
     read_text_preview,
 )
+
+# Session-state keys for the rename-folder dialog (input value, inline error, one-shot
+# "select the prefilled text" flag).
+_RENAME_INPUT_KEY = "rename_folder_label_input"
+_RENAME_ERROR_KEY = "rename_folder_error"
+_RENAME_SELECT_KEY = "rename_folder_select_pending"
+# Tracks which folder the rename dialog last opened for, so a fresh open resets the
+# input/error and auto-selects — letting any trigger (folder or build button) just set
+# ``rename_folder_relative_path`` (like the delete flow) without cross-module coupling.
+_RENAME_OPENED_FOR_KEY = "rename_folder_opened_for"
 
 
 def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
@@ -267,7 +281,10 @@ def _delete_folder_confirmation_dialog() -> None:
                 for snapshot in blocking
             ],
             close_label=strings["FILES_DELETE_BLOCKED_CLOSE"],
-            close_key="delete_folder_blocked_close",
+            # Key must avoid the "delete_folder_" prefix: the red-delete CSS (see the
+            # st.markdown block below) substring-matches it and would turn this primary
+            # button's text dark-red-on-red. Keep it readable (white-on-primary).
+            close_key="blocked_index_delete_close",
             on_close=_cancel,
         )
         return
@@ -301,6 +318,149 @@ def _delete_folder(relative_path: str) -> None:
         _cached_list_generated_files.clear()
         _cached_download_tree.clear()
     st.rerun()
+
+
+def _clear_rename_state() -> None:
+    """Clear the rename dialog's session state (callback-safe — no rerun).
+
+    Used for Cancel (``on_click``) and dialog dismiss (``on_dismiss``), which both rerun
+    on their own; the fresh-open guard re-seeds the input on the next open.
+    """
+    st.session_state.rename_folder_relative_path = ""
+    st.session_state.pop(_RENAME_ERROR_KEY, None)
+    st.session_state.pop(_RENAME_OPENED_FOR_KEY, None)
+
+
+def _close_rename() -> None:
+    """Close the rename dialog from a render context (blocked notice / early return)."""
+    _clear_rename_state()
+    st.rerun()
+
+
+def _reset_after_rename(relative_path: str) -> None:
+    """Clear all rename state after a successful rename (more than cancel: it also drops
+    the typed input and any stale preview of a file under the renamed folder)."""
+    _clear_rename_state()
+    st.session_state.pop(_RENAME_INPUT_KEY, None)
+    preview_path = str(st.session_state.get("preview_file_relative_path", ""))
+    if preview_path == relative_path or preview_path.startswith(f"{relative_path}/"):
+        st.session_state.preview_file_relative_path = ""
+    _cached_list_generated_files.clear()
+    _cached_download_tree.clear()
+
+
+def _confirm_rename_cb(relative_path: str) -> None:
+    """Apply the rename from the Confirm button's on_click callback.
+
+    Reading the label from session state (not a widget return value) and running inside
+    an ``on_click`` callback fixes the two-click issue: the callback fires on the first
+    click with the committed text, rather than the first click only committing the field.
+    No ``st.rerun`` — the callback triggers its own rerun.
+    """
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    new_label = str(st.session_state.get(_RENAME_INPUT_KEY, ""))
+    # Build folders store their name in build.json, so route them through rename_build
+    # (which keeps that field in sync); crawl/vector folders use the plain dir rename.
+    is_build = is_build_folder(Path(relative_path).name)
+    try:
+        if is_build:
+            rename_build(_session_root(), relative_path, new_label)
+        else:
+            rename_generated_folder(_session_root(), relative_path, new_label)
+    except FileExistsError as exc:
+        st.session_state[_RENAME_ERROR_KEY] = strings["FILES_RENAME_DUPLICATE_ERROR"].format(
+            name=str(exc)
+        )
+        return
+    except (OSError, ValueError):
+        st.session_state[_RENAME_ERROR_KEY] = strings["FILES_RENAME_INVALID_ERROR"]
+        return
+    _reset_after_rename(relative_path)
+
+
+@st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_clear_rename_state)
+def _rename_folder_confirmation_dialog() -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    relative_path = str(st.session_state.get("rename_folder_relative_path", ""))
+    if not relative_path:
+        return
+
+    # A referenced vector index's full name still changes, so block it like delete does
+    # (reusing the delete-blocked item/close strings).
+    blocking = _builds_blocking_index_delete(_session_root(), relative_path)
+    if blocking:
+        render_notice_dialog(
+            title=strings["FILES_RENAME_BLOCKED_TITLE"],
+            body=strings["FILES_RENAME_BLOCKED_BODY"].format(count=len(blocking)),
+            items=[
+                strings["FILES_DELETE_BLOCKED_ITEM"].format(name=snapshot.name, slug=snapshot.slug)
+                for snapshot in blocking
+            ],
+            close_label=strings["FILES_DELETE_BLOCKED_CLOSE"],
+            close_key="rename_folder_blocked_close",
+            on_close=_close_rename,
+        )
+        return
+
+    split = run_folder_label_split(Path(relative_path).name)
+    if split is None:  # not a numbered run folder — nothing safe to rename
+        _close_rename()
+        return
+    locked, current_label = split
+
+    # A fresh open (first render for this folder) resets any stale typed value/error from a
+    # previous rename and arms the auto-select, so a trigger only needs to set the path.
+    if st.session_state.get(_RENAME_OPENED_FOR_KEY) != relative_path:
+        st.session_state[_RENAME_OPENED_FOR_KEY] = relative_path
+        st.session_state.pop(_RENAME_INPUT_KEY, None)
+        st.session_state.pop(_RENAME_ERROR_KEY, None)
+        st.session_state[_RENAME_SELECT_KEY] = True
+
+    confirm_key = "rename_folder_confirm_button"
+    st.subheader(strings["FILES_RENAME_FOLDER_DIALOG_TITLE"])
+    # Show the locked <prefix>NN_ inline before the field so it's clear it stays.
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        st.markdown(f"**{locked}**")
+        st.text_input(
+            strings["FILES_RENAME_FOLDER_INPUT_LABEL"],
+            value=current_label,
+            key=_RENAME_INPUT_KEY,
+            label_visibility="collapsed",
+        )
+    if st.session_state.pop(_RENAME_SELECT_KEY, False):
+        select_widget_text(_RENAME_INPUT_KEY)  # once, on open: prefilled text starts selected
+    error = st.session_state.get(_RENAME_ERROR_KEY)
+    if error:
+        st.error(error)
+    # Match the Delete dialog's layout (content-width, Cancel left, Confirm right-docked)
+    # but with neutral colours (rename isn't destructive): plain Cancel + primary Confirm.
+    st.markdown(confirm_column_right_dock_css(confirm_key), unsafe_allow_html=True)
+    action_cols = st.columns(2)
+    with action_cols[0]:
+        st.button(
+            strings["FILES_RENAME_FOLDER_DIALOG_CANCEL"],
+            key="rename_folder_cancel_button",
+            on_click=_clear_rename_state,
+        )
+    with action_cols[1]:
+        st.button(
+            strings["FILES_RENAME_FOLDER_DIALOG_CONFIRM"],
+            type="primary",
+            icon=":material/edit:",
+            key=confirm_key,
+            on_click=_confirm_rename_cb,
+            args=(relative_path,),
+        )
+
+
+def _render_open_rename_folder_dialog() -> None:
+    rename_path = str(st.session_state.get("rename_folder_relative_path", ""))
+    if not rename_path:
+        return
+    if not (_session_root() / rename_path).is_dir():
+        st.session_state.rename_folder_relative_path = ""
+        return
+    _rename_folder_confirmation_dialog()
 
 
 def _render_file_preview_button(file: GeneratedFile) -> None:
@@ -433,6 +593,22 @@ def _render_open_export_dialog() -> None:
     _export_folder_dialog()
 
 
+def _render_folder_rename_button(relative_path: str) -> None:
+    strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
+    folder_name = Path(relative_path).name
+    if st.button(
+        label=strings["FILES_RENAME_FOLDER_BUTTON"],
+        icon=":material/edit:",
+        key=f"rename_folder_{st.session_state.session_id}_{relative_path}",
+        help=strings["FILES_RENAME_FOLDER_HELP"].format(folder=folder_name),
+        disabled=_files_actions_busy(),
+    ):
+        # The dialog resets its input/error + auto-selects on a fresh open (see
+        # _RENAME_OPENED_FOR_KEY), so the trigger only sets the path, like delete.
+        st.session_state.rename_folder_relative_path = relative_path
+        st.rerun()
+
+
 def _render_folder_delete_button(relative_path: str) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     folder_name = Path(relative_path).name
@@ -528,6 +704,10 @@ def render_download_tree(
                         site_graph = find_site_graph_file(folder_node)
                         if site_graph is not None:
                             render_explore_3d_button(site_graph, disabled=_files_actions_busy())
+                        # Rename edits only a run folder's trailing label (crawl/vector);
+                        # fixed history folders keep just Export + Delete.
+                        if is_run_folder(name):
+                            _render_folder_rename_button(name)
                         _render_folder_delete_button(name)
             continue
         render_generated_file_download(entry)
@@ -854,6 +1034,10 @@ def _downloads_body() -> None:
     )
     if st.session_state.get("upload_dialog_open"):
         _upload_folder_dialog()
+    # Red "Delete this folder" styling. The selector substring-matches ANY key containing
+    # "st-key-delete_folder_" (both the tree buttons and the dialog's cancel/confirm, which
+    # re-override it); dialog buttons that must NOT be red (e.g. a blocked-notice Close) must
+    # use a key WITHOUT that prefix.
     st.markdown(
         """
         <style>
@@ -894,6 +1078,7 @@ def _downloads_body() -> None:
 
     _render_open_preview_dialog(files)
     _render_open_delete_folder_dialog()
+    _render_open_rename_folder_dialog()
     _render_open_export_dialog()
 
 

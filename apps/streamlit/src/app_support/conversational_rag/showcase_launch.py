@@ -36,7 +36,7 @@ def render_launch_button(
 ) -> None:
     """Mount the Launch button that opens *url* in a new tab.
 
-    *url* is relative (``?show=<token>``) so the frontend resolves it against the
+    *url* is relative (``?showcase=<token>``) so the frontend resolves it against the
     app's base URL, keeping base-path deploys working. *auto_open* attempts a
     best-effort open on mount for a just-built showcase.
     """
