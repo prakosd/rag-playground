@@ -64,6 +64,73 @@ def test_import_uploaded_history_zip_rejected(monkeypatch: pytest.MonkeyPatch) -
     fake_st.rerun.assert_called_once()
 
 
+def _history_hook_script(fire_label: str, folder: str) -> None:
+    # Render a one-folder tree with an after_history_hook so a test can assert the hook
+    # fires right after a history folder (and only for history folders).
+    import streamlit as st
+
+    from app_support import downloads_ui as ui
+
+    for key, value in {
+        "session_id": "s1",
+        "language": "EN",
+        "job": None,
+        "job_state": "idle",
+        "vector_index_job": None,
+        "vector_index_state": "idle",
+    }.items():
+        st.session_state.setdefault(key, value)
+    ui.render_download_tree(
+        {folder: {}},
+        allow_run_folder_collapse=False,
+        after_history_hook=lambda: st.markdown(fire_label),
+    )
+
+
+def test_render_download_tree_fires_after_history_hook() -> None:
+    # The build tree drops its Token-usage panel via this hook right after the
+    # conversational_rag_history folder, so the hook must fire for a history folder.
+    app = AppTest.from_function(
+        _history_hook_script,
+        kwargs={"fire_label": "HOOK_FIRED", "folder": "conversational_rag_history"},
+    )
+    app.run(timeout=10)
+    assert not app.exception
+    assert any("HOOK_FIRED" in block.value for block in app.markdown)
+
+
+def test_render_download_tree_hook_skips_non_history_folder() -> None:
+    app = AppTest.from_function(
+        _history_hook_script,
+        kwargs={"fire_label": "HOOK_FIRED", "folder": "vector_01_slate"},
+    )
+    app.run(timeout=10)
+    assert not app.exception
+    assert not any("HOOK_FIRED" in block.value for block in app.markdown)
+
+
+def test_on_export_dismiss_clears_painted_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Dismissing the export modal must reset every export key, including the two-phase
+    # "painted" flag, so the next export starts fresh (and re-paints its shell).
+    fake_st = MagicMock()
+    fake_st.session_state = _State(
+        {
+            "export_folder_relative_path": "crawl_01_garden",
+            "export_zip_payload": {"relative_path": "crawl_01_garden", "bytes": b"z"},
+            "export_autoclicked": True,
+            "export_dialog_painted_for": "crawl_01_garden",
+        }
+    )
+    monkeypatch.setattr(downloads_ui, "st", fake_st)
+
+    downloads_ui._on_export_dismiss()
+
+    assert fake_st.session_state["export_folder_relative_path"] == ""
+    assert "export_zip_payload" not in fake_st.session_state
+    assert "export_autoclicked" not in fake_st.session_state
+    assert "export_dialog_painted_for" not in fake_st.session_state
+
+
 # Risk: the preview modal shows file timestamps; a bad epoch must not crash the
 # dialog. Verify the UTC formatter returns a stable string. Type: unit.
 def test_format_preview_timestamp_utc_formats_epoch() -> None:
@@ -308,6 +375,53 @@ def _render_delete_dialog_view(delete_path: str) -> None:
     ui._render_downloads()
 
 
+def _render_multi_state_view(delete_path: str, export_path: str) -> None:
+    # Prime BOTH the delete and export dialog states to verify only one modal renders.
+    import streamlit as st
+
+    from app_support import downloads_ui as ui
+
+    defaults = {
+        "session_id": "s1",
+        "job": None,
+        "job_state": "idle",
+        "vector_index_job": None,
+        "vector_index_state": "idle",
+        "language": "EN",
+        "active_output_dir": "",
+        "preview_file_relative_path": "",
+        "delete_folder_relative_path": delete_path,
+        "export_folder_relative_path": export_path,
+        "rename_folder_relative_path": "",
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+    ui._render_downloads()
+
+
+def test_only_one_files_dialog_renders_when_multiple_states_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Defensive: a just-dismissed dialog must not linger beside a newly opened one, so the
+    # body renders only the first modal whose state is set (delete is checked before export).
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "crawl_01_garden" / "2026-07-01_09-00-00").mkdir(parents=True)
+
+    app = AppTest.from_function(
+        _render_multi_state_view,
+        kwargs={"delete_path": "crawl_01_garden", "export_path": "crawl_01_garden"},
+    )
+    app.run(timeout=10)
+
+    assert not app.exception
+    # Delete wins (checked first); its confirm button renders.
+    assert any(getattr(b, "key", "") == "delete_folder_confirm_button" for b in app.button)
+    # The export dialog must not render alongside it (no download button, no preparing shell).
+    assert not any(getattr(b, "key", "").startswith("export_download_") for b in app.button)
+    assert "export_dialog_painted_for" not in app.session_state
+
+
 def test_delete_blocked_close_button_avoids_red_delete_key_prefix(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -381,10 +495,10 @@ def test_rename_dialog_renders_prefilled_input(
     # The locked prefix shows inline before the field (no explanatory caption anymore).
     assert any("crawl_01_" in md.value for md in app.markdown)
     assert not any("part stays" in md.value for md in app.markdown)
-    # Confirm button is labelled "Confirm" and is not stretched (delete-style right-dock).
+    # Confirm button is labelled "Confirm"; Cancel + Confirm are the form's submit buttons.
     confirm = next(b for b in app.button if b.key == "rename_folder_confirm_button")
     assert confirm.label == "Confirm"
-    assert any("align-items: flex-end" in md.value for md in app.markdown)
+    assert any(b.key == "rename_folder_cancel_button" for b in app.button)
 
 
 def test_rename_dialog_blocks_referenced_index(
@@ -424,7 +538,8 @@ def test_rename_dialog_confirm_renames_in_one_click(
     )
     app.run(timeout=10)
     assert not app.exception
-    # Edit the label and click Confirm once — the on_click callback applies it in one pass.
+    # Edit the label and submit the form once — the render-context handler applies it in
+    # one pass (and closes the modal), no two-click dance.
     text_input = next(w for w in app.text_input if w.value == "garden")
     text_input.set_value("beach")
     next(b for b in app.button if b.key == "rename_folder_confirm_button").click()
@@ -479,7 +594,7 @@ def test_rename_dialog_invalid_label_keeps_dialog_open_with_error(
     # The folder is untouched, the dialog stays open, and an inline error shows.
     assert (session / "crawl_01_garden").is_dir()
     assert app.session_state["rename_folder_relative_path"] == "crawl_01_garden"
-    assert any("letters, numbers, and underscores" in err.value for err in app.error)
+    assert any("letters, numbers, underscores, and dashes" in err.value for err in app.error)
 
 
 def test_rename_dialog_renames_build_and_syncs_manifest(

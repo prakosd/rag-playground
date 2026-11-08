@@ -798,7 +798,7 @@ STRINGS_ID: Strings = {
     "FILES_RENAME_FOLDER_DIALOG_CANCEL": "Batal",
     "FILES_RENAME_FOLDER_DIALOG_CONFIRM": "Konfirmasi",
     "FILES_RENAME_DUPLICATE_ERROR": ("Folder bernama **{name}** sudah ada. Pilih nama lain."),
-    "FILES_RENAME_INVALID_ERROR": "Gunakan hanya huruf, angka, dan garis bawah.",
+    "FILES_RENAME_INVALID_ERROR": "Gunakan hanya huruf, angka, garis bawah, dan tanda hubung.",
     "FILES_RENAME_BLOCKED_TITLE": "Tidak bisa mengganti nama indeks ini",
     "FILES_RENAME_BLOCKED_BODY": (
         "Vector index ini dipakai oleh {count} build dari Langkah 5. Mengganti namanya akan "

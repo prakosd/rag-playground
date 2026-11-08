@@ -697,9 +697,9 @@ def test_rename_generated_folder_rejects_duplicate_name(tmp_path: Path) -> None:
 def test_rename_generated_folder_rejects_unsafe_labels(tmp_path: Path) -> None:
     (tmp_path / "crawl_01_garden").mkdir()
 
-    # Spaces, hyphens, slashes, dots, and other symbols are all rejected — only
-    # letters, numbers, and underscores are allowed.
-    for bad_label in ("", "   ", "a b", "a-b", "a/b", "..", "weird*name"):
+    # Spaces, slashes, dots, and other symbols are all rejected — only letters,
+    # numbers, underscores, and dashes are allowed.
+    for bad_label in ("", "   ", "a b", "a/b", "..", "weird*name"):
         with pytest.raises(ValueError):
             rename_generated_folder(tmp_path, "crawl_01_garden", bad_label)
     assert (tmp_path / "crawl_01_garden").is_dir()
@@ -712,6 +712,16 @@ def test_rename_generated_folder_allows_underscore_label(tmp_path: Path) -> None
 
     assert new_name == "crawl_01_my_docs_v2"
     assert (tmp_path / "crawl_01_my_docs_v2").is_dir()
+
+
+def test_rename_generated_folder_allows_dash_label(tmp_path: Path) -> None:
+    (tmp_path / "crawl_01_garden").mkdir()
+
+    # Dashes are allowed alongside letters, numbers, and underscores.
+    new_name = rename_generated_folder(tmp_path, "crawl_01_garden", "my-docs-v2")
+
+    assert new_name == "crawl_01_my-docs-v2"
+    assert (tmp_path / "crawl_01_my-docs-v2").is_dir()
 
 
 def test_rename_generated_folder_rejects_timestamp_like_label(tmp_path: Path) -> None:

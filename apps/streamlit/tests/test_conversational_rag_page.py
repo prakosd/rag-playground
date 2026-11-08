@@ -350,6 +350,20 @@ def test_showcase_panel_css_makes_panel_resizable(monkeypatch: MonkeyPatch) -> N
     assert "height:460px" in css
     assert "min-height" in css
     assert "flex:none" in css  # so the panel's own height applies (not a flex-grow item)
+    # Only the top corners are rounded; the bottom two are squared so the panel welds
+    # flush to the chat input docked below it (matching Step 5).
+    assert "border-top-left-radius:0.5rem" in css
+    assert "border-top-right-radius:0.5rem" in css
+    assert "border-bottom-left-radius:0" in css
+    assert "border-bottom-right-radius:0" in css
     # The old Small/Medium/Large control is gone.
     assert not hasattr(page, "_render_showcase_panel_height")
+
+
+def test_panel_dock_css_pulls_panel_up_under_controls(monkeypatch: MonkeyPatch) -> None:
+    page = _page(monkeypatch)
+    # A negative top margin on the panel key trims the default block gap so the panel
+    # sits snug under the New-conversation + picker row (mirrors _INPUT_DOCK_CSS below).
+    assert f".st-key-{page._CHAT_PANEL_KEY}" in page._PANEL_DOCK_CSS
+    assert "margin-top:-" in page._PANEL_DOCK_CSS
     assert not hasattr(page, "_SHOWCASE_PANEL_HEIGHTS")

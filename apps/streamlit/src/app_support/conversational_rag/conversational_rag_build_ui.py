@@ -59,6 +59,7 @@ __all__ = [
     "load_build_as_controls",
     "render_build_launch_button",
     "render_build_load_dialog",
+    "render_build_token_panel",
     "render_build_tree_actions",
     "resolve_build_index",
     "snapshot_from_controls",
@@ -322,15 +323,29 @@ def _render_relaunch_button(strings: Strings, snapshot: BuildSnapshot, *, disabl
         st.rerun()
 
 
+def render_build_token_panel(strings: Strings, session_root: Path | str, name: str) -> None:
+    """Render a build's Token usage panel from its showcase chat history, if any.
+
+    Rendered in the Output Files tree right after the build's ``conversational_rag_history``
+    folder (the content it summarizes), above the build's action row. No-op for a build
+    with no run dir or no recorded conversations.
+    """
+    run_dir = build_run_dir(build_dir(session_root, name))
+    if run_dir is None:
+        return
+    records = load_conversational_rag_history(run_dir)
+    if records:
+        render_conversational_token_panel(strings, records, key_suffix=f"_{name}")
+
+
 def render_build_tree_actions(
     strings: Strings, session_root: Path | str, name: str, *, disabled: bool = False
 ) -> None:
-    """Render a build's actions inside its Output Files tree folder.
+    """Render a build's action row inside its Output Files tree folder.
 
-    The run-folder tree already lists build.json (with its own preview/download) and
-    the showcase chat history; this adds the Token-usage panel built from that history
-    (above the actions, next to the content it summarizes) and the
-    Export/Launch/Load/Rename/Delete action row.
+    The run-folder tree already lists build.json (with its own preview/download) and the
+    showcase chat history; :func:`render_build_token_panel` adds the Token-usage panel just
+    under that history, and this adds the Export/Launch/Load/Rename/Delete action row.
     """
     build_root = build_dir(session_root, name)
     snapshot = load_build(build_root)
@@ -341,9 +356,6 @@ def render_build_tree_actions(
     just_built = st.session_state.get(_JUST_BUILT_KEY) == name
     if just_built:
         st.session_state.pop(_JUST_BUILT_KEY, None)
-    records = load_conversational_rag_history(run_dir)
-    if records:
-        render_conversational_token_panel(strings, records, key_suffix=f"_{snapshot.name}")
     with st.container(horizontal=True, vertical_alignment="center", width="content", gap="xxsmall"):
         _export_button(strings, snapshot, disabled=disabled)
         _launch_button(strings, snapshot, auto_open=just_built)

@@ -186,6 +186,18 @@ def test_rename_build_renames_folder_and_syncs_manifest_name(tmp_path: Path) -> 
     assert snapshot.slug == "garden_river_stone_oak_cedar"  # slug untouched
 
 
+def test_rename_build_allows_dash_label(tmp_path: Path) -> None:
+    _write_build(tmp_path, _snapshot(name="rag_build_01_garden"))
+
+    new_name = rename_build(tmp_path, "rag_build_01_garden", "charter-v2")
+
+    assert new_name == "rag_build_01_charter-v2"
+    assert (tmp_path / "rag_build_01_charter-v2").is_dir()
+    snapshot = load_build(tmp_path / "rag_build_01_charter-v2")
+    assert snapshot is not None
+    assert snapshot.name == "rag_build_01_charter-v2"
+
+
 def test_rename_build_noop_leaves_manifest_unchanged(tmp_path: Path) -> None:
     _write_build(tmp_path, _snapshot(name="rag_build_01_garden"))
 

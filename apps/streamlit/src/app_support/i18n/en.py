@@ -776,7 +776,7 @@ STRINGS_EN: Strings = {
     "FILES_RENAME_DUPLICATE_ERROR": (
         "A folder named **{name}** already exists. Pick a different name."
     ),
-    "FILES_RENAME_INVALID_ERROR": "Use only letters, numbers, and underscores.",
+    "FILES_RENAME_INVALID_ERROR": "Use only letters, numbers, underscores, and dashes.",
     "FILES_RENAME_BLOCKED_TITLE": "Can't rename this index",
     "FILES_RENAME_BLOCKED_BODY": (
         "This vector index is used by {count} build(s) from Step 5. Renaming it would break "

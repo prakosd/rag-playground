@@ -203,6 +203,10 @@ def _followup_bubble_css(fill: str) -> str:
 
 # Pull the chat input snug under the scroll panel by dropping the default block gap.
 _INPUT_DOCK_CSS = f"<style>.st-key-{_INPUT_DOCK_KEY}{{margin-top:-1rem}}</style>"
+# Pull the chat panel up snug under the conversation controls row (New + picker + Build),
+# trimming the default block gap so the panel reads as part of that row (mirrors
+# _INPUT_DOCK_CSS, which docks the chat input under the panel).
+_PANEL_DOCK_CSS = f"<style>.st-key-{_CHAT_PANEL_KEY}{{margin-top:-0.75rem}}</style>"
 # Weld the scroll panel to the composer below it: square the panel's bottom corners and
 # the chat input's top corners so the history + input read as one continuous surface.
 _WELD_CSS = (
@@ -264,7 +268,9 @@ def _showcase_panel_css(border_color: str, height_px: int) -> str:
     unlike Step 5's height-locked container the browser's ``resize`` handle can actually
     change — and persist — the height (an inline drag height survives reruns and isn't
     overridden). This CSS recreates the bordered, scrollable look ``st.container(height=)``
-    gives (the weld CSS still squares the bottom corners), starting at *height_px*.
+    gives, starting at *height_px*. It rounds only the top corners and squares the bottom
+    two itself so the panel welds flush to the chat input docked below it (matching Step 5,
+    where ``_WELD_CSS`` squares the height-locked container's bottom corners).
     """
     return (
         "<style>"
@@ -272,7 +278,10 @@ def _showcase_panel_css(border_color: str, height_px: int) -> str:
         # flex:none so this stops being a flex-grow item and its own height applies
         # (otherwise a plain container collapses to min-height); the drag then overrides it.
         f"flex:none;height:{height_px}px;min-height:200px;overflow-y:auto;resize:vertical;"
-        f"border:1px solid {border_color};border-radius:0.5rem;padding:1rem}}"
+        f"border:1px solid {border_color};"
+        # Round only the top; square the bottom so it welds to the chat input below.
+        "border-top-left-radius:0.5rem;border-top-right-radius:0.5rem;"
+        "border-bottom-left-radius:0;border-bottom-right-radius:0;padding:1rem}"
         "</style>"
     )
 
@@ -363,15 +372,23 @@ def render_page(
     theme_dark = st.context.theme.type == "dark"
     bubble_fill = _BUBBLE_FILL_DARK if theme_dark else _BUBBLE_FILL_LIGHT
     panel_border = _PANEL_BORDER_DARK if theme_dark else _PANEL_BORDER_LIGHT
+    panel_height = get_settings().conv_rag_chat_panel_height_px
     st.html(_CHAT_ALIGN_CSS)
     st.html(_assistant_bubble_css(bubble_fill))
     st.html(_STATUS_BUBBLE_CSS)
     st.html(_followup_bubble_css(bubble_fill))
     st.html(_INPUT_DOCK_CSS)
+    st.html(_PANEL_DOCK_CSS)
     st.html(_WELD_CSS)
     st.html(_idle_input_border_css(panel_border))
     st.html(_TABS_EXPANDER_TIGHTEN_CSS)
     st.html(_INSPECT_TABS_RHYTHM_CSS)
+    # The showcase builds the panel with a plain st.container (no height=) so the visitor
+    # can drag-resize it; inject its scroll-box CSS here (not right before the panel) so
+    # no invisible element sits between the controls row and the panel, which would widen
+    # the gap _PANEL_DOCK_CSS trims.
+    if showcase:
+        st.html(_showcase_panel_css(panel_border, panel_height))
 
     # Peek the queued question (a typed message or a follow-up click) before the
     # controls so every input can be locked while its answer streams — a mid-stream
@@ -429,11 +446,9 @@ def render_page(
     # Peek the scroll intent before the panel so a submitted turn can scroll to the
     # new question *before* the blocking stream (pinning it to the top as it streams).
     scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
-    panel_height = get_settings().conv_rag_chat_panel_height_px
     # The showcase builds the panel without Streamlit's height= so the visitor can drag it
-    # taller/shorter (CSS recreates the bordered scroll box); Step 5 keeps the fixed height.
+    # taller/shorter (its scroll-box CSS was injected above); Step 5 keeps the fixed height.
     if showcase:
-        st.html(_showcase_panel_css(panel_border, panel_height))
         panel_container = st.container(key=_CHAT_PANEL_KEY)
     else:
         panel_container = st.container(height=panel_height, key=_CHAT_PANEL_KEY)

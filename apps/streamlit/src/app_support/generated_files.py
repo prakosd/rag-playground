@@ -86,9 +86,10 @@ _PROGRESS_HISTORY_FILE = "progress_history.jsonl"
 _SITE_GRAPH_FILENAME = "site_graph.jsonl"
 _RUN_FOLDER_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 # Allowed characters for a user-entered folder label (the part after <prefix>NN_):
-# letters, numbers, and underscores only — no spaces, hyphens, or other symbols, so the
-# label stays filesystem/URL-safe and reads cleanly in the tree.
-_SAFE_LABEL_RE = re.compile(r"^[A-Za-z0-9_]+$")
+# letters, numbers, underscores, and dashes only — no spaces or other symbols, so the
+# label stays filesystem/URL-safe and reads cleanly in the tree. The dash is last in the
+# character class so it is a literal, not a range.
+_SAFE_LABEL_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _FINAL_CONTENT_GLOB = "content_*"
 _SORTED_SUCCESS_CONTENT_GLOB = "sorted_success_content_*"
 _SUCCESS_CONTENT_GLOB = "success_content_*"
@@ -265,7 +266,7 @@ def rename_generated_folder(session_root: Path | str, relative_path: str, new_la
     locked, _current_label = split
     label = new_label.strip()
     if not _SAFE_LABEL_RE.fullmatch(label):
-        raise ValueError("Use only letters, numbers, and underscores.")
+        raise ValueError("Use only letters, numbers, underscores, and dashes.")
     new_name = f"{locked}{label}"
     if new_name == target.name:
         return target.name

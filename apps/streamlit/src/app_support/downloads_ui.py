@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import html
 import mimetypes
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import nullcontext
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -56,12 +57,12 @@ from app_support.conversational_rag.build_manager import (
     rename_build,
 )
 from app_support.conversational_rag.conversational_rag_build_ui import (
+    render_build_token_panel,
     render_build_tree_actions,
     resolve_build_index,
 )
 from app_support.dialog_ui import (
     SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX,
-    confirm_column_right_dock_css,
     render_confirm_dialog,
     render_notice_dialog,
     scrollable_dialog_css,
@@ -115,6 +116,11 @@ _RENAME_SELECT_KEY = "rename_folder_select_pending"
 # input/error and auto-selects — letting any trigger (folder or build button) just set
 # ``rename_folder_relative_path`` (like the delete flow) without cross-module coupling.
 _RENAME_OPENED_FOR_KEY = "rename_folder_opened_for"
+# Tracks which folder the export dialog has already deferred its zip build for, so the
+# first run reruns immediately (fast, no block) and the (possibly slow) build runs on the
+# next run — a dialog that blocks on its first run lets the previous dialog's elements
+# linger as a ghost (streamlit#10907). Cleared on dismiss.
+_EXPORT_PAINTED_KEY = "export_dialog_painted_for"
 
 
 def _format_preview_timestamp_utc(timestamp: float | None) -> str | None:
@@ -349,13 +355,13 @@ def _reset_after_rename(relative_path: str) -> None:
     _cached_download_tree.clear()
 
 
-def _confirm_rename_cb(relative_path: str) -> None:
-    """Apply the rename from the Confirm button's on_click callback.
+def _apply_rename(relative_path: str) -> None:
+    """Apply the rename from the Confirm form-submit, running in the render context.
 
-    Reading the label from session state (not a widget return value) and running inside
-    an ``on_click`` callback fixes the two-click issue: the callback fires on the first
-    click with the committed text, rather than the first click only committing the field.
-    No ``st.rerun`` — the callback triggers its own rerun.
+    Running here (a form submit, not an ``on_click`` callback) lets a successful rename
+    ``st.rerun()`` to close the modal cleanly instead of leaving a blank dialog behind;
+    an invalid/duplicate label sets the inline error and reruns so the dialog re-renders
+    with it. The form batches the field + submit, so there is no two-click issue.
     """
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     new_label = str(st.session_state.get(_RENAME_INPUT_KEY, ""))
@@ -371,11 +377,11 @@ def _confirm_rename_cb(relative_path: str) -> None:
         st.session_state[_RENAME_ERROR_KEY] = strings["FILES_RENAME_DUPLICATE_ERROR"].format(
             name=str(exc)
         )
-        return
     except (OSError, ValueError):
         st.session_state[_RENAME_ERROR_KEY] = strings["FILES_RENAME_INVALID_ERROR"]
-        return
-    _reset_after_rename(relative_path)
+    else:
+        _reset_after_rename(relative_path)
+    st.rerun()
 
 
 @st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_clear_rename_state)
@@ -418,39 +424,46 @@ def _rename_folder_confirmation_dialog() -> None:
 
     confirm_key = "rename_folder_confirm_button"
     st.subheader(strings["FILES_RENAME_FOLDER_DIALOG_TITLE"])
-    # Show the locked <prefix>NN_ inline before the field so it's clear it stays.
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-        st.markdown(f"**{locked}**")
-        st.text_input(
-            strings["FILES_RENAME_FOLDER_INPUT_LABEL"],
-            value=current_label,
-            key=_RENAME_INPUT_KEY,
-            label_visibility="collapsed",
-        )
+    # A form so Enter submits the single-line field and the Confirm handler runs in the
+    # render context (not an on_click callback): a successful rename then st.rerun()s to
+    # close the modal cleanly instead of leaving a blank dialog, and the form batches the
+    # field + submit so there is no two-click issue.
+    with st.form("rename_folder_form", enter_to_submit=True, border=False):
+        # Show the locked <prefix>NN_ inline before the field (centred, hugging it) so it
+        # is clear it stays; only the trailing label is editable.
+        with st.container(horizontal=True, vertical_alignment="center", gap=None):
+            st.markdown(f"**{locked}**")
+            st.text_input(
+                strings["FILES_RENAME_FOLDER_INPUT_LABEL"],
+                value=current_label,
+                key=_RENAME_INPUT_KEY,
+                label_visibility="collapsed",
+            )
+        error = st.session_state.get(_RENAME_ERROR_KEY)
+        if error:
+            st.error(error)
+        # Cancel left, Confirm right (neutral colours — rename isn't destructive). Confirm
+        # is defined first so Enter maps to it, then docked right (mirrors basic_rag_qa).
+        action_cols = st.columns(2)
+        with action_cols[1], st.container(horizontal_alignment="right"):
+            confirm = st.form_submit_button(
+                strings["FILES_RENAME_FOLDER_DIALOG_CONFIRM"],
+                type="primary",
+                icon=":material/edit:",
+                key=confirm_key,
+            )
+        with action_cols[0]:
+            cancel = st.form_submit_button(
+                strings["FILES_RENAME_FOLDER_DIALOG_CANCEL"],
+                key="rename_folder_cancel_button",
+            )
     if st.session_state.pop(_RENAME_SELECT_KEY, False):
         select_widget_text(_RENAME_INPUT_KEY)  # once, on open: prefilled text starts selected
-    error = st.session_state.get(_RENAME_ERROR_KEY)
-    if error:
-        st.error(error)
-    # Match the Delete dialog's layout (content-width, Cancel left, Confirm right-docked)
-    # but with neutral colours (rename isn't destructive): plain Cancel + primary Confirm.
-    st.markdown(confirm_column_right_dock_css(confirm_key), unsafe_allow_html=True)
-    action_cols = st.columns(2)
-    with action_cols[0]:
-        st.button(
-            strings["FILES_RENAME_FOLDER_DIALOG_CANCEL"],
-            key="rename_folder_cancel_button",
-            on_click=_clear_rename_state,
-        )
-    with action_cols[1]:
-        st.button(
-            strings["FILES_RENAME_FOLDER_DIALOG_CONFIRM"],
-            type="primary",
-            icon=":material/edit:",
-            key=confirm_key,
-            on_click=_confirm_rename_cb,
-            args=(relative_path,),
-        )
+    if cancel:
+        _clear_rename_state()
+        st.rerun()
+    if confirm:
+        _apply_rename(relative_path)
 
 
 def _render_open_rename_folder_dialog() -> None:
@@ -528,6 +541,7 @@ def _on_export_dismiss() -> None:
     st.session_state.export_folder_relative_path = ""
     st.session_state.pop("export_zip_payload", None)
     st.session_state.pop("export_autoclicked", None)
+    st.session_state.pop(_EXPORT_PAINTED_KEY, None)
 
 
 @st.dialog(_DIALOG_PLACEHOLDER_TITLE, width="small", on_dismiss=_on_export_dismiss)
@@ -538,11 +552,16 @@ def _export_folder_dialog() -> None:
         return
     folder_name = Path(relative_path).name
 
-    # Build once and reuse across the dialog's reruns (bounded: cleared on
-    # dismiss), so the auto-click rerun never rebuilds the zip. The spinner shows
-    # inside the modal, which blocks the rest of the UI while preparing.
+    # Build once and reuse across the dialog's reruns (bounded: cleared on dismiss), so the
+    # auto-click rerun never rebuilds the zip. The build can be slow (big indexes); blocking
+    # on it during this dialog's first run lets Streamlit leave a just-dismissed dialog's
+    # elements on screen as a ghost (streamlit#10907). So on the first run just mark the
+    # dialog painted and rerun (fast, no block); the zip build is deferred to the next run.
     payload = st.session_state.get("export_zip_payload")
     if not isinstance(payload, dict) or payload.get("relative_path") != relative_path:
+        if st.session_state.get(_EXPORT_PAINTED_KEY) != relative_path:
+            st.session_state[_EXPORT_PAINTED_KEY] = relative_path
+            st.rerun()
         session_folder = _session_root()
         with st.spinner(strings["FILES_EXPORT_PREPARING"].format(folder=folder_name)):
             try:
@@ -659,7 +678,10 @@ def render_generated_file_download(file: GeneratedFile) -> None:
 
 
 def render_download_tree(
-    tree: Mapping[str, Any], *, allow_run_folder_collapse: bool = True
+    tree: Mapping[str, Any],
+    *,
+    allow_run_folder_collapse: bool = True,
+    after_history_hook: Callable[[], None] | None = None,
 ) -> None:
     entries = sorted(
         tree.items(),
@@ -678,12 +700,25 @@ def render_download_tree(
                     folder_label = format_history_folder_label(name, entry)
                 else:
                     folder_label, folder_node = collapse_artifact_run_folder(name, entry)
+            is_build = allow_run_folder_collapse and is_build_folder(name)
             with st.expander(folder_label, icon=download_folder_icon(name)):
                 render_download_tree(
                     folder_node,
                     allow_run_folder_collapse=False,
+                    # A build drops its Token usage panel right after its history folder
+                    # (next to the content it summarizes), above the action row below.
+                    after_history_hook=(
+                        partial(
+                            render_build_token_panel,
+                            get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE)),
+                            _session_root(),
+                            name,
+                        )
+                        if is_build
+                        else None
+                    ),
                 )
-                if allow_run_folder_collapse and is_build_folder(name):
+                if is_build:
                     render_build_tree_actions(
                         get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE)),
                         _session_root(),
@@ -709,6 +744,10 @@ def render_download_tree(
                         if is_run_folder(name):
                             _render_folder_rename_button(name)
                         _render_folder_delete_button(name)
+            # Fire the hook right after a history folder's expander closes so a build's
+            # Token usage panel sits directly under conversational_rag_history.
+            if after_history_hook is not None and is_history_folder(name):
+                after_history_hook()
             continue
         render_generated_file_download(entry)
 
@@ -1076,10 +1115,17 @@ def _downloads_body() -> None:
 
     _render_sample_data_panel()
 
-    _render_open_preview_dialog(files)
-    _render_open_delete_folder_dialog()
-    _render_open_rename_folder_dialog()
-    _render_open_export_dialog()
+    # Only one Files & folders modal is live at a time: render the first whose state is
+    # set so a just-dismissed dialog can't linger beside a newly opened one (each
+    # _render_open_* also re-checks its own state and is a no-op when unset).
+    if str(st.session_state.get("preview_file_relative_path", "")):
+        _render_open_preview_dialog(files)
+    elif str(st.session_state.get("delete_folder_relative_path", "")):
+        _render_open_delete_folder_dialog()
+    elif str(st.session_state.get("rename_folder_relative_path", "")):
+        _render_open_rename_folder_dialog()
+    elif str(st.session_state.get("export_folder_relative_path", "")):
+        _render_open_export_dialog()
 
 
 def _render_downloads() -> None:

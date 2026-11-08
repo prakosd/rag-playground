@@ -313,6 +313,15 @@ def _build_actions_script(session_dir: str, name: str) -> None:
     render_build_tree_actions(_STRINGS_EN, _Path(session_dir), name)
 
 
+def _build_token_panel_script(session_dir: str, name: str) -> None:
+    from pathlib import Path as _Path
+
+    from app_support.conversational_rag.conversational_rag_build_ui import render_build_token_panel
+    from app_support.i18n import STRINGS_EN as _STRINGS_EN
+
+    render_build_token_panel(_STRINGS_EN, _Path(session_dir), name)
+
+
 def test_render_build_tree_actions_renders_action_row(tmp_path: Path) -> None:
     source = _real_index(tmp_path / "src")
     snapshot = snapshot_from_controls(
@@ -352,26 +361,16 @@ def test_render_build_tree_actions_renders_action_row(tmp_path: Path) -> None:
     assert all(button.label == "Delete this folder" for button in delete_buttons)
 
 
-def _block_has_buttons(node: object) -> bool:
-    try:
-        return len(node.button) > 0  # type: ignore[attr-defined]
-    except (AttributeError, TypeError):
-        return False
-
-
-def test_render_build_tree_actions_puts_token_panel_above_actions(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_render_build_tree_actions_omits_token_panel(tmp_path: Path, monkeypatch) -> None:
+    # The Token-usage panel moved out of the action row into render_build_token_panel
+    # (so the tree can drop it right under the history folder it summarizes); the action
+    # row itself must no longer render it, even when history exists.
     from app_support.conversational_rag.conversational_rag_history import (
         ConversationalTurnRecord,
         append_conversational_rag_record,
     )
 
-    # The Launch button is a CCv2 component whose registration leaks across AppTest
-    # contexts; stub it so this test (which renders a second build-action row) stays
-    # independent. The order check only needs the st.button actions + the token panel.
     monkeypatch.setattr(build_ui, "render_launch_button", lambda *a, **k: None)
-
     source = _real_index(tmp_path / "src")
     snapshot = snapshot_from_controls(
         _controls(index=source),
@@ -381,7 +380,6 @@ def test_render_build_tree_actions_puts_token_panel_above_actions(
         prompts={},
     )
     create_build(tmp_path, snapshot)
-    # Seed one history record so the Token-usage panel renders.
     run_dir = build_run_dir(tmp_path / "rag_build_01_garden")
     assert run_dir is not None
     append_conversational_rag_record(
@@ -407,11 +405,68 @@ def test_render_build_tree_actions_puts_token_panel_above_actions(
     ).run()
 
     assert not at.exception
-    children = list(at.main.children.values())
-    token_pos = next(
-        i
-        for i, node in enumerate(children)
-        if type(node).__name__ == "Expander" and "Token usage" in getattr(node, "label", "")
+    assert not any("Token usage" in getattr(node, "label", "") for node in at.expander)
+
+
+def test_render_build_token_panel_renders_from_history(tmp_path: Path) -> None:
+    from app_support.conversational_rag.conversational_rag_history import (
+        ConversationalTurnRecord,
+        append_conversational_rag_record,
     )
-    actions_pos = next(i for i, node in enumerate(children) if _block_has_buttons(node))
-    assert token_pos < actions_pos  # Token usage sits above the Export/Launch/Load/Delete row
+
+    source = _real_index(tmp_path / "src")
+    snapshot = snapshot_from_controls(
+        _controls(index=source),
+        language="EN",
+        name="rag_build_01_garden",
+        slug="alpha_beta_gamma_delta_epsilon",
+        prompts={},
+    )
+    create_build(tmp_path, snapshot)
+    run_dir = build_run_dir(tmp_path / "rag_build_01_garden")
+    assert run_dir is not None
+    append_conversational_rag_record(
+        run_dir,
+        ConversationalTurnRecord(
+            timestamp_utc="2026-10-30T00:00:00.000+00:00",
+            index_folder="vector_01_garden",
+            index_run="2026-10-28_10-00-00",
+            embedding_model="titan",
+            llm_model="main",
+            aux_model="aux",
+            reranker="off",
+            raw_question="q",
+            sub_questions=(),
+            answer="a",
+            conversation_id="abc123",
+        ),
+    )
+
+    at = AppTest.from_function(
+        _build_token_panel_script,
+        kwargs={"session_dir": str(tmp_path), "name": "rag_build_01_garden"},
+    ).run()
+
+    assert not at.exception
+    assert any("Token usage" in getattr(node, "label", "") for node in at.expander)
+
+
+def test_render_build_token_panel_noop_without_history(tmp_path: Path) -> None:
+    source = _real_index(tmp_path / "src")
+    snapshot = snapshot_from_controls(
+        _controls(index=source),
+        language="EN",
+        name="rag_build_01_garden",
+        slug="alpha_beta_gamma_delta_epsilon",
+        prompts={},
+    )
+    create_build(tmp_path, snapshot)
+
+    at = AppTest.from_function(
+        _build_token_panel_script,
+        kwargs={"session_dir": str(tmp_path), "name": "rag_build_01_garden"},
+    ).run()
+
+    assert not at.exception
+    # No showcase conversations yet → no Token usage panel.
+    assert not any("Token usage" in getattr(node, "label", "") for node in at.expander)
