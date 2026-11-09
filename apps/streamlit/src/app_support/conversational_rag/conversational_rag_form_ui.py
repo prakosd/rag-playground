@@ -104,6 +104,11 @@ _ANSWER_RECENT_TURNS_MIN = 0
 _ANSWER_RECENT_TURNS_MAX = 10
 _PLAN_RECENT_TURNS_MIN = 0
 _PLAN_RECENT_TURNS_MAX = 10
+# Answer-model sampling temperature exposed as a 0.0-1.0 slider (the library allows up to
+# 2.0, but 0-1 is the useful, safe range for grounded answers); 0 = deterministic wording.
+_ANSWER_TEMPERATURE_MIN = 0.0
+_ANSWER_TEMPERATURE_MAX = 1.0
+_ANSWER_TEMPERATURE_STEP = 0.1
 # Ask the model for a few more candidates than will be shown, so validation (which
 # drops unanswerable or duplicate suggestions) still has enough left to fill the limit.
 _FOLLOWUP_CANDIDATE_BUFFER = 2
@@ -116,6 +121,12 @@ _PROMPT_TAB_KEYS = {
     "followups": "CONV_PROMPT_TAB_FOLLOWUPS",
     "answerability": "CONV_PROMPT_TAB_ANSWERABILITY",
     "state": "CONV_PROMPT_TAB_STATE",
+}
+# Prompt field name → an extra i18n help key appended to that tab's placeholder-caption
+# tooltip. Only the state prompt carries one: its purpose (rolling conversation memory) and
+# the Advanced-options knobs that gate it are the least self-evident of the stages.
+_PROMPT_TAB_EXTRA_HELP = {
+    "state": "CONV_PROMPT_STATE_HELP",
 }
 # Suggested follow-ups render in their own keyed container so the page CSS can hide
 # the duplicate assistant avatar (they read as a continuation of the answer bubble).
@@ -148,6 +159,7 @@ class ConversationalControls:
     state_summary_start_turn: int
     state_summary_max_words: int
     answer_recent_turns: int
+    answer_temperature: float
     plan_recent_turns: int
 
 
@@ -191,7 +203,11 @@ def build_conversational_config(
     """
     settings = get_settings()
     return ConversationalConfig(
-        rag=RagConfig(llm_model=controls.answer_model, top_k=controls.top_k),
+        rag=RagConfig(
+            llm_model=controls.answer_model,
+            top_k=controls.top_k,
+            temperature=controls.answer_temperature,
+        ),
         prompts=resolve_conversational_prompts(session_root, prompt_overrides),
         aux_model_id=controls.aux_model_id or None,
         plan_enabled=controls.decomposition_limit > _DECOMPOSITION_LIMIT_MIN,
@@ -364,7 +380,7 @@ def render_advanced_controls(
                 )
 
         with st.expander(strings["CONV_ADV_GROUP_ANSWER"], expanded=False):
-            answer_turns_col, _, _ = st.columns(3)
+            answer_turns_col, temperature_col, _ = st.columns(3)
             with answer_turns_col:
                 answer_recent_turns = int(
                     st.number_input(
@@ -379,6 +395,22 @@ def render_advanced_controls(
                         help=strings["CONV_ANSWER_RECENT_TURNS_HELP"],
                         disabled=disabled,
                         key=f"{key_prefix}_answer_recent_turns",
+                    )
+                )
+            with temperature_col:
+                answer_temperature = float(
+                    st.slider(
+                        strings["CONV_ANSWER_TEMPERATURE_LABEL"],
+                        min_value=_ANSWER_TEMPERATURE_MIN,
+                        max_value=_ANSWER_TEMPERATURE_MAX,
+                        value=min(
+                            max(settings.conv_rag_answer_temperature, _ANSWER_TEMPERATURE_MIN),
+                            _ANSWER_TEMPERATURE_MAX,
+                        ),
+                        step=_ANSWER_TEMPERATURE_STEP,
+                        help=strings["CONV_ANSWER_TEMPERATURE_HELP"],
+                        disabled=disabled,
+                        key=f"{key_prefix}_answer_temperature",
                     )
                 )
 
@@ -512,6 +544,7 @@ def render_advanced_controls(
         state_summary_start_turn=state_summary_start_turn,
         state_summary_max_words=state_summary_max_words,
         answer_recent_turns=answer_recent_turns,
+        answer_temperature=answer_temperature,
         plan_recent_turns=plan_recent_turns,
     )
 
@@ -646,6 +679,19 @@ def _render_prompt_actions(
                 st.rerun()
 
 
+def _single_prompt_help(strings: Strings, prompt_key: str) -> str:
+    """Return the placeholder-caption tooltip for *prompt_key*, plus any per-stage note.
+
+    Most stages show only the shared placeholder help; the state prompt appends its
+    purpose + gating-options explanation (see ``_PROMPT_TAB_EXTRA_HELP``).
+    """
+    help_text = strings["CONV_PROMPT_FIELDS_HELP"]
+    extra_key = _PROMPT_TAB_EXTRA_HELP.get(prompt_key)
+    if extra_key:
+        help_text = f"{help_text}\n\n{strings[extra_key]}"
+    return help_text
+
+
 def _render_single_prompt(
     strings: Strings, key_prefix: str, session_root: Path, prompt_key: str, *, disabled: bool
 ) -> None:
@@ -660,7 +706,7 @@ def _render_single_prompt(
     )
     st.caption(
         strings["CONV_PROMPT_FIELDS_CAPTION"].format(fields=fields),
-        help=strings["CONV_PROMPT_FIELDS_HELP"],
+        help=_single_prompt_help(strings, prompt_key),
     )
     st.text_area(
         strings[_PROMPT_TAB_KEYS[prompt_key]],

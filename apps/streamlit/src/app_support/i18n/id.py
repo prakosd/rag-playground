@@ -263,9 +263,11 @@ STRINGS_ID: Strings = {
     "CHAT_NEW_CONVERSATION": "Percakapan baru",
     "CHAT_CONVERSATION_SELECT": "Percakapan",
     "CHAT_WELCOME_DEFAULT": (
-        "Hai! Saya siap membantu. Tanyakan apa saja dan saya jawab dari yang saya ketahui.\n"
-        "Halo! Ada yang bisa saya bantu hari ini? Tanyakan apa saja.\n"
-        "Hai! Dengan senang hati saya bantu — apa yang ingin Anda ketahui?"
+        "Hai! Apa yang sedang Anda pikirkan hari ini?\n"
+        "Halo! Tanyakan apa saja, dan saya jawab dari isi basis pengetahuan Anda.\n"
+        "Hai! Apa yang ingin Anda telusuri?\n"
+        "Hai! Saya siap kapan pun Anda siap — ada yang bisa saya bantu telusuri?\n"
+        "Senang bertemu Anda! Apa yang ingin Anda ketahui?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_BUILD_LAUNCH_BUTTON": "Bangun & luncurkan",
@@ -371,6 +373,16 @@ STRINGS_ID: Strings = {
         "0 = tidak menampilkan apa pun, jadi tiap jawaban berdiri sendiri. Makin tinggi makin "
         "banyak obrolan terbaru yang diingat tetapi memakai lebih banyak token. Bawaan 5."
     ),
+    "CONV_ANSWER_TEMPERATURE_LABEL": "Kreativitas jawaban",
+    "CONV_ANSWER_TEMPERATURE_HELP": (
+        "Seberapa bervariasi susunan kata jawaban dari satu kali ke kali berikutnya — "
+        "'temperature' model. Pada 0, model selalu memilih kata yang paling mungkin, jadi "
+        "pertanyaan yang sama memberi jawaban yang stabil dan dapat diulang (terbaik untuk "
+        "jawaban faktual yang berdasar). Nilai lebih tinggi (hingga 1.0) membuatnya menyusun "
+        "kalimat lebih bebas dan lebih bervariasi antar percobaan. Ini mengubah susunan kata, "
+        "bukan bagian teks yang diambil. Bawaan 0.0; naikkan sedikit untuk variasi yang lebih "
+        "alami, atau biarkan 0 untuk konsistensi maksimal."
+    ),
     "CONV_PLAN_RECENT_TURNS_LABEL": "Giliran terbaru untuk perencanaan",
     "CONV_PLAN_RECENT_TURNS_HELP": (
         "Sebelum mencari, aplikasi menulis ulang pesan Anda menjadi pertanyaan mandiri yang "
@@ -414,13 +426,24 @@ STRINGS_ID: Strings = {
         "tidak akan berfungsi. Anda tetap boleh mengubah kata-kata di sekitarnya atau "
         "mengurutkan ulang."
     ),
+    "CONV_PROMPT_STATE_HELP": (
+        "Untuk apa prompt ini: setelah tiap jawaban, model bantu membaca pertanyaan Anda dan "
+        "jawabannya, lalu memperbarui memori ringkas percakapan — ringkasan beserta entitas "
+        "penting, utas terbuka, dan pertanyaan terbaru. Giliran berikutnya memakai memori itu "
+        "untuk menafsirkan rujukan seperti 'itu' atau 'tersebut' dan menyusun pencariannya; "
+        "memori ini tidak pernah muncul dalam jawaban. Memori baru aktif setelah percakapan "
+        "mencapai giliran 'Mulai ringkasan memory' di Opsi lanjutan → Memori (giliran awal "
+        "hanya mencatat pertanyaan terbaru dan tidak mengirim prompt), dan 'Batas kata "
+        "ringkasan' di sana membatasi panjang ringkasan. Model yang menjalankannya adalah "
+        "'Model bantu' di Opsi lanjutan → Model bantu."
+    ),
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Ditampilkan sebagai sapaan asisten di awal percakapan baru. "
         "Satu baris per alternatif — satu dipilih acak."
     ),
     "CONV_PROMPT_ERROR_REPLY_CAPTION": (
         "Ditampilkan di obrolan saat sebuah giliran tak bisa dijawab karena kesalahan. "
-        "Satu baris per alternatif — satu dipilih acak. Detail teknis masuk ke Inspeksi."
+        "Satu baris per alternatif — satu dipilih acak."
     ),
     "CONV_PROMPT_FOLLOWUP_INTRO_CAPTION": (
         "Ditampilkan di atas saran pertanyaan lanjutan. Satu baris per alternatif — "
@@ -431,19 +454,25 @@ STRINGS_ID: Strings = {
         "baris per alternatif — satu dipilih acak tiap giliran."
     ),
     "CONV_ERROR_REPLY_DEFAULT": (
-        "Maaf — saya belum bisa menyusun jawaban saat ini. Silakan coba lagi sebentar.\n"
-        "Ada gangguan di sisi saya, jadi saya belum bisa menjawab saat ini. Silakan coba lagi nanti.\n"
-        "Saya kesulitan mengakses yang saya butuhkan untuk menjawabnya. Silakan coba lagi beberapa saat lagi."
+        "Hmm, saya belum berhasil menyusun jawabannya barusan. Boleh coba lagi sebentar?\n"
+        "Maaf, ya — ada yang tersendat di sisi saya. Boleh coba lagi sebentar lagi?\n"
+        "Saya menemui kendala mengambil yang saya butuhkan untuk itu. Mari coba lagi nanti.\n"
+        "Barusan tidak berjalan seperti harapan. Mau coba sekali lagi?\n"
+        "Ada yang menghalangi barusan, jadi saya belum bisa menjawabnya. Coba lagi nanti."
     ),
     "CONV_FOLLOWUP_INTRO_DEFAULT": (
-        "Ingin tahu tentang…\n"
-        "Anda mungkin juga ingin menjelajahi…\n"
-        "Berikut beberapa hal yang bisa Anda tanyakan berikutnya…"
+        "Omong-omong, Anda mungkin penasaran soal…\n"
+        "Ini membuat saya teringat beberapa hal terkait…\n"
+        "Ada beberapa hal lain yang terlintas…\n"
+        "Masih ada yang menarik untuk ditelusuri di sini…\n"
+        "Selagi membahas ini, Anda mungkin juga bertanya-tanya…"
     ),
     "CONV_NO_FOLLOWUPS_DEFAULT": (
-        "Apa lagi yang ingin Anda ketahui?\n"
-        "Ada lagi yang bisa saya bantu?\n"
-        "Silakan ajukan pertanyaan lain."
+        "Apa lagi yang sedang Anda pikirkan?\n"
+        "Ada hal lain yang membuat Anda penasaran?\n"
+        "Ada lagi yang ingin Anda telusuri?\n"
+        "Dengan senang hati saya lanjutkan — apa lagi yang ingin Anda ketahui?\n"
+        "Tanyakan apa saja lagi kapan pun Anda siap."
     ),
     "CONV_PROMPT_SAVE": "Simpan",
     "CONV_PROMPT_RESET": "Reset ke bawaan",

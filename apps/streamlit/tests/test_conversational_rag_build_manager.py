@@ -75,6 +75,21 @@ def test_from_json_returns_none_when_fields_missing() -> None:
     assert BuildSnapshot.from_json(json.dumps({"name": "rag_build_01_x"})) is None
 
 
+def test_snapshot_round_trip_preserves_answer_temperature() -> None:
+    restored = BuildSnapshot.from_json(_snapshot(answer_temperature=0.5).to_json())
+    assert restored is not None
+    assert restored.answer_temperature == 0.5
+
+
+def test_from_json_defaults_answer_temperature_for_legacy_builds() -> None:
+    # A build.json written before the temperature field still loads, defaulting to 0.0.
+    data = json.loads(_snapshot().to_json())
+    data.pop("answer_temperature")
+    restored = BuildSnapshot.from_json(json.dumps(data))
+    assert restored is not None
+    assert restored.answer_temperature == 0.0
+
+
 def test_allocate_build_name_uses_next_sequence_and_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

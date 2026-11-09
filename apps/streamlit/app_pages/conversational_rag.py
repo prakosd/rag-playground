@@ -223,11 +223,12 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
     "[data-testid='stExpanderDetails']"
     ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
     "{padding-top:0.25rem}"
-    # The Messages tab nests a second tab row; pull it up so it sits snug under the
-    # outer tab row instead of leaving an empty band above the sub-tabs.
+    # The Messages tab nests a second tab row; pull it up by the outer tab panel's full
+    # 1rem top padding so the sub-tabs sit flush under the outer tab row instead of
+    # leaving an empty band above them.
     "[data-testid='stExpanderDetails']"
     ":has(>[data-testid='stVerticalBlock']>[data-testid='stTabs']:first-child)"
-    " [data-testid='stTabs'] [data-testid='stTabs']{margin-top:-0.75rem}"
+    " [data-testid='stTabs'] [data-testid='stTabs']{margin-top:-1rem}"
     # Hug the "Required placeholders" caption to its text area: lift it under the tab
     # row and drop its own paragraph's default 16px bottom margin so it reads as a
     # tight heading instead of floating between the tabs and the editor.
@@ -261,16 +262,16 @@ _INSPECT_TABS_RHYTHM_CSS = (
 )
 
 
-def _showcase_panel_css(border_color: str, height_px: int) -> str:
-    """Make the showcase chat panel a user-resizable scroll box (drag the bottom edge).
+def _resizable_panel_css(border_color: str, height_px: int) -> str:
+    """Make the chat panel a user-resizable scroll box (drag the bottom edge).
 
-    The showcase builds the panel with a plain ``st.container`` (no ``height=``), so
-    unlike Step 5's height-locked container the browser's ``resize`` handle can actually
-    change — and persist — the height (an inline drag height survives reruns and isn't
-    overridden). This CSS recreates the bordered, scrollable look ``st.container(height=)``
-    gives, starting at *height_px*. It rounds only the top corners and squares the bottom
-    two itself so the panel welds flush to the chat input docked below it (matching Step 5,
-    where ``_WELD_CSS`` squares the height-locked container's bottom corners).
+    Step 5 and the showcase both build the panel with a plain ``st.container`` (no
+    ``height=``), so — unlike a height-locked container — the browser's ``resize`` handle
+    can actually change and persist the height (an inline drag height survives reruns and is
+    not overridden). This CSS recreates the bordered, scrollable look ``st.container(height=)``
+    gives, starting at *height_px*. It rounds only the top corners and squares the bottom two
+    itself so the panel welds flush to the chat input docked below it (``_WELD_CSS`` squares
+    the chat input's matching top corners).
     """
     return (
         "<style>"
@@ -383,12 +384,11 @@ def render_page(
     st.html(_idle_input_border_css(panel_border))
     st.html(_TABS_EXPANDER_TIGHTEN_CSS)
     st.html(_INSPECT_TABS_RHYTHM_CSS)
-    # The showcase builds the panel with a plain st.container (no height=) so the visitor
-    # can drag-resize it; inject its scroll-box CSS here (not right before the panel) so
-    # no invisible element sits between the controls row and the panel, which would widen
-    # the gap _PANEL_DOCK_CSS trims.
-    if showcase:
-        st.html(_showcase_panel_css(panel_border, panel_height))
+    # The chat panel is built with a plain st.container (no height=) so it is drag-resizable;
+    # inject its scroll-box CSS here (not right before the panel) so no invisible element
+    # sits between the controls row and the panel, which would widen the gap _PANEL_DOCK_CSS
+    # trims.
+    st.html(_resizable_panel_css(panel_border, panel_height))
 
     # Peek the queued question (a typed message or a follow-up click) before the
     # controls so every input can be locked while its answer streams — a mid-stream
@@ -446,12 +446,9 @@ def render_page(
     # Peek the scroll intent before the panel so a submitted turn can scroll to the
     # new question *before* the blocking stream (pinning it to the top as it streams).
     scroll_requested = on_entry or st.session_state.pop(_SCROLL_REQUESTED_KEY, False)
-    # The showcase builds the panel without Streamlit's height= so the visitor can drag it
-    # taller/shorter (its scroll-box CSS was injected above); Step 5 keeps the fixed height.
-    if showcase:
-        panel_container = st.container(key=_CHAT_PANEL_KEY)
-    else:
-        panel_container = st.container(height=panel_height, key=_CHAT_PANEL_KEY)
+    # The panel is built without Streamlit's height= so it is drag-resizable (its scroll-box
+    # CSS was injected above); the dragged height persists across reruns.
+    panel_container = st.container(key=_CHAT_PANEL_KEY)
     with panel_container:
         if not turns and not submitting:
             _render_welcome_bubble(strings, context.session_root(), showcase_prompts)

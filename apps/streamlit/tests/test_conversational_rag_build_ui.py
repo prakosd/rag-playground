@@ -75,6 +75,7 @@ def _controls(**overrides: object) -> ConversationalControls:
         "state_summary_max_words": 150,
         "answer_recent_turns": 5,
         "plan_recent_turns": 2,
+        "answer_temperature": 0.4,
     }
     values.update(overrides)
     return ConversationalControls(**values)  # type: ignore[arg-type]
@@ -115,6 +116,7 @@ def test_snapshot_from_controls_maps_fields() -> None:
     assert snapshot.index_vector_folder == "vector_01_slate"
     assert snapshot.index_run_name == "2026-10-28_10-00-00"
     assert snapshot.embedding_model == "titan"
+    assert snapshot.answer_temperature == 0.4
     assert snapshot.created_at_utc  # an ISO timestamp was recorded
 
 
@@ -216,6 +218,7 @@ def test_control_widget_values_maps_snapshot() -> None:
     assert values["conversational_rag_top_k"] == 9
     assert values["conversational_rag_llm_model"] == "x-model"
     assert values["conversational_rag_reranker"] == snapshot.reranker
+    assert values["conversational_rag_answer_temperature"] == snapshot.answer_temperature
     assert values["conversational_rag_thresholds"] == (
         snapshot.followup_drop,
         snapshot.followup_keep,
@@ -275,6 +278,7 @@ def test_load_build_as_controls_reconstructs(tmp_path: Path) -> None:
     controls = load_build_as_controls(tmp_path / "rag_build_01_garden")
     assert controls is not None
     assert controls.top_k == 7
+    assert controls.answer_temperature == 0.4  # the frozen slider value is reproduced
     assert controls.index is not None
     assert controls.index.vector_folder == "vector_01_slate"
 

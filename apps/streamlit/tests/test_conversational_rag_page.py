@@ -340,10 +340,11 @@ def test_showcase_initial_conversation_preserves_live_turns(monkeypatch: MonkeyP
     assert state[page._SHOWCASE_INIT_KEY] is True
 
 
-def test_showcase_panel_css_makes_panel_resizable(monkeypatch: MonkeyPatch) -> None:
+def test_resizable_panel_css_makes_panel_resizable(monkeypatch: MonkeyPatch) -> None:
     page = _page(monkeypatch)
-    css = page._showcase_panel_css("rgba(0,0,0,0.2)", 460)
-    # The showcase panel is a CSS-built, user-resizable scroll box scoped to the panel key.
+    css = page._resizable_panel_css("rgba(0,0,0,0.2)", 460)
+    # Step 5 and the showcase share this CSS-built, user-resizable scroll box scoped to the
+    # panel key (both build the panel with a plain st.container, no height=).
     assert f".st-key-{page._CHAT_PANEL_KEY}" in css
     assert "resize:vertical" in css
     assert "overflow-y:auto" in css

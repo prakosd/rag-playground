@@ -256,9 +256,11 @@ STRINGS_EN: Strings = {
     "CHAT_NEW_CONVERSATION": "New conversation",
     "CHAT_CONVERSATION_SELECT": "Conversation",
     "CHAT_WELCOME_DEFAULT": (
-        "Hi! I'm here to help. Ask me anything and I'll answer from what I know.\n"
-        "Hello! What can I help you with today? Ask me anything.\n"
-        "Hi there! I'm happy to help — what would you like to know?"
+        "Hi there! What's on your mind today?\n"
+        "Hello! Ask me anything and I'll answer from what's in your knowledge base.\n"
+        "Hey! What would you like to explore?\n"
+        "Hi! I'm ready when you are — what can I help you look into?\n"
+        "Good to see you! What would you like to know?"
     ),
     # ── Conversational RAG controls + inspection (Step 5) ─────────────────
     "CONV_BUILD_LAUNCH_BUTTON": "Build & launch",
@@ -359,6 +361,15 @@ STRINGS_EN: Strings = {
         "0 = show none, so every answer stands on its own. Higher remembers more of the "
         "recent chat but uses more tokens. Default 5."
     ),
+    "CONV_ANSWER_TEMPERATURE_LABEL": "Answer creativity",
+    "CONV_ANSWER_TEMPERATURE_HELP": (
+        "How much the answer's wording can vary from one run to the next — the model's "
+        "'temperature'. At 0 the model always picks the most likely wording, so the same "
+        "question gives a steady, repeatable answer (best for grounded, factual replies). "
+        "Higher values (up to 1.0) let it phrase things more loosely and vary more between "
+        "runs. It changes the wording, not which passages are retrieved. Default 0.0; raise "
+        "it a little for more natural variety, or keep it at 0 for maximum consistency."
+    ),
     "CONV_PLAN_RECENT_TURNS_LABEL": "Recent turns for planning",
     "CONV_PLAN_RECENT_TURNS_HELP": (
         "Before searching, the app rewrites your message into clear standalone questions; "
@@ -399,13 +410,24 @@ STRINGS_EN: Strings = {
         "shown, including the curly braces, or that part of the prompt won't work. You can "
         "still reword the text around them or change their order."
     ),
+    "CONV_PROMPT_STATE_HELP": (
+        "What this prompt is for: after each answer, the auxiliary model reads your question "
+        "and the reply and updates a short rolling memory of the conversation — a summary plus "
+        "key entities, open threads, and recent questions. The next turn feeds that memory back "
+        "in to resolve references like 'it' or 'that' and to plan its search; it never appears "
+        "in the answer itself. It only starts once the conversation reaches the "
+        "'Memory summary start' turn in Advanced options → Memory (earlier turns just track "
+        "recent questions and send no prompt), and 'Summary word limit' there caps how long "
+        "the summary gets. The model that runs it is the 'Auxiliary model' under Advanced "
+        "options → Helper model."
+    ),
     "CONV_PROMPT_WELCOME_CAPTION": (
         "Shown as the assistant's greeting at the start of a new conversation. "
         "One line per alternate — a random one appears."
     ),
     "CONV_PROMPT_ERROR_REPLY_CAPTION": (
         "Shown in the chat when a turn can't be answered because of an error. One "
-        "line per alternate — a random one appears. Technical details go to Inspect."
+        "line per alternate — a random one appears."
     ),
     "CONV_PROMPT_FOLLOWUP_INTRO_CAPTION": (
         "Shown above the suggested follow-ups. One line per alternate — a random "
@@ -416,19 +438,25 @@ STRINGS_EN: Strings = {
         "random one appears each turn."
     ),
     "CONV_ERROR_REPLY_DEFAULT": (
-        "Sorry — I couldn't put together an answer just now. Please try again in a moment.\n"
-        "Something went wrong on my end, so I can't answer that right now. Please try again shortly.\n"
-        "I'm having trouble reaching what I need to answer that. Please try again in a little while."
+        "Hmm, I couldn't put that answer together just now. Mind trying again in a moment?\n"
+        "Sorry about that — something tripped up on my end. Could you try again shortly?\n"
+        "I hit a snag reaching what I needed for that one. Let's try again in a little while.\n"
+        "That didn't go through the way I hoped. Want to give it another try?\n"
+        "Something got in the way just now, so I couldn't answer that. Please try again soon."
     ),
     "CONV_FOLLOWUP_INTRO_DEFAULT": (
-        "Would you like to know about…\n"
-        "You might also want to explore…\n"
-        "Here are a few things you could ask next…"
+        "On a related note, you might be curious about…\n"
+        "This got me thinking about a few related things…\n"
+        "A couple of other things came to mind…\n"
+        "There's a bit more worth exploring here…\n"
+        "While we're on the topic, you might also wonder…"
     ),
     "CONV_NO_FOLLOWUPS_DEFAULT": (
-        "What else would you like to know?\n"
-        "Is there anything else I can help you with?\n"
-        "Feel free to ask me anything else."
+        "What else is on your mind?\n"
+        "Anything else you're curious about?\n"
+        "Is there more you'd like to explore?\n"
+        "Happy to keep going — what else would you like to know?\n"
+        "Ask me anything else whenever you're ready."
     ),
     "CONV_PROMPT_SAVE": "Save",
     "CONV_PROMPT_RESET": "Reset to default",

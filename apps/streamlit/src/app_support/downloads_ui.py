@@ -63,6 +63,7 @@ from app_support.conversational_rag.conversational_rag_build_ui import (
 )
 from app_support.dialog_ui import (
     SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX,
+    enter_submits_confirm_css,
     render_confirm_dialog,
     render_notice_dialog,
     scrollable_dialog_css,
@@ -442,17 +443,20 @@ def _rename_folder_confirmation_dialog() -> None:
         error = st.session_state.get(_RENAME_ERROR_KEY)
         if error:
             st.error(error)
-        # Cancel left, Confirm right (neutral colours — rename isn't destructive). Confirm
-        # is defined first so Enter maps to it, then docked right (mirrors basic_rag_qa).
+        # Enter-to-submit fires the FIRST submit button in element-tree order, so Confirm must
+        # live in the first column (col[0]) — otherwise Enter triggers Cancel and dismisses the
+        # dialog without renaming. The row is then visually reversed (enter_submits_confirm_css)
+        # so Cancel still reads left and Confirm right, like the other confirm dialogs.
+        st.markdown(enter_submits_confirm_css(confirm_key), unsafe_allow_html=True)
         action_cols = st.columns(2)
-        with action_cols[1], st.container(horizontal_alignment="right"):
+        with action_cols[0], st.container(horizontal_alignment="right"):
             confirm = st.form_submit_button(
                 strings["FILES_RENAME_FOLDER_DIALOG_CONFIRM"],
                 type="primary",
                 icon=":material/edit:",
                 key=confirm_key,
             )
-        with action_cols[0]:
+        with action_cols[1]:
             cancel = st.form_submit_button(
                 strings["FILES_RENAME_FOLDER_DIALOG_CANCEL"],
                 key="rename_folder_cancel_button",

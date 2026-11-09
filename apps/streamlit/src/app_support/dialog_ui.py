@@ -15,6 +15,7 @@ __all__ = [
     "SCROLLABLE_DIALOG_CONTENT_HEIGHT_PX",
     "confirm_column_right_dock_css",
     "confirm_dialog_css",
+    "enter_submits_confirm_css",
     "render_confirm_dialog",
     "render_notice_dialog",
     "scrollable_dialog_css",
@@ -98,6 +99,23 @@ def confirm_column_right_dock_css(confirm_key: str) -> str:
         }}
         </style>
     """
+
+
+def enter_submits_confirm_css(confirm_key: str) -> str:
+    """Return the ``<style>`` that visually reverses a form dialog's action row.
+
+    Streamlit's Enter-to-submit fires the FIRST form-submit button in element-tree order,
+    so a ``st.form`` confirm dialog must put Confirm in the first column — otherwise Enter
+    silently triggers Cancel and dismisses the modal without acting. Reversing the action
+    row's flex direction keeps the familiar Cancel-left / Confirm-right layout while Confirm
+    stays first in the tree. Scoped to the row via the confirm key, so only that row flips.
+    """
+    return (
+        "<style>"
+        f'div[data-testid="stHorizontalBlock"]:has(.st-key-{confirm_key})'
+        "{flex-direction:row-reverse}"
+        "</style>"
+    )
 
 
 def render_confirm_dialog(

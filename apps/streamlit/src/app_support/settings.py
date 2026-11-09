@@ -202,6 +202,10 @@ class Settings(BaseSettings):
     # Recent turns shown to the query-planner prompt (and kept as the memory's
     # "recent questions" window); 0 = none.
     conv_rag_plan_recent_turns: int
+    # Answer-model sampling temperature (exposed 0.0-1.0 in Step 5): 0 = focused and
+    # repeatable, higher = more varied wording. 0 suits grounded RAG answers; the
+    # auxiliary model stays deterministic (0) regardless of this.
+    conv_rag_answer_temperature: float
     # Directory (relative to the repo root) holding the six Step 5 default prompt
     # files (answer/decompose/rerank/followups/answerability/state). Edit those to
     # reword a default without a code change; a per-session edit from the app's

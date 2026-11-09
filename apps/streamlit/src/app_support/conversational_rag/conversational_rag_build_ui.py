@@ -119,6 +119,7 @@ def snapshot_from_controls(
         index_run_name=controls.index.run_name,
         embedding_model=embedding_model_of(controls.index),
         prompts=dict(prompts),
+        answer_temperature=controls.answer_temperature,
     )
 
 
@@ -152,6 +153,7 @@ def load_build_as_controls(build_root: Path | str) -> ConversationalControls | N
         state_summary_max_words=snapshot.state_summary_max_words,
         answer_recent_turns=snapshot.answer_recent_turns,
         plan_recent_turns=snapshot.plan_recent_turns,
+        answer_temperature=snapshot.answer_temperature,
     )
 
 
@@ -176,6 +178,7 @@ def control_widget_values(snapshot: BuildSnapshot) -> dict[str, object]:
         f"{prefix}_decomposition": snapshot.decomposition_limit,
         f"{prefix}_plan_recent_turns": snapshot.plan_recent_turns,
         f"{prefix}_answer_recent_turns": snapshot.answer_recent_turns,
+        f"{prefix}_answer_temperature": snapshot.answer_temperature,
         f"{prefix}_followup_count": snapshot.followup_show_count,
         f"{prefix}_followup_probe_k": snapshot.followup_probe_k,
         f"{prefix}_answerability_chunks": snapshot.answerability_chunks,

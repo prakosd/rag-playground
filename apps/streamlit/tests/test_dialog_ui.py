@@ -1,6 +1,19 @@
 from __future__ import annotations
 
-from app_support.dialog_ui import confirm_dialog_css, scrollable_dialog_css
+from app_support.dialog_ui import (
+    confirm_dialog_css,
+    enter_submits_confirm_css,
+    scrollable_dialog_css,
+)
+
+
+def test_enter_submits_confirm_css_reverses_action_row_scoped_to_confirm() -> None:
+    css = enter_submits_confirm_css("confirm_k")
+    # The action row is flex-reversed so Confirm (first in the tree, the Enter target) still
+    # reads on the right, scoped to the row holding the confirm key.
+    assert "flex-direction:row-reverse" in css
+    assert ".st-key-confirm_k" in css
+    assert 'data-testid="stHorizontalBlock"' in css
 
 
 def test_confirm_dialog_css_scopes_styles_to_given_keys() -> None:

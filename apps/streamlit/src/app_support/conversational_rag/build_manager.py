@@ -85,6 +85,9 @@ class BuildSnapshot:
     index_run_name: str
     embedding_model: str
     prompts: dict[str, str]
+    # Added after the fields above, so it carries a default: older build.json files without
+    # this key still load (from_json drops missing keys), defaulting to a deterministic 0.0.
+    answer_temperature: float = 0.0
 
     def to_json(self) -> str:
         """Serialize the snapshot as pretty JSON for ``build.json``."""

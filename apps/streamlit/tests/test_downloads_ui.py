@@ -551,6 +551,31 @@ def test_rename_dialog_confirm_renames_in_one_click(
     assert app.session_state["rename_folder_relative_path"] == ""  # dialog closed
 
 
+def test_rename_dialog_confirm_is_first_submit_so_enter_targets_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "outputs" / "streamlit_sessions" / "session_s1"
+    (session / "crawl_01_garden" / "2026-07-01_09-00-00").mkdir(parents=True)
+
+    app = AppTest.from_function(
+        _render_rename_dialog_view, kwargs={"rename_path": "crawl_01_garden"}
+    )
+    app.run(timeout=10)
+    assert not app.exception
+    # Streamlit's Enter-to-submit fires the FIRST form-submit button in element-tree order,
+    # so Confirm must precede Cancel in the tree — otherwise Enter would dismiss via Cancel
+    # without renaming (the reported bug).
+    rename_keys = [
+        b.key
+        for b in app.button
+        if b.key in {"rename_folder_confirm_button", "rename_folder_cancel_button"}
+    ]
+    assert rename_keys == ["rename_folder_confirm_button", "rename_folder_cancel_button"]
+    # The action row is visually reversed so Cancel still reads left and Confirm right.
+    assert any("flex-direction:row-reverse" in md.value for md in app.markdown)
+
+
 def test_rename_dialog_cancel_closes_without_renaming(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

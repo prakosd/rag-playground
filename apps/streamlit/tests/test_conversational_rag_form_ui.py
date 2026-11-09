@@ -42,6 +42,7 @@ def _controls(**overrides) -> ConversationalControls:
         state_summary_max_words=150,
         answer_recent_turns=5,
         plan_recent_turns=2,
+        answer_temperature=0.0,
     )
     values.update(overrides)
     return ConversationalControls(**values)
@@ -84,6 +85,14 @@ def test_build_config_threads_recent_turns_and_summary_length() -> None:
     assert config.answer_recent_turns == 7
     assert config.plan_recent_turns == 4
     assert config.state_summary_max_words == 200
+
+
+def test_build_config_threads_answer_temperature() -> None:
+    # The Step 5 answer-creativity slider flows into the answer model's sampling temperature.
+    config = build_conversational_config(_controls(answer_temperature=0.6))
+    assert config.rag.temperature == 0.6
+    # Default stays deterministic.
+    assert build_conversational_config(_controls(answer_temperature=0.0)).rag.temperature == 0.0
 
 
 def test_build_config_decomposition_limit_controls_planning() -> None:
@@ -192,6 +201,21 @@ def test_prompt_tab_visible_follows_toggles() -> None:
     assert visible("answerability") and not visible("answerability", followups=False)
     assert visible("rerank")  # LLM re-ranker → its prompt is used
     assert not visible("rerank", reranker="local") and not visible("rerank", reranker="off")
+
+
+def test_single_prompt_help_appends_state_explanation() -> None:
+    # The state tab's placeholder caption tooltip gains the rolling-memory explanation,
+    # while keeping the shared placeholder help.
+    state_help = form_ui._single_prompt_help(STRINGS_EN, "state")
+    assert STRINGS_EN["CONV_PROMPT_FIELDS_HELP"] in state_help
+    assert STRINGS_EN["CONV_PROMPT_STATE_HELP"] in state_help
+
+
+def test_single_prompt_help_is_plain_for_other_prompts() -> None:
+    # Every other stage shows only the shared placeholder help (no extra note).
+    assert (
+        form_ui._single_prompt_help(STRINGS_EN, "answer") == STRINGS_EN["CONV_PROMPT_FIELDS_HELP"]
+    )
 
 
 def test_inspect_note_returns_localized_text_for_matching_code() -> None:
