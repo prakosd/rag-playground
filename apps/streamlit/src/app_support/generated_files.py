@@ -25,7 +25,6 @@ from artifact_store.archives import (
 )
 from artifact_store.naming import (
     BASIC_RAG_QA_FOLDER_PREFIX,
-    CONVERSATIONAL_RAG_FOLDER_PREFIX,
     RAG_BUILD_FOLDER_PREFIX,
     SEARCH_FOLDER_PREFIX,
     VECTOR_FOLDER_PREFIX,
@@ -45,7 +44,7 @@ from crawl4md.naming import (
 
 from app_support.basic_rag_qa.basic_rag_qa_history import BASIC_QA_HISTORY_DIRNAME
 from app_support.conversational_rag.conversational_rag_history import (
-    CONVERSATIONAL_RAG_HISTORY_DIRNAME,
+    CONVERSATIONAL_RAG_DIRNAME,
 )
 from app_support.semantic_search.search_history import SEARCH_HISTORY_DIRNAME
 from app_support.session_manager import ensure_within_root
@@ -56,12 +55,13 @@ _VECTOR_DIR_PREFIX = VECTOR_FOLDER_PREFIX
 _SEARCH_DIR_PREFIX = SEARCH_FOLDER_PREFIX
 _BASIC_RAG_QA_DIR_PREFIX = BASIC_RAG_QA_FOLDER_PREFIX
 _RAG_BUILD_DIR_PREFIX = RAG_BUILD_FOLDER_PREFIX
-_CONVERSATIONAL_RAG_DIR_PREFIX = CONVERSATIONAL_RAG_FOLDER_PREFIX
+# A fixed folder name (no timestamped run folders), so the name itself is its icon match.
+_CONVERSATIONAL_RAG_DIR_NAME = CONVERSATIONAL_RAG_DIRNAME
 # Fixed per-session history folders (not timestamped runs). They get the same
 # Export + Delete controls as run folders so a user can download or clear their
 # accumulated search / Q&A / chat history straight from the download tree.
 _HISTORY_FOLDER_NAMES = frozenset(
-    {SEARCH_HISTORY_DIRNAME, BASIC_QA_HISTORY_DIRNAME, CONVERSATIONAL_RAG_HISTORY_DIRNAME}
+    {SEARCH_HISTORY_DIRNAME, BASIC_QA_HISTORY_DIRNAME, CONVERSATIONAL_RAG_DIRNAME}
 )
 # Material icons for download-tree folders, picked by artifact type so a crawl
 # run reads as exploration and a vector index as a database at a glance.
@@ -823,7 +823,7 @@ def download_folder_icon(folder_name: str) -> str:
         return _FOLDER_ICON_SEARCH
     if folder_name.startswith(_BASIC_RAG_QA_DIR_PREFIX):
         return _FOLDER_ICON_BASIC_RAG_QA
-    if folder_name.startswith(_CONVERSATIONAL_RAG_DIR_PREFIX):
+    if folder_name.startswith(_CONVERSATIONAL_RAG_DIR_NAME):
         return _FOLDER_ICON_CONVERSATIONAL_RAG
     if folder_name.startswith(_RAG_BUILD_DIR_PREFIX):
         return _FOLDER_ICON_RAG_BUILD

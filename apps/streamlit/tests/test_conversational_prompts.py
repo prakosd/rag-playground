@@ -26,6 +26,8 @@ from app_support.conversational_rag.conversational_prompts import (
     resolve_welcome_message,
     save_conversational_prompt,
 )
+from app_support.conversational_rag.conversational_rag_history import CONVERSATIONAL_RAG_DIRNAME
+from app_support.conversational_rag.session_snapshot import read_session_snapshot
 
 
 def _point_config_at(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -130,6 +132,16 @@ def test_save_load_reset_round_trip(tmp_path: Path) -> None:
 
     reset_conversational_prompt(tmp_path, "followups")
     assert load_saved_conversational_prompt(tmp_path, "followups") is None
+
+
+def test_saved_prompt_lives_in_snapshot_not_a_txt_file(tmp_path: Path) -> None:
+    # Session edits persist into conversational_rag/snapshot.json; no per-prompt .txt is written.
+    save_conversational_prompt(tmp_path, "answer", "session answer")
+
+    snapshot = read_session_snapshot(tmp_path)
+    assert snapshot["prompts"]["answer"] == "session answer"
+    folder = tmp_path / CONVERSATIONAL_RAG_DIRNAME
+    assert not list(folder.glob("prompt_*.txt"))
 
 
 def test_conversational_prompt_is_valid_accepts_and_rejects() -> None:

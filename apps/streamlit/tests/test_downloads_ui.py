@@ -89,10 +89,10 @@ def _history_hook_script(fire_label: str, folder: str) -> None:
 
 def test_render_download_tree_fires_after_history_hook() -> None:
     # The build tree drops its Token-usage panel via this hook right after the
-    # conversational_rag_history folder, so the hook must fire for a history folder.
+    # conversational_rag folder, so the hook must fire for a history folder.
     app = AppTest.from_function(
         _history_hook_script,
-        kwargs={"fire_label": "HOOK_FIRED", "folder": "conversational_rag_history"},
+        kwargs={"fire_label": "HOOK_FIRED", "folder": "conversational_rag"},
     )
     app.run(timeout=10)
     assert not app.exception

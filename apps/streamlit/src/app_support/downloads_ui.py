@@ -749,7 +749,7 @@ def render_download_tree(
                             _render_folder_rename_button(name)
                         _render_folder_delete_button(name)
             # Fire the hook right after a history folder's expander closes so a build's
-            # Token usage panel sits directly under conversational_rag_history.
+            # Token usage panel sits directly under conversational_rag.
             if after_history_hook is not None and is_history_folder(name):
                 after_history_hook()
             continue

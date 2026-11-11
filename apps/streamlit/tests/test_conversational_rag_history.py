@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app_support.conversational_rag.conversational_rag_history import (
-    CONVERSATIONAL_RAG_HISTORY_DIRNAME,
+    CONVERSATIONAL_RAG_DIRNAME,
     ConversationalFollowupRecord,
     ConversationalPromptTrace,
     ConversationalStageUsage,
@@ -43,8 +43,6 @@ def test_append_and_load_round_trip_newest_first(tmp_path: Path) -> None:
     records = load_conversational_rag_history(tmp_path)
 
     assert [record.raw_question for record in records] == ["second", "first"]
-    csv_path = tmp_path / CONVERSATIONAL_RAG_HISTORY_DIRNAME / "conversational_rag_history.csv"
-    assert csv_path.is_file()
 
 
 def test_proposed_subquestion_count_round_trips(tmp_path: Path) -> None:
@@ -143,17 +141,13 @@ def test_conversation_and_transaction_ids_round_trip(tmp_path: Path) -> None:
     assert loaded.conversation_id == "conv42"
     assert loaded.transaction_id == "txn99"
     assert loaded.state_summary == "rolling summary"
-    csv_text = (
-        tmp_path / CONVERSATIONAL_RAG_HISTORY_DIRNAME / "conversational_rag_history.csv"
-    ).read_text(encoding="utf-8")
-    assert "conv42" in csv_text and "txn99" in csv_text  # exported for download
 
 
 def test_legacy_records_without_ids_default_to_empty(tmp_path: Path) -> None:
-    directory = tmp_path / CONVERSATIONAL_RAG_HISTORY_DIRNAME
+    directory = tmp_path / CONVERSATIONAL_RAG_DIRNAME
     directory.mkdir(parents=True)
     # A pre-feature line lacking conversation_id / transaction_id / state_summary.
-    (directory / "conversational_rag_history.jsonl").write_text(
+    (directory / "transactions.jsonl").write_text(
         '{"timestamp_utc": "t1", "raw_question": "q", "answer": "A"}\n', encoding="utf-8"
     )
 
@@ -200,8 +194,8 @@ def test_pinned_records_sort_first(tmp_path: Path) -> None:
 
 
 def test_malformed_lines_are_skipped(tmp_path: Path) -> None:
-    directory = tmp_path / CONVERSATIONAL_RAG_HISTORY_DIRNAME
+    directory = tmp_path / CONVERSATIONAL_RAG_DIRNAME
     directory.mkdir(parents=True)
-    (directory / "conversational_rag_history.jsonl").write_text("not json\n", encoding="utf-8")
+    (directory / "transactions.jsonl").write_text("not json\n", encoding="utf-8")
 
     assert load_conversational_rag_history(tmp_path) == []

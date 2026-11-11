@@ -43,8 +43,10 @@ from app_support.conversational_rag.conversational_prompts import (
 )
 from app_support.conversational_rag.conversational_rag_build_ui import (
     apply_pending_load,
+    apply_session_snapshot,
     render_build_launch_button,
     render_build_load_dialog,
+    save_session_snapshot,
 )
 from app_support.conversational_rag.conversational_rag_form_ui import (
     FOLLOWUP_BUBBLE_KEY_PREFIX,
@@ -366,6 +368,7 @@ def render_page(
         st.html(_SHOWCASE_WIDTH_CSS)
     else:
         apply_pending_load(strings, context.session_root())
+        apply_session_snapshot(context.session_root())
     on_entry = entered_page("conversational_rag")
     if not showcase:
         st.subheader(strings["CHAT_SECTION_HEADER"], anchor="conversational-rag-header")
@@ -568,6 +571,14 @@ def render_page(
             answer,
             elapsed,
         )
+        # Snapshot the live settings so a reload/import restores them (showcase is
+        # read-only and driven by its build.json, so it never writes a session snapshot).
+        if not showcase:
+            save_session_snapshot(
+                controls,
+                context.session_root(),
+                answer_language_name(st.session_state.get("language", context.default_language)),
+            )
         # Consume the queued question only after the turn is safely committed, so an
         # interrupted stream keeps it and re-streams instead of losing the turn.
         st.session_state.pop(_PENDING_KEY, None)

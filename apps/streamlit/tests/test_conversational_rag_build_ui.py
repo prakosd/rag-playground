@@ -25,9 +25,11 @@ from app_support.conversational_rag.conversational_rag_build_ui import (
     control_widget_values,
     frozen_prompt_texts,
     load_build_as_controls,
+    save_session_snapshot,
     snapshot_from_controls,
 )
 from app_support.conversational_rag.conversational_rag_form_ui import ConversationalControls
+from app_support.conversational_rag.session_snapshot import read_session_snapshot
 from app_support.i18n import STRINGS_EN
 from app_support.rag_shared.index_catalog import IndexRef, list_session_indexes
 
@@ -474,3 +476,71 @@ def test_render_build_token_panel_noop_without_history(tmp_path: Path) -> None:
     assert not at.exception
     # No showcase conversations yet → no Token usage panel.
     assert not any("Token usage" in getattr(node, "label", "") for node in at.expander)
+
+
+def test_save_session_snapshot_writes_options_and_keeps_prompt_edits(tmp_path: Path) -> None:
+    index = _real_index(tmp_path)
+    save_conversational_prompt(tmp_path, "answer", "my edit")  # a genuine prompt edit
+
+    save_session_snapshot(_controls(index=index, top_k=9), tmp_path, "English")
+
+    data = read_session_snapshot(tmp_path)
+    assert data["top_k"] == 9
+    assert data["language"] == "English"
+    assert data["index_vector_folder"] == "vector_01_slate"
+    # Only the genuine edit is kept; un-edited prompts stay absent so config/default still apply.
+    assert data["prompts"] == {"answer": "my edit"}
+
+
+def test_save_session_snapshot_noop_without_index(tmp_path: Path) -> None:
+    save_session_snapshot(_controls(index=None), tmp_path, "English")
+
+    assert read_session_snapshot(tmp_path) == {}
+
+
+def _apply_session_snapshot_script(session_dir: str) -> None:
+    from pathlib import Path as _Path
+
+    from app_support.conversational_rag.conversational_rag_build_ui import apply_session_snapshot
+
+    apply_session_snapshot(_Path(session_dir))
+
+
+def test_apply_session_snapshot_restores_options_and_index(tmp_path: Path) -> None:
+    index = _real_index(tmp_path)
+    save_session_snapshot(
+        _controls(index=index, top_k=9, answer_model="x-model"), tmp_path, "English"
+    )
+
+    at = AppTest.from_function(
+        _apply_session_snapshot_script, kwargs={"session_dir": str(tmp_path)}
+    ).run()
+
+    assert not at.exception
+    assert at.session_state["conversational_rag_top_k"] == 9
+    assert at.session_state["conversational_rag_llm_model"] == "x-model"
+    assert at.session_state["conversational_rag_index"].vector_folder == "vector_01_slate"
+
+
+def _apply_session_snapshot_twice_script(session_dir: str) -> None:
+    from pathlib import Path as _Path
+
+    import streamlit as st
+
+    from app_support.conversational_rag.conversational_rag_build_ui import apply_session_snapshot
+
+    apply_session_snapshot(_Path(session_dir))  # one-shot restore for this session
+    st.session_state["conversational_rag_top_k"] = 1  # user overrides afterwards
+    apply_session_snapshot(_Path(session_dir))  # same session → must not re-seed
+
+
+def test_apply_session_snapshot_reseeds_only_once_per_session(tmp_path: Path) -> None:
+    index = _real_index(tmp_path)
+    save_session_snapshot(_controls(index=index, top_k=9), tmp_path, "English")
+
+    at = AppTest.from_function(
+        _apply_session_snapshot_twice_script, kwargs={"session_dir": str(tmp_path)}
+    ).run()
+
+    assert not at.exception
+    assert at.session_state["conversational_rag_top_k"] == 1  # user override survived

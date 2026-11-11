@@ -2,11 +2,11 @@
 
 The six conversational prompts (answer, decompose, rerank, followups,
 answerability, state) each resolve with the same precedence as Step 4's single
-template: a per-session saved edit → the shipped config ``.txt`` (so an operator
-can reword a default without a code change) → the built-in ``rag_engine``
-constant. A missing/empty source falls through to the next, so a deleted file
-never breaks a turn. Pure I/O + resolution (no Streamlit), so it stays
-unit-testable and the page module stays thin.
+template: a per-session saved edit (stored in ``conversational_rag/snapshot.json``)
+→ the shipped config ``.txt`` (so an operator can reword a default without a code
+change) → the built-in ``rag_engine`` constant. A missing/empty source falls through
+to the next, so a cleared edit never breaks a turn. Pure I/O + resolution (no
+Streamlit), so it stays unit-testable and the page module stays thin.
 """
 
 from __future__ import annotations
@@ -25,8 +25,10 @@ from rag_engine.prompts import (
     SUGGEST_FOLLOWUPS_TEMPLATE,
 )
 
-from app_support.conversational_rag.conversational_rag_history import (
-    conversational_rag_history_dir,
+from app_support.conversational_rag.session_snapshot import (
+    remove_snapshot_prompt,
+    set_snapshot_prompt,
+    snapshot_prompt,
 )
 from app_support.settings import get_settings
 
@@ -98,7 +100,6 @@ _LIBRARY_DEFAULTS = {
 # This module lives at apps/streamlit/src/app_support/conversational_rag/; the repo
 # root is five parents up and the config dir resolves against it.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_SESSION_PROMPT_PREFIX = "prompt_"
 
 
 def conversational_prompt_is_valid(key: str, template: str) -> bool:
@@ -110,29 +111,19 @@ def _config_path(key: str) -> Path:
     return _REPO_ROOT / _settings.conv_rag_prompt_template_dir / _PROMPT_FILENAMES[key]
 
 
-def _session_prompt_path(session_root: Path | str, key: str) -> Path:
-    return conversational_rag_history_dir(session_root) / f"{_SESSION_PROMPT_PREFIX}{key}.txt"
-
-
 def load_saved_conversational_prompt(session_root: Path | str, key: str) -> str | None:
-    """Return the session's saved *key* prompt, or None when unset/empty."""
-    try:
-        text = _session_prompt_path(session_root, key).read_text(encoding="utf-8")
-    except OSError:
-        return None
-    return text if text.strip() else None
+    """Return the session's saved *key* prompt (from ``snapshot.json``), or None when unset."""
+    return snapshot_prompt(session_root, key)
 
 
 def save_conversational_prompt(session_root: Path | str, key: str, template: str) -> None:
-    """Persist *template* as this session's *key* prompt."""
-    directory = conversational_rag_history_dir(session_root)
-    directory.mkdir(parents=True, exist_ok=True)
-    _session_prompt_path(session_root, key).write_text(template, encoding="utf-8")
+    """Persist *template* as this session's *key* prompt in ``snapshot.json``."""
+    set_snapshot_prompt(session_root, key, template)
 
 
 def reset_conversational_prompt(session_root: Path | str, key: str) -> None:
     """Remove the session's saved *key* prompt, reverting to the default."""
-    _session_prompt_path(session_root, key).unlink(missing_ok=True)
+    remove_snapshot_prompt(session_root, key)
 
 
 def resolve_conversational_prompt(

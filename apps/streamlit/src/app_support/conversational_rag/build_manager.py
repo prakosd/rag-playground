@@ -94,12 +94,8 @@ class BuildSnapshot:
         return json.dumps(dataclasses.asdict(self), indent=2)
 
     @staticmethod
-    def from_json(text: str) -> BuildSnapshot | None:
-        """Parse a ``build.json`` payload, or None when it is invalid/incomplete."""
-        try:
-            data = json.loads(text)
-        except (ValueError, TypeError):
-            return None
+    def from_dict(data: object) -> BuildSnapshot | None:
+        """Build a snapshot from a parsed mapping, or None when it is invalid/incomplete."""
         if not isinstance(data, dict):
             return None
         known = {field.name for field in dataclasses.fields(BuildSnapshot)}
@@ -107,6 +103,15 @@ class BuildSnapshot:
             return BuildSnapshot(**{key: data[key] for key in known if key in data})
         except TypeError:
             return None
+
+    @staticmethod
+    def from_json(text: str) -> BuildSnapshot | None:
+        """Parse a ``build.json`` payload, or None when it is invalid/incomplete."""
+        try:
+            data = json.loads(text)
+        except (ValueError, TypeError):
+            return None
+        return BuildSnapshot.from_dict(data)
 
 
 def _next_build_sequence(session_root: Path) -> int:

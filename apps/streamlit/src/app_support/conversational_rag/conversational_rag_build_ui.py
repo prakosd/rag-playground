@@ -10,6 +10,7 @@ inside its Output Files tree folder. The pure mapping helpers are unit-tested; t
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -44,6 +45,11 @@ from app_support.conversational_rag.conversational_rag_history import (
 from app_support.conversational_rag.conversational_token_ui import (
     render_conversational_token_panel,
 )
+from app_support.conversational_rag.session_snapshot import (
+    read_session_snapshot,
+    snapshot_prompts,
+    write_session_snapshot,
+)
 from app_support.conversational_rag.showcase_launch import render_launch_button
 from app_support.i18n._types import Strings
 from app_support.rag_shared.index_catalog import (
@@ -54,6 +60,7 @@ from app_support.rag_shared.index_catalog import (
 
 __all__ = [
     "apply_pending_load",
+    "apply_session_snapshot",
     "control_widget_values",
     "frozen_prompt_texts",
     "load_build_as_controls",
@@ -62,6 +69,7 @@ __all__ = [
     "render_build_token_panel",
     "render_build_tree_actions",
     "resolve_build_index",
+    "save_session_snapshot",
     "snapshot_from_controls",
 ]
 
@@ -123,6 +131,26 @@ def snapshot_from_controls(
     )
 
 
+def save_session_snapshot(
+    controls: ConversationalControls,
+    session_root: Path | str,
+    language: str,
+) -> None:
+    """Persist the live Step 5 settings as the session ``snapshot.json``, keeping prompt edits.
+
+    Called after each committed turn so a reload — or importing the exported session into a
+    fresh session/browser — restores the last-used options and index (the chat lives in
+    ``transactions.jsonl``; prompt edits persist on Save). Only genuine prompt edits are kept
+    (not every resolved prompt), so an un-edited prompt still resolves from the shipped config
+    / library default. No-op without a selected index (nothing to snapshot).
+    """
+    if controls.index is None:
+        return
+    edits = snapshot_prompts(session_root)
+    snapshot = snapshot_from_controls(controls, language=language, name="", slug="", prompts=edits)
+    write_session_snapshot(session_root, dataclasses.asdict(snapshot))
+
+
 def load_build_as_controls(build_root: Path | str) -> ConversationalControls | None:
     """Reconstruct the frozen Step 5 controls from a build, for showcase rendering.
 
@@ -164,6 +192,9 @@ _JUST_BUILT_KEY = "conversational_rag_just_built"
 # at the top of the next run — before the controls instantiate.
 _LOAD_TRIGGER = "conversational_rag_pending_load"
 _APPLY_LOAD_KEY = "conversational_rag_apply_load"
+# The session root the controls were last restored for, so apply_session_snapshot
+# re-seeds when the active session changes but not on every rerun.
+_SNAPSHOT_RESTORED_FOR_KEY = "conversational_rag_snapshot_restored_for"
 
 
 def control_widget_values(snapshot: BuildSnapshot) -> dict[str, object]:
@@ -218,6 +249,19 @@ def resolve_build_index(build_root: Path | str, snapshot: BuildSnapshot) -> Inde
     return copied[0] if copied else None
 
 
+def _seed_options_and_index(session_root: Path | str, snapshot: BuildSnapshot) -> None:
+    """Seed the option control widgets + the matching index from *snapshot* into session state.
+
+    Shared by the build Load and the session-snapshot restore; both must run before the
+    controls instantiate (Streamlit forbids setting a widget's state key after it renders).
+    """
+    for key, value in control_widget_values(snapshot).items():
+        st.session_state[key] = value
+    ref = _matching_index(session_root, snapshot)
+    if ref is not None:
+        st.session_state[f"{_CONTROL_KEY_PREFIX}_index"] = ref
+
+
 def _apply_load(session_root: Path | str, snapshot: BuildSnapshot) -> None:
     """Write a build's settings + frozen prompts into the live Step 5 control state.
 
@@ -225,11 +269,7 @@ def _apply_load(session_root: Path | str, snapshot: BuildSnapshot) -> None:
     forbids setting a widget's state key once its widget has rendered. Prompts come
     from the snapshot (build.json), not disk.
     """
-    for key, value in control_widget_values(snapshot).items():
-        st.session_state[key] = value
-    ref = _matching_index(session_root, snapshot)
-    if ref is not None:
-        st.session_state[f"{_CONTROL_KEY_PREFIX}_index"] = ref
+    _seed_options_and_index(session_root, snapshot)
     for key, text in snapshot.prompts.items():
         if text and text.strip():
             save_conversational_prompt(session_root, key, text)
@@ -246,6 +286,24 @@ def apply_pending_load(strings: Strings, session_root: Path | str) -> None:
         return
     _apply_load(session_root, snapshot)
     st.toast(strings["CONV_BUILD_LOADED_TOAST"].format(name=name), icon=":material/check:")
+
+
+def apply_session_snapshot(session_root: Path | str) -> None:
+    """Seed the Step 5 controls from the session's ``snapshot.json`` at the top of the page.
+
+    Runs before the controls instantiate (Streamlit forbids setting a widget's state key
+    once its widget has rendered) and only re-seeds when the active session changes — so a
+    reload or a switched-to/imported session restores its last-used options and index
+    without clobbering live edits on later reruns. Prompts restore lazily via
+    ``resolve_conversational_prompt``, so only the option widgets + index need seeding.
+    """
+    if st.session_state.get(_SNAPSHOT_RESTORED_FOR_KEY) == str(session_root):
+        return
+    st.session_state[_SNAPSHOT_RESTORED_FOR_KEY] = str(session_root)
+    snapshot = BuildSnapshot.from_dict(read_session_snapshot(session_root))
+    if snapshot is None:
+        return
+    _seed_options_and_index(session_root, snapshot)
 
 
 def _build_now(
@@ -329,7 +387,7 @@ def _render_relaunch_button(strings: Strings, snapshot: BuildSnapshot, *, disabl
 def render_build_token_panel(strings: Strings, session_root: Path | str, name: str) -> None:
     """Render a build's Token usage panel from its showcase chat history, if any.
 
-    Rendered in the Output Files tree right after the build's ``conversational_rag_history``
+    Rendered in the Output Files tree right after the build's ``conversational_rag``
     folder (the content it summarizes), above the build's action row. No-op for a build
     with no run dir or no recorded conversations.
     """
