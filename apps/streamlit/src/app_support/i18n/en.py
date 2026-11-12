@@ -510,19 +510,24 @@ STRINGS_EN: Strings = {
     "CONV_INSPECT_STATE_RECENT": "Recent questions",
     "CONV_INSPECT_STATE_EMPTY": "No conversation memory yet.",
     "CONV_INSPECT_STATE_HELP": (
-        "A rolling memory of the conversation: each turn updates it from your question and "
-        "the answer, and the next turn uses it to resolve references (like 'it' or 'that') "
-        "and plan its search — it is not part of the answer itself. The model only starts "
-        "summarising after the first few turns (configurable in Advanced options), so "
+        "A rolling memory of the conversation that the next turn uses to resolve references "
+        "(like 'it' or 'that') and plan its search — it is not part of the answer itself. "
+        "Recent questions are the rewritten, standalone form of your last few questions, "
+        "tracked automatically every turn; the summary, entities, and open threads are the "
+        "model's running notes, updated from your question and the answer. The model only "
+        "starts summarising after the first few turns (configurable in Advanced options), so "
         "earlier turns just track recent questions and send no prompt."
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "No follow-up suggestions for this turn.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
         "Yes/No is the verdict — whether this follow-up can be answered from your indexed "
-        "knowledge. A clearly high confidence keeps it (Yes) and a clearly low one drops it (No) "
-        "by the threshold alone; only a borderline confidence is decided by the model, using the "
-        "Answerability prompt. The percentage is that confidence — the follow-up's best "
-        "semantic-search match against your collection — not a model judgement."
+        "knowledge. The percentage is the confidence: the follow-up's best semantic-search "
+        "match against your collection, not a model judgement. A clearly high confidence keeps "
+        "it (Yes) and a clearly low one drops it (No) by the threshold alone — no prompt is "
+        "sent. A borderline confidence — one that lands between the drop and keep cut-offs, so "
+        "neither threshold can decide — is handed to the model using the Answerability prompt. "
+        "That is why an Answerability probe below appears only for these borderline follow-ups, "
+        "not for every Yes or No."
     ),
     "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Answerability · Confidence %",
     "CONV_INSPECT_ANSWERABILITY_YES": "Yes",

@@ -102,6 +102,28 @@ def test_turn_from_record_rebuilds_display_adequate_answer() -> None:
     assert answer.sources[0].retrieval_rank == 2  # passage number survives a reload
 
 
+def test_turn_from_record_restores_full_conversation_state() -> None:
+    from dataclasses import replace
+
+    record = replace(
+        _record("2026-09-01T10:00:00.000+00:00", state_summary="About X"),
+        state_entities={"discount": "Multi-Product"},
+        state_recent_resolved=("What is the discount?",),
+        state_open_threads=("What about Indonesia?",),
+        state_asked_questions=("What is the discount?",),
+    )
+
+    state = turn_from_record(record)["answer"].state
+
+    # The whole rolling memory is restored (not just the summary), so the Inspect state
+    # tab renders in full after a reload and the next turn keeps its context.
+    assert state.summary == "About X"
+    assert state.entities == {"discount": "Multi-Product"}
+    assert state.recent_resolved == ("What is the discount?",)
+    assert state.open_threads == ("What about Indonesia?",)
+    assert state.asked_questions == ("What is the discount?",)
+
+
 def test_turn_from_record_rebuilds_followups_with_scores_and_verdicts() -> None:
     from dataclasses import replace
 
@@ -109,12 +131,40 @@ def test_turn_from_record_rebuilds_followups_with_scores_and_verdicts() -> None:
         ConversationalFollowupRecord(question="Keep me", score=0.8, verdict="keep"),
         ConversationalFollowupRecord(question="Drop me", score=0.2, verdict="drop"),
     )
-    record = replace(_record("2026-09-01T10:00:00.000+00:00"), follow_ups_evaluated=evaluated)
+    record = replace(
+        _record("2026-09-01T10:00:00.000+00:00", follow_ups=("Keep me",)),
+        follow_ups_evaluated=evaluated,
+    )
 
     answer = turn_from_record(record)["answer"]
 
     assert [(f.question, f.score) for f in answer.follow_ups] == [("Keep me", 0.8)]
     assert [(f.question, f.verdict) for f in answer.dropped_followups] == [("Drop me", "drop")]
+
+
+def test_turn_from_record_exposes_full_evaluated_followups() -> None:
+    from dataclasses import replace
+
+    evaluated = (
+        ConversationalFollowupRecord(question="Shown?", score=0.9, verdict="keep"),
+        ConversationalFollowupRecord(
+            question="Bumped?", score=0.62, verdict="keep", checked_by_llm=True
+        ),
+        ConversationalFollowupRecord(
+            question="Dropped?", score=0.2, verdict="drop", checked_by_llm=True
+        ),
+    )
+    record = replace(
+        _record("2026-09-01T10:00:00.000+00:00", follow_ups=("Shown?",)),
+        follow_ups_evaluated=evaluated,
+    )
+
+    answer = turn_from_record(record)["answer"]
+
+    # The shown bubble stays the truncated slice, but evaluated_followups carries every
+    # probed candidate (incl. the bumped borderline-kept) so a probe can recover its score.
+    assert [f.question for f in answer.follow_ups] == ["Shown?"]
+    assert {f.question for f in answer.evaluated_followups} == {"Shown?", "Bumped?", "Dropped?"}
 
 
 def test_turn_from_record_falls_back_to_followup_strings_without_evaluated() -> None:

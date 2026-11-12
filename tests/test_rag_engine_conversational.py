@@ -742,6 +742,63 @@ def test_conversational_answer_populates_dropped_followups(tmp_path: Path) -> No
     assert [f.question for f in result.follow_ups] == ["What else about France?"]
 
 
+def test_conversational_answer_populates_evaluated_followups(tmp_path: Path) -> None:
+    def retriever(run_dir, query, config):
+        score = 0.1 if "weather" in query else 0.9
+        return RetrievalResult(
+            chunks=[RetrievedChunk(text="ctx", source="a.md", score=score, metadata={})]
+        )
+
+    def aux_resolver(config):
+        model = _ScriptedModel(reply='["What else about France?", "What is the weather?"]')
+        return ResolvedChatModel(model=model, model_id="aux"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "Tell me about France",
+        ConversationState(),
+        ConversationalConfig(reranker="off"),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    # evaluated_followups is the complete set — every probed candidate, kept and dropped —
+    # so a UI can map each answerability probe to its follow-up's verdict + confidence.
+    evaluated = {f.question: f.verdict for f in result.evaluated_followups}
+    assert evaluated == {"What else about France?": "keep", "What is the weather?": "drop"}
+
+
+def test_conversational_answer_evaluated_includes_truncated_kept(tmp_path: Path) -> None:
+    # Both candidates pass (kept), but followup_show_count=1 shows only the top one;
+    # evaluated_followups still carries both, so a truncated-kept probe keeps its score.
+    def retriever(run_dir, query, config):
+        score = 0.95 if "France" in query else 0.85
+        return RetrievalResult(
+            chunks=[RetrievedChunk(text="ctx", source="a.md", score=score, metadata={})]
+        )
+
+    def aux_resolver(config):
+        model = _ScriptedModel(reply='["More about France?", "More about Paris?"]')
+        return ResolvedChatModel(model=model, model_id="aux"), []
+
+    result = conversational_answer(
+        tmp_path,
+        "Tell me about France",
+        ConversationState(),
+        ConversationalConfig(reranker="off", followup_show_count=1),
+        retriever=retriever,
+        chat_resolver=_main_resolver,
+        aux_resolver=aux_resolver,
+    )
+
+    assert len(result.follow_ups) == 1  # only the top-scoring kept candidate is shown
+    assert {f.question for f in result.evaluated_followups} == {
+        "More about France?",
+        "More about Paris?",
+    }
+
+
 def test_conversational_answer_parallel_followups_skip_the_answer(tmp_path: Path) -> None:
     prompts: list[str] = []
 

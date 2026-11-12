@@ -108,12 +108,15 @@ def _chunks_from_results(results: tuple[StoredResult, ...]) -> list[RetrievedChu
 
 def _rebuild_followups(
     record: ConversationalTurnRecord,
-) -> tuple[list[ValidatedFollowup], list[ValidatedFollowup]]:
-    """Rebuild (kept, dropped) follow-ups from a stored record.
+) -> tuple[list[ValidatedFollowup], list[ValidatedFollowup], list[ValidatedFollowup]]:
+    """Rebuild (shown_kept, dropped, evaluated) follow-ups from a stored record.
 
     Prefers the full-fidelity ``follow_ups_evaluated`` (real score + verdict); falls
     back to the plain question-string lists for records saved before scores were kept
-    (their confidence then shows blank rather than a misleading 0%).
+    (their confidence then shows blank rather than a misleading 0%). ``shown_kept`` is
+    the truncated slice the follow-up bubble renders (``follow_ups_shown``); ``evaluated``
+    is every probed candidate, so a UI can map each answerability probe to its verdict +
+    confidence even when that candidate was bumped out of the shown slice.
     """
     if record.follow_ups_evaluated:
         evaluated = [
@@ -125,27 +128,31 @@ def _rebuild_followups(
             )
             for item in record.follow_ups_evaluated
         ]
-        kept = [item for item in evaluated if item.verdict == "keep"]
         dropped = [item for item in evaluated if item.verdict == "drop"]
-        return kept, dropped
-    kept = [ValidatedFollowup(question=question) for question in record.follow_ups_shown]
+        by_question = {item.question: item for item in evaluated}
+        shown_kept = [
+            by_question.get(question, ValidatedFollowup(question=question))
+            for question in record.follow_ups_shown
+        ]
+        return shown_kept, dropped, evaluated
+    shown_kept = [ValidatedFollowup(question=question) for question in record.follow_ups_shown]
     dropped = [
         ValidatedFollowup(question=question, verdict="drop")
         for question in record.follow_ups_dropped
     ]
-    return kept, dropped
+    return shown_kept, dropped, [*shown_kept, *dropped]
 
 
 def turn_from_record(record: ConversationalTurnRecord) -> dict:
     """Rebuild a display-adequate ``{question, answer}`` turn from a stored record.
 
     The answer carries the persisted text, sources, sub-questions, follow-ups,
-    per-stage timings, token usage, and prompt traces, models, and the rolling
-    summary — enough to re-render the turn and its inspector. Un-persisted fields
-    (live retrieval cache, entities, warnings/errors) are left empty; the turn id
-    is assigned by the caller.
+    per-stage timings, token usage, prompt traces, models, and the full rolling
+    conversation state — enough to re-render the turn and its inspector. Un-persisted
+    fields (live retrieval cache, warnings/errors) are left empty; the turn id is
+    assigned by the caller.
     """
-    kept_followups, dropped_followups = _rebuild_followups(record)
+    kept_followups, dropped_followups, evaluated_followups = _rebuild_followups(record)
     answer = ConversationalAnswer(
         answer=record.answer,
         sources=_chunks_from_results(record.results),
@@ -156,7 +163,14 @@ def turn_from_record(record: ConversationalTurnRecord) -> dict:
         ),
         follow_ups=kept_followups,
         dropped_followups=dropped_followups,
-        state=ConversationState(summary=record.state_summary),
+        evaluated_followups=evaluated_followups,
+        state=ConversationState(
+            summary=record.state_summary,
+            entities=dict(record.state_entities),
+            recent_resolved=record.state_recent_resolved,
+            open_threads=record.state_open_threads,
+            asked_questions=record.state_asked_questions,
+        ),
         model_used=record.llm_model or None,
         aux_model_used=record.aux_model or None,
         reranker_used=record.reranker or None,
@@ -208,8 +222,10 @@ def asked_questions_from_records(
     """Rebuild a conversation's asked-question history from its saved turns.
 
     Folds every turn's resolved sub-questions (oldest first, case-insensitively
-    de-duplicated, capped) so follow-up de-duplication survives a reload — the
-    live ``ConversationState.asked_questions`` is not persisted to disk.
+    de-duplicated, capped) so follow-up de-duplication survives a reload. This
+    whole-conversation fold is the authoritative asked-history on load, even though
+    each turn also persists its own ``state_asked_questions`` snapshot (used for
+    ``ConversationState`` round-trip fidelity, not continuity).
     """
     ordered = sorted(
         (record for record in records if record.conversation_id == conversation_id),

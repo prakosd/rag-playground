@@ -62,6 +62,7 @@ __all__ = [
     "ConversationalControls",
     "FOLLOWUP_BUBBLE_KEY_PREFIX",
     "INSPECT_BUBBLE_KEY_PREFIX",
+    "answerability_probe_labels",
     "aux_model_choices",
     "build_conversational_config",
     "decomposition_help_text",
@@ -888,9 +889,7 @@ def render_turn_inspection(
             _render_followups_prompts(strings, answer)
         with tabs[4]:
             _render_state(strings, answer.state)
-            _render_stage_prompt(
-                strings, answer, "state", help_text=strings["CONV_INSPECT_STATE_HELP"]
-            )
+            _render_stage_prompt(strings, answer, "state")
         with tabs[5]:
             _render_diagnostics(strings, answer)
 
@@ -910,27 +909,64 @@ def _render_stage_prompt(
     strings: Strings,
     answer: ConversationalAnswer,
     process: str,
-    *,
-    help_text: str | None = None,
 ) -> None:
-    """Show the captured prompt/reply for *process*, or a note when none was sent.
-
-    *help_text* adds a hover hint to the "no prompt" note — used by the state tab to
-    explain why early turns send no prompt without spending a caption line.
-    """
+    """Show the captured prompt/reply for *process*, or a note when none was sent."""
     trace = next((item for item in answer.prompt_traces if item.process == process), None)
     if trace is None:
-        st.caption(strings["CONV_INSPECT_NO_PROMPT"], help=help_text)
+        st.caption(strings["CONV_INSPECT_NO_PROMPT"])
         return
     _render_prompt_trace(strings, trace)
 
 
+def answerability_probe_labels(
+    strings: Strings,
+    probes: Sequence[StagePromptTrace],
+    evaluated: Sequence[ValidatedFollowup],
+) -> list[str]:
+    """Label each answerability probe ``Answerability probe N · 🟢 Yes · 64%``.
+
+    The verdict (Yes/No) comes from the probe's own YES/NO reply, so it is always known;
+    the confidence % is recovered by mapping the probe to its follow-up among *evaluated*
+    (every probed candidate — the question is embedded verbatim in the probe prompt,
+    longest-first + consumed once so a substring can't steal another's probe). A probe
+    with no match (e.g. an old record saved without scores) shows number + verdict only.
+    """
+    yes_label = strings["CONV_INSPECT_ANSWERABILITY_YES"]
+    no_label = strings["CONV_INSPECT_ANSWERABILITY_NO"]
+    candidates = sorted(
+        (item for item in evaluated if item.checked_by_llm),
+        key=lambda item: len(item.question),
+        reverse=True,
+    )
+    used: set[int] = set()
+    labels: list[str] = []
+    for index, probe in enumerate(probes, start=1):
+        match: ValidatedFollowup | None = None
+        for position, candidate in enumerate(candidates):
+            if position not in used and candidate.question and candidate.question in probe.prompt:
+                used.add(position)
+                match = candidate
+                break
+        is_yes = probe.response.strip().lower().startswith("yes")
+        emoji = _VERDICT_KEEP_EMOJI if is_yes else _VERDICT_DROP_EMOJI
+        verdict_label = yes_label if is_yes else no_label
+        score = match.score if match is not None else 0.0
+        probe_label = strings["CONV_INSPECT_ANSWERABILITY_PROBE"].format(n=index)
+        labels.append(f"{probe_label} · {_answerability_value(emoji, verdict_label, score)}")
+    return labels
+
+
 def _render_followups_prompts(strings: Strings, answer: ConversationalAnswer) -> None:
-    """Follow-up generation prompt in sub-tabs, then each answerability probe below."""
+    """Follow-up generation prompt in sub-tabs, then each answerability probe below.
+
+    Each probe is labelled with its number, verdict, and confidence (``Answerability
+    probe N · 🟢 Yes · 64%``); probes exist only for the borderline follow-ups.
+    """
     _render_stage_prompt(strings, answer, "followups")
     probes = [item for item in answer.prompt_traces if item.process == "answerability"]
-    for index, probe in enumerate(probes, start=1):
-        with st.expander(strings["CONV_INSPECT_ANSWERABILITY_PROBE"].format(n=index)):
+    labels = answerability_probe_labels(strings, probes, answer.evaluated_followups)
+    for label, probe in zip(labels, probes, strict=True):
+        with st.expander(label):
             _render_prompt_trace(strings, probe)
 
 
@@ -1091,16 +1127,20 @@ def _render_state(strings: Strings, state: ConversationState) -> None:
     if not (state.summary or state.entities or state.recent_resolved or state.open_threads):
         st.caption(strings["CONV_INSPECT_STATE_EMPTY"])
         return
+    # Recent questions lead with the tab's hint (they are tracked every turn, even before
+    # the model starts summarising), then the model's running notes follow beneath them.
+    if state.recent_resolved:
+        _section_label(
+            strings["CONV_INSPECT_STATE_RECENT"], help_text=strings["CONV_INSPECT_STATE_HELP"]
+        )
+        _bullet_list(state.recent_resolved)
     if state.summary:
         _section_label(strings["CONV_INSPECT_STATE_SUMMARY"])
         st.write(state.summary)
-    rows: list[tuple[str, str]] = list(state.entities.items())
-    if rows:
+    entity_rows = list(state.entities.items())
+    if entity_rows:
         _section_label(strings["CONV_INSPECT_STATE_ENTITIES"])
-        st.markdown(kv_grid_html(rows, columns=2), unsafe_allow_html=True)
-    if state.recent_resolved:
-        _section_label(strings["CONV_INSPECT_STATE_RECENT"])
-        _bullet_list(state.recent_resolved)
+        _bullet_list([f"**{name}**: {value}" for name, value in entity_rows])
     if state.open_threads:
         _section_label(strings["CONV_INSPECT_STATE_THREADS"])
         _bullet_list(state.open_threads)
@@ -1160,9 +1200,9 @@ def _render_followups(
         strings["CONV_INSPECT_FOLLOWUPS_SCORE_HEADER"],
         help_text=strings["CONV_INSPECT_FOLLOWUPS_HELP"],
     )
-    # Labels here are the questions themselves, so render them full-opacity with a
-    # bullet rather than as dimmed field names.
+    # Labels here are the questions themselves, so render them full-opacity and
+    # numbered (1 · , 2 · , …) rather than as dimmed field names.
     st.markdown(
-        kv_grid_html(rows, columns=2, dim_labels=False, label_prefix="· "),
+        kv_grid_html(rows, columns=2, dim_labels=False, numbered=True),
         unsafe_allow_html=True,
     )

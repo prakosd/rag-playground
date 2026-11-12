@@ -199,7 +199,7 @@ def kv_grid_html(
     margin_bottom: bool = False,
     margin_top: bool = False,
     dim_labels: bool = True,
-    label_prefix: str = "",
+    numbered: bool = False,
 ) -> str:
     """Render label/value *rows* as a compact aligned grid (values right-aligned).
 
@@ -207,13 +207,15 @@ def kv_grid_html(
     so the index Details panel and the Step 3/4 history cards share one tidy look.
     *margin_top* pulls the grid up to sit closer to the row above it. *dim_labels* greys
     the left column (a field name); set it False when the label is content itself (e.g. a
-    follow-up question). *label_prefix* is prepended to each label (e.g. a bullet "· ").
+    follow-up question). *numbered* prefixes each label with its 1-based running number and
+    a "· " separator ("1 · ", "2 · ", …) — used for the follow-up question list.
     """
     label_style = "opacity:0.65" if dim_labels else ""
     cells = "".join(
-        f'<div style="{label_style}">{html.escape(f"{label_prefix}{label}")}</div>'
+        f'<div style="{label_style}">'
+        f"{html.escape(f'{index} · {label}' if numbered else label)}</div>"
         f'<div style="text-align:right">{html.escape(value)}</div>'
-        for label, value in rows
+        for index, (label, value) in enumerate(rows, start=1)
     )
     template = "auto 1fr auto 1fr" if columns == 4 else "auto 1fr"
     extra = ""

@@ -817,17 +817,24 @@ def _followups_stage(
     latest_question: str = "",
     latest_answer: str = "",
     summary: str = "",
-) -> tuple[list[ValidatedFollowup], list[ValidatedFollowup], list[LibraryMessage], float]:
-    """Suggest/validate follow-ups → (follow_ups, dropped, warnings, elapsed seconds).
+) -> tuple[
+    list[ValidatedFollowup],
+    list[ValidatedFollowup],
+    list[ValidatedFollowup],
+    list[LibraryMessage],
+    float,
+]:
+    """Suggest/validate follow-ups → (follow_ups, dropped, evaluated, warnings, elapsed).
 
-    ``dropped`` are the probed-but-rejected candidates (verdict "drop"), returned so
-    the inspector can show their answerability + confidence beside the kept ones.
+    ``dropped`` are the probed-but-rejected candidates (verdict "drop") and ``evaluated``
+    is every probed candidate (kept + dropped, before the show cap), returned so the
+    inspector can show answerability + confidence and map each probe to its follow-up.
     ``latest_question``/``latest_answer`` + ``summary`` anchor the suggestions to the
     most recent exchange (``latest_answer`` is empty in the parallel path).
     """
     warnings: list[LibraryMessage] = []
     follow_ups: list[ValidatedFollowup] = []
-    dropped: list[ValidatedFollowup] = []
+    evaluated: list[ValidatedFollowup] = []
     start = perf_counter()
     directive = thinking_disabled_system_directive(aux.model_id)
     try:
@@ -853,8 +860,9 @@ def _followups_stage(
             asked_questions=asked_questions,
             record_usage=record_usage,
             record_prompt=record_prompt,
-            # Rejected candidates feed the inspector's "No" rows (kept ones ride the return).
-            record_evaluation=lambda fu: dropped.append(fu) if fu.verdict == "drop" else None,
+            # Keep every probed candidate so the inspector can map each probe to its
+            # follow-up's verdict + confidence; the shown (kept) slice rides the return.
+            record_evaluation=evaluated.append,
             system_directive=directive,
         )
         if candidates and not follow_ups:
@@ -862,7 +870,8 @@ def _followups_stage(
     except Exception as exc:  # noqa: BLE001 - follow-ups are optional
         _logger.warning("Follow-up generation failed: %s", exc)
         warnings.append(messages.followups_generation_failed(str(exc)))
-    return follow_ups, dropped, warnings, perf_counter() - start
+    dropped = [item for item in evaluated if item.verdict == "drop"]
+    return follow_ups, dropped, evaluated, warnings, perf_counter() - start
 
 
 def _submit_followups(
@@ -922,6 +931,7 @@ def _finalize_turn(
     progress_callback: Callable[[LibraryMessage], None] | None,
     overflow: Sequence[RetrievedChunk] = (),
     dropped_followups: Sequence[ValidatedFollowup] = (),
+    evaluated_followups: Sequence[ValidatedFollowup] = (),
 ) -> ConversationalAnswer:
     """Roll conversation state forward and assemble the ``ConversationalAnswer``.
 
@@ -952,6 +962,7 @@ def _finalize_turn(
         plan=plan,
         follow_ups=follow_ups,
         dropped_followups=list(dropped_followups),
+        evaluated_followups=list(evaluated_followups),
         state=next_state,
         model_used=resolved.model_id,
         aux_model_used=aux.model_id,
@@ -994,6 +1005,7 @@ def _compose_turn(
     _report(progress_callback, messages.progress_answer())
     follow_ups: list[ValidatedFollowup] = []
     dropped_followups: list[ValidatedFollowup] = []
+    evaluated_followups: list[ValidatedFollowup] = []
     resolved_question = "; ".join(plan.sub_questions) or raw_question
     with ThreadPoolExecutor(max_workers=2) as executor:
         answer_future = executor.submit(
@@ -1046,9 +1058,10 @@ def _compose_turn(
                 summary=state.summary,
             )
         if followups_future is not None:
-            follow_ups, dropped_followups, followups_warnings, timings["followups"] = (
+            follow_ups, dropped_followups, evaluated_followups, followups_warnings, elapsed = (
                 followups_future.result()
             )
+            timings["followups"] = elapsed
             warnings.extend(followups_warnings)
 
     return _finalize_turn(
@@ -1062,6 +1075,7 @@ def _compose_turn(
         answer_text=answer_text,
         follow_ups=follow_ups,
         dropped_followups=dropped_followups,
+        evaluated_followups=evaluated_followups,
         warnings=warnings,
         errors=errors,
         timings=timings,
@@ -1111,6 +1125,7 @@ class ConversationalGeneration:
         errors: list[LibraryMessage] = []
         follow_ups: list[ValidatedFollowup] = []
         dropped_followups: list[ValidatedFollowup] = []
+        evaluated_followups: list[ValidatedFollowup] = []
 
         _report(self._progress, messages.progress_answer())
         resolved_question = "; ".join(prepared.plan.sub_questions) or prepared.raw_question
@@ -1185,9 +1200,10 @@ class ConversationalGeneration:
                     summary=self._state.summary,
                 )
             if followups_future is not None:
-                follow_ups, dropped_followups, followups_warnings, prepared.timings["followups"] = (
+                follow_ups, dropped_followups, evaluated_followups, followups_warnings, elapsed = (
                     followups_future.result()
                 )
+                prepared.timings["followups"] = elapsed
                 prepared.warnings.extend(followups_warnings)
 
         self.answer = _finalize_turn(
@@ -1201,6 +1217,7 @@ class ConversationalGeneration:
             answer_text=answer_text,
             follow_ups=follow_ups,
             dropped_followups=dropped_followups,
+            evaluated_followups=evaluated_followups,
             warnings=prepared.warnings,
             errors=errors,
             timings=prepared.timings,

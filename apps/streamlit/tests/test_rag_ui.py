@@ -95,12 +95,14 @@ def test_kv_grid_html_margin_top_pulls_grid_up() -> None:
     assert "margin-top:-0.5rem" in grid
 
 
-def test_kv_grid_html_undimmed_labels_with_prefix() -> None:
-    # Follow-up rows treat the label as content: full-opacity and bullet-prefixed.
-    grid = kv_grid_html([("Ask this?", "Yes")], dim_labels=False, label_prefix="· ")
+def test_kv_grid_html_numbered_prefixes_running_numbers() -> None:
+    # The follow-up question list treats each label as content: full-opacity and numbered
+    # (1 · , 2 · , …) so the probes below can be read against it.
+    grid = kv_grid_html([("First?", "Yes"), ("Second?", "No")], dim_labels=False, numbered=True)
 
-    assert "opacity:0.65" not in grid  # the label is not greyed
-    assert "· Ask this?" in grid  # the bullet is prepended to the label
+    assert "opacity:0.65" not in grid  # the label is content, not greyed
+    assert "1 · First?" in grid
+    assert "2 · Second?" in grid
 
 
 def test_stacked_label_value_html_escapes_and_clips() -> None:

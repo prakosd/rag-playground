@@ -249,7 +249,9 @@ _TABS_EXPANDER_TIGHTEN_CSS = (
 # an empty-state note (the State/Diagnostics tabs' "nothing here" caption) off the panel's
 # bottom border. The section-label caption's own `<p>` carries a 16px bottom margin that
 # its container only half-compensates, leaving a visible gap under the label; zero it (and
-# trim list bottoms) so content hugs its label. Scoped to the Inspect containers by key.
+# the `·`-bullet paragraphs that `_bullet_list` emits, and trim list bottoms) so content
+# hugs its label and the last state section hugs the Prompt/Response tabs rather than
+# leaving a gap under Open threads. Scoped to the Inspect containers by key.
 _INSPECT_TABS_RHYTHM_CSS = (
     "<style>"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs'] [data-testid='stTabs']"
@@ -258,6 +260,8 @@ _INSPECT_TABS_RHYTHM_CSS = (
     "{padding-top:0.5rem;padding-bottom:0.5rem}"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"
     " [data-testid='stCaptionContainer'] p{margin-bottom:0}"
+    f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"
+    " [data-testid='stMarkdownContainer'] p{margin-bottom:0}"
     f"div[class*='st-key-{INSPECT_BUBBLE_KEY_PREFIX}'] [data-testid='stTabs']"
     " [data-testid='stMarkdownContainer'] ul{margin-bottom:0.5rem}"
     "</style>"
@@ -914,10 +918,19 @@ def _append_history(
                 verdict=item.verdict,
                 checked_by_llm=item.checked_by_llm,
             )
-            for item in (*answer.follow_ups, *answer.dropped_followups)
+            # The complete evaluated set (every probed candidate, untruncated) so a reloaded
+            # turn can map each answerability probe to its verdict + confidence; the shown
+            # slice still rides ``follow_ups_shown``. Older answers fall back to kept + dropped.
+            for item in (
+                answer.evaluated_followups or (*answer.follow_ups, *answer.dropped_followups)
+            )
         ),
         conversation_id=conversation_id,
         transaction_id=new_transaction_id(),
         state_summary=answer.state.summary,
+        state_entities=dict(answer.state.entities),
+        state_recent_resolved=tuple(answer.state.recent_resolved),
+        state_open_threads=tuple(answer.state.open_threads),
+        state_asked_questions=tuple(answer.state.asked_questions),
     )
     append_conversational_rag_record(session_root, record)

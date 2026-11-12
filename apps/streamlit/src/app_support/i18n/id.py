@@ -526,21 +526,26 @@ STRINGS_ID: Strings = {
     "CONV_INSPECT_STATE_RECENT": "Pertanyaan terbaru",
     "CONV_INSPECT_STATE_EMPTY": "Belum ada memory percakapan.",
     "CONV_INSPECT_STATE_HELP": (
-        "Memory percakapan yang berjalan: setiap giliran memperbaruinya dari pertanyaan Anda "
-        "dan jawabannya, lalu giliran berikutnya memakainya untuk memahami rujukan (seperti "
-        "'itu' atau 'tersebut') dan merencanakan pencariannya — ini bukan bagian dari jawaban "
-        "itu sendiri. Model baru mulai meringkas setelah beberapa giliran pertama (dapat "
-        "diatur di Opsi lanjutan), jadi giliran awal hanya mencatat pertanyaan terbaru dan "
-        "tidak mengirim prompt."
+        "Memory percakapan yang berjalan yang dipakai giliran berikutnya untuk memahami "
+        "rujukan (seperti 'itu' atau 'tersebut') dan merencanakan pencariannya — ini bukan "
+        "bagian dari jawaban itu sendiri. Pertanyaan terbaru adalah bentuk mandiri (sudah "
+        "ditulis ulang) dari beberapa pertanyaan terakhir Anda, dicatat otomatis setiap "
+        "giliran; sedangkan ringkasan, entitas, dan utas terbuka adalah catatan berjalan "
+        "model, diperbarui dari pertanyaan dan jawaban Anda. Model baru mulai meringkas "
+        "setelah beberapa giliran pertama (dapat diatur di Opsi lanjutan), jadi giliran awal "
+        "hanya mencatat pertanyaan terbaru dan tidak mengirim prompt."
     ),
     "CONV_INSPECT_FOLLOWUPS_NONE": "Tidak ada saran pertanyaan lanjutan untuk giliran ini.",
     "CONV_INSPECT_FOLLOWUPS_HELP": (
         "Ya/Tidak adalah putusannya — apakah pertanyaan lanjutan ini dapat dijawab dari "
-        "pengetahuan terindeks Anda. Keyakinan yang jelas tinggi mempertahankannya (Ya) dan yang "
-        "jelas rendah membuangnya (Tidak) berdasarkan ambang saja; hanya keyakinan di ambang "
-        "batas yang diputuskan oleh model, memakai prompt Keterjawaban. Persentasenya adalah "
-        "keyakinan itu — kecocokan pencarian semantik terbaik terhadap koleksi Anda — bukan "
-        "penilaian model."
+        "pengetahuan terindeks Anda. Persentasenya adalah keyakinan: kecocokan pencarian "
+        "semantik terbaik pertanyaan lanjutan terhadap koleksi Anda, bukan penilaian model. "
+        "Keyakinan yang jelas tinggi mempertahankannya (Ya) dan yang jelas rendah membuangnya "
+        "(Tidak) berdasarkan ambang saja — tidak ada prompt yang dikirim. Hanya keyakinan di "
+        "ambang batas — yang berada di antara batas buang dan batas simpan, sehingga tidak ada "
+        "ambang yang bisa memutuskan — yang diserahkan ke model memakai prompt Keterjawaban. "
+        "Itulah sebabnya Pemeriksaan keterjawaban di bawah hanya muncul untuk pertanyaan "
+        "lanjutan di ambang batas ini, bukan untuk setiap Ya atau Tidak."
     ),
     "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Dapat dijawab · Keyakinan %",
     "CONV_INSPECT_ANSWERABILITY_YES": "Ya",

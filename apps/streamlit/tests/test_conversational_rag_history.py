@@ -93,6 +93,29 @@ def test_follow_ups_evaluated_round_trips(tmp_path: Path) -> None:
     assert record.follow_ups_evaluated == evaluated  # score + verdict survive the round trip
 
 
+def test_full_conversation_state_round_trips(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    record = replace(
+        _record(),
+        state_summary="summary",
+        state_entities={"discount": "Multi-Product", "provider": "NRMA"},
+        state_recent_resolved=("What is the discount?",),
+        state_open_threads=("What about Indonesia?",),
+        state_asked_questions=("What is the discount?", "What about Indonesia?"),
+    )
+    append_conversational_rag_record(tmp_path, record)
+
+    loaded = load_conversational_rag_history(tmp_path)[0]
+
+    # Entities, recent questions, open threads, and the asked-history all survive, so a
+    # reloaded turn shows the full Conversation state tab and the next turn keeps its memory.
+    assert loaded.state_entities == {"discount": "Multi-Product", "provider": "NRMA"}
+    assert loaded.state_recent_resolved == ("What is the discount?",)
+    assert loaded.state_open_threads == ("What about Indonesia?",)
+    assert loaded.state_asked_questions == ("What is the discount?", "What about Indonesia?")
+
+
 def test_prompt_traces_persist(tmp_path: Path) -> None:
     record = ConversationalTurnRecord(
         timestamp_utc="t1",
@@ -156,6 +179,11 @@ def test_legacy_records_without_ids_default_to_empty(tmp_path: Path) -> None:
     assert loaded.conversation_id == ""
     assert loaded.transaction_id == ""
     assert loaded.state_summary == ""
+    # The full-state fields also default empty on a pre-feature line.
+    assert loaded.state_entities == {}
+    assert loaded.state_recent_resolved == ()
+    assert loaded.state_open_threads == ()
+    assert loaded.state_asked_questions == ()
 
 
 def test_token_usage_round_trips(tmp_path: Path) -> None:

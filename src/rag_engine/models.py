@@ -178,6 +178,10 @@ class ConversationalAnswer:
     # Candidates that were evaluated but not shown as buttons (verdict "drop"), kept so
     # the inspector can report their answerability + confidence beside the kept ones.
     dropped_followups: list[ValidatedFollowup] = field(default_factory=list)
+    # Every probed candidate (kept + dropped), before the show-count cap is applied, so a UI
+    # can map each answerability probe back to its follow-up's verdict + confidence. A superset
+    # of ``follow_ups`` ∪ ``dropped_followups`` (``follow_ups`` is the shown, truncated slice).
+    evaluated_followups: list[ValidatedFollowup] = field(default_factory=list)
     state: ConversationState = field(default_factory=ConversationState)
     model_used: str | None = None
     aux_model_used: str | None = None

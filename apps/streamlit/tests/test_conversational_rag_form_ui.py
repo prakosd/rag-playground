@@ -4,8 +4,10 @@ from unittest.mock import MagicMock
 
 from rag_engine import (
     ConversationalAnswer,
+    ConversationState,
     QueryPlan,
     RetrievedChunk,
+    StagePromptTrace,
     StageTokenUsage,
     TokenUsage,
     ValidatedFollowup,
@@ -186,6 +188,91 @@ def test_followup_answerability_rows_omits_percent_when_score_unknown() -> None:
     )
 
     assert rows == [("Q", "🟢 Yes")]
+
+
+def test_answerability_probe_labels_number_verdict_and_confidence() -> None:
+    # Each probe reads "Answerability probe N · <verdict from its own reply> · <confidence>",
+    # the confidence recovered by mapping the probe to its follow-up in the evaluated set.
+    evaluated = [
+        ValidatedFollowup(
+            question="Is A covered?", score=0.64, verdict="keep", checked_by_llm=True
+        ),
+        ValidatedFollowup(
+            question="Is B covered?", score=0.57, verdict="drop", checked_by_llm=True
+        ),
+    ]
+    probes = [
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nIs A covered?\n", response="YES"
+        ),
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nIs B covered?\n", response="NO"
+        ),
+    ]
+
+    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, evaluated)
+
+    assert labels == [
+        "Answerability probe 1 · 🟢 Yes · 64%",
+        "Answerability probe 2 · 🔴 No · 57%",
+    ]
+
+
+def test_answerability_probe_labels_resolve_truncated_kept_score() -> None:
+    # A borderline-kept follow-up bumped out of the shown list is still in `evaluated`, so
+    # its probe recovers the confidence instead of falling back to a bare number. The
+    # high-confidence kept follow-up (not checked) has no probe and is skipped.
+    evaluated = [
+        ValidatedFollowup(question="Shown?", score=0.9, verdict="keep", checked_by_llm=False),
+        ValidatedFollowup(question="Bumped?", score=0.62, verdict="keep", checked_by_llm=True),
+    ]
+    probes = [
+        StagePromptTrace(process="answerability", prompt="Question:\nBumped?\n", response="YES"),
+    ]
+
+    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, evaluated)
+
+    assert labels == ["Answerability probe 1 · 🟢 Yes · 62%"]
+
+
+def test_answerability_probe_labels_verdict_from_reply_without_match() -> None:
+    # An old record without scores (empty evaluated) still shows number + verdict, read
+    # from the probe's own YES/NO reply, just without a confidence %.
+    probes = [
+        StagePromptTrace(process="answerability", prompt="Question:\nOrphan?\n", response="NO"),
+    ]
+
+    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, ())
+
+    assert labels == ["Answerability probe 1 · 🔴 No"]
+
+
+def test_answerability_probe_labels_handle_substring_questions() -> None:
+    # A shorter question that is a substring of a longer one must not steal the longer
+    # question's probe: longest-first matching + single consumption keeps them distinct.
+    evaluated = [
+        ValidatedFollowup(
+            question="Really, is it covered?", score=0.6, verdict="drop", checked_by_llm=True
+        ),
+        ValidatedFollowup(
+            question="is it covered?", score=0.5, verdict="drop", checked_by_llm=True
+        ),
+    ]
+    probes = [
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nReally, is it covered?\n", response="NO"
+        ),
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nis it covered?\n", response="NO"
+        ),
+    ]
+
+    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, evaluated)
+
+    assert labels == [
+        "Answerability probe 1 · 🔴 No · 60%",
+        "Answerability probe 2 · 🔴 No · 50%",
+    ]
 
 
 def test_prompt_tab_visible_follows_toggles() -> None:
@@ -410,3 +497,29 @@ def test_render_decomposition_lists_subquestions_as_one_bullet_block(monkeypatch
 
     fake_st.markdown.assert_called_once_with("· What is A?  \n· What is B?")
     assert fake_st.caption.call_args.kwargs.get("help")  # the label carries a hover hint
+
+
+def test_render_state_orders_recent_first_and_formats_entities(monkeypatch) -> None:
+    # Recent questions lead (with the tab's hover hint), then Summary, Entities, Open threads —
+    # and entities read as tight bold-key `: value` bullets, not a right-aligned grid.
+    fake_st = MagicMock()
+    monkeypatch.setattr(form_ui, "st", fake_st)
+    state = ConversationState(
+        summary="A short recap.",
+        entities={"discount": "Multi-Product discount"},
+        recent_resolved=("What is the discount?",),
+        open_threads=("What about Indonesia?",),
+    )
+
+    form_ui._render_state(STRINGS_EN, state)
+
+    labels = [call.args[0] for call in fake_st.caption.call_args_list]
+    assert labels == [
+        "**Recent questions**",
+        "**Summary**",
+        "**Entities**",
+        "**Open threads**",
+    ]
+    assert fake_st.caption.call_args_list[0].kwargs.get("help")  # Recent questions carries the hint
+    markdown_blocks = [call.args[0] for call in fake_st.markdown.call_args_list]
+    assert "· **discount**: Multi-Product discount" in markdown_blocks

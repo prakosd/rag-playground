@@ -33,7 +33,7 @@ conversational_answer(run_dir, question, state, config)  # Step 5 (advanced pipe
   ├─ retrieve_multi(...)                     → merged, deduped chunks (parallel)
   ├─ rerank_chunks(...)                      → top_n context + overflow (off/local/LLM)
   ├─ generate_chat_answer(...)               → grounded answer
-  ├─ suggest_followups / validate_followups  → kept + dropped ValidatedFollowup[] (verdict + confidence)
+  ├─ suggest_followups / validate_followups  → kept + dropped + all evaluated ValidatedFollowup[] (verdict + confidence)
   └─ update_state(...)                       → next ConversationState
                                              → ConversationalAnswer (+ plan, timings, token_usage, prompt_traces)
 

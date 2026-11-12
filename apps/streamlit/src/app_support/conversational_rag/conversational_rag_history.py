@@ -10,7 +10,7 @@ Records are capped at the most recent :data:`_MAX_RECORDS`.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from artifact_store.naming import CONVERSATIONAL_RAG_FOLDER_PREFIX
@@ -109,6 +109,13 @@ class ConversationalTurnRecord:
     conversation_id: str = ""
     transaction_id: str = ""
     state_summary: str = ""
+    # The rest of the rolling conversation state (beyond the summary), persisted so a
+    # reloaded turn restores the Inspect "Conversation state" tab in full and the next
+    # turn keeps its memory/continuity rather than starting from just the summary.
+    state_entities: dict[str, str] = field(default_factory=dict)
+    state_recent_resolved: tuple[str, ...] = ()
+    state_open_threads: tuple[str, ...] = ()
+    state_asked_questions: tuple[str, ...] = ()
 
 
 def conversational_rag_history_dir(session_root: Path | str) -> Path:
@@ -181,6 +188,12 @@ def _str_tuple(value: object) -> tuple[str, ...]:
     if isinstance(value, (list, tuple)):
         return tuple(str(item) for item in value)
     return ()
+
+
+def _str_dict(value: object) -> dict[str, str]:
+    if isinstance(value, dict):
+        return {str(key): str(val) for key, val in value.items()}
+    return {}
 
 
 def _opt_int(value: object) -> int | None:
@@ -280,6 +293,10 @@ def _record_from_payload(payload: object) -> ConversationalTurnRecord | None:
             conversation_id=str(payload.get("conversation_id", "")),
             transaction_id=str(payload.get("transaction_id", "")),
             state_summary=str(payload.get("state_summary", "")),
+            state_entities=_str_dict(payload.get("state_entities")),
+            state_recent_resolved=_str_tuple(payload.get("state_recent_resolved")),
+            state_open_threads=_str_tuple(payload.get("state_open_threads")),
+            state_asked_questions=_str_tuple(payload.get("state_asked_questions")),
         )
     except (KeyError, TypeError, ValueError):
         return None
