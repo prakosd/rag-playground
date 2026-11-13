@@ -78,6 +78,7 @@ def _controls(**overrides: object) -> ConversationalControls:
         "answer_recent_turns": 5,
         "plan_recent_turns": 2,
         "answer_temperature": 0.4,
+        "injection_prevention": True,
     }
     values.update(overrides)
     return ConversationalControls(**values)  # type: ignore[arg-type]
@@ -119,6 +120,7 @@ def test_snapshot_from_controls_maps_fields() -> None:
     assert snapshot.index_run_name == "2026-10-28_10-00-00"
     assert snapshot.embedding_model == "titan"
     assert snapshot.answer_temperature == 0.4
+    assert snapshot.injection_prevention is True
     assert snapshot.created_at_utc  # an ISO timestamp was recorded
 
 
@@ -221,6 +223,7 @@ def test_control_widget_values_maps_snapshot() -> None:
     assert values["conversational_rag_llm_model"] == "x-model"
     assert values["conversational_rag_reranker"] == snapshot.reranker
     assert values["conversational_rag_answer_temperature"] == snapshot.answer_temperature
+    assert values["conversational_rag_injection_prevention"] == snapshot.injection_prevention
     assert values["conversational_rag_thresholds"] == (
         snapshot.followup_drop,
         snapshot.followup_keep,

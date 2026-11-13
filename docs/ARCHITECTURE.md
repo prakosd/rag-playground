@@ -135,6 +135,9 @@ flowchart TD
   - `retrieve_multi` — search each sub-question in parallel and de-dupe;
   - `rerank_chunks` — re-order the merged pool (off / local cross-encoder / LLM);
   - answer generation — streamed token-by-token via `conversational_answer_stream`, with
+    an opt-in injection-prevention layer (`ConversationalConfig.injection_prevention`,
+    default on) that sanitizes + spotlights/datamarks the retrieved knowledge before the
+    grounded-answer prompt, with
     `suggest_followups` + `validate_followups` then propose only corpus-answerable
     follow-ups (by default after the answer so they build on it; a `followups_parallel`
     flag runs them alongside it), and `update_state` rolls conversation memory forward.

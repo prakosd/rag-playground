@@ -130,6 +130,13 @@ class ConversationalConfig(BaseModel):
     # threaded into the answer prompt so the answer matches the UI language.
     language: str = DEFAULT_ANSWER_LANGUAGE
 
+    # Opt-in injection-prevention layer for the grounded-answer prompt: when True (default)
+    # the retrieved knowledge is sanitised (hidden/zero-width chars dropped, markdown image
+    # exfiltration defanged) and spotlighted (datamarked + a treat-as-data directive) so a
+    # poisoned source can't smuggle instructions; False sends it verbatim (to compare). A
+    # mitigation that lowers risk, not a guarantee; the <knowledge> fence stays on regardless.
+    injection_prevention: bool = True
+
     @field_validator("followup_min_score", "followup_drop_score")
     @classmethod
     def _validate_unit_interval(cls, value: float) -> float:

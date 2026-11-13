@@ -35,6 +35,7 @@ from rag_engine.llm import (
     thinking_disabled_system_directive,
 )
 from rag_engine.models import (
+    RERANKER_REUSED,
     ChatTurn,
     ConversationalAnswer,
     ConversationState,
@@ -69,6 +70,7 @@ __all__ = [
     "CONVERSATIONAL_PROMPT_FIELDS",
     "DEFAULT_CHAT_MODEL",
     "ECHO_MODEL",
+    "RERANKER_REUSED",
     "ChatModelInfo",
     "ChatModelUnavailable",
     "ChatTurn",

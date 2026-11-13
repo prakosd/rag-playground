@@ -88,6 +88,9 @@ class BuildSnapshot:
     # Added after the fields above, so it carries a default: older build.json files without
     # this key still load (from_json drops missing keys), defaulting to a deterministic 0.0.
     answer_temperature: float = 0.0
+    # Injection prevention defaults on; older build.json files without the key keep the
+    # safer default (spotlight + sanitise the retrieved knowledge before the answer prompt).
+    injection_prevention: bool = True
 
     def to_json(self) -> str:
         """Serialize the snapshot as pretty JSON for ``build.json``."""

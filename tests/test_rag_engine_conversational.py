@@ -10,7 +10,8 @@ from rag_engine import messages
 from rag_engine.chat import conversational_answer, conversational_answer_stream
 from rag_engine.config import ConversationalConfig
 from rag_engine.llm import ResolvedChatModel
-from rag_engine.models import ChatTurn, ConversationState, RetrievedChunk
+from rag_engine.models import RERANKER_REUSED, ChatTurn, ConversationState, RetrievedChunk
+from rag_engine.prompts import SPOTLIGHT_DIRECTIVE
 from rag_engine.retrieval import RetrievalResult
 
 _CHUNKS = [
@@ -231,7 +232,9 @@ def test_conversational_answer_captures_answer_prompt_trace(tmp_path: Path) -> N
         tmp_path,
         "What is the capital of France?",
         ConversationState(),
-        ConversationalConfig(reranker="off", followups_enabled=False),
+        # injection_prevention off so this trace-capture test sees the verbatim context
+        # (the spotlighting on/off behaviour has its own tests in test_rag_engine_chat.py).
+        ConversationalConfig(reranker="off", followups_enabled=False, injection_prevention=False),
         retriever=retriever,
         chat_resolver=_main_resolver,
         aux_resolver=_echo_aux_resolver,
@@ -595,6 +598,9 @@ def test_conversational_answer_cached_chunks_skip_retrieval(tmp_path: Path) -> N
 
     assert result.answer == "ANSWER"
     assert result.sources == _CHUNKS
+    # A cache hit reuses the follow-up's checked passages, so no re-ranker ran: the turn
+    # records the honest "reused" sentinel (not a real re-ranker key).
+    assert result.reranker_used == RERANKER_REUSED
     # A cache hit still rolls conversation state forward.
     assert result.state.recent_resolved == ("What is the capital of France?",)
 
@@ -647,6 +653,58 @@ def test_conversational_answer_threads_tone_into_prompt(tmp_path: Path) -> None:
 
     # The requested tone is baked into the grounded-answer system prompt.
     assert "Formal" in captured["system"]
+
+
+def test_conversational_answer_spotlights_knowledge_when_injection_prevention_on(
+    tmp_path: Path,
+) -> None:
+    # End-to-end guard: the flag must reach the grounded-answer system prompt through
+    # _compose_turn's executor.submit(_answer_stage, ...) positional wiring (not just
+    # _render_chat_prompt), so a future param reorder can't silently drop it.
+    captured: dict[str, str] = {}
+
+    class _CapturingModel(SimpleChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capturing"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+            captured["system"] = messages[0].content
+            return "ANSWER"
+
+    def main_resolver(model_id, *, temperature=0.0, max_tokens=1024):
+        return ResolvedChatModel(model=_CapturingModel(), model_id="main"), []
+
+    def retriever(run_dir, query, config):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(text="Paris is the capital.", source="a.md", score=0.9, metadata={})
+            ]
+        )
+
+    def run(injection_prevention: bool) -> str:
+        captured.clear()
+        conversational_answer(
+            tmp_path,
+            "What is the capital?",
+            ConversationState(),
+            ConversationalConfig(
+                reranker="off",
+                followups_enabled=False,
+                injection_prevention=injection_prevention,
+            ),
+            retriever=retriever,
+            chat_resolver=main_resolver,
+            aux_resolver=_echo_aux_resolver,
+        )
+        return captured["system"]
+
+    on = run(injection_prevention=True)
+    off = run(injection_prevention=False)
+    assert SPOTLIGHT_DIRECTIVE in on
+    assert "Paris^is^the^capital." in on
+    assert SPOTLIGHT_DIRECTIVE not in off
+    assert "Paris is the capital." in off
 
 
 def test_conversational_answer_populates_followups(tmp_path: Path) -> None:

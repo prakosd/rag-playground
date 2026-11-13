@@ -9,7 +9,10 @@ from crawl4md.extractor import ContentExtractor
 
 _RUN_BENCHMARKS_ENV = "CRAWL4MD_RUN_BENCHMARKS"
 _BENCHMARK_CARD_COUNT = 120
-_EXPECTED_LAST_PRODUCT = f"Phone {_BENCHMARK_CARD_COUNT - 1}"
+# Main-content extraction keeps each card's body copy (only the first card's heading
+# survives), so assert on the LAST card's distinctive copy to confirm the whole card
+# list — not just the first — is extracted at scale.
+_EXPECTED_LAST_PRODUCT = f"benchmark phone {_BENCHMARK_CARD_COUNT - 1}"
 
 
 @pytest.mark.skipif(

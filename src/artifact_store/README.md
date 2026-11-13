@@ -39,8 +39,8 @@ message = LibraryMessage(
     params={"requested_dimension": 1024, "actual_dimension": 384},
     severity=SEVERITY_WARNING,
 )
-str(message)        # English fallback for logs/JSON
-message.as_dict()   # {code, text, severity, params} for a UI to localize
+str(message)  # English fallback for logs/JSON
+message.as_dict()  # {code, text, severity, params} for a UI to localize
 ```
 
 `crawl4md`, `vector_indexer`, and `rag_engine` build their messages on this primitive;
@@ -60,7 +60,7 @@ from artifact_store import (
 )
 
 run_dir = folder_name(VECTOR_FOLDER_PREFIX, "01_navigate")  # "vector_01_navigate"
-slug = format_utc_timestamp_slug()                          # "2026-06-01_12-09-15"
+slug = format_utc_timestamp_slug()  # "2026-06-01_12-09-15"
 
 # Reject paths that escape a root before reading/writing
 safe = ensure_within_root("outputs/session_x", "outputs/session_x/final/a.md")

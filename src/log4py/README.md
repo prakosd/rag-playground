@@ -18,8 +18,8 @@ output handlers, so importing a library stays silent until an app opts in.
 ```python
 from log4py import get_logger
 
-_logger = get_logger(__name__)          # module-level logger, silent by default
-_logger.info("Indexed %d chunks", n)    # %-style deferred formatting
+_logger = get_logger(__name__)  # module-level logger, silent by default
+_logger.info("Indexed %d chunks", n)  # %-style deferred formatting
 ```
 
 The application turns logging on once:
@@ -28,9 +28,9 @@ The application turns logging on once:
 from log4py import configure_logging
 
 configure_logging(
-    level="INFO",                        # DEBUG < INFO < WARNING < ERROR (WARN = WARNING)
+    level="INFO",  # DEBUG < INFO < WARNING < ERROR (WARN = WARNING)
     logger_names=("crawl4md", "vector_indexer", "rag_engine", "artifact_store"),
-    log_file="logs/app.log",             # optional rotating file (stderr always unless stream=False)
+    log_file="logs/app.log",  # optional rotating file (stderr always unless stream=False)
 )
 ```
 
@@ -55,7 +55,7 @@ from log4py import configure_logging
 configure_logging(
     level="INFO",
     logger_names=("crawl4md", "vector_indexer", "rag_engine", "artifact_store"),
-    log_file_router=current_session_log_path,   # () -> Path | None
+    log_file_router=current_session_log_path,  # () -> Path | None
 )
 ```
 

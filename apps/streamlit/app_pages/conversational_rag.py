@@ -877,7 +877,7 @@ def _append_history(
         embedding_model=embedding_model,
         llm_model=answer.model_used or config.rag.llm_model,
         aux_model=answer.aux_model_used or "",
-        reranker=answer.reranker_used or config.reranker,
+        reranker=answer.reranker_used or "",
         raw_question=question,
         sub_questions=tuple(answer.plan.sub_questions),
         proposed_subquestion_count=answer.plan.proposed_count,

@@ -206,6 +206,10 @@ class Settings(BaseSettings):
     # repeatable, higher = more varied wording. 0 suits grounded RAG answers; the
     # auxiliary model stays deterministic (0) regardless of this.
     conv_rag_answer_temperature: float
+    # Default state of the Step 5 prompt-injection prevention toggle (users override per
+    # session): on sanitises + spotlights the retrieved knowledge before the answer prompt to
+    # blunt a poisoned source/index; off sends it verbatim. A mitigation, not a guarantee.
+    conv_rag_injection_prevention: bool
     # Directory (relative to the repo root) holding the six Step 5 default prompt
     # files (answer/decompose/rerank/followups/answerability/state). Edit those to
     # reword a default without a code change; a per-session edit from the app's

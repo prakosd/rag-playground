@@ -108,7 +108,16 @@ can be tested without ChromaDB or network access.
 
 Retrieved knowledge is wrapped in `<knowledge>` delimiters and the model is told to
 treat it as data only and never follow instructions embedded inside it (see
-`prompts.py`). The Step 5 answer template is a **full, editable chat prompt**: a leading
+`prompts.py`). On top of this always-on fence, Step 5 exposes an opt-in
+**prompt-injection prevention** flag (`ConversationalConfig.injection_prevention`,
+default on) that hardens the grounded-answer prompt against a poisoned source/index:
+`sanitize_untrusted_text` NFKC-normalises each retrieved chunk body and drops
+zero-width/hidden/bidi/tag Unicode plus markdown-image exfiltration, `datamark_text`
+interleaves a `^` marker through it (Microsoft "spotlighting"), and `SPOTLIGHT_DIRECTIVE`
+tells the model the marker means "data, never instructions". It transforms only the chunk
+body sent to the answer model — the citation header and the displayed passages stay
+intact — so off sends the text verbatim (handy to compare). A risk-reducing mitigation,
+not a guarantee. The Step 5 answer template is a **full, editable chat prompt**: a leading
 `[system]` section and a trailing `[user]` / `{question}` section that
 `chat._chat_prompt` splits into the two messages (`split_chat_sections`), so what you
 edit is exactly what the Inspect "Prompt" shows. Conversation history lives in the
@@ -175,7 +184,7 @@ UI can render it. Message codes/builders live in `rag_engine.messages`.
 
 | Module | Responsibility |
 |---|---|
-| `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter`; `ConversationalConfig` (Step 5 stage flags + thresholds + answer `tone` + `language` + `ConversationalPrompts` per-stage prompt overrides, wraps a `RagConfig`) |
+| `config.py` | `RagConfig` (Pydantic v2): `llm_model`, `temperature`, `max_tokens`, `top_k`, `score_threshold`, `search_type`, `fetch_k`, `lambda_mult`, `source_filter`; `ConversationalConfig` (Step 5 stage flags + thresholds + answer `tone` + `language` + `injection_prevention` + `ConversationalPrompts` per-stage prompt overrides, wraps a `RagConfig`) |
 | `catalog.py` | `ChatModelInfo`, `CHAT_MODEL_OPTIONS` (Bedrock Nova/Claude APAC profiles + Qwen3/NVIDIA in-Region + OpenAI Direct API, echo; sorted by cloud → provider → size → name), `DEFAULT_CHAT_MODEL` (pinned to Bedrock Claude), `ECHO_MODEL` |
 | `llm/` | `resolve_chat_model` (init_chat_model + echo fallback), `resolve_auxiliary_model` (small helper model for Step 5), `thinking_disabled_model_kwargs`, lazy echo model |
 | `retrieval.py` | reopen a persisted index via a `VectorSearcher`, run similarity or MMR search with an optional source filter, post-filter by score threshold (Step 3); `retrieve_multi` (parallel per-sub-question, deduped, sharing one warmed searcher) |

@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from rag_engine import (
+    RERANKER_REUSED,
     ConversationalAnswer,
     ConversationState,
     QueryPlan,
@@ -45,6 +46,7 @@ def _controls(**overrides) -> ConversationalControls:
         answer_recent_turns=5,
         plan_recent_turns=2,
         answer_temperature=0.0,
+        injection_prevention=True,
     )
     values.update(overrides)
     return ConversationalControls(**values)
@@ -95,6 +97,14 @@ def test_build_config_threads_answer_temperature() -> None:
     assert config.rag.temperature == 0.6
     # Default stays deterministic.
     assert build_conversational_config(_controls(answer_temperature=0.0)).rag.temperature == 0.0
+
+
+def test_build_config_threads_injection_prevention() -> None:
+    # The Advanced-options toggle flows straight into the library config both ways.
+    assert build_conversational_config(_controls(injection_prevention=True)).injection_prevention
+    assert not build_conversational_config(
+        _controls(injection_prevention=False)
+    ).injection_prevention
 
 
 def test_build_config_decomposition_limit_controls_planning() -> None:
@@ -190,13 +200,15 @@ def test_followup_answerability_rows_omits_percent_when_score_unknown() -> None:
     assert rows == [("Q", "🟢 Yes")]
 
 
-def test_answerability_probe_labels_number_verdict_and_confidence() -> None:
+def test_answerability_probe_labels_number_by_grid_row_verdict_and_confidence() -> None:
     # Each probe reads "Answerability probe N · <verdict from its own reply> · <confidence>",
-    # the confidence recovered by mapping the probe to its follow-up in the evaluated set.
-    evaluated = [
+    # where N is the follow-up's row in the numbered grid (kept first, then dropped by score).
+    follow_ups = [
         ValidatedFollowup(
             question="Is A covered?", score=0.64, verdict="keep", checked_by_llm=True
         ),
+    ]
+    dropped = [
         ValidatedFollowup(
             question="Is B covered?", score=0.57, verdict="drop", checked_by_llm=True
         ),
@@ -210,7 +222,9 @@ def test_answerability_probe_labels_number_verdict_and_confidence() -> None:
         ),
     ]
 
-    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, evaluated)
+    labels = form_ui.answerability_probe_labels(
+        STRINGS_EN, probes, follow_ups, dropped, [*follow_ups, *dropped]
+    )
 
     assert labels == [
         "Answerability probe 1 · 🟢 Yes · 64%",
@@ -218,10 +232,43 @@ def test_answerability_probe_labels_number_verdict_and_confidence() -> None:
     ]
 
 
-def test_answerability_probe_labels_resolve_truncated_kept_score() -> None:
-    # A borderline-kept follow-up bumped out of the shown list is still in `evaluated`, so
-    # its probe recovers the confidence instead of falling back to a bare number. The
-    # high-confidence kept follow-up (not checked) has no probe and is skipped.
+def test_answerability_probe_labels_number_dropped_probe_after_kept_rows() -> None:
+    # The number is the follow-up's grid row (kept first, then dropped), so a checked
+    # follow-up at row 2 and a dropped one at row 3 read "probe 2"/"probe 3" — the
+    # unchecked row-1 follow-up has no probe, so probe numbers are non-contiguous.
+    follow_ups = [
+        ValidatedFollowup(question="Top pick?", score=0.9, verdict="keep", checked_by_llm=False),
+        ValidatedFollowup(
+            question="Borderline keep?", score=0.6, verdict="keep", checked_by_llm=True
+        ),
+    ]
+    dropped = [
+        ValidatedFollowup(question="Rejected?", score=0.4, verdict="drop", checked_by_llm=True),
+    ]
+    probes = [
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nBorderline keep?\n", response="YES"
+        ),
+        StagePromptTrace(process="answerability", prompt="Question:\nRejected?\n", response="NO"),
+    ]
+
+    labels = form_ui.answerability_probe_labels(
+        STRINGS_EN, probes, follow_ups, dropped, [*follow_ups, *dropped]
+    )
+
+    assert labels == [
+        "Answerability probe 2 · 🟢 Yes · 60%",
+        "Answerability probe 3 · 🔴 No · 40%",
+    ]
+
+
+def test_answerability_probe_labels_number_truncated_kept_probe_after_grid() -> None:
+    # A borderline-kept follow-up bumped out of the shown grid is still in `evaluated`, so its
+    # probe keeps the confidence (matched there) but numbers *after* the grid rows — it must
+    # not reuse row 1, which belongs to the shown (not-checked) follow-up.
+    follow_ups = [
+        ValidatedFollowup(question="Shown?", score=0.9, verdict="keep", checked_by_llm=False),
+    ]
     evaluated = [
         ValidatedFollowup(question="Shown?", score=0.9, verdict="keep", checked_by_llm=False),
         ValidatedFollowup(question="Bumped?", score=0.62, verdict="keep", checked_by_llm=True),
@@ -230,14 +277,48 @@ def test_answerability_probe_labels_resolve_truncated_kept_score() -> None:
         StagePromptTrace(process="answerability", prompt="Question:\nBumped?\n", response="YES"),
     ]
 
-    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, evaluated)
+    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, follow_ups, (), evaluated)
 
-    assert labels == ["Answerability probe 1 · 🟢 Yes · 62%"]
+    # grid = [Shown? (row 1)]; the truncated "Bumped?" numbers after it, not at row 1.
+    assert labels == ["Answerability probe 2 · 🟢 Yes · 62%"]
+
+
+def test_answerability_probe_labels_truncated_probe_does_not_collide_with_a_row() -> None:
+    # A truncated-kept probe must not steal a shown row's number: grid = [K1 (row 1),
+    # D1 (row 2)]; the bumped-out "K2" numbers 3, leaving D1 correctly at row 2.
+    follow_ups = [
+        ValidatedFollowup(question="Shown keep?", score=0.9, verdict="keep", checked_by_llm=True),
+    ]
+    dropped = [
+        ValidatedFollowup(question="Dropped?", score=0.3, verdict="drop", checked_by_llm=True),
+    ]
+    evaluated = [
+        follow_ups[0],
+        ValidatedFollowup(question="Bumped keep?", score=0.6, verdict="keep", checked_by_llm=True),
+        dropped[0],
+    ]
+    probes = [
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nShown keep?\n", response="YES"
+        ),
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nBumped keep?\n", response="YES"
+        ),
+        StagePromptTrace(process="answerability", prompt="Question:\nDropped?\n", response="NO"),
+    ]
+
+    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, follow_ups, dropped, evaluated)
+
+    assert labels == [
+        "Answerability probe 1 · 🟢 Yes · 90%",
+        "Answerability probe 3 · 🟢 Yes · 60%",
+        "Answerability probe 2 · 🔴 No · 30%",
+    ]
 
 
 def test_answerability_probe_labels_verdict_from_reply_without_match() -> None:
-    # An old record without scores (empty evaluated) still shows number + verdict, read
-    # from the probe's own YES/NO reply, just without a confidence %.
+    # A legacy record without follow-up lists still shows number + verdict, read from the
+    # probe's own YES/NO reply, just without a confidence %.
     probes = [
         StagePromptTrace(process="answerability", prompt="Question:\nOrphan?\n", response="NO"),
     ]
@@ -250,7 +331,7 @@ def test_answerability_probe_labels_verdict_from_reply_without_match() -> None:
 def test_answerability_probe_labels_handle_substring_questions() -> None:
     # A shorter question that is a substring of a longer one must not steal the longer
     # question's probe: longest-first matching + single consumption keeps them distinct.
-    evaluated = [
+    dropped = [
         ValidatedFollowup(
             question="Really, is it covered?", score=0.6, verdict="drop", checked_by_llm=True
         ),
@@ -267,12 +348,21 @@ def test_answerability_probe_labels_handle_substring_questions() -> None:
         ),
     ]
 
-    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, evaluated)
+    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, (), dropped, dropped)
 
     assert labels == [
         "Answerability probe 1 · 🔴 No · 60%",
         "Answerability probe 2 · 🔴 No · 50%",
     ]
+
+
+def test_reranker_display_passes_modes_through_and_labels_reused() -> None:
+    # Real re-ranker keys show as-is; the follow-up cache sentinel becomes a plain-language
+    # phrase; an unknown/missing value shows an em dash.
+    assert form_ui._reranker_display(STRINGS_EN, "llm") == "llm"
+    assert form_ui._reranker_display(STRINGS_EN, RERANKER_REUSED) == "reused (no re-ranking)"
+    assert form_ui._reranker_display(STRINGS_EN, None) == "—"
+    assert form_ui._reranker_display(STRINGS_EN, "") == "—"
 
 
 def test_prompt_tab_visible_follows_toggles() -> None:

@@ -30,6 +30,7 @@ from rag_engine.llm import (
     thinking_disabled_system_directive,
 )
 from rag_engine.models import (
+    RERANKER_REUSED,
     ChatTurn,
     ConversationalAnswer,
     ConversationState,
@@ -50,6 +51,7 @@ from rag_engine.prompts import (
     CONVERSATIONAL_PROMPT_FIELDS,
     DEFAULT_ANSWER_LANGUAGE,
     QA_SYSTEM_PROMPT,
+    SPOTLIGHT_DIRECTIVE,
     conversation_history_labels,
     extract_token_usage,
     format_context,
@@ -165,6 +167,7 @@ def _chat_prompt(
     language: str,
     system_prompt: str | None,
     system_directive: str = "",
+    injection_prevention: bool = False,
 ) -> tuple[Any, dict]:
     from langchain_core.prompts import ChatPromptTemplate
 
@@ -180,7 +183,15 @@ def _chat_prompt(
     # The template is a full chat prompt: split its [system]/[user] sections into the
     # two messages (a marker-less prompt is all-system with the built-in {question} turn).
     system, human = split_chat_sections(template)
-    values = {"knowledge": format_context(chunks), "tone": tone, "language": language}
+    # Injection prevention (opt-in): sanitise + datamark the untrusted retrieved knowledge
+    # and tell the model about the marker. The <knowledge> fence stays on either way.
+    values = {
+        "knowledge": format_context(
+            chunks, sanitize=injection_prevention, datamark=injection_prevention
+        ),
+        "tone": tone,
+        "language": language,
+    }
     # The conversation-history block lives in the [system] section, fenced as data. With
     # history, fill it (appending the built-in block first if a custom prompt omitted it);
     # with none, drop the block so the first turn's prompt stays clean.
@@ -193,6 +204,8 @@ def _chat_prompt(
         )
     elif has_conversation_history_block(system):
         system = strip_conversation_history_block(system)
+    if injection_prevention:
+        system = f"{system} {SPOTLIGHT_DIRECTIVE}"
     # A best-effort per-model directive (e.g. Nemotron's /no_think) rides at the end of
     # the system message; Bedrock's chat template reads it and strips the token.
     if system_directive:
@@ -210,6 +223,7 @@ def _render_chat_prompt(
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
     system_directive: str = "",
+    injection_prevention: bool = False,
 ) -> str:
     """Render the grounded-answer prompt (system + history + question) as plain text.
 
@@ -223,6 +237,7 @@ def _render_chat_prompt(
         language=language,
         system_prompt=system_prompt,
         system_directive=system_directive,
+        injection_prevention=injection_prevention,
     )
     formatted = prompt.format_messages(**values, question=question)
     return "\n\n".join(
@@ -241,6 +256,7 @@ def generate_chat_answer(
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
     system_directive: str = "",
+    injection_prevention: bool = False,
 ) -> str:
     """Generate a conversational answer string."""
     text, _ = generate_chat_answer_with_usage(
@@ -252,6 +268,7 @@ def generate_chat_answer(
         language=language,
         system_prompt=system_prompt,
         system_directive=system_directive,
+        injection_prevention=injection_prevention,
     )
     return text
 
@@ -266,6 +283,7 @@ def generate_chat_answer_with_usage(
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
     system_directive: str = "",
+    injection_prevention: bool = False,
 ) -> tuple[str, TokenUsage | None]:
     """Generate a conversational answer with the token usage it reported."""
     from langchain_core.output_parsers import StrOutputParser
@@ -277,6 +295,7 @@ def generate_chat_answer_with_usage(
         language=language,
         system_prompt=system_prompt,
         system_directive=system_directive,
+        injection_prevention=injection_prevention,
     )
     message = (prompt | chat_model).invoke({**values, "question": question})
     return StrOutputParser().invoke(message), extract_token_usage(message)
@@ -292,6 +311,7 @@ def stream_chat_answer(
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
     system_directive: str = "",
+    injection_prevention: bool = False,
 ) -> Iterator[str]:
     """Yield conversational answer tokens as they are generated."""
     from langchain_core.output_parsers import StrOutputParser
@@ -303,6 +323,7 @@ def stream_chat_answer(
         language=language,
         system_prompt=system_prompt,
         system_directive=system_directive,
+        injection_prevention=injection_prevention,
     )
     yield from (prompt | chat_model | StrOutputParser()).stream({**values, "question": question})
 
@@ -327,6 +348,7 @@ class ChatAnswerStream:
         language: str,
         system_prompt: str | None,
         system_directive: str = "",
+        injection_prevention: bool = False,
     ) -> None:
         self._chat_model = chat_model
         self._question = question
@@ -337,6 +359,7 @@ class ChatAnswerStream:
             language=language,
             system_prompt=system_prompt,
             system_directive=system_directive,
+            injection_prevention=injection_prevention,
         )
         self.text = ""
         self.usage: TokenUsage | None = None
@@ -372,6 +395,7 @@ def stream_chat_answer_with_usage(
     language: str = DEFAULT_ANSWER_LANGUAGE,
     system_prompt: str | None = None,
     system_directive: str = "",
+    injection_prevention: bool = False,
 ) -> ChatAnswerStream:
     """Return a :class:`ChatAnswerStream` that streams the answer and captures usage."""
     return ChatAnswerStream(
@@ -383,6 +407,7 @@ def stream_chat_answer_with_usage(
         language=language,
         system_prompt=system_prompt,
         system_directive=system_directive,
+        injection_prevention=injection_prevention,
     )
 
 
@@ -518,7 +543,7 @@ def _prepare_turn(
             overflow=[],
             plan=QueryPlan(sub_questions=[raw_question]),
             recent=recent,
-            reranker_used=None,
+            reranker_used=RERANKER_REUSED,
             warnings=warnings,
             timings=timings,
             turn_index=turn_index,
@@ -734,6 +759,7 @@ def _capture_answer_prompt(
     language: str,
     system_prompt: str | None,
     system_directive: str,
+    injection_prevention: bool = False,
     answer_text: str,
 ) -> None:
     """Record the grounded-answer prompt/reply as an ``answer`` trace, best-effort.
@@ -752,6 +778,7 @@ def _capture_answer_prompt(
             language=language,
             system_prompt=system_prompt,
             system_directive=system_directive,
+            injection_prevention=injection_prevention,
         )
         record_prompt("answer", rendered, answer_text)
     except Exception:  # noqa: BLE001 - trace capture is best-effort
@@ -768,6 +795,7 @@ def _answer_stage(
     system_prompt: str | None = None,
     record_usage: Callable[[str, TokenUsage | None], None] | None = None,
     record_prompt: Callable[[str, str, str], None] | None = None,
+    injection_prevention: bool = False,
 ) -> tuple[str, list[LibraryMessage], float]:
     """Generate the grounded answer, returning (text, errors, elapsed seconds)."""
     errors: list[LibraryMessage] = []
@@ -784,6 +812,7 @@ def _answer_stage(
             language=language,
             system_prompt=system_prompt,
             system_directive=directive,
+            injection_prevention=injection_prevention,
         )
         if record_usage is not None:
             record_usage("answer", usage)
@@ -796,6 +825,7 @@ def _answer_stage(
             language=language,
             system_prompt=system_prompt,
             system_directive=directive,
+            injection_prevention=injection_prevention,
             answer_text=answer_text,
         )
     except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
@@ -1019,6 +1049,7 @@ def _compose_turn(
             config.prompts.answer,
             ledger.record,
             prompt_ledger.record,
+            injection_prevention=config.injection_prevention,
         )
         # Parallel mode kicks off follow-ups now (they won't see the answer text);
         # serial mode (default) waits and builds them from the finished answer below.
@@ -1162,6 +1193,7 @@ class ConversationalGeneration:
                     language=config.language,
                     system_prompt=config.prompts.answer,
                     system_directive=thinking_disabled_system_directive(prepared.resolved.model_id),
+                    injection_prevention=config.injection_prevention,
                 )
                 for piece in answer_stream:
                     parts.append(piece)
@@ -1176,6 +1208,7 @@ class ConversationalGeneration:
                     language=config.language,
                     system_prompt=config.prompts.answer,
                     system_directive=thinking_disabled_system_directive(prepared.resolved.model_id),
+                    injection_prevention=config.injection_prevention,
                     answer_text=answer_stream.text,
                 )
             except Exception as exc:  # noqa: BLE001 - boundary around the chat backend

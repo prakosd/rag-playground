@@ -157,6 +157,13 @@ class ValidatedFollowup:
     checked_by_llm: bool = False
 
 
+# ``reranker_used`` sentinel: a follow-up click answers from the follow-up's pre-checked
+# probe passages, so planning/retrieval/re-ranking are all skipped. The turn records this
+# instead of a real re-ranker key (``off``/``local``/``llm``) so the UI can report it
+# honestly — both live and after reload — rather than implying a re-ranker ran.
+RERANKER_REUSED = "reused"
+
+
 @dataclass
 class ConversationalAnswer:
     """Structured outcome of one conversational RAG turn.
@@ -185,6 +192,8 @@ class ConversationalAnswer:
     state: ConversationState = field(default_factory=ConversationState)
     model_used: str | None = None
     aux_model_used: str | None = None
+    # The re-ranker that ran: ``off`` / ``local`` / ``llm``, ``RERANKER_REUSED`` when the
+    # turn reused a clicked follow-up's passages (no re-ranking), or ``None`` when unknown.
     reranker_used: str | None = None
     timings: dict[str, float] = field(default_factory=dict)
     token_usage: list[StageTokenUsage] = field(default_factory=list)

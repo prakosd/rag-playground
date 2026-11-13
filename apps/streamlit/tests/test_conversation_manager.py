@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from rag_engine import ConversationalAnswer, RetrievedChunk, StagePromptTrace, ValidatedFollowup
+from rag_engine import (
+    RERANKER_REUSED,
+    ConversationalAnswer,
+    RetrievedChunk,
+    StagePromptTrace,
+    ValidatedFollowup,
+)
 
 from app_support.conversational_rag.conversation_manager import (
     asked_questions_from_records,
@@ -31,6 +37,7 @@ def _record(
     conversation_id: str = "conv1",
     question: str = "q",
     answer: str = "a",
+    reranker: str = "local",
     state_summary: str = "",
     sub_questions: tuple[str, ...] = (),
     follow_ups: tuple[str, ...] = (),
@@ -45,7 +52,7 @@ def _record(
         embedding_model="e",
         llm_model="main",
         aux_model="aux",
-        reranker="local",
+        reranker=reranker,
         raw_question=question,
         sub_questions=sub_questions,
         answer=answer,
@@ -241,6 +248,17 @@ def test_turn_from_record_maps_prompt_traces() -> None:
     assert [(trace.process, trace.prompt, trace.response) for trace in traces] == [
         ("decomposition", "P", "R")
     ]
+
+
+def test_turn_from_record_preserves_reused_reranker_and_maps_empty_to_none() -> None:
+    # The follow-up cache sentinel survives a round-trip, so a reloaded cached turn reads
+    # the same "reused" value it showed live (not a fabricated re-ranker); an empty
+    # reranker field becomes None (shown as a dash).
+    reused = turn_from_record(_record("2026-09-01T10:00:00.000+00:00", reranker=RERANKER_REUSED))
+    assert reused["answer"].reranker_used == RERANKER_REUSED
+
+    missing = turn_from_record(_record("2026-09-01T10:00:00.000+00:00", reranker=""))
+    assert missing["answer"].reranker_used is None
 
 
 def test_conversation_turns_orders_oldest_first_with_sequential_ids() -> None:

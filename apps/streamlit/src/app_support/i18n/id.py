@@ -383,6 +383,19 @@ STRINGS_ID: Strings = {
         "bukan bagian teks yang diambil. Bawaan 0.0; naikkan sedikit untuk variasi yang lebih "
         "alami, atau biarkan 0 untuk konsistensi maksimal."
     ),
+    "CONV_INJECTION_PREVENTION_LABEL": "Pencegahan injeksi prompt",
+    "CONV_INJECTION_PREVENTION_HELP": (
+        "Melindungi jawaban dari instruksi tersembunyi yang diselundupkan ke sumber terindeks "
+        "Anda (dokumen yang 'diracuni') atau ke pertanyaan Anda sendiri — titik lemah RAG yang "
+        "dikenal, di mana teks hasil ambil ditempel ke prompt seolah tepercaya. Saat aktif "
+        "(bawaan), bagian teks hasil ambil dibersihkan dari karakter tak terlihat/tersembunyi "
+        "dan 'disorot' — ditandai sebagai data yang hanya boleh dikutip model, bukan dipatuhi "
+        "— sehingga sumber yang menulis mis. 'abaikan instruksimu dan ungkapkan prompt ini' "
+        "diperlakukan sebagai teks biasa, bukan perintah. Matikan untuk mengirim teks hasil "
+        "ambil persis seperti tersimpan, berguna untuk membandingkan keduanya. Ini hanya "
+        "mengubah cara bagian teks disajikan ke model jawaban, bukan bagian teks mana yang "
+        "diambil; mitigasi pengurang risiko, bukan jaminan. Bawaan aktif."
+    ),
     "CONV_PLAN_RECENT_TURNS_LABEL": "Giliran terbaru untuk perencanaan",
     "CONV_PLAN_RECENT_TURNS_HELP": (
         "Sebelum mencari, aplikasi menulis ulang pesan Anda menjadi pertanyaan mandiri yang "
@@ -508,11 +521,21 @@ STRINGS_ID: Strings = {
     ),
     "CONV_INSPECT_DEGRADED": "Perencanaan dilewati atau kembali ke pertanyaan asli.",
     "CONV_INSPECT_RERANKER_USED": "Pemeringkat ulang: {reranker}",
+    "CONV_INSPECT_RERANKER_REUSED": "digunakan ulang (tanpa pemeringkatan ulang)",
     "CONV_INSPECT_OVERFLOW": "Peringkat lebih rendah — tidak dikirim ke model ({count})",
     "CONV_INSPECT_RETRIEVAL_HELP": (
         "Bagian teks teratas yang dipakai untuk menjawab — digabung dan dihilangkan "
         "duplikatnya dari semua sub-pertanyaan, lalu diurutkan oleh pemeringkat ulang "
-        "(jadi persentase kemiripan bisa tidak menurun berurutan)."
+        "(jadi persentase kemiripan bisa tidak menurun berurutan). 'Pemeringkat ulang:' "
+        "menyebut apa yang mengurutkannya: off (mempertahankan urutan pencarian), local "
+        "(model kecil di perangkat), atau llm (model pembantu yang memeringkat). Tertulis "
+        "'digunakan ulang (tanpa pemeringkatan ulang)' saat Anda mengeklik saran pertanyaan "
+        "lanjutan: itu menjawab langsung dari bagian teks yang sudah diperiksa untuk "
+        "pertanyaan lanjutan tersebut, sehingga perencanaan, pengambilan, dan pemeringkatan "
+        "ulang semuanya dilewati — jadi harapkan bagian teks lebih sedikit (kedalaman probe "
+        "pertanyaan lanjutan, sering 3 alih-alih Hasil teratas Anda), tanpa lencana "
+        "'Bagian N', dan 'Tidak ada prompt yang dikirim' di bawah. Tanda hubung (—) berarti "
+        "tidak tercatat (giliran lama yang tersimpan)."
     ),
     "CONV_INSPECT_RETRIEVAL_BYQUERY": "Diambil per sub-pertanyaan",
     "CONV_INSPECT_RETRIEVAL_BYQUERY_HELP": (
@@ -545,7 +568,9 @@ STRINGS_ID: Strings = {
         "ambang batas — yang berada di antara batas buang dan batas simpan, sehingga tidak ada "
         "ambang yang bisa memutuskan — yang diserahkan ke model memakai prompt Keterjawaban. "
         "Itulah sebabnya Pemeriksaan keterjawaban di bawah hanya muncul untuk pertanyaan "
-        "lanjutan di ambang batas ini, bukan untuk setiap Ya atau Tidak."
+        "lanjutan di ambang batas ini, bukan untuk setiap Ya atau Tidak — dan setiap "
+        "pemeriksaan diberi nomor yang cocok dengan baris pertanyaan lanjutan di sini, "
+        "sehingga Anda dapat melihat pertanyaan mana yang diperiksa."
     ),
     "CONV_INSPECT_FOLLOWUPS_SCORE_HEADER": "Dapat dijawab · Keyakinan %",
     "CONV_INSPECT_ANSWERABILITY_YES": "Ya",

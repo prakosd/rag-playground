@@ -78,7 +78,7 @@ APIs and message queues.
 ```python
 result = VectorIndexer().run(config, inputs, output_base)
 for message in result.warnings + result.errors:
-    payload = message.as_dict()          # send to your frontend
+    payload = message.as_dict()  # send to your frontend
     text = my_i18n.get(payload["code"], payload["text"]).format(**payload["params"])
 ```
 

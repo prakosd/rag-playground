@@ -79,6 +79,8 @@ def test_conversational_config_defaults() -> None:
     assert config.max_workers >= 1
     assert config.tone == "Neutral"
     assert config.language == "English"
+    # Injection prevention is on by default (users opt out to compare).
+    assert config.injection_prevention is True
 
 
 @pytest.mark.parametrize(

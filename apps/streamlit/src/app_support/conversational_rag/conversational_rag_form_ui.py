@@ -18,6 +18,7 @@ from artifact_store import LibraryMessage
 from rag_engine import (
     CHAT_MODEL_OPTIONS,
     CONVERSATIONAL_PROMPT_FIELDS,
+    RERANKER_REUSED,
     ConversationalAnswer,
     ConversationalConfig,
     ConversationState,
@@ -162,6 +163,7 @@ class ConversationalControls:
     answer_recent_turns: int
     answer_temperature: float
     plan_recent_turns: int
+    injection_prevention: bool
 
 
 def aux_model_choices() -> tuple[list[str], int]:
@@ -233,6 +235,7 @@ def build_conversational_config(
         plan_recent_turns=controls.plan_recent_turns,
         tone=controls.tone,
         language=language,
+        injection_prevention=controls.injection_prevention,
     )
 
 
@@ -414,6 +417,13 @@ def render_advanced_controls(
                         key=f"{key_prefix}_answer_temperature",
                     )
                 )
+            injection_prevention = st.toggle(
+                strings["CONV_INJECTION_PREVENTION_LABEL"],
+                value=settings.conv_rag_injection_prevention,
+                help=strings["CONV_INJECTION_PREVENTION_HELP"],
+                disabled=disabled,
+                key=f"{key_prefix}_injection_prevention",
+            )
 
         with st.expander(strings["CONV_ADV_GROUP_FOLLOWUPS"], expanded=False):
             # The three "how many" knobs share one 4-wide row; the keep/drop range
@@ -547,6 +557,7 @@ def render_advanced_controls(
         answer_recent_turns=answer_recent_turns,
         answer_temperature=answer_temperature,
         plan_recent_turns=plan_recent_turns,
+        injection_prevention=injection_prevention,
     )
 
 
@@ -825,7 +836,7 @@ def render_turn_metadata(strings: Strings, answer: ConversationalAnswer) -> None
         numbered[4],
         (strings["CONV_META_ANSWER_MODEL"], answer.model_used or "—"),
         (strings["CONV_META_AUX_MODEL"], answer.aux_model_used or "—"),
-        (strings["CONV_META_RERANKER"], answer.reranker_used or "—"),
+        (strings["CONV_META_RERANKER"], _reranker_display(strings, answer.reranker_used)),
     ]
     stages_col, models_col = st.columns(2)
     with stages_col:
@@ -918,56 +929,89 @@ def _render_stage_prompt(
     _render_prompt_trace(strings, trace)
 
 
+def _probe_search_order(items: Sequence[ValidatedFollowup]) -> list[int]:
+    """Indices of LLM-checked candidates, longest question first (match precedence)."""
+    return sorted(
+        (index for index, item in enumerate(items) if item.checked_by_llm and item.question),
+        key=lambda index: len(items[index].question),
+        reverse=True,
+    )
+
+
 def answerability_probe_labels(
     strings: Strings,
     probes: Sequence[StagePromptTrace],
-    evaluated: Sequence[ValidatedFollowup],
+    follow_ups: Sequence[ValidatedFollowup],
+    dropped: Sequence[ValidatedFollowup] = (),
+    evaluated: Sequence[ValidatedFollowup] = (),
 ) -> list[str]:
     """Label each answerability probe ``Answerability probe N · 🟢 Yes · 64%``.
 
-    The verdict (Yes/No) comes from the probe's own YES/NO reply, so it is always known;
-    the confidence % is recovered by mapping the probe to its follow-up among *evaluated*
-    (every probed candidate — the question is embedded verbatim in the probe prompt,
-    longest-first + consumed once so a substring can't steal another's probe). A probe
-    with no match (e.g. an old record saved without scores) shows number + verdict only.
+    ``N`` is the follow-up's own row in the numbered Answerability grid above (kept
+    follow-ups first, then dropped by score), so a probe points straight at the question
+    it evaluated. The verdict (Yes/No) comes from the probe's own YES/NO reply; the
+    confidence % is the matched follow-up's score. Each probe's question is embedded
+    verbatim in its prompt, so matching is longest-question-first + consumed-once so a
+    substring can't steal another's probe. A borderline-kept follow-up truncated out of
+    the grid is matched against the full *evaluated* set instead (keeping its %) and
+    numbered sequentially; a probe with no match at all (e.g. a legacy record) shows
+    number + verdict only.
     """
     yes_label = strings["CONV_INSPECT_ANSWERABILITY_YES"]
     no_label = strings["CONV_INSPECT_ANSWERABILITY_NO"]
-    candidates = sorted(
-        (item for item in evaluated if item.checked_by_llm),
-        key=lambda item: len(item.question),
-        reverse=True,
-    )
-    used: set[int] = set()
+    grid = [*follow_ups, *sorted(dropped, key=lambda item: item.score, reverse=True)]
+    grid_search = _probe_search_order(grid)
+    evaluated_search = _probe_search_order(evaluated)
+    used_grid: set[int] = set()
+    used_evaluated: set[int] = set()
     labels: list[str] = []
-    for index, probe in enumerate(probes, start=1):
-        match: ValidatedFollowup | None = None
-        for position, candidate in enumerate(candidates):
-            if position not in used and candidate.question and candidate.question in probe.prompt:
-                used.add(position)
-                match = candidate
+    # Unmatched (e.g. kept-but-truncated) probes number *after* the grid rows so their label
+    # can never collide with a shown row's ordinal.
+    fallback_number = len(grid)
+    for probe in probes:
+        number: int | None = None
+        score = 0.0
+        for position in grid_search:
+            if position not in used_grid and grid[position].question in probe.prompt:
+                used_grid.add(position)
+                number = position + 1
+                score = grid[position].score
                 break
+        if number is None:
+            for position in evaluated_search:
+                if position not in used_evaluated and evaluated[position].question in probe.prompt:
+                    used_evaluated.add(position)
+                    score = evaluated[position].score
+                    break
+            fallback_number += 1
+            number = fallback_number
         is_yes = probe.response.strip().lower().startswith("yes")
         emoji = _VERDICT_KEEP_EMOJI if is_yes else _VERDICT_DROP_EMOJI
         verdict_label = yes_label if is_yes else no_label
-        score = match.score if match is not None else 0.0
-        probe_label = strings["CONV_INSPECT_ANSWERABILITY_PROBE"].format(n=index)
+        probe_label = strings["CONV_INSPECT_ANSWERABILITY_PROBE"].format(n=number)
         labels.append(f"{probe_label} · {_answerability_value(emoji, verdict_label, score)}")
     return labels
 
 
 def _render_followups_prompts(strings: Strings, answer: ConversationalAnswer) -> None:
-    """Follow-up generation prompt in sub-tabs, then each answerability probe below.
+    """Each answerability probe directly under the follow-up list, then the generation prompt.
 
-    Each probe is labelled with its number, verdict, and confidence (``Answerability
-    probe N · 🟢 Yes · 64%``); probes exist only for the borderline follow-ups.
+    A probe is labelled with the follow-up's number in the list above, its verdict, and
+    confidence (``Answerability probe 2 · 🔴 No · 56%``); probes exist only for the
+    borderline follow-ups, so their numbers point at the rows the model actually checked.
     """
-    _render_stage_prompt(strings, answer, "followups")
     probes = [item for item in answer.prompt_traces if item.process == "answerability"]
-    labels = answerability_probe_labels(strings, probes, answer.evaluated_followups)
+    labels = answerability_probe_labels(
+        strings,
+        probes,
+        answer.follow_ups,
+        answer.dropped_followups,
+        answer.evaluated_followups,
+    )
     for label, probe in zip(labels, probes, strict=True):
         with st.expander(label):
             _render_prompt_trace(strings, probe)
+    _render_stage_prompt(strings, answer, "followups")
 
 
 def render_followup_bubble(
@@ -1074,6 +1118,17 @@ def subquestion_provenance_rows(
     return [(question, sorted(hits)) for question, hits in numbers.items() if hits]
 
 
+def _reranker_display(strings: Strings, reranker_used: str | None) -> str:
+    """Human label for the re-ranker that ran, honest about the follow-up cache path.
+
+    ``off``/``local``/``llm`` pass through; the cache sentinel becomes a "reused" phrase
+    (both live and after reload); an unknown/missing value shows an em dash.
+    """
+    if reranker_used == RERANKER_REUSED:
+        return strings["CONV_INSPECT_RERANKER_REUSED"]
+    return reranker_used or "—"
+
+
 def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default_tab: str) -> None:
     """Merged Retrieval + re-ranking view: explain, group by sub-question, then cards."""
     if not answer.sources:
@@ -1082,7 +1137,7 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
     all_chunks = [*answer.sources, *answer.overflow_sources]
     rows = subquestion_provenance_rows(all_chunks, answer.plan)
     reranker_label = strings["CONV_INSPECT_RERANKER_USED"].format(
-        reranker=answer.reranker_used or "—"
+        reranker=_reranker_display(strings, answer.reranker_used)
     )
     if rows:
         # Re-ranker and the per-sub-question heading share one line to save height,

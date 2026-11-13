@@ -90,6 +90,16 @@ def test_from_json_defaults_answer_temperature_for_legacy_builds() -> None:
     assert restored.answer_temperature == 0.0
 
 
+def test_from_json_defaults_injection_prevention_on_for_legacy_builds() -> None:
+    # A build.json written before the injection-prevention toggle still loads, defaulting to
+    # the safer on so launched/reloaded builds keep spotlighting the retrieved knowledge.
+    data = json.loads(_snapshot().to_json())
+    data.pop("injection_prevention")
+    restored = BuildSnapshot.from_json(json.dumps(data))
+    assert restored is not None
+    assert restored.injection_prevention is True
+
+
 def test_allocate_build_name_uses_next_sequence_and_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
