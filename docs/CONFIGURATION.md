@@ -278,20 +278,23 @@ flowchart TD
 ### Intermediate file cleanup
 
 By default (`_CLEANUP_INTERMEDIATE_FILES = True` in `src/crawl4md/_internal/final_output.py`),
-three categories of intermediate files are automatically removed once the final sorted output is written:
+four categories of intermediate files are automatically removed once the final sorted output is written:
 
 | Removed | Why |
 |---------|-----|
 | `round_N/success_pages.jsonl`, `round_N/fail_pages.jsonl` | JSONL sidecar files used during the crawl to keep memory usage low. No longer needed once sorted files exist. |
 | `final/success_content_*.md`, `final/fail_content_*.md` | Unsorted merged content — superseded by `final/sorted_*` which contains the same pages in a better order. |
+| `round_N/success_content_*.md`, `round_N/fail_content_*.md` | Per-round content snapshots — the same pages are merged, deduped, and sorted into `final/content_*`. The small per-round `*_urls.txt` lists are kept. |
 | `round_N/sorted_*` | Per-round sorted snapshots — superseded by the final merged sorted output. |
 
 To keep every intermediate file on disk (useful for debugging), set
 `_CLEANUP_INTERMEDIATE_FILES = False` in `src/crawl4md/_internal/final_output.py`.
 
-Every generated content file (`*_content_*.txt` / `*_content_*.md`) starts with YAML
-front matter recording the crawl start time, session ID, stored directory, full
-crawl parameters, and status. It covers the entire file, not individual pages within it.
+Every generated content file (`*_content_*.txt` / `*_content_*.md`) starts with a minimal
+YAML front-matter block recording only the crawl start time (`crawl_start_datetime`); it
+covers the whole file, not individual pages. The full crawl parameters are written once to
+`settings.json` in the run folder (see below), so they are no longer repeated atop every
+content file.
 
 Each page's human-readable header (the title heading and `*Source: <url>*` line) is
 wrapped in render-invisible HTML-comment markers (`<!-- crawl4md:source -->` …
@@ -318,6 +321,7 @@ Supporting files — URL lists and any failed-page content — sit in
 | Timestamped crawl diary | `logs/activity_log.txt` / `logs/activity_log.csv` |
 | Chart-ready progress timeline | `logs/progress_history.jsonl` |
 | Proxy usage (cost) | `logs/network_usage.csv` (only when a proxied round runs) |
+| Crawl settings used (to review or reproduce a run) | `settings.json` (in the run folder) |
 
 **Why `round_N/` folders?** crawl4md retries failed pages in separate rounds
 (controlled by `max_retries`). Each round folder is an intermediate snapshot. The

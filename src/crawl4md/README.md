@@ -22,17 +22,23 @@ crawler.print_summary(results)
 Output is written to a UTC-timestamped folder; the primary result is
 `final/content_*.md`.
 
-Each content file opens with a YAML front-matter block (crawl run metadata) and wraps
-every page's human-readable header (title + `*Source: <url>*`) in render-invisible markers
+Each content file opens with a minimal YAML front-matter block (just `crawl_start_datetime`) and
+wraps every page's human-readable header (title + `*Source: <url>*`) in render-invisible markers
 (`<!-- crawl4md:source -->` … `<!-- /crawl4md:source -->`). The markers do not show when the
 Markdown is rendered; they let `vector_indexer` recover each page's source and exclude both the
 front matter and the header from indexed chunks. The marker strings live in `writer.py` and are
 mirrored in `vector_indexer.page_source` with a "keep in sync" note (no cross-library import).
 
-Authentication headers set through `CrawlerConfig.secret_headers` (e.g. an `Authorization` header
-for a protected page) are `exclude=True`, so they never appear in this front-matter metadata, logs,
-or tracebacks. Use `secret_headers` — not `headers` — for any credential; `headers` IS serialized
-into the front matter.
+The full crawl parameters (crawler + page config) are written once to `settings.json` in the run
+folder — handy for seeing or reproducing the settings a run used — instead of being repeated atop
+every content file. Authentication headers set through `CrawlerConfig.secret_headers` (e.g. an
+`Authorization` header for a protected page) are `exclude=True`, so they never appear in
+`settings.json`, the front matter, logs, or tracebacks. Use `secret_headers` — not `headers` — for
+any credential; `headers` IS serialized into `settings.json`.
+
+Once the final sorted output is written, the per-round `success_content_*`/`fail_content_*`
+snapshots are removed (the pages are merged, deduped, and sorted into `final/content_*`); the
+per-round URL lists and `logs/` are kept.
 
 ## Module map
 

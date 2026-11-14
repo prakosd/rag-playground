@@ -44,6 +44,13 @@ _CHART_COLOR_FAILED = "#FF4B4B"
 _CHART_COLOR_LIMIT = "#FACA2B"
 _CHART_AREA_OPACITY = 0.45
 _CHART_LIMIT_LINE_WIDTH = 2.0
+# Keep the Limit line hidden until discovery nears the cap: with a very large
+# page limit it would otherwise dominate the y-axis and flatten the real series.
+_CHART_LIMIT_VISIBILITY_RATIO = 0.8
+# Before any pages are found the chart series are all zero at t≈0; anchor the axes to a
+# small initial span so the empty chart renders cleanly instead of collapsing to a sliver.
+_CHART_INITIAL_X_SPAN = 1.0
+_CHART_INITIAL_Y_SPAN = 10.0
 _PREVIEW_DIALOG_WIDTH = "large"
 # Adjust this percentage to resize the preview modal relative to the viewport.
 _PREVIEW_DIALOG_VIEWPORT_PERCENT = 70

@@ -61,6 +61,8 @@ def emit_page_progress(
     limit: int,
     next_url: str = "",
     eta_remaining_seconds: float | None = None,
+    round_num: int | None = None,
+    seed_count: int | None = None,
     active_urls: list[str] | None = None,
     active_url_count: int | None = None,
     next_urls: list[str] | None = None,
@@ -82,6 +84,10 @@ def emit_page_progress(
         "output_dir": str(output_dir) if output_dir else "",
         "limit": limit,
     }
+    if round_num is not None:
+        event["round"] = round_num
+    if seed_count is not None:
+        event["seed_count"] = seed_count
     if active_urls is not None:
         event["active_urls"] = active_urls
     if active_url_count is not None:

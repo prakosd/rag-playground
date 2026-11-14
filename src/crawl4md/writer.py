@@ -294,7 +294,7 @@ class FileWriter:
         except FileNotFoundError:
             pass
 
-        front_matter = self._build_front_matter(path.parent)
+        front_matter = self._build_front_matter()
         if not front_matter:
             return
 
@@ -302,103 +302,23 @@ class FileWriter:
         with path.open("ab") as fh:
             fh.write(front_matter.encode("utf-8"))
 
-    def _build_front_matter(self, stored_directory: Path) -> str:
-        """Build file-level YAML metadata for generated crawl content files."""
+    def _build_front_matter(self) -> str:
+        """Build the minimal file-level YAML header for crawl content files.
+
+        Only the crawl capture date is emitted; the full run parameters live in the
+        run's ``settings.json``. The date is kept because ``vector_indexer`` reads it
+        from this block as per-chunk ``crawl_date`` metadata.
+        """
         if not self._run_metadata:
             return ""
-
-        status = "success"
-        if self._prefix.startswith("fail_") or self._prefix.startswith("sorted_fail_"):
-            status = "failed"
-
-        data: dict[str, Any] = {
-            "crawl_start_datetime": self._run_metadata.get("crawl_start_datetime"),
-            "session_id": self._run_metadata.get("session_id"),
-            "stored_directory": str(stored_directory),
-            "crawl_parameters": self._run_metadata.get("crawl_parameters", {}),
-            "status": status,
-        }
-
-        lines = [_YAML_FRONT_MATTER_DELIMITER]
-        for key, value in data.items():
-            self._append_yaml_key_value(lines, key, value)
-        lines.append(_YAML_FRONT_MATTER_DELIMITER)
-        return "".join(lines)
-
-    @classmethod
-    def _append_yaml_key_value(
-        cls,
-        lines: list[str],
-        key: str,
-        value: Any,
-        *,
-        indent: int = 0,
-    ) -> None:
-        """Append one YAML key/value entry, expanding nested objects as needed."""
-        prefix = " " * indent
-        if isinstance(value, dict):
-            if not value:
-                lines.append(f"{prefix}{key}: {{}}\n")
-                return
-            lines.append(f"{prefix}{key}:\n")
-            for child_key, child_value in value.items():
-                cls._append_yaml_key_value(
-                    lines,
-                    str(child_key),
-                    child_value,
-                    indent=indent + 2,
-                )
-            return
-
-        if isinstance(value, list):
-            if not value:
-                lines.append(f"{prefix}{key}: []\n")
-                return
-            lines.append(f"{prefix}{key}:\n")
-            cls._append_yaml_list(lines, value, indent=indent + 2)
-            return
-
-        lines.append(f"{prefix}{key}: {cls._yaml_scalar(value)}\n")
-
-    @classmethod
-    def _append_yaml_list(cls, lines: list[str], values: list[Any], *, indent: int = 0) -> None:
-        """Append YAML list items, expanding nested containers recursively."""
-        prefix = " " * indent
-        for item in values:
-            if isinstance(item, dict):
-                if not item:
-                    lines.append(f"{prefix}- {{}}\n")
-                    continue
-                lines.append(f"{prefix}-\n")
-                for child_key, child_value in item.items():
-                    cls._append_yaml_key_value(
-                        lines,
-                        str(child_key),
-                        child_value,
-                        indent=indent + 2,
-                    )
-                continue
-
-            if isinstance(item, list):
-                if not item:
-                    lines.append(f"{prefix}- []\n")
-                    continue
-                lines.append(f"{prefix}-\n")
-                cls._append_yaml_list(lines, item, indent=indent + 2)
-                continue
-
-            lines.append(f"{prefix}- {cls._yaml_scalar(item)}\n")
-
-    @staticmethod
-    def _yaml_scalar(value: Any) -> str:
-        """Render a JSON-serializable scalar/object in a YAML-compatible form."""
-        if isinstance(value, str):
-            return json.dumps(value, ensure_ascii=False)
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if value is None:
-            return "null"
-        return str(value)
+        crawl_start = self._run_metadata.get("crawl_start_datetime")
+        if crawl_start is None:
+            return ""
+        return (
+            f"{_YAML_FRONT_MATTER_DELIMITER}"
+            f"crawl_start_datetime: {json.dumps(str(crawl_start), ensure_ascii=False)}\n"
+            f"{_YAML_FRONT_MATTER_DELIMITER}"
+        )
 
 
 def rename_files_with_total(files: list[Path]) -> list[Path]:

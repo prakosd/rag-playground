@@ -393,14 +393,14 @@ class Strings(TypedDict):
     TOAST_SESSION_EXTEND_FAILED: str
     # ── Progress metrics ──────────────────────────────────────────────────
     METRIC_PROCESSED_LABEL: str
-    METRIC_PROCESSED_DELTA: str  # template: {n}
-    METRIC_PROCESSED_DELTA_RETRY: str  # template: {n}
+    METRIC_PROCESSED_DELTA_ROUND_INITIAL: str
+    METRIC_PROCESSED_DELTA_ROUND_RETRY: str  # template: {n}
     METRIC_PROCESSED_TOOLTIP: str
     METRIC_SUCCESSFUL_LABEL: str
-    METRIC_SUCCESSFUL_DELTA: str  # template: {n}
+    METRIC_SUCCESSFUL_DELTA: str  # template: {p}
     METRIC_SUCCESSFUL_TOOLTIP: str
     METRIC_FAILED_LABEL: str
-    METRIC_FAILED_DELTA: str  # template: {n}
+    METRIC_FAILED_DELTA: str  # template: {p}
     METRIC_FAILED_TOOLTIP: str
     METRIC_DISCOVERED_LABEL: str
     METRIC_DISCOVERED_DELTA: str  # template: {n}, {m}

@@ -115,15 +115,22 @@ def append_live_progress_sample(
     return history
 
 
+def resolve_progress_history_path(crawl_root: Path | None) -> Path | None:
+    """Return the existing progress_history.jsonl path for *crawl_root*, if any."""
+    if crawl_root is None:
+        return None
+    history_path = crawl_root / _LOGS_DIR_NAME / _PROGRESS_HISTORY_FILE
+    if history_path.is_file():
+        return history_path
+    # Fall back to the legacy location (crawls written before the logs/ subdir).
+    legacy_path = crawl_root / _PROGRESS_HISTORY_FILE
+    return legacy_path if legacy_path.is_file() else None
+
+
 def load_persisted_progress_history(crawl_root: Path | None) -> list[dict[str, object]]:
     """Load progress_history.jsonl rows when present, skipping malformed lines."""
-    if crawl_root is None:
-        return []
-    history_path = crawl_root / _LOGS_DIR_NAME / _PROGRESS_HISTORY_FILE
-    if not history_path.is_file():
-        # Fall back to the legacy location (crawls written before the logs/ subdir).
-        history_path = crawl_root / _PROGRESS_HISTORY_FILE
-    if not history_path.is_file():
+    history_path = resolve_progress_history_path(crawl_root)
+    if history_path is None:
         return []
 
     rows: list[dict[str, object]] = []

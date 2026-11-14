@@ -130,8 +130,8 @@ def test_localize_message_bad_params_fall_back_to_default_text() -> None:
 
 def test_processed_retry_delta_has_n_placeholder() -> None:
     for catalog, name in ((STRINGS_EN, "EN"), (STRINGS_ID, "ID")):
-        val = catalog["METRIC_PROCESSED_DELTA_RETRY"]
-        assert "{n}" in val, f"STRINGS_{name}[METRIC_PROCESSED_DELTA_RETRY] missing {{n}}"
+        val = catalog["METRIC_PROCESSED_DELTA_ROUND_RETRY"]
+        assert "{n}" in val, f"STRINGS_{name}[METRIC_PROCESSED_DELTA_ROUND_RETRY] missing {{n}}"
 
 
 def test_state_labels_cover_known_states() -> None:

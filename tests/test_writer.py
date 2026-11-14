@@ -241,7 +241,9 @@ class TestFileWriterIncremental:
 
         content = files[0].read_text(encoding="utf-8")
         assert content.count("crawl_start_datetime:") == 1
-        assert content.count("session_id:") == 1
+        # The trimmed header carries only the date; richer metadata moved to settings.json.
+        assert "session_id:" not in content
+        assert "crawl_parameters:" not in content
         assert "https://example.com/a" in content
         assert "https://example.com/b" in content
 

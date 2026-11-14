@@ -91,7 +91,7 @@ touching the application layer: the write facet is `vector_indexer.VectorStore` 
 `ChromaVectorStore`), the read facet is `rag_engine.VectorSearcher` (default
 `ChromaSearcher`), and the manifest's `store_backend` lets `open_searcher` reopen an index
 with the matching searcher. Embeddings are LangChain `Embeddings` objects. Before chunking, the
-indexer strips each file's leading crawl run metadata (the YAML front matter) and
+indexer strips each file's leading YAML front matter (the crawl-date header) and
 splits the body on the render-invisible page markers crawl4md emits, so run metadata
 never reaches a chunk and every chunk carries its page's title/URL as
 `source_title` / `source_url` / `crawl_date` metadata (the chunk body stays pure

@@ -18,6 +18,7 @@ import html
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import altair as alt
@@ -32,7 +33,10 @@ from app_support.app_runtime import (
     _CHART_COLOR_LIMIT,
     _CHART_COLOR_SUCCESSFUL,
     _CHART_CUMULATIVE_INTERPOLATE,
+    _CHART_INITIAL_X_SPAN,
+    _CHART_INITIAL_Y_SPAN,
     _CHART_LIMIT_LINE_WIDTH,
+    _CHART_LIMIT_VISIBILITY_RATIO,
     _DEFAULT_LANGUAGE,
     _PROGRESS_CHART_HEIGHT,
     _STATE_CANCEL_REQUESTED,
@@ -60,6 +64,7 @@ from app_support.progress_chart import (
     prepare_cumulative_chart_display_rows,
     prepare_cumulative_chart_rows,
     progress_chart_time_unit_seconds,
+    resolve_progress_history_path,
     select_progress_chart_time_unit,
 )
 from app_support.support import (
@@ -246,6 +251,31 @@ def _render_crawl_timing(strings: Mapping[str, Any]) -> None:
     )
 
 
+def _attempt_percentage(part: int, total: int) -> float:
+    """Percentage of crawl attempts that are *part* (0.0 before anything is attempted)."""
+    if total <= 0:
+        return 0.0
+    return part / total * 100
+
+
+def _round_badge_text(strings: Strings, round_num: int | None) -> str:
+    """Page-attempts badge text: the active crawl round.
+
+    Round 1 (or unknown) reads as the initial crawl; later rounds are retries
+    numbered from 1 (round 2 -> "Retry round 1").
+    """
+    if round_num is None or round_num <= 1:
+        return strings["METRIC_PROCESSED_DELTA_ROUND_INITIAL"]
+    return strings["METRIC_PROCESSED_DELTA_ROUND_RETRY"].format(n=round_num - 1)
+
+
+def _limit_value_text(seed_count: int, limit: int) -> str:
+    """Limit-card value: the per-URL limit, or ``N × limit`` for several start URLs."""
+    if seed_count > 1:
+        return f"{seed_count} × {limit:,}"
+    return f"{limit:,}"
+
+
 def render_progress_and_files(
     processed: int,
     successful: int,
@@ -253,9 +283,14 @@ def render_progress_and_files(
     discovered: int,
     limit: int,
     state: str,
+    round_num: int | None = None,
+    seed_count: int = 1,
 ) -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
-    denominator = discovered if discovered > 0 else max(limit, 1)
+    # With several start URLs the limit is a per-URL budget, so the effective total cap is
+    # seed_count × limit (see the crawler's multi-seed discovery budget).
+    effective_limit = max(seed_count, 1) * limit
+    denominator = discovered if discovered > 0 else max(effective_limit, 1)
     covered_unique_pages = min(processed, denominator)
     progress_ratio = min(max(covered_unique_pages / denominator, 0.0), 1.0)
     progress_pct = progress_ratio * 100
@@ -279,13 +314,9 @@ def render_progress_and_files(
     denominator_label = (
         strings["DENOM_DISCOVERED"].format(n=f"{discovered:,}")
         if discovered > 0
-        else strings["DENOM_LIMIT"].format(n=f"{limit:,}")
+        else strings["DENOM_LIMIT"].format(n=f"{effective_limit:,}")
     )
-    processed_delta = (
-        strings["METRIC_PROCESSED_DELTA_RETRY"].format(n=f"{extra_attempts:,}")
-        if extra_attempts > 0
-        else strings["METRIC_PROCESSED_DELTA"].format(n=f"{processed:,}")
-    )
+    processed_delta = _round_badge_text(strings, round_num)
     progress_status = (
         strings["PROGRESS_RETRYING"]
         if is_retry_phase
@@ -321,7 +352,9 @@ def render_progress_and_files(
         row1[1].metric(
             label=strings["METRIC_SUCCESSFUL_LABEL"],
             value=f"{successful:,}",
-            delta=strings["METRIC_SUCCESSFUL_DELTA"].format(n=f"{successful:,}"),
+            delta=strings["METRIC_SUCCESSFUL_DELTA"].format(
+                p=f"{_attempt_percentage(successful, processed):.1f}"
+            ),
             delta_color="normal",
             help=strings["METRIC_SUCCESSFUL_TOOLTIP"],
             icon=":material/check_circle:",
@@ -330,7 +363,9 @@ def render_progress_and_files(
         row1[2].metric(
             label=strings["METRIC_FAILED_LABEL"],
             value=f"{failed:,}",
-            delta=strings["METRIC_FAILED_DELTA"].format(n=f"{failed:,}"),
+            delta=strings["METRIC_FAILED_DELTA"].format(
+                p=f"{_attempt_percentage(failed, processed):.1f}"
+            ),
             delta_color="inverse",
             help=strings["METRIC_FAILED_TOOLTIP"],
             icon=":material/error:",
@@ -338,8 +373,9 @@ def render_progress_and_files(
         )
 
         row2 = st.columns(3)
-        discovered_remaining = max(limit - discovered, 0)
-        limit_reached = discovered >= limit
+        discovered_remaining = max(effective_limit - discovered, 0)
+        limit_reached = discovered >= effective_limit
+        limit_value = _limit_value_text(seed_count, limit)
         limit_status_delta = (
             strings["METRIC_LIMIT_DELTA_REACHED"]
             if limit_reached
@@ -358,7 +394,7 @@ def render_progress_and_files(
         )
         row2[1].metric(
             label=strings["METRIC_LIMIT_LABEL"],
-            value=f"{limit:,}",
+            value=limit_value,
             delta=limit_status_delta,
             delta_color="off",
             help=strings["METRIC_LIMIT_TOOLTIP"],
@@ -410,6 +446,8 @@ def _render_status_boxes() -> None:
     failed_pages = int(latest.get("failed_pages", 0) or 0)
     discovered_pages = int(latest.get("queued_discovered_urls", 0) or 0)
     limit = int(latest.get("limit", DEFAULT_LIMIT) or DEFAULT_LIMIT)
+    round_raw = latest.get("round")
+    seed_count = int(latest.get("seed_count", 1) or 1)
     render_progress_and_files(
         processed=processed_pages,
         successful=successful_pages,
@@ -417,6 +455,8 @@ def _render_status_boxes() -> None:
         discovered=discovered_pages,
         limit=limit,
         state=st.session_state.job_state,
+        round_num=int(round_raw) if round_raw is not None else None,
+        seed_count=seed_count,
     )
 
 
@@ -511,29 +551,66 @@ def _render_status_rows() -> None:
         st.error(localize_message(strings, message) or strings["ERROR_CRAWL_FAILED_FALLBACK"])
 
 
+def _should_show_limit_line(rows: list[dict[str, float]]) -> bool:
+    """Return whether the Limit line should be drawn on the timeline chart.
+
+    With a very large page limit the Limit line would dominate the y-axis and
+    flatten the real series, so it stays hidden until discovered pages reach
+    ``_CHART_LIMIT_VISIBILITY_RATIO`` of the limit.
+    """
+    if not rows:
+        return False
+    latest = rows[-1]
+    page_limit = latest.get("page_limit", 0) or 0
+    if page_limit <= 0:
+        return False
+    discovered = latest.get("discovered_pages", 0) or 0
+    return discovered >= _CHART_LIMIT_VISIBILITY_RATIO * page_limit
+
+
+def _axis_scale(data_max: float, initial_span: float) -> alt.Scale:
+    """Axis scale that stays readable before any data arrives.
+
+    Until a non-zero value exists the series sit at zero at t≈0, which would collapse
+    the auto-scaled axis to a degenerate sliver (e.g. ``0.000000``); anchor it to a small
+    span instead, then auto-scale from 0 once real data appears.
+    """
+    if data_max > 0:
+        return alt.Scale(domainMin=0)
+    return alt.Scale(domain=[0, initial_span])
+
+
 def _build_cumulative_progress_chart(
     rows: list[dict[str, float]], chart_strings: Strings
 ) -> alt.FacetChart | alt.LayerChart:
-    color_scale = alt.Scale(
-        domain=[
-            chart_strings["CHART_SERIES_DISCOVERED"],
-            chart_strings["CHART_SERIES_SUCCESSFUL"],
-            chart_strings["CHART_SERIES_FAILED"],
-            chart_strings["CHART_SERIES_LIMIT"],
-        ],
-        range=[
-            _CHART_COLOR_DISCOVERED,
-            _CHART_COLOR_SUCCESSFUL,
-            _CHART_COLOR_FAILED,
-            _CHART_COLOR_LIMIT,
-        ],
-    )
+    show_limit = _should_show_limit_line(rows)
+    domain = [
+        chart_strings["CHART_SERIES_DISCOVERED"],
+        chart_strings["CHART_SERIES_SUCCESSFUL"],
+        chart_strings["CHART_SERIES_FAILED"],
+    ]
+    color_range = [
+        _CHART_COLOR_DISCOVERED,
+        _CHART_COLOR_SUCCESSFUL,
+        _CHART_COLOR_FAILED,
+    ]
+    if show_limit:
+        domain.append(chart_strings["CHART_SERIES_LIMIT"])
+        color_range.append(_CHART_COLOR_LIMIT)
+    color_scale = alt.Scale(domain=domain, range=color_range)
     color = alt.Color(
         "series:N",
         scale=color_scale,
         legend=alt.Legend(title=None),
     )
-    x = alt.X("elapsed_time:Q", title="")
+    x_data_max = max((row["elapsed_time"] for row in rows), default=0.0)
+    y_data_max = max(
+        (max(row["discovered_pages"], row["processed_pages"]) for row in rows), default=0.0
+    )
+    if show_limit:
+        y_data_max = max(y_data_max, max((row["page_limit"] for row in rows), default=0.0))
+    x = alt.X("elapsed_time:Q", title="", scale=_axis_scale(x_data_max, _CHART_INITIAL_X_SPAN))
+    y_scale = _axis_scale(y_data_max, _CHART_INITIAL_Y_SPAN)
 
     discovered = (
         alt.Chart(
@@ -546,7 +623,7 @@ def _build_cumulative_progress_chart(
         )
         .encode(
             x=x,
-            y=alt.Y("discovered_pages:Q", title=""),
+            y=alt.Y("discovered_pages:Q", title="", scale=y_scale),
             color=color,
         )
     )
@@ -561,7 +638,7 @@ def _build_cumulative_progress_chart(
         )
         .encode(
             x=x,
-            y=alt.Y("successful_pages:Q", title=""),
+            y=alt.Y("successful_pages:Q", title="", scale=y_scale),
             color=color,
         )
     )
@@ -576,30 +653,33 @@ def _build_cumulative_progress_chart(
         )
         .encode(
             x=x,
-            y=alt.Y("processed_pages:Q", title=""),
+            y=alt.Y("processed_pages:Q", title="", scale=y_scale),
             y2="successful_pages:Q",
             color=color,
         )
     )
-    limit = (
-        alt.Chart(
-            alt.Data(
-                values=[{**row, "series": chart_strings["CHART_SERIES_LIMIT"]} for row in rows]
+    layers: list[alt.Chart] = [discovered, successful, failed]
+    if show_limit:
+        limit = (
+            alt.Chart(
+                alt.Data(
+                    values=[{**row, "series": chart_strings["CHART_SERIES_LIMIT"]} for row in rows]
+                )
+            )
+            .mark_line(
+                strokeWidth=_CHART_LIMIT_LINE_WIDTH,
+                interpolate=_CHART_CUMULATIVE_INTERPOLATE,
+            )
+            .encode(
+                x=x,
+                y=alt.Y("page_limit:Q", title="", scale=y_scale),
+                color=color,
             )
         )
-        .mark_line(
-            strokeWidth=_CHART_LIMIT_LINE_WIDTH,
-            interpolate=_CHART_CUMULATIVE_INTERPOLATE,
-        )
-        .encode(
-            x=x,
-            y=alt.Y("page_limit:Q", title=""),
-            color=color,
-        )
-    )
+        layers.append(limit)
 
     return (
-        alt.layer(discovered, successful, failed, limit)
+        alt.layer(*layers)
         .properties(
             height=_PROGRESS_CHART_HEIGHT,
             padding={"top": 0, "right": 0, "bottom": 50, "left": 0},
@@ -613,13 +693,65 @@ def _build_cumulative_progress_chart(
     )
 
 
+# ── Cached live-panel file reads ─────────────────────────────────────────────
+# The live panel re-runs every few seconds; caching the persisted-history and
+# activity-log reads on each file's (mtime, size) avoids re-parsing a file that
+# has not advanced between reruns (e.g. a finished crawl still on screen). A live
+# crawl changes the file each refresh, so it simply reads fresh.
+_LIVE_READ_CACHE_MAX_ENTRIES = 8
+
+
+def _file_cache_token(path: Path) -> tuple[float, int] | None:
+    """Return a ``(mtime, size)`` cache token for *path*, or ``None`` if unstatable."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime, stat.st_size)
+
+
+@st.cache_data(show_spinner=False, max_entries=_LIVE_READ_CACHE_MAX_ENTRIES)
+def _cached_progress_history(
+    crawl_root: str, cache_token: tuple[float, int]
+) -> list[dict[str, object]]:
+    _ = cache_token  # Keeps the file's (mtime, size) in st.cache_data's argument hash.
+    return load_persisted_progress_history(Path(crawl_root))
+
+
+def _persisted_progress_history(crawl_root: Path | None) -> list[dict[str, object]]:
+    """Load persisted progress history, reusing the parse while the file is unchanged."""
+    history_path = resolve_progress_history_path(crawl_root)
+    if crawl_root is None or history_path is None:
+        return []
+    token = _file_cache_token(history_path)
+    if token is None:
+        return load_persisted_progress_history(crawl_root)
+    return _cached_progress_history(str(crawl_root), token)
+
+
+@st.cache_data(show_spinner=False, max_entries=_LIVE_READ_CACHE_MAX_ENTRIES)
+def _cached_recent_lines(
+    log_path: str, max_lines: int, cache_token: tuple[float, int]
+) -> list[str]:
+    _ = cache_token  # Keeps the file's (mtime, size) in st.cache_data's argument hash.
+    return read_recent_lines(log_path, max_lines=max_lines)
+
+
+def _recent_activity_lines(log_path: Path, max_lines: int) -> list[str]:
+    """Read the activity-log tail, reusing it while the file is unchanged."""
+    token = _file_cache_token(log_path)
+    if token is None:
+        return read_recent_lines(log_path, max_lines=max_lines)
+    return _cached_recent_lines(str(log_path), max_lines, token)
+
+
 def _render_progress_charts() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     live_history = st.session_state.get("progress_chart_history")
     if not isinstance(live_history, list):
         live_history = []
 
-    persisted_history = load_persisted_progress_history(_active_file_root())
+    persisted_history = _persisted_progress_history(_active_file_root())
     selected_history = prefer_persisted_history(live_history, persisted_history)
     cumulative_rows = prepare_cumulative_chart_rows(selected_history)
     if not cumulative_rows:
@@ -656,7 +788,7 @@ def _render_activity_log() -> None:
     strings = get_strings(st.session_state.get("language", _DEFAULT_LANGUAGE))
     log_path = activity_log_path(_active_file_root())
     max_lines = int(st.session_state.activity_log_size)
-    lines = read_recent_lines(log_path, max_lines=max_lines) if log_path else []
+    lines = _recent_activity_lines(log_path, max_lines) if log_path else []
     st.session_state.activity_log_latest_line = lines[-1] if lines else None
     if lines:
         rows_html = "".join(

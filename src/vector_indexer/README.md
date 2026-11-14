@@ -68,8 +68,8 @@ as `LibraryMessage` objects (e.g. code `vector.skipped_unsupported_file`).
 
 ## Page-aware indexing
 
-crawl4md output begins with a YAML *front matter* block (crawl run metadata) and wraps
-each page's human-readable header (title + `*Source: <url>*`) in render-invisible markers
+crawl4md output begins with a minimal YAML *front matter* block (just `crawl_start_datetime`) and
+wraps each page's human-readable header (title + `*Source: <url>*`) in render-invisible markers
 (`<!-- crawl4md:source -->` … `<!-- /crawl4md:source -->`). `page_source.split_into_pages`
 strips the front matter so run metadata never reaches a chunk, splits the body into pages,
 and recovers each page's title/URL. `chunk_documents` then records the title/URL as chunk

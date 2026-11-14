@@ -88,6 +88,67 @@ def test_emit_page_progress_includes_optional_concurrency_metadata(tmp_path: Pat
     assert event["max_concurrent"] == 20
 
 
+# Risk: the live KPI "Page attempts" badge shows the current round, so the page event
+# must carry it when the crawler supplies one. Type: unit.
+def test_emit_page_progress_includes_round_when_provided(tmp_path: Path) -> None:
+    events: list[object] = []
+    emit_page_progress(
+        events.append,
+        [CrawlResult(url="https://example.com/a", success=True)],
+        generated={"a"},
+        prior_success=0,
+        prior_fail=0,
+        current_url="https://example.com/a",
+        output_dir=tmp_path,
+        limit=10,
+        round_num=2,
+    )
+
+    event = events[0]
+    assert isinstance(event, dict)
+    assert event["round"] == 2
+
+
+# Risk: round is optional metadata; without it the event must stay unchanged. Type: unit.
+def test_emit_page_progress_omits_round_when_absent(tmp_path: Path) -> None:
+    events: list[object] = []
+    emit_page_progress(
+        events.append,
+        [CrawlResult(url="https://example.com/a", success=True)],
+        generated={"a"},
+        prior_success=0,
+        prior_fail=0,
+        current_url="https://example.com/a",
+        output_dir=tmp_path,
+        limit=10,
+    )
+
+    event = events[0]
+    assert isinstance(event, dict)
+    assert "round" not in event
+
+
+# Risk: the Limit KPI shows N×limit for multi-seed crawls, so the page event must carry the
+# seed count when the crawler supplies one. Type: unit.
+def test_emit_page_progress_includes_seed_count_when_provided(tmp_path: Path) -> None:
+    events: list[object] = []
+    emit_page_progress(
+        events.append,
+        [CrawlResult(url="https://example.com/a", success=True)],
+        generated={"a"},
+        prior_success=0,
+        prior_fail=0,
+        current_url="https://example.com/a",
+        output_dir=tmp_path,
+        limit=10,
+        seed_count=2,
+    )
+
+    event = events[0]
+    assert isinstance(event, dict)
+    assert event["seed_count"] == 2
+
+
 def test_emit_page_progress_returns_emitted_event(tmp_path: Path) -> None:
     events: list[object] = []
     results = [CrawlResult(url="https://example.com/a", success=True)]

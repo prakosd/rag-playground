@@ -596,6 +596,61 @@ class TestRetryRounds:
         assert len(results) == 4
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
+    def test_retried_redirect_target_does_not_reopen_discovery(
+        self, mock_crawler_cls, tmp_path: Path
+    ):
+        """A redirect target that fails then is retried must not get a fresh discovery budget.
+
+        Regression: redirect targets were added to ``generated`` without a ``seed_of`` entry, so
+        when retried they were enumerated as fresh seeds (``setdefault(norm, seed_idx)``) and
+        re-opened discovery past the limit, making the Discovered count keep climbing after
+        "limit reached". The target now inherits the source URL's seed, so the gate stays closed.
+        """
+        seed = "https://example.com/"
+        n_seed_links = 3
+        seed_html = "".join(f'<a href="/p{i}">P</a>' for i in range(n_seed_links))
+        block = "<html><body>Request unsuccessful. Incapsula incident ID: 1</body></html>"
+        calls: dict[str, int] = {}
+
+        async def mock_arun(url, config):
+            calls[url] = calls.get(url, 0) + 1
+            if url == seed:
+                return _make_mock_result(url, seed_html, "seed")
+            if "/p" in url and calls[url] == 1:
+                # /pN redirects to a new same-domain target /rN and is blocked -> fails -> retried
+                n = url.rsplit("/p", 1)[-1]
+                return _make_mock_result(
+                    url, block, "blocked", redirected_url=f"https://example.com/r{n}"
+                )
+            if "/r" in url and calls[url] == 1:
+                # the retried redirect target succeeds and links to 5 brand-new pages
+                n = url.rsplit("/r", 1)[-1]
+                links = "".join(f'<a href="/r{n}_{j}">x</a>' for j in range(5))
+                return _make_mock_result(url, "<p>ok</p>" + links, "ok")
+            return _make_mock_result(url, "<p>leaf</p>", "leaf")
+
+        mock_instance = AsyncMock()
+        mock_instance.arun = mock_arun
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_crawler_cls.return_value = mock_instance
+
+        events: list[dict] = []
+        config = CrawlerConfig(urls=[seed], limit=3, max_depth=4, max_concurrent=1, max_retries=3)
+        crawler = SiteCrawler(config, output_base=tmp_path, progress_callback=events.append)
+        crawler.crawl()
+
+        discovered = [
+            int(e.get("queued_discovered_urls", 0))
+            for e in events
+            if e.get("event") in ("page_processed", "urls_discovered")
+        ]
+        # The seed discovers its own links (seed + n_seed_links); retried redirect targets must NOT
+        # re-open discovery, so Discovered never climbs past that. Pre-fix it ballooned well past
+        # the limit (each retried target got a fresh budget and added 5 more).
+        assert max(discovered) <= 1 + n_seed_links
+
+    @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_non_crawlable_links_do_not_consume_limit(self, mock_crawler_cls, tmp_path: Path):
         """Non-crawlable URLs (wrong domain, etc.) must not count toward limit."""
         # Seed discovers 3 same-domain + 5 other-domain links.

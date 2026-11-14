@@ -168,7 +168,7 @@ class TestFailContentFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        fail_files = list(crawler.output_dir.glob("initial/fail_content_*.txt"))
+        fail_files = list(crawler.output_dir.glob("final/diagnostics/sorted_fail_content_*.txt"))
         assert len(fail_files) >= 1
         content = fail_files[0].read_text(encoding="utf-8")
         assert "https://example.com/blocked" in content
@@ -202,7 +202,7 @@ class TestFailContentFiles:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        fail_files = list(crawler.output_dir.glob("initial/fail_content_*.txt"))
+        fail_files = list(crawler.output_dir.glob("final/diagnostics/sorted_fail_content_*.txt"))
         assert len(fail_files) >= 1
         content = fail_files[0].read_text(encoding="utf-8")
         assert "**Error:** Blocked by WAF" in content
@@ -264,7 +264,7 @@ class TestOutputFrontMatter:
     def test_all_generated_content_files_include_front_matter(
         self, mock_crawler_cls, tmp_path: Path
     ):
-        """Every generated success/fail content file starts with required metadata."""
+        """Every generated content file starts with a minimal crawl-date header."""
         ok_url = "https://example.com/ok"
         blocked_url = "https://example.com/blocked"
 
@@ -304,13 +304,11 @@ class TestOutputFrontMatter:
             content = file_path.read_text(encoding="utf-8")
             assert content.startswith("---\n")
             assert "crawl_start_datetime:" in content
-            assert f'session_id: "{crawler.output_dir.name}"' in content
-            assert f"stored_directory: {json.dumps(str(file_path.parent))}" in content
-            assert "crawl_parameters:" in content
-            if "fail_content_" in file_path.name:
-                assert 'status: "failed"' in content
-            else:
-                assert 'status: "success"' in content
+            # The bulky run metadata moved to settings.json; only the date remains.
+            assert "session_id:" not in content
+            assert "stored_directory:" not in content
+            assert "crawl_parameters:" not in content
+            assert "status:" not in content
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_session_id_defaults_to_output_dir_name_even_under_app_like_path(
@@ -352,11 +350,8 @@ class TestOutputFrontMatter:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        content_files = sorted(crawler.output_dir.glob("initial/success_content_*.txt"))
-        assert content_files
-
-        content = content_files[0].read_text(encoding="utf-8")
-        assert f'session_id: "{crawler.output_dir.name}"' in content
+        settings = json.loads((crawler.output_dir / "settings.json").read_text(encoding="utf-8"))
+        assert settings["session_id"] == crawler.output_dir.name
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_session_id_can_be_set_explicitly(self, mock_crawler_cls, tmp_path: Path):
@@ -390,11 +385,8 @@ class TestOutputFrontMatter:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        content_files = sorted(crawler.output_dir.glob("initial/success_content_*.txt"))
-        assert content_files
-
-        content = content_files[0].read_text(encoding="utf-8")
-        assert f'session_id: "{explicit_session_id}"' in content
+        settings = json.loads((crawler.output_dir / "settings.json").read_text(encoding="utf-8"))
+        assert settings["session_id"] == explicit_session_id
 
 
 class TestPagesRegistry:
@@ -793,7 +785,7 @@ class TestPrintSummary:
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_fail_content_merged_across_rounds(self, mock_crawler_cls, tmp_path: Path):
-        """Fail content from multiple rounds is merged into final fail_content files."""
+        """Fail content from multiple rounds is merged into the final sorted fail content."""
         blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 999</body></html>"
         blocked_result = _make_mock_result(
             "https://example.com/stuck", blocked_html, "still blocked"
@@ -818,11 +810,10 @@ class TestPrintSummary:
         crawler.crawl()
 
         assert crawler.output_dir is not None
-        # Per-round fail content files from both rounds
-        round1_fail = list(crawler.output_dir.glob("initial/fail_content_*.txt"))
-        round2_fail = list(crawler.output_dir.glob("round_1/fail_content_*.txt"))
-        assert len(round1_fail) >= 1
-        assert len(round2_fail) >= 1
+        # Both rounds fail the same URL; the final sorted fail content is the merge.
+        final_fail = list(crawler.output_dir.glob("final/diagnostics/sorted_fail_content_*.txt"))
+        assert len(final_fail) >= 1
+        assert "https://example.com/stuck" in final_fail[0].read_text(encoding="utf-8")
 
     @patch("crawl4md.crawler.AsyncWebCrawler")
     def test_retry_skips_already_succeeded_url(self, mock_crawler_cls, tmp_path: Path):
@@ -1113,7 +1104,8 @@ class TestRoundSuccessSnapshots:
         crawler = SiteCrawler(
             config, page_config, output_base=tmp_path, extractor=extractor, writer=writer
         )
-        crawler.crawl()
+        with patch("crawl4md._internal.final_output._CLEANUP_INTERMEDIATE_FILES", False):
+            crawler.crawl()
 
         assert crawler.output_dir is not None
 

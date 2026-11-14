@@ -107,6 +107,7 @@ from crawl4md._internal.progress_history import (
     PROGRESS_HISTORY_FILE as _INTERNAL_PROGRESS_HISTORY_FILE,
 )
 from crawl4md._internal.progress_history import ProgressHistoryRecorder
+from crawl4md._internal.run_settings import write_crawl_settings
 from crawl4md._internal.site_graph import (
     _PAGE_RECORD_DEPTH as _INTERNAL_PAGE_RECORD_DEPTH,
 )
@@ -464,6 +465,8 @@ class SiteCrawler:
         self._progress_callback = progress_callback
         self._should_cancel = should_cancel
         self.content_files: list[Path] = []
+        # Active 1-based crawl round (1 = initial); surfaced on progress events.
+        self._current_round = 1
         # Set to the error text when an unexpected error stops the crawl mid-run;
         # the crawl still finalizes its partial output and the caller (e.g. the
         # Streamlit job) reads this to report a failure while keeping that output.
@@ -544,11 +547,12 @@ class SiteCrawler:
             self.output_dir,
         )
         self._run_metadata = self._build_run_metadata()
+        write_crawl_settings(self.output_dir, self._run_metadata)
         self._progress_history = ProgressHistoryRecorder(
             output_dir=logs_dir,
             session_id=str(self._run_metadata.get("session_id", self.output_dir.name)),
         )
-        self._progress_history.set_round(1)
+        self._set_round(1)
         self._site_graph.reset(logs_dir)
         self._network_usage.reset(logs_dir)
         self._emit_progress(
@@ -780,8 +784,7 @@ class SiteCrawler:
                         self._fail_writer.reset(_FAIL_SUFFIX)
                     self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
                     self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
-                    if self._progress_history is not None:
-                        self._progress_history.set_round(1)
+                    self._set_round(1)
                     self._report_status(
                         f"--- Round 1/{total_rounds}: Crawling {len(self.config.urls)} seed URL(s) ---"
                     )
@@ -837,8 +840,7 @@ class SiteCrawler:
                             self._fail_writer.reset(_FAIL_SUFFIX)
                         self._success_sidecar = round_dir / _SUCCESS_SIDECAR_SUFFIX
                         self._fail_sidecar = round_dir / _FAIL_SIDECAR_SUFFIX
-                        if self._progress_history is not None:
-                            self._progress_history.set_round(round_num)
+                        self._set_round(round_num)
 
                         cooldown = _ROUND_COOLDOWN * random.uniform(
                             _ROUND_COOLDOWN_JITTER_MIN, _ROUND_COOLDOWN_JITTER_MAX
@@ -991,6 +993,12 @@ class SiteCrawler:
         """
         print(message)
 
+    def _set_round(self, round_num: int) -> None:
+        """Track the active 1-based round and mirror it into progress history."""
+        self._current_round = round_num
+        if self._progress_history is not None:
+            self._progress_history.set_round(round_num)
+
     def _emit_page_progress(
         self,
         results: list[CrawlResult],
@@ -1018,6 +1026,8 @@ class SiteCrawler:
             limit=self.config.limit,
             next_url=next_url,
             eta_remaining_seconds=eta_remaining_seconds,
+            round_num=self._current_round,
+            seed_count=len(self.config.urls),
             active_urls=active_urls,
             active_url_count=active_url_count,
             next_urls=next_urls,
@@ -1572,6 +1582,11 @@ class SiteCrawler:
 
                     visited.add(norm_final)
                     generated.add(norm_final)
+                    # Keep every discovered URL attributed to a seed so the per-seed limit gate
+                    # stays accurate. Redirect targets inherit the source URL's seed; without this
+                    # a target later retried as a "seed" would get a fresh budget and re-open
+                    # discovery past the limit.
+                    seed_of.setdefault(norm_final, seed_of.get(norm_url, 0))
                     depths[norm_final] = depth
 
                     if redirected and not self._url_allowed(final_url):

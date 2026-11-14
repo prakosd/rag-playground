@@ -210,6 +210,43 @@ def test_write_sorted_files_keeps_unsorted_final_content_when_cleanup_disabled(
     assert unsorted.exists()
 
 
+def test_write_sorted_files_deletes_round_content_snapshots_when_cleanup_enabled(
+    tmp_path: Path,
+) -> None:
+    round_dir = tmp_path / "initial"
+    _append_page(round_dir / "success_pages.jsonl", "https://example.com/a", "# A")
+    success_snapshot = round_dir / "success_content_001.md"
+    fail_snapshot = round_dir / "fail_content_001.md"
+    success_snapshot.write_text("snapshot", encoding="utf-8")
+    fail_snapshot.write_text("snapshot", encoding="utf-8")
+    url_list = round_dir / "success_urls.txt"
+    url_list.write_text("https://example.com/a", encoding="utf-8")
+    writer = _output_writer(tmp_path)
+
+    with patch.object(_fo_mod, "_CLEANUP_INTERMEDIATE_FILES", True):
+        writer.write_sorted_files()
+
+    assert not success_snapshot.exists()
+    assert not fail_snapshot.exists()
+    assert url_list.exists()  # per-round URL lists are kept
+    assert list((tmp_path / "final").glob("content_*"))  # sorted output still produced
+
+
+def test_write_sorted_files_keeps_round_content_snapshots_when_cleanup_disabled(
+    tmp_path: Path,
+) -> None:
+    round_dir = tmp_path / "initial"
+    _append_page(round_dir / "success_pages.jsonl", "https://example.com/a", "# A")
+    success_snapshot = round_dir / "success_content_001.md"
+    success_snapshot.write_text("snapshot", encoding="utf-8")
+    writer = _output_writer(tmp_path)
+
+    with patch.object(_fo_mod, "_CLEANUP_INTERMEDIATE_FILES", False):
+        writer.write_sorted_files()
+
+    assert success_snapshot.exists()
+
+
 def test_delete_sidecars_handles_absent_files_gracefully(tmp_path: Path) -> None:
     writer = _output_writer(tmp_path)
     # No sidecar files exist — should not raise

@@ -17,6 +17,6 @@ Pydantic v2 models — all user-facing parameters validated here. Use `model_val
 ## Constraints
 
 - `headers` is a free-form `dict[str, str]` forwarded to Crawl4AI's `BrowserConfig`.
-- `secret_headers` carries sensitive request headers (e.g. `Authorization`) and is `exclude=True` + `repr=False`, so it never reaches the run-metadata front matter (which serializes the config), logs, or tracebacks. The `effective_headers` property merges it over `headers` (secret wins) for outgoing requests. Never put credentials in `headers` — it IS serialized into front matter.
+- `secret_headers` carries sensitive request headers (e.g. `Authorization`) and is `exclude=True` + `repr=False`, so it never reaches the run's `settings.json` (which serializes the config), logs, or tracebacks. The `effective_headers` property merges it over `headers` (secret wins) for outgoing requests. Never put credentials in `headers` — it IS serialized into `settings.json`.
 - Type hints required on all public fields and validators.
 - Pydantic field defaults are exempt from the "no inline magic values" rule.

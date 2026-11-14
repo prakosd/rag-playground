@@ -221,14 +221,30 @@ class FinalOutputWriter:
             for sidecar in self._round_sidecars(pattern):
                 sidecar.unlink(missing_ok=True)
 
+    def _round_dirs(self) -> list[Path]:
+        """Return all round directories (initial + retries) in round order."""
+        dirs = [
+            d
+            for d in self.output_dir.iterdir()
+            if d.is_dir() and round_num_from_dir(d.name) is not None
+        ]
+        return sorted(dirs, key=lambda d: round_num_from_dir(d.name) or 0)
+
     def _round_sidecars(self, suffix: str) -> list[Path]:
         """Return all round sidecars (initial + retries) sorted by round order."""
-        sidecars = [
-            d / suffix
-            for d in self.output_dir.iterdir()
-            if d.is_dir() and round_num_from_dir(d.name) is not None and (d / suffix).exists()
-        ]
-        return sorted(sidecars, key=lambda p: round_num_from_dir(p.parent.name) or 0)
+        return [d / suffix for d in self._round_dirs() if (d / suffix).exists()]
+
+    def delete_round_content_files(self) -> None:
+        """Delete per-round content snapshots after the final sorted output is written.
+
+        The per-round ``success_content_*``/``fail_content_*`` files duplicate the
+        sorted ``final/content_*`` output, so they are removed to save disk; the
+        small per-round URL lists and the logs are kept.
+        """
+        for round_dir in self._round_dirs():
+            for prefix in (_SUCCESS_SUFFIX, _FAIL_SUFFIX):
+                for file_path in round_dir.glob(f"{prefix}content_*{self.output_extension}"):
+                    file_path.unlink(missing_ok=True)
 
     def write_sorted_files(self) -> None:
         final_dir = self.output_dir / _FINAL_DIR_NAME
@@ -261,6 +277,7 @@ class FinalOutputWriter:
         if _CLEANUP_INTERMEDIATE_FILES:
             self.clear_final_content_files(sorted_files=False)
             self.delete_sidecars()
+            self.delete_round_content_files()
 
     def get_final_content_files(self) -> list[Path]:
         final_dir = self.output_dir / _FINAL_DIR_NAME
