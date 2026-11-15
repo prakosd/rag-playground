@@ -164,11 +164,11 @@ def validate_followups(
             executor.submit(retriever, run_dir, question, probe, **extra): question
             for question in unique
         }
-        for future, question in futures.items():
+        for idx, (future, question) in enumerate(futures.items(), start=1):
             try:
                 results[question] = future.result()
             except Exception as exc:  # noqa: BLE001 - one probe failing is tolerated
-                _logger.warning("Follow-up probe failed for %r: %s", question, exc)
+                _logger.warning("Follow-up probe #%d failed: %s", idx, exc)
 
     kept: list[ValidatedFollowup] = []
     for question in unique:

@@ -4,6 +4,16 @@ UI-independent Python library that turns text documents into a persisted vector
 index. It powers **Step 2 — Build Vector Index** in the Streamlit app, but it has
 no Streamlit dependency and is equally usable from any UI, a CLI, or tests.
 
+```mermaid
+flowchart LR
+  In["crawl results<br/>.md / .txt / .zip"] --> Load["load + split pages"]
+  Load --> Chunk["chunk + metadata"]
+  Chunk --> Embed["embeddings<br/>Titan / OpenAI / offline"]
+  Embed --> Store["ChromaDB index<br/>+ manifest.json"]
+```
+
+See [ARCHITECTURE.md § Step 2](../../docs/ARCHITECTURE.md#step-2--how-indexing-works) for how this fits the pipeline.
+
 ## What it does
 
 ```

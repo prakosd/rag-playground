@@ -944,8 +944,12 @@ def answerability_probe_labels(
     follow_ups: Sequence[ValidatedFollowup],
     dropped: Sequence[ValidatedFollowup] = (),
     evaluated: Sequence[ValidatedFollowup] = (),
-) -> list[str]:
-    """Label each answerability probe ``Answerability probe N · 🟢 Yes · 64%``.
+) -> list[tuple[StagePromptTrace, str]]:
+    """Build ``(probe, label)`` pairs for the answerability expanders, ordered by row N.
+
+    Each label reads ``Answerability probe N · 🟢 Yes · 64%``. The pairs are returned sorted
+    by ``N`` (not the evaluation order the probes arrive in), so the caller renders the
+    expanders top-to-bottom matching the numbered follow-up list above.
 
     ``N`` is the follow-up's own row in the numbered Answerability grid above (kept
     follow-ups first, then dropped by score), so a probe points straight at the question
@@ -964,7 +968,7 @@ def answerability_probe_labels(
     evaluated_search = _probe_search_order(evaluated)
     used_grid: set[int] = set()
     used_evaluated: set[int] = set()
-    labels: list[str] = []
+    numbered: list[tuple[int, StagePromptTrace, str]] = []
     # Unmatched (e.g. kept-but-truncated) probes number *after* the grid rows so their label
     # can never collide with a shown row's ordinal.
     fallback_number = len(grid)
@@ -989,8 +993,10 @@ def answerability_probe_labels(
         emoji = _VERDICT_KEEP_EMOJI if is_yes else _VERDICT_DROP_EMOJI
         verdict_label = yes_label if is_yes else no_label
         probe_label = strings["CONV_INSPECT_ANSWERABILITY_PROBE"].format(n=number)
-        labels.append(f"{probe_label} · {_answerability_value(emoji, verdict_label, score)}")
-    return labels
+        label = f"{probe_label} · {_answerability_value(emoji, verdict_label, score)}"
+        numbered.append((number, probe, label))
+    numbered.sort(key=lambda item: item[0])
+    return [(probe, label) for _number, probe, label in numbered]
 
 
 def _render_followups_prompts(strings: Strings, answer: ConversationalAnswer) -> None:
@@ -999,16 +1005,17 @@ def _render_followups_prompts(strings: Strings, answer: ConversationalAnswer) ->
     A probe is labelled with the follow-up's number in the list above, its verdict, and
     confidence (``Answerability probe 2 · 🔴 No · 56%``); probes exist only for the
     borderline follow-ups, so their numbers point at the rows the model actually checked.
+    The expanders are ordered by that number (not evaluation order) so they line up with
+    the numbered list.
     """
     probes = [item for item in answer.prompt_traces if item.process == "answerability"]
-    labels = answerability_probe_labels(
+    for probe, label in answerability_probe_labels(
         strings,
         probes,
         answer.follow_ups,
         answer.dropped_followups,
         answer.evaluated_followups,
-    )
-    for label, probe in zip(labels, probes, strict=True):
+    ):
         with st.expander(label):
             _render_prompt_trace(strings, probe)
     _render_stage_prompt(strings, answer, "followups")
@@ -1258,6 +1265,6 @@ def _render_followups(
     # Labels here are the questions themselves, so render them full-opacity and
     # numbered (1 · , 2 · , …) rather than as dimmed field names.
     st.markdown(
-        kv_grid_html(rows, columns=2, dim_labels=False, numbered=True),
+        kv_grid_html(rows, columns=2, dim_labels=False, numbered=True, margin_bottom=True),
         unsafe_allow_html=True,
     )

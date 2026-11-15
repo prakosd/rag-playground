@@ -26,6 +26,7 @@ from rag_engine import (
 )
 
 from app_support.app_runtime import _ICON_BUTTON_WIDTH_PX
+from app_support.backend_client import http_conversational
 from app_support.conversational_rag.conversation_manager import (
     ConversationSummary,
     asked_questions_from_records,
@@ -662,18 +663,31 @@ def _stream_pending_turn(
         status.update(label=localize_message(strings, message.as_dict()))
 
     start = perf_counter()
-    generation = conversational_answer_stream(
-        run_dir,
-        question,
-        state,
-        config,
-        history=history,
-        cached_chunks=cached,
-        progress_callback=_report_progress,
-        retriever=cached_retriever,
-        chat_resolver=cached_chat_resolver,
-        aux_resolver=cached_aux_resolver,
-    )
+    if get_settings().backend_mode == "http":
+        # The backend runs the whole pipeline and streams tokens + progress back; it uses
+        # its own resolvers, so the app's cached ones are not threaded through.
+        generation = http_conversational(
+            run_dir,
+            question,
+            state,
+            config,
+            history=history,
+            cached_chunks=cached,
+            progress_callback=_report_progress,
+        )
+    else:
+        generation = conversational_answer_stream(
+            run_dir,
+            question,
+            state,
+            config,
+            history=history,
+            cached_chunks=cached,
+            progress_callback=_report_progress,
+            retriever=cached_retriever,
+            chat_resolver=cached_chat_resolver,
+            aux_resolver=cached_aux_resolver,
+        )
     with answer_area:
         st.write_stream(generation)
         elapsed = perf_counter() - start

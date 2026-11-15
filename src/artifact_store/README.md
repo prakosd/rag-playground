@@ -6,6 +6,17 @@ libraries, and the Streamlit app all build on. It depends on the Python standard
 library plus `log4py` (the zero-dependency logging base layer) only — no crawler,
 no UI, no third-party packages.
 
+```mermaid
+flowchart TD
+  Log4py["log4py"] --> AS["artifact_store<br/>naming · paths · archives · discovery"]
+  AS --> Crawl["crawl4md"]
+  AS --> VI["vector_indexer"]
+  AS --> RE["rag_engine"]
+  AS --> App["Streamlit app"]
+```
+
+The pure-stdlib foundation every producer and consumer shares. See [package layers](../../docs/ARCHITECTURE.md#package-layers).
+
 ## Why it exists
 
 Crawl outputs, uploaded files, and vector indexes all need the same primitives:

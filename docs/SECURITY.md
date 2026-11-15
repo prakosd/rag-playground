@@ -3,7 +3,9 @@
 This document records the security posture of **rag-playground**: a findings-by-severity
 audit (with the fix or recommendation for each), the defense-in-depth practices already in
 place, and a deployment hardening checklist. It complements the operational
-[Security checklist](CLOUD_DEPLOYMENT.md#8-security-checklist) in the cloud-deployment guide.
+[Security checklist](CLOUD_DEPLOYMENT.md#8-security-checklist) in the cloud-deployment guide,
+and sits alongside the broader architecture + performance + security
+[code review](CODE_REVIEW.md) (which extends this audit to the FastAPI backend offload layer).
 
 > **Threat model.** The app crawls **untrusted** websites and indexes their content, then
 > feeds that content to an LLM and renders it in the browser. The two primary concerns are

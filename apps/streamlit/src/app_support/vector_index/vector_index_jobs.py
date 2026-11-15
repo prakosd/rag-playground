@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import queue
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,8 +31,10 @@ from vector_indexer.messages import (
     CODE_SSL_CERTIFICATE,
 )
 
+from app_support.backend_client import run_remote_index
 from app_support.log_context import set_log_session_id
 from app_support.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
+from app_support.settings import get_settings
 
 _EVENT_STARTED = "started"
 _EVENT_PROGRESS = "progress"
@@ -153,6 +155,77 @@ def _write_uploads(upload_dir: Path, uploads: Sequence[tuple[str, bytes]]) -> li
     return written
 
 
+def _emit_index_terminal(
+    emit: Callable[[Mapping[str, object]], None],
+    *,
+    state: str,
+    output_dir: str,
+    indexed_file_count: int,
+    indexed_chunk_count: int,
+    skipped_file_count: int,
+    warnings: list[dict],
+    errors: list[dict],
+) -> None:
+    """Emit a completed/cancelled/failed terminal event (shared by in-process + http)."""
+    emit(
+        {
+            "event": state,
+            "output_dir": output_dir,
+            "indexed_file_count": indexed_file_count,
+            "indexed_chunk_count": indexed_chunk_count,
+            "skipped_file_count": skipped_file_count,
+            "warnings": warnings,
+            "errors": errors,
+        }
+    )
+
+
+def _run_index_via_backend(
+    emit: Callable[[Mapping[str, object]], None],
+    *,
+    config: IndexingConfig,
+    input_paths: Sequence[str],
+    output_base: Path,
+    sessions_root: Path | str,
+    cancel_event: threading.Event,
+) -> None:
+    """Run the index on the FastAPI backend (``BACKEND_MODE=http``), relaying its events.
+
+    Sends the input paths + output base *relative* to the sessions root (the backend resolves
+    them under its own shared-storage root), streams the backend's progress events straight to
+    *emit*, and builds the terminal event from the final result using the frontend's own output
+    path. Requires frontend and backend to share storage (see docs/CLOUD_DEPLOYMENT.md).
+    """
+    root = Path(sessions_root)
+    relative_inputs = [str(Path(path).relative_to(root)) for path in input_paths]
+    relative_output = str(Path(output_base).relative_to(root))
+    result = run_remote_index(
+        config, relative_inputs, relative_output, emit=emit, cancel_event=cancel_event
+    )
+    if "error" in result:
+        failure = messages.classify_embedding_failure(str(result["error"]))
+        emit({"event": _EVENT_FAILED, "errors": [failure.as_dict()]})
+        return
+    output_dir_name = result.get("output_dir_name") or ""
+    output_dir = str(output_base / output_dir_name) if output_dir_name else ""
+    if result.get("cancelled"):
+        state = _EVENT_CANCELLED
+    elif result.get("success"):
+        state = _EVENT_COMPLETED
+    else:
+        state = _EVENT_FAILED
+    _emit_index_terminal(
+        emit,
+        state=state,
+        output_dir=output_dir,
+        indexed_file_count=int(result.get("indexed_file_count", 0)),
+        indexed_chunk_count=int(result.get("indexed_chunk_count", 0)),
+        skipped_file_count=int(result.get("skipped_file_count", 0)),
+        warnings=list(result.get("warnings", [])),
+        errors=list(result.get("errors", [])),
+    )
+
+
 def start_vector_index_job(
     *,
     session_id: str,
@@ -182,30 +255,39 @@ def start_vector_index_job(
         set_log_session_id(session_id)  # route this worker thread's logs to the session
         emit({"event": _EVENT_STARTED})
         try:
-            result = runner.run(
-                config,
-                input_paths,
-                output_base,
-                progress_callback=lambda payload: emit({"event": _EVENT_PROGRESS, **payload}),
-                should_cancel=cancel_event.is_set,
-            )
-            if cancel_event.is_set():
-                state = _EVENT_CANCELLED
-            elif result.success:
-                state = _EVENT_COMPLETED
+            if get_settings().backend_mode == "http":
+                _run_index_via_backend(
+                    emit,
+                    config=config,
+                    input_paths=input_paths,
+                    output_base=output_base,
+                    sessions_root=sessions_root,
+                    cancel_event=cancel_event,
+                )
             else:
-                state = _EVENT_FAILED
-            emit(
-                {
-                    "event": state,
-                    "output_dir": str(result.output_dir),
-                    "indexed_file_count": result.indexed_file_count,
-                    "indexed_chunk_count": result.indexed_chunk_count,
-                    "skipped_file_count": result.skipped_file_count,
-                    "warnings": [message.as_dict() for message in result.warnings],
-                    "errors": [message.as_dict() for message in result.errors],
-                }
-            )
+                result = runner.run(
+                    config,
+                    input_paths,
+                    output_base,
+                    progress_callback=lambda payload: emit({"event": _EVENT_PROGRESS, **payload}),
+                    should_cancel=cancel_event.is_set,
+                )
+                if cancel_event.is_set():
+                    state = _EVENT_CANCELLED
+                elif result.success:
+                    state = _EVENT_COMPLETED
+                else:
+                    state = _EVENT_FAILED
+                _emit_index_terminal(
+                    emit,
+                    state=state,
+                    output_dir=str(result.output_dir),
+                    indexed_file_count=result.indexed_file_count,
+                    indexed_chunk_count=result.indexed_chunk_count,
+                    skipped_file_count=result.skipped_file_count,
+                    warnings=[message.as_dict() for message in result.warnings],
+                    errors=[message.as_dict() for message in result.errors],
+                )
         except Exception as exc:  # noqa: BLE001 - surface background errors to the UI.
             failure = messages.classify_embedding_failure(f"{type(exc).__name__}: {exc}")
             emit({"event": _EVENT_FAILED, "errors": [failure.as_dict()]})

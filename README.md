@@ -5,9 +5,29 @@
 
 > **Live demo:** a hosted instance runs on Streamlit Community Cloud at **<https://rag-playground-prakosd.streamlit.app/>** — crawl a small site, build an index, and try Steps 3–5 right in the browser (the offline echo model answers when no cloud credentials are configured).
 
+> **Portfolio / case study:** this project doubles as a hands-on showcase of **agentic, AI-assisted engineering** — most of the code was written by GitHub Copilot while I owned the architecture, the written instructions, the reviews, and the tests. See the **[case study](docs/CASE_STUDY.md)** for the real-world problem it solves, the engineering decisions, and the results.
+
 A practical RAG playground that bundles five independent Python libraries plus a browser-based Streamlit app. **Step 1** crawls websites into clean Markdown (wrapping [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API) and **Step 2** builds a searchable vector index from those outputs. **Steps 3–5** add semantic search, single-turn RAG Q&A, and conversational (history-aware) RAG over those indexes — all runnable offline with a built-in echo model when no cloud credentials are set.
 
 **Naming:** the pip **distribution** is `rag-playground`. The **import packages** are unchanged — `import crawl4md`, `import vector_indexer`, `import rag_engine`, `import artifact_store`, `import log4py` (and `app_support` for the app). Installing `rag-playground` does not create an `import rag_playground`; you import the individual libraries you need.
+
+## How it works (at a glance)
+
+Crawl a website into clean Markdown, turn it into a searchable vector index, then ask questions and get **grounded, cited answers**. All five steps run offline with a built-in echo model when no cloud key is set.
+
+```mermaid
+flowchart LR
+  Web["Websites<br/>HTML · PDF · Word"] --> S1["① Crawl<br/>clean Markdown"]
+  S1 --> S2["② Index<br/>vector store"]
+  S2 --> S3["③ Semantic search"]
+  S2 --> S4["④ Grounded Q&A"]
+  S2 --> S5["⑤ Conversational RAG"]
+  S3 --> Ans["Cited answer"]
+  S4 --> Ans
+  S5 --> Ans
+```
+
+Want to zoom in? The [architecture guide](docs/ARCHITECTURE.md) goes from this helicopter view down to each library and [how they talk to each other](docs/ARCHITECTURE.md#how-the-libraries-talk-during-a-question).
 
 ## What's inside
 
@@ -121,6 +141,18 @@ New to the app, or want to explore the RAG steps without spending the time and c
 
 The samples live in [`data/fixtures/`](data/fixtures). Importing works offline, but *querying* an imported index re-embeds your question with the embedding model recorded in its manifest — the bundled index uses Amazon Titan on Bedrock, so semantic search over it needs those credentials (see [Configuration](docs/CONFIGURATION.md)).
 
+## Using the app — the five steps
+
+The browser app walks left-to-right through the [pipeline above](#how-it-works-at-a-glance). It works the same whether you run it **locally** (`http://localhost:8501` after [setup](#set-up-local-development)) or open the **[live demo](https://rag-playground-prakosd.streamlit.app/)** — no cloud key required (an offline echo model answers Steps 4–5).
+
+1. **① Crawl** — paste one or more site URLs, set depth/limit, and start. The app streams progress and writes clean Markdown under `outputs/`.
+2. **② Index** — pick crawl results (or [sample data](#start-from-sample-data-skip-crawling)) and build a vector index, choosing an embedding model (offline default, Amazon Titan, or OpenAI).
+3. **③ Semantic search** — type a query and see the top-matching passages with scores and sources.
+4. **④ Basic RAG Q&A** — retrieve + assemble an editable, grounded prompt, then stream a cited answer with token/latency stats.
+5. **⑤ Conversational RAG** — history-aware chat that decomposes the question, retrieves and re-ranks across sub-questions, then streams a grounded answer with suggested follow-ups.
+
+New here? Start with **[sample data](#start-from-sample-data-skip-crawling)** to skip Steps 1–2, or follow the deeper [architecture walkthrough](docs/ARCHITECTURE.md).
+
 ## Use the libraries without Streamlit
 
 The libraries are UI-independent — install only the component you need and drive it from your own frontend (React, Vue, PHP, a CLI, an API server, …). Each library returns plain Python result objects and emits structured progress / warning / error **events** (stable codes + data, with no UI strings baked in), so any UI can render them in its own language. See [docs/BUILDING_ANOTHER_UI.md](docs/BUILDING_ANOTHER_UI.md).
@@ -179,15 +211,21 @@ For step-by-step control, use `ContentExtractor`, `ContentSorter`, and `FileWrit
 
 | Topic | Doc |
 |---|---|
+| Project story & case study | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) |
 | Install & environments | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
 | Configuration & output reference | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | Architecture & data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Cloud deployment & readiness | [docs/CLOUD_DEPLOYMENT.md](docs/CLOUD_DEPLOYMENT.md) |
+| AWS deployment (hands-on runbook) | [docs/AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md) |
+| CI/CD with GitHub Actions | [docs/CICD_GITHUB_ACTIONS.md](docs/CICD_GITHUB_ACTIONS.md) |
 | Development (tests, lint, conventions) | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Code review (architecture · security · performance) | [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) |
+| Security posture & audit | [docs/SECURITY.md](docs/SECURITY.md) |
 | Health check & uptime monitoring | [docs/HEALTH_CHECK.md](docs/HEALTH_CHECK.md) |
 | Building another UI over the libraries | [docs/BUILDING_ANOTHER_UI.md](docs/BUILDING_ANOTHER_UI.md) |
 | Core crawler | [src/crawl4md/README.md](src/crawl4md/README.md) |
 | Shared foundation | [src/artifact_store/README.md](src/artifact_store/README.md) |
+| S3 storage backend | [src/artifact_store_s3/README.md](src/artifact_store_s3/README.md) |
 | Vector indexer | [src/vector_indexer/README.md](src/vector_indexer/README.md) |
 | RAG engine | [src/rag_engine/README.md](src/rag_engine/README.md) |
 | Streamlit app | [apps/streamlit/README.md](apps/streamlit/README.md) |

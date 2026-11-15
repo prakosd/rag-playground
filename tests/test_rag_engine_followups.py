@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+
+import pytest
 from langchain_core.language_models import SimpleChatModel
 
 from rag_engine.config import ConversationalConfig
@@ -165,6 +168,23 @@ def test_validate_followups_drops_low_score() -> None:
         return RetrievalResult(chunks=[_chunk("c", 0.1)])
 
     assert validate_followups("/tmp", ["bad"], ConversationalConfig(), retriever=retriever) == []
+
+
+def test_failed_probe_is_logged_without_query_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "topsecretfollowup"
+
+    def retriever(run_dir, query, config):
+        raise RuntimeError("probe boom")
+
+    with caplog.at_level(logging.WARNING, logger="rag_engine"):
+        result = validate_followups("/tmp", [secret], ConversationalConfig(), retriever=retriever)
+
+    assert result == []
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "Follow-up probe" in logged
+    assert secret not in logged
 
 
 def test_validate_followups_borderline_kept_by_llm() -> None:

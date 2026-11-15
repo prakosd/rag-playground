@@ -5,6 +5,15 @@ uses only the Python standard library and depends on **no** other project
 package, so every library (`artifact_store`, `crawl4md`, `vector_indexer`,
 `rag_engine`) and the Streamlit app can import it freely.
 
+```mermaid
+flowchart LR
+  Mods["Every module<br/>get_logger(__name__)"] -->|emit records| Py["Python logging"]
+  App["App<br/>configure_logging() · once"] -->|level · format · routing| Py
+  Py --> Out["Terminal + per-session log files"]
+```
+
+Libraries only *emit*; the app configures output once. See [where log4py sits](../../docs/ARCHITECTURE.md#package-layers).
+
 ## Why
 
 Logging is a cross-cutting concern. `log4py` gives every module one consistent

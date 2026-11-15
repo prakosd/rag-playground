@@ -227,11 +227,11 @@ def retrieve_multi(
             executor.submit(retriever, run_dir, question, config, **extra): question
             for question in questions
         }
-        for future, question in futures.items():
+        for idx, (future, question) in enumerate(futures.items(), start=1):
             try:
                 results[question] = future.result()
             except Exception as exc:  # noqa: BLE001 - one sub-question failing is tolerated
-                _logger.warning("Retrieval failed for sub-question %r: %s", question, exc)
+                _logger.warning("Retrieval failed for sub-question #%d: %s", idx, exc)
 
     merged: list[RetrievedChunk] = []
     index_by_identity: dict[str, int] = {}

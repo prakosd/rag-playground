@@ -1,0 +1,75 @@
+name: CI
+
+# Runs the test suites and linting on every push to master and every pull request.
+# See docs/CICD_GITHUB_ACTIONS.md for a beginner-friendly explanation.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A newer push to the same branch/PR cancels an in-progress run (saves minutes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dev tools (ruff pinned via the [dev] extra)
+        run: pip install -e ".[dev]"
+      - name: ruff check
+        run: ruff check src/ tests/ apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/ apps/backend
+      - name: ruff format --check
+        run: ruff format --check src/ tests/ apps/streamlit/streamlit_app.py apps/streamlit/app_pages/ apps/streamlit/src/ apps/streamlit/tests/ apps/backend
+
+  test-libraries:
+    name: Library tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    # 3.14 is the aspirational ceiling; some C-extension wheels may lag, so it is
+    # informational (does not fail the whole run) until the ecosystem catches up.
+    continue-on-error: ${{ matrix.python == '3.14' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      # Every library extra EXCEPT [rerank] — that pulls torch, which is heavy and
+      # lags new Python releases. The re-ranking tests inject fakes / simulate its
+      # absence, so the core suite runs fully without it.
+      - name: Install libraries (no torch)
+        run: pip install -e ".[dev,crawl,vector,bedrock,openai,rag,s3]"
+      - name: Run core library tests
+        run: python -m pytest tests/ -q
+
+  test-app-backend:
+    name: App + backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # The Streamlit app depends on [rerank] (torch), so install the full stack on a
+      # Python with reliable torch wheels. Tests mock the browser, so no Playwright
+      # install is needed here.
+      - name: Install app + backend
+        run: pip install -e ".[dev,all]" -e "apps/streamlit[dev]" -e "apps/backend[dev]"
+      - name: Run app + backend tests
+        run: python -m pytest apps/streamlit/tests apps/backend -q

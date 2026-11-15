@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 import threading
+
+import pytest
 
 from rag_engine import messages
 from rag_engine.config import RagConfig
@@ -67,6 +70,25 @@ def test_all_failures_surface_errors() -> None:
 
     assert result.chunks == []
     assert any(e.code == CODE_INDEX_NOT_FOUND for e in result.errors)
+
+
+def test_failed_sub_question_is_logged_without_query_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "topsecretsubquery"
+
+    def retriever(run_dir, query, config):
+        if query == secret:
+            raise RuntimeError("retriever boom")
+        return RetrievalResult(chunks=[_chunk("good")])
+
+    with caplog.at_level(logging.WARNING, logger="rag_engine"):
+        result = retrieve_multi("/tmp", [secret, "harmless"], RagConfig(), retriever=retriever)
+
+    assert [chunk.text for chunk in result.chunks] == ["good"]
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "Retrieval failed for sub-question" in logged
+    assert secret not in logged
 
 
 def test_empty_sub_questions_returns_empty() -> None:

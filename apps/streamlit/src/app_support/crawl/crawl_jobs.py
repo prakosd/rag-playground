@@ -6,7 +6,7 @@ import html
 import os
 import queue
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +19,7 @@ from crawl4md.messages import classify_crawl_error
 from crawl4md.writer import FileWriter
 from log4py import get_logger
 
+from app_support.backend_client import run_remote_crawl
 from app_support.crawl.crawl_runtime import ensure_playwright_browser
 from app_support.crawl.form_defaults import (
     DEFAULT_ACTIVITY_LOG_SIZE,
@@ -315,6 +316,126 @@ def _cleared_concurrent_progress(crawler_config: CrawlerConfig) -> dict[str, obj
     }
 
 
+def _emit_crawl_terminal(
+    emit: Callable[[Mapping[str, object]], None],
+    *,
+    session_id: str,
+    crawl_id: str,
+    crawler_config: CrawlerConfig,
+    output_dir: str,
+    processed_pages: int,
+    successful_pages: int,
+    failed_pages: int,
+    crawl_error: str | None,
+    cancelled: bool,
+) -> None:
+    """Emit a turn's completed/cancelled/failed-with-output terminal event.
+
+    Shared by the in-process crawler and the ``BACKEND_MODE=http`` path so both report the
+    identical event shape (a mid-run ``crawl_error`` still keeps the partial output).
+    """
+    base: dict[str, object] = {
+        "session_id": session_id,
+        "crawl_id": crawl_id,
+        "output_dir": output_dir,
+        "processed_pages": processed_pages,
+        "successful_pages": successful_pages,
+        "failed_pages": failed_pages,
+        "limit": crawler_config.limit,
+        **_cleared_concurrent_progress(crawler_config),
+    }
+    if crawl_error is not None:
+        failure = classify_crawl_error(crawl_error)
+        emit(
+            {
+                "event": _EVENT_FAILED,
+                **base,
+                "error": failure.default_text,
+                "error_code": failure.code,
+                "error_params": dict(failure.params),
+            }
+        )
+    else:
+        emit({"event": _EVENT_CANCELLED if cancelled else _EVENT_COMPLETED, **base})
+
+
+def _emit_crawl_failed(
+    emit: Callable[[Mapping[str, object]], None],
+    *,
+    session_id: str,
+    crawl_id: str,
+    crawler_config: CrawlerConfig,
+    error: str,
+) -> None:
+    """Emit the minimal failed event for an unexpected error (no partial output)."""
+    failure = classify_crawl_error(error)
+    emit(
+        {
+            "event": _EVENT_FAILED,
+            "session_id": session_id,
+            "crawl_id": crawl_id,
+            "error": failure.default_text,
+            "error_code": failure.code,
+            "error_params": dict(failure.params),
+            "limit": crawler_config.limit,
+            **_cleared_concurrent_progress(crawler_config),
+        }
+    )
+
+
+def _run_crawl_via_backend(
+    emit: Callable[[Mapping[str, object]], None],
+    *,
+    session_id: str,
+    crawl_id: str,
+    crawler_config: CrawlerConfig,
+    page_config: PageConfig,
+    output_base: Path,
+    sessions_root: Path | str,
+    cancel_event: threading.Event,
+    activity_log_size: int,
+) -> None:
+    """Run the crawl on the FastAPI backend (``BACKEND_MODE=http``), relaying its events.
+
+    Sends the output path *relative* to the sessions root (the backend resolves it under its
+    own shared-storage root), streams the backend's progress events straight to *emit*, and
+    builds the terminal event from the final result using the frontend's own output path.
+    Requires frontend and backend to share storage (see docs/CLOUD_DEPLOYMENT.md).
+    """
+    relative = Path(output_base).relative_to(Path(sessions_root))
+    result = run_remote_crawl(
+        crawler_config,
+        page_config,
+        str(relative),
+        emit=emit,
+        cancel_event=cancel_event,
+        activity_log_size=activity_log_size,
+    )
+    if "error" in result:
+        _emit_crawl_failed(
+            emit,
+            session_id=session_id,
+            crawl_id=crawl_id,
+            crawler_config=crawler_config,
+            error=str(result["error"]),
+        )
+        return
+    output_dir_name = result.get("output_dir_name") or ""
+    output_dir = str(output_base / output_dir_name) if output_dir_name else ""
+    _emit_crawl_terminal(
+        emit,
+        session_id=session_id,
+        crawl_id=crawl_id,
+        crawler_config=crawler_config,
+        output_dir=output_dir,
+        processed_pages=int(result.get("processed_pages", 0)),
+        successful_pages=int(result.get("successful_pages", 0)),
+        failed_pages=int(result.get("failed_pages", 0)),
+        crawl_error=result.get("crawl_error"),
+        cancelled=bool(result.get("cancelled", False)),
+    )
+
+
 def start_crawl_job(
     *,
     session_id: str,
@@ -361,74 +482,57 @@ def start_crawl_job(
             }
         )
         try:
-            ensure_playwright_browser()
-            extractor = ContentExtractor(page_config)
-            writer = FileWriter(
-                max_file_size_mb=page_config.max_file_size_mb,
-                file_extension=page_config.output_extension,
-            )
-            crawler = SiteCrawler(
-                crawler_config,
-                page_config,
-                output_base=output_base,
-                session_id=f"{SESSION_PREFIX}{session_id}",
-                extractor=extractor,
-                writer=writer,
-                activity_log_size=activity_log_size,
-                progress_callback=emit,
-                should_cancel=cancel_event.is_set,
-            )
-            results = crawler.crawl()
-            success_count = sum(1 for result in results if result.success)
-            fail_count = len(results) - success_count
-            if crawler.crawl_error is not None:
-                # The crawl hit an unexpected error mid-run but still finalized its
-                # partial output; report a failure that keeps that output available.
-                failure = classify_crawl_error(crawler.crawl_error)
-                emit(
-                    {
-                        "event": _EVENT_FAILED,
-                        "session_id": session_id,
-                        "crawl_id": crawl_id,
-                        "output_dir": str(crawler.output_dir) if crawler.output_dir else "",
-                        "processed_pages": len(results),
-                        "successful_pages": success_count,
-                        "failed_pages": fail_count,
-                        "error": failure.default_text,
-                        "error_code": failure.code,
-                        "error_params": dict(failure.params),
-                        "limit": crawler_config.limit,
-                        **_cleared_concurrent_progress(crawler_config),
-                    }
+            if get_settings().backend_mode == "http":
+                _run_crawl_via_backend(
+                    emit,
+                    session_id=session_id,
+                    crawl_id=crawl_id,
+                    crawler_config=crawler_config,
+                    page_config=page_config,
+                    output_base=output_base,
+                    sessions_root=sessions_root,
+                    cancel_event=cancel_event,
+                    activity_log_size=activity_log_size,
                 )
             else:
-                state = _EVENT_CANCELLED if cancel_event.is_set() else _EVENT_COMPLETED
-                emit(
-                    {
-                        "event": state,
-                        "session_id": session_id,
-                        "crawl_id": crawl_id,
-                        "output_dir": str(crawler.output_dir) if crawler.output_dir else "",
-                        "processed_pages": len(results),
-                        "successful_pages": success_count,
-                        "failed_pages": fail_count,
-                        "limit": crawler_config.limit,
-                        **_cleared_concurrent_progress(crawler_config),
-                    }
+                ensure_playwright_browser()
+                extractor = ContentExtractor(page_config)
+                writer = FileWriter(
+                    max_file_size_mb=page_config.max_file_size_mb,
+                    file_extension=page_config.output_extension,
+                )
+                crawler = SiteCrawler(
+                    crawler_config,
+                    page_config,
+                    output_base=output_base,
+                    session_id=f"{SESSION_PREFIX}{session_id}",
+                    extractor=extractor,
+                    writer=writer,
+                    activity_log_size=activity_log_size,
+                    progress_callback=emit,
+                    should_cancel=cancel_event.is_set,
+                )
+                results = crawler.crawl()
+                success_count = sum(1 for result in results if result.success)
+                _emit_crawl_terminal(
+                    emit,
+                    session_id=session_id,
+                    crawl_id=crawl_id,
+                    crawler_config=crawler_config,
+                    output_dir=str(crawler.output_dir) if crawler.output_dir else "",
+                    processed_pages=len(results),
+                    successful_pages=success_count,
+                    failed_pages=len(results) - success_count,
+                    crawl_error=crawler.crawl_error,
+                    cancelled=cancel_event.is_set(),
                 )
         except Exception as exc:  # noqa: BLE001 - surface background errors to the UI.
-            failure = classify_crawl_error(str(exc))
-            emit(
-                {
-                    "event": _EVENT_FAILED,
-                    "session_id": session_id,
-                    "crawl_id": crawl_id,
-                    "error": failure.default_text,
-                    "error_code": failure.code,
-                    "error_params": dict(failure.params),
-                    "limit": crawler_config.limit,
-                    **_cleared_concurrent_progress(crawler_config),
-                }
+            _emit_crawl_failed(
+                emit,
+                session_id=session_id,
+                crawl_id=crawl_id,
+                crawler_config=crawler_config,
+                error=str(exc),
             )
 
     thread = threading.Thread(target=run, name=f"crawl4md-{crawl_id}", daemon=True)

@@ -5,6 +5,16 @@ UI-independent retrieval-augmented generation over the vector indexes built by
 app — semantic search, single-turn QA, and conversational (history-aware) RAG —
 and stays usable from any UI, CLI, or tests without Streamlit.
 
+```mermaid
+flowchart LR
+  Q["query / question"] --> Ret["retrieve()<br/>reopen index"]
+  Ret --> Chunks["RetrievedChunk[]"]
+  Chunks --> Gen["generate<br/>grounded prompt → chat model"]
+  Gen --> Ans["answer + sources"]
+```
+
+Step 3 stops at the chunks; Steps 4–5 generate. See [ARCHITECTURE.md § Steps 3-5](../../docs/ARCHITECTURE.md#steps-3-5--how-rag-works) and [how the libraries talk](../../docs/ARCHITECTURE.md#how-the-libraries-talk-during-a-question).
+
 ## Data flow
 
 ```

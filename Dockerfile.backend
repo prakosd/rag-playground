@@ -1,6 +1,8 @@
-# FastAPI backend — query-only (retrieval + answering). No browser/OCR, so it stays
-# small. If you later expose crawl/index endpoints, add Chromium + Tesseract like the
-# frontend image.
+# FastAPI backend — query-only by default (retrieval + answering + conversational), so it
+# stays small (no browser/OCR). To also serve the Step 1 crawl offload (POST /crawl), build a
+# crawl-capable image: install the backend's [crawl] extra and add Chromium + Tesseract like
+# the frontend Dockerfile (plus `playwright install --with-deps chromium` + `crawl4ai-setup`).
+# Crawl offload also needs frontend+backend to share storage (ARTIFACTS_ROOT == SESSIONS_ROOT).
 #   docker build -f Dockerfile.backend -t rag-playground-backend .
 #   docker run -p 8000:8000 -v app-data:/data/sessions \
 #     -e ARTIFACTS_ROOT=/data/sessions rag-playground-backend

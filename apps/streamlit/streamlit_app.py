@@ -166,7 +166,14 @@ _PORTFOLIO_MODAL_COMPONENT = component_v2(
 )
 
 
-@st.cache_resource(show_spinner=False)
+# Bounded like the other resource caches: the cache value is just a run-once marker, but the
+# key is the active-session tuple, which changes as sessions come and go — cap retained keys so
+# a long-lived Cloud process doesn't accumulate them (an evicted set simply re-runs the
+# idempotent cleanup if it recurs).
+_STARTUP_CLEANUP_CACHE_MAX_ENTRIES = 8
+
+
+@st.cache_resource(show_spinner=False, max_entries=_STARTUP_CLEANUP_CACHE_MAX_ENTRIES)
 def _run_startup_cleanup(active_session_ids: tuple[str, ...]) -> None:
     removed = cleanup_old_sessions_with_lock(
         _SESSIONS_ROOT,

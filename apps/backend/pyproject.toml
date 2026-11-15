@@ -16,6 +16,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Step 1 crawl offload (POST /crawl) runs SiteCrawler here, so it needs the crawler
+# stack (Crawl4AI + Playwright/Chromium + Tesseract via the image). Opt-in so a
+# query-only backend image stays small.
+crawl = ["rag-playground[crawl]"]
 dev = [
     "pytest>=8.0",
     "ruff>=0.9",

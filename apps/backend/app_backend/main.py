@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from app_backend.crawl_api import router as crawl_router
+from app_backend.index_api import router as index_router
 from app_backend.rag_api import router as rag_router
 
 
@@ -16,6 +18,8 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(rag_router)
+    app.include_router(crawl_router)
+    app.include_router(index_router)
     return app
 
 

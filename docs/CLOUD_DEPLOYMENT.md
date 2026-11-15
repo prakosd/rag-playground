@@ -2,6 +2,9 @@
 
 ← Back to [README](../README.md) · see also [ARCHITECTURE.md](ARCHITECTURE.md) · [CONFIGURATION.md](CONFIGURATION.md)
 
+> 🛠️ **Want the step-by-step how-to instead of the architecture rationale?** See the
+> hands-on [AWS Deployment Runbook](AWS_DEPLOYMENT.md).
+
 This document assesses how ready `rag-playground` is to run as a three-tier cloud
 deployment — **frontend** (UI), **backend** (compute/LLM), and **storage**
 (durable files) — validates the proposed split, corrects a few rough edges, and
@@ -156,8 +159,10 @@ the storage backend. It does **not** modify the running app.
 
 ## 7. Containerization notes (B7)
 
-There is no production `Dockerfile` yet (only `.devcontainer`). A backend/frontend
-image must reproduce the dev container's system setup:
+Production images live at the repo root — [`Dockerfile`](../Dockerfile) (crawl-capable
+frontend), [`Dockerfile.backend`](../Dockerfile.backend) (query-only backend), and
+[`docker-compose.yml`](../docker-compose.yml) (local three-tier with MinIO). They
+reproduce the dev container's system setup:
 
 - **Tesseract OCR** (`tesseract-ocr` + language packs) for PDF OCR.
 - **Playwright Chromium** (`playwright install --with-deps chromium`) and
@@ -197,8 +202,8 @@ See [SECURITY.md](SECURITY.md) for the full findings-by-severity audit. In brief
 | B2 | `StorageBackend` interface + `LocalStorageBackend` (behavior identical) | low | ✅ Done |
 | B3 | Migrate disk consumers behind the seam (writer, archives, histories, cleanup, index sync) | medium | 🟡 Session cleanup migrated; library writes still local |
 | B4 | `artifact_store_s3` package + `[s3]` extra + `STORAGE_BACKEND` selector | medium | ✅ Done |
-| B5 | FastAPI backend service (additive, standalone) | medium | ✅ Done — `/health`, `/rag/search`, `/rag/answer` |
-| B6 | `BACKEND_MODE=http` client path in the frontend (default `inprocess`) | higher | 🟡 Retrieval offload done; streaming/conversational pending |
+| B5 | FastAPI backend service (additive, standalone) | medium | ✅ Done — `/health`, `/rag/search`, `/rag/answer`, `/rag/generate`, `/rag/conversational`, `/crawl` (job + cancel), `/index` (job + cancel) |
+| B6 | `BACKEND_MODE=http` client path in the frontend (default `inprocess`) | higher | ✅ Done — every step offloadable (crawl + index jobs + the read path), streamed with cancel; the crawl/index jobs need frontend+backend shared storage |
 | B7 | Production Dockerfiles + `docker-compose` (local 3-tier with MinIO/LocalStack) | low | ✅ Done |
 | Tier 2 | Distributed job queue + DB-backed session/conversation state for multi-instance | higher | ⬜ (future) |
 

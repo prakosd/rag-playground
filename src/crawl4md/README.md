@@ -8,6 +8,16 @@ For installation and the full configuration/output reference, see the repo
 docs: [INSTALLATION.md](../../docs/INSTALLATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md),
 and [ARCHITECTURE.md](../../docs/ARCHITECTURE.md).
 
+```mermaid
+flowchart LR
+  Seeds["Seed URLs"] --> Crawl["SiteCrawler.crawl()"]
+  Crawl --> Extract["ContentExtractor<br/>clean Markdown"]
+  Extract --> Sort["ContentSorter<br/>URL-path order"]
+  Sort --> Write["FileWriter<br/>final/ sorted .md"]
+```
+
+Crawl → extract → sort → write. The full retry/round flow is in [ARCHITECTURE.md § Step 1](../../docs/ARCHITECTURE.md#step-1--how-crawling-works).
+
 ## Quick start
 
 ```python

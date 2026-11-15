@@ -250,8 +250,9 @@ class Settings(BaseSettings):
     storage_s3_bucket: str
     storage_s3_prefix: str
     # How the app runs RAG compute: "inprocess" (default, libraries in-process) or
-    # "http" (offload retrieval to the FastAPI backend at BACKEND_URL). See
-    # docs/CLOUD_DEPLOYMENT.md.
+    # "http" (offload all compute — the Step 1 crawl + Step 2 index jobs and the read
+    # path: retrieval, the Step 4 send, and the Step 5 conversational turn — to the
+    # FastAPI backend at BACKEND_URL). See docs/CLOUD_DEPLOYMENT.md.
     backend_mode: str
     backend_url: str
 

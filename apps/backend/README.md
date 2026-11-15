@@ -21,18 +21,26 @@ uvicorn app_backend.main:app --host 0.0.0.0 --port 8000
 | `GET /health` | Liveness probe | — |
 | `POST /rag/search` | Semantic search over an index (Step 3) | `{run_dir, query, top_k?, score_threshold?, search_type?, source_filter?}` |
 | `POST /rag/answer` | Grounded answer over an index (Step 4) | `{run_dir, question, llm_model?, temperature?, max_tokens?, top_k?}` |
+| `POST /rag/generate` | Stream an answer for a raw, pre-built prompt (Step 4 "send"): NDJSON `{token}` frames then a final `{done, usage, model_used, warnings}` frame | `{prompt, llm_model?}` |
+| `POST /rag/conversational` | Stream a Step 5 conversational turn: NDJSON `{progress}`/`{token}` frames then a final `{done: <ConversationalAnswer>}` frame | `{run_dir, question, state, config, history?, cached_chunks?}` |
+| `POST /crawl` | Run a Step 1 crawl, streaming NDJSON `{job_id}` then `{event}` progress frames then a final `{result}` frame (needs the `[crawl]` extra + a browser in the image) | `{output_base, crawler_config, page_config?, activity_log_size?}` |
+| `POST /crawl/{job_id}/cancel` | Request cooperative cancel of a running crawl job | — |
+| `POST /index` | Run a Step 2 index job, streaming NDJSON `{job_id}` then `{event}` progress frames then a final `{result}` frame | `{output_base, input_paths, config}` |
+| `POST /index/{job_id}/cancel` | Request cooperative cancel of a running index job | — |
 
-- `run_dir` is resolved **under `ARTIFACTS_ROOT`** with containment (path traversal is
-  rejected with `400`); it points at an index directory containing `manifest.json`.
-- Library warnings/errors are returned in the `200` payload as `{code, default_text,
+- `run_dir` (and the crawl `output_base`) is resolved **under `ARTIFACTS_ROOT`** with
+  containment (path traversal is rejected with `400`); `run_dir` points at an index
+  directory containing `manifest.json`.
+- Library warnings/errors are returned in the `200` payload as `{code, text,
   params, severity}` objects (from `LibraryMessage.as_dict()`), so any client localizes
   by `code` — never by matching text.
 
-## Not yet exposed (roadmap)
+## Storage note
 
-Crawl and index jobs (long-running, need progress/cancel + SSE) and the conversational
-(Step 5) + streaming endpoints. See the roadmap in
-[docs/CLOUD_DEPLOYMENT.md](../../docs/CLOUD_DEPLOYMENT.md).
+The full offload is exposed: the Step 1 crawl job, the Step 2 index job, and the Steps 3–5
+RAG reads. The crawl and index jobs additionally require frontend and backend to **share
+storage** (they write under `ARTIFACTS_ROOT`, which the frontend reads back). See the roadmap
+in [docs/CLOUD_DEPLOYMENT.md](../../docs/CLOUD_DEPLOYMENT.md).
 
 ## Test
 

@@ -11,6 +11,37 @@ state, background jobs, and downloads. For running the project as a three-tier
 cloud deployment (frontend / backend / storage), see
 [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md).
 
+## Contents
+
+- [At a glance (helicopter view)](#at-a-glance-helicopter-view)
+- [Package layers](#package-layers) — who depends on whom
+- [Step 1 — how crawling works](#step-1--how-crawling-works)
+- [Step 2 — how indexing works](#step-2--how-indexing-works)
+- [Steps 3-5 — how RAG works](#steps-3-5--how-rag-works) · [how the libraries talk](#how-the-libraries-talk-during-a-question)
+- [Library layers](#library-layers) — internals of each package
+
+This guide zooms in **top-to-bottom**: helicopter flow → package layers → each step's pipeline → how the libraries talk → per-library internals.
+
+## At a glance (helicopter view)
+
+Five steps turn websites into grounded, cited answers (the same flow the [README](../README.md#how-it-works-at-a-glance) shows):
+
+```mermaid
+flowchart LR
+  Web["Websites<br/>HTML · PDF · Word"] --> S1["① Crawl<br/>crawl4md"]
+  S1 --> S2["② Index<br/>vector_indexer"]
+  S2 --> S3["③ Search<br/>rag_engine"]
+  S2 --> S4["④ Q&A<br/>rag_engine"]
+  S2 --> S5["⑤ Chat<br/>rag_engine"]
+  S3 --> Ans["Cited answer"]
+  S4 --> Ans
+  S5 --> Ans
+```
+
+## Package layers
+
+Who depends on whom — a zero-dependency logging base and a pure-stdlib foundation under three independent libraries and the app:
+
 ```mermaid
 flowchart TD
   Log4py["log4py<br/>logging base · zero-dependency stdlib"]
@@ -115,6 +146,29 @@ flowchart TD
   Chunks --> Resolve["resolve_chat_model<br/>init_chat_model · echo fallback"]
   Resolve --> Generate["prompt | model | parser<br/>(defensive prompt)"]
   Generate --> Answer["RagAnswer<br/>answer + sources + warnings/errors"]
+```
+
+### How the libraries talk during a question
+
+The app orchestrates; the libraries do the work and hand results back:
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant App as Streamlit app
+  participant RE as rag_engine
+  participant VS as VectorSearcher
+  participant LLM as Chat model
+  U->>App: question
+  App->>RE: retrieve(run_dir, query)
+  RE->>VS: similarity search
+  VS-->>RE: RetrievedChunk[] (+ scores)
+  RE-->>App: chunks — Step 3 stops here
+  App->>RE: answer_question / conversational_answer
+  RE->>LLM: grounded, injection-fenced prompt
+  LLM-->>RE: answer
+  RE-->>App: RagAnswer / ConversationalAnswer
+  App-->>U: streamed, cited answer
 ```
 
 - **Step 3 (semantic search)** stops at `RetrievedChunk[]` — ranked snippets with

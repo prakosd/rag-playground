@@ -1,0 +1,66 @@
+name: Deploy backend (ECR → ECS)
+
+# Builds the FastAPI backend image (Dockerfile.backend), pushes it to Amazon ECR, and
+# rolls out the ECS service. INERT until you opt in: it only runs when the repository
+# variable DEPLOY_BACKEND is "true" and the AWS settings below are provided.
+# Full setup steps: docs/CICD_GITHUB_ACTIONS.md § CD — deploy the backend to AWS.
+
+on:
+  workflow_dispatch: # lets you run it manually from the Actions tab
+  push:
+    branches: [master]
+    paths:
+      - "apps/backend/**"
+      - "src/**"
+      - "Dockerfile.backend"
+      - ".github/workflows/deploy-backend.yml"
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # request a short-lived token to assume the AWS role (OIDC)
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & deploy backend
+    runs-on: ubuntu-latest
+    # Opt-in gate: set repository variable DEPLOY_BACKEND=true once AWS is configured.
+    if: ${{ vars.DEPLOY_BACKEND == 'true' }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC, no long-lived keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push the backend image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          SHA_TAG="$REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+          LATEST_TAG="$REGISTRY/$ECR_REPOSITORY:latest"
+          docker build -f Dockerfile.backend -t "$SHA_TAG" -t "$LATEST_TAG" .
+          docker push "$SHA_TAG"
+          docker push "$LATEST_TAG"
+
+      - name: Roll out to ECS (pulls the new :latest image)
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --force-new-deployment \
+            --region "$AWS_REGION"

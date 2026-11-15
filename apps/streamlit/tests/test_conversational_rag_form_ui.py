@@ -222,13 +222,63 @@ def test_answerability_probe_labels_number_by_grid_row_verdict_and_confidence() 
         ),
     ]
 
-    labels = form_ui.answerability_probe_labels(
+    pairs = form_ui.answerability_probe_labels(
         STRINGS_EN, probes, follow_ups, dropped, [*follow_ups, *dropped]
     )
 
-    assert labels == [
+    assert [label for _probe, label in pairs] == [
         "Answerability probe 1 · 🟢 Yes · 64%",
         "Answerability probe 2 · 🔴 No · 57%",
+    ]
+
+
+def test_answerability_probe_labels_order_by_grid_number_not_evaluation_order() -> None:
+    # Probes arrive in evaluation order (grid rows 4, 5, 3, 2) but the expanders must read in
+    # grid order (2, 3, 4, 5) so they line up with the numbered follow-up list above. Row 1 is
+    # a clear keep (not LLM-checked), so it has no probe — mirrors the Step 5 Inspect screenshot.
+    follow_ups = [
+        ValidatedFollowup(
+            question="Q1 clear yes?", score=0.6, verdict="keep", checked_by_llm=False
+        ),
+        ValidatedFollowup(
+            question="Q2 borderline?", score=0.54, verdict="keep", checked_by_llm=True
+        ),
+    ]
+    dropped = [
+        ValidatedFollowup(question="Q3 reqs?", score=0.52, verdict="drop", checked_by_llm=True),
+        ValidatedFollowup(
+            question="Q4 exclusions?", score=0.49, verdict="drop", checked_by_llm=True
+        ),
+        ValidatedFollowup(question="Q5 compare?", score=0.49, verdict="drop", checked_by_llm=True),
+    ]
+    probes = [
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nQ4 exclusions?\n", response="NO"
+        ),
+        StagePromptTrace(process="answerability", prompt="Question:\nQ5 compare?\n", response="NO"),
+        StagePromptTrace(process="answerability", prompt="Question:\nQ3 reqs?\n", response="NO"),
+        StagePromptTrace(
+            process="answerability", prompt="Question:\nQ2 borderline?\n", response="YES"
+        ),
+    ]
+
+    pairs = form_ui.answerability_probe_labels(
+        STRINGS_EN, probes, follow_ups, dropped, [*follow_ups, *dropped]
+    )
+
+    assert [label for _probe, label in pairs] == [
+        "Answerability probe 2 · 🟢 Yes · 54%",
+        "Answerability probe 3 · 🔴 No · 52%",
+        "Answerability probe 4 · 🔴 No · 49%",
+        "Answerability probe 5 · 🔴 No · 49%",
+    ]
+    # Each probe stays paired with its own label through the sort (same-verdict rows would
+    # hide a mis-pairing), so the probe prompts come back in grid order too.
+    assert [probe.prompt for probe, _label in pairs] == [
+        "Question:\nQ2 borderline?\n",
+        "Question:\nQ3 reqs?\n",
+        "Question:\nQ4 exclusions?\n",
+        "Question:\nQ5 compare?\n",
     ]
 
 
@@ -252,11 +302,11 @@ def test_answerability_probe_labels_number_dropped_probe_after_kept_rows() -> No
         StagePromptTrace(process="answerability", prompt="Question:\nRejected?\n", response="NO"),
     ]
 
-    labels = form_ui.answerability_probe_labels(
+    pairs = form_ui.answerability_probe_labels(
         STRINGS_EN, probes, follow_ups, dropped, [*follow_ups, *dropped]
     )
 
-    assert labels == [
+    assert [label for _probe, label in pairs] == [
         "Answerability probe 2 · 🟢 Yes · 60%",
         "Answerability probe 3 · 🔴 No · 40%",
     ]
@@ -277,10 +327,10 @@ def test_answerability_probe_labels_number_truncated_kept_probe_after_grid() -> 
         StagePromptTrace(process="answerability", prompt="Question:\nBumped?\n", response="YES"),
     ]
 
-    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, follow_ups, (), evaluated)
+    pairs = form_ui.answerability_probe_labels(STRINGS_EN, probes, follow_ups, (), evaluated)
 
     # grid = [Shown? (row 1)]; the truncated "Bumped?" numbers after it, not at row 1.
-    assert labels == ["Answerability probe 2 · 🟢 Yes · 62%"]
+    assert [label for _probe, label in pairs] == ["Answerability probe 2 · 🟢 Yes · 62%"]
 
 
 def test_answerability_probe_labels_truncated_probe_does_not_collide_with_a_row() -> None:
@@ -307,12 +357,14 @@ def test_answerability_probe_labels_truncated_probe_does_not_collide_with_a_row(
         StagePromptTrace(process="answerability", prompt="Question:\nDropped?\n", response="NO"),
     ]
 
-    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, follow_ups, dropped, evaluated)
+    pairs = form_ui.answerability_probe_labels(STRINGS_EN, probes, follow_ups, dropped, evaluated)
 
-    assert labels == [
+    # Expanders render in grid-number order (1, 2, 3), not the evaluation order the probes
+    # arrive in (1, 3, 2) — and the bumped-out "Bumped keep?" numbers 3, leaving D1 at row 2.
+    assert [label for _probe, label in pairs] == [
         "Answerability probe 1 · 🟢 Yes · 90%",
-        "Answerability probe 3 · 🟢 Yes · 60%",
         "Answerability probe 2 · 🔴 No · 30%",
+        "Answerability probe 3 · 🟢 Yes · 60%",
     ]
 
 
@@ -323,9 +375,9 @@ def test_answerability_probe_labels_verdict_from_reply_without_match() -> None:
         StagePromptTrace(process="answerability", prompt="Question:\nOrphan?\n", response="NO"),
     ]
 
-    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, ())
+    pairs = form_ui.answerability_probe_labels(STRINGS_EN, probes, ())
 
-    assert labels == ["Answerability probe 1 · 🔴 No"]
+    assert [label for _probe, label in pairs] == ["Answerability probe 1 · 🔴 No"]
 
 
 def test_answerability_probe_labels_handle_substring_questions() -> None:
@@ -348,9 +400,9 @@ def test_answerability_probe_labels_handle_substring_questions() -> None:
         ),
     ]
 
-    labels = form_ui.answerability_probe_labels(STRINGS_EN, probes, (), dropped, dropped)
+    pairs = form_ui.answerability_probe_labels(STRINGS_EN, probes, (), dropped, dropped)
 
-    assert labels == [
+    assert [label for _probe, label in pairs] == [
         "Answerability probe 1 · 🔴 No · 60%",
         "Answerability probe 2 · 🔴 No · 50%",
     ]

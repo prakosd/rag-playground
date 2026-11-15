@@ -28,6 +28,7 @@ from rag_engine import (
 )
 from rag_engine.models import TokenUsage
 
+from app_support.backend_client import http_generate
 from app_support.basic_rag_qa.basic_rag_qa_form_ui import (
     apply_maximized_prompt,
     basic_rag_qa_template_is_valid,
@@ -571,6 +572,17 @@ def _send_prompt(
     prompt_text: str,
 ) -> bool:
     """Stream the model's answer to *prompt_text* and record it; return success."""
+    if get_settings().backend_mode == "http":
+        return _send_prompt_via_backend(
+            strings,
+            session_root,
+            index=index,
+            model=model,
+            tone=tone,
+            top_results=top_results,
+            question=question,
+            prompt_text=prompt_text,
+        )
     resolved, warnings = cached_chat_resolver(model)
     render_messages(strings, warnings, [])
     with st.container(border=True):
@@ -591,7 +603,7 @@ def _send_prompt(
             strings, generation.usage, elapsed, chat_model_info_for(resolved.model_id).label
         )
         st.caption(caption)
-    _record_send(
+    _finalize_send(
         session_root,
         index=index,
         model_used=resolved.model_id,
@@ -601,13 +613,94 @@ def _send_prompt(
         prompt_text=prompt_text,
         answer=generation.text,
         usage=generation.usage,
+        caption=caption,
+        elapsed=elapsed,
+    )
+    return True
+
+
+def _send_prompt_via_backend(
+    strings: Strings,
+    session_root: Path,
+    *,
+    index: IndexRef,
+    model: str,
+    tone: str,
+    top_results: int,
+    question: str,
+    prompt_text: str,
+) -> bool:
+    """``BACKEND_MODE=http`` variant of :func:`_send_prompt`.
+
+    The backend resolves the model and streams the answer, so ``model_used`` and any
+    echo-fallback warning arrive *with* the stream (rendered just under the answer)
+    rather than up front. A network/backend failure is a structured error, not a crash.
+    """
+    with st.container(border=True):
+        st.markdown(f"**{strings['BASIC_QA_ANSWER_HEADER']}**")
+        generation = http_generate(prompt_text, model)
+        start = time.perf_counter()
+        try:
+            st.write_stream(generation)
+        except Exception as exc:  # noqa: BLE001 - boundary around the chat backend
+            render_messages(strings, [], [messages.classify_generation_failure(str(exc))])
+            return False
+        elapsed = time.perf_counter() - start
+        if generation.error is not None:
+            render_messages(strings, generation.warnings, [generation.error])
+            return False
+        render_messages(strings, generation.warnings, [])
+        caption = _stats_caption(
+            strings, generation.usage, elapsed, chat_model_info_for(generation.model_used).label
+        )
+        st.caption(caption)
+    _finalize_send(
+        session_root,
+        index=index,
+        model_used=generation.model_used,
+        tone=tone,
+        top_results=top_results,
+        question=question,
+        prompt_text=prompt_text,
+        answer=generation.text,
+        usage=generation.usage,
+        caption=caption,
+        elapsed=elapsed,
+    )
+    return True
+
+
+def _finalize_send(
+    session_root: Path,
+    *,
+    index: IndexRef,
+    model_used: str,
+    tone: str,
+    top_results: int,
+    question: str,
+    prompt_text: str,
+    answer: str,
+    usage: TokenUsage | None,
+    caption: str,
+    elapsed: float,
+) -> None:
+    """Record one sent prompt and stash its answer + stats (shared by both send paths)."""
+    _record_send(
+        session_root,
+        index=index,
+        model_used=model_used,
+        tone=tone,
+        top_results=top_results,
+        question=question,
+        prompt_text=prompt_text,
+        answer=answer,
+        usage=usage,
         elapsed=elapsed,
         search_seconds=float(st.session_state.get(_QA_SEARCH_SECONDS_KEY, 0.0)),
         results=stored_results(st.session_state.get(_QA_RESULTS_KEY) or []),
     )
-    st.session_state[_ANSWER_KEY] = generation.text
+    st.session_state[_ANSWER_KEY] = answer
     st.session_state[_STATS_KEY] = caption
-    return True
 
 
 def _record_send(

@@ -422,3 +422,47 @@ def test_basic_rag_qa_generate_prompt_fills_prompt(
 
     assert not app.exception
     assert app.session_state["basic_rag_qa_prompt"] == "GENERATED PROMPT"
+
+
+def test_send_prompt_offloads_to_backend_when_http(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    # BACKEND_MODE=http must route the send through the backend path (never resolve the
+    # model locally), threading the raw prompt + model choice straight through.
+    page = _page(monkeypatch)
+    monkeypatch.setattr(page, "get_settings", lambda: SimpleNamespace(backend_mode="http"))
+    captured: dict[str, object] = {}
+
+    def fake_via_backend(
+        strings: object,
+        session_root: object,
+        *,
+        index: object,
+        model: str,
+        tone: object,
+        top_results: object,
+        question: str,
+        prompt_text: str,
+    ) -> bool:
+        captured.update(model=model, prompt_text=prompt_text, question=question)
+        return True
+
+    monkeypatch.setattr(page, "_send_prompt_via_backend", fake_via_backend)
+
+    result = page._send_prompt(
+        STRINGS_EN,
+        tmp_path,
+        index=object(),
+        model="bedrock:x",
+        tone="Neutral",
+        top_results=5,
+        question="what is X?",
+        prompt_text="the raw prompt",
+    )
+
+    assert result is True
+    assert captured == {
+        "model": "bedrock:x",
+        "prompt_text": "the raw prompt",
+        "question": "what is X?",
+    }
