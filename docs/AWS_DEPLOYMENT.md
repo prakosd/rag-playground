@@ -199,8 +199,9 @@ covers every step (`BACKEND_MODE=http`); see the roadmap in
 3. **Host the UI cheaply (optional):** keep the Streamlit UI on **Streamlit Community Cloud**
    (it auto-deploys from GitHub — see [CICD_GITHUB_ACTIONS.md](CICD_GITHUB_ACTIONS.md)) and set
    `BACKEND_URL` to your AWS backend. The UI stays light; AWS does the heavy lifting. **A public
-   backend must be authenticated** — put it behind the ALB with a shared-token header or an
-   authorizer; never expose it open.
+   backend must be authenticated** — set `BACKEND_AUTH_TOKEN` (the same value on the backend and
+   the frontend) so every route requires an `X-Backend-Token` header, and still keep it behind
+   the ALB; never expose it open.
 4. **Scale-out needs shared state:** multiple frontend instances must share session/conversation
    state and jobs (a distributed queue + a state DB) — the Tier-2 future items in
    [CLOUD_DEPLOYMENT.md § 4](CLOUD_DEPLOYMENT.md#4-reference-architecture).
@@ -235,9 +236,12 @@ Full audit in [SECURITY.md](SECURITY.md); the deployment essentials:
 - Override `ZIP_SIGNING_SECRET` per deployment.
 - Terminate **TLS at the ALB**; keep container ports (8501/8000) private.
 - Least-privilege **IAM roles** for S3/EFS; no long-lived keys on the box when a role works.
-- For shared/multi-tenant crawl, restrict **network egress** (deny RFC1918/link-local/metadata
-  ranges) — the crawler does not block private-IP seed URLs.
-- A public Tier-2 backend **must** require auth.
+- For shared/multi-tenant crawl, enable the crawler's SSRF guard (`BLOCK_PRIVATE_NETWORKS=true`
+  on the backend) **and** restrict **network egress** (deny RFC1918/link-local/metadata ranges)
+  as defense in depth.
+- A public Tier-2 backend **must** require auth — set `BACKEND_AUTH_TOKEN` on the backend and
+  frontend, and leave `ALLOW_PAGE_SCRIPTS` unset. See
+  [SECURITY.md](SECURITY.md#networked-backend-hardening).
 
 ## Troubleshooting
 

@@ -15,6 +15,11 @@ from vector_indexer import IndexingConfig
 from app_support import backend_client
 
 
+def _settings(backend_url: str = "http://x", backend_auth_token: str = "") -> SimpleNamespace:
+    """Fake of the Settings shape the backend client reads (URL + optional auth token)."""
+    return SimpleNamespace(backend_url=backend_url, backend_auth_token=backend_auth_token)
+
+
 class _FakeResponse:
     def __init__(self, payload: dict[str, Any]) -> None:
         self._payload = payload
@@ -31,20 +36,45 @@ class _FakeClient:
         self._payload = payload
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    def post(self, url: str, json: dict[str, Any], timeout: float) -> _FakeResponse:
+    def post(
+        self, url: str, json: dict[str, Any], timeout: float, headers: Any = None
+    ) -> _FakeResponse:
         self.calls.append((url, json))
         return _FakeResponse(self._payload)
 
 
 class _BoomClient:
-    def post(self, url: str, json: dict[str, Any], timeout: float) -> Any:
+    def post(self, url: str, json: dict[str, Any], timeout: float, headers: Any = None) -> Any:
         raise RuntimeError("connection refused")
 
 
-def test_http_search_rebuilds_result(monkeypatch: pytest.MonkeyPatch) -> None:
+class _CapturingSearchClient:
+    def __init__(self) -> None:
+        self.headers: Any = "unset"
+
+    def post(self, url: str, json: dict[str, Any], timeout: float, headers: Any = None) -> Any:
+        self.headers = headers
+        return _FakeResponse({"chunks": [], "warnings": [], "errors": []})
+
+
+def test_http_search_sends_auth_header_when_token_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
+        backend_client, "get_settings", lambda: _settings(backend_auth_token="s3cret")
     )
+    client = _CapturingSearchClient()
+    backend_client.http_search("idx", "q", RagConfig(), client=client)
+    assert client.headers == {"X-Backend-Token": "s3cret"}  # frontend authenticates to backend
+
+
+def test_http_search_sends_no_auth_header_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
+    client = _CapturingSearchClient()
+    backend_client.http_search("idx", "q", RagConfig(), client=client)
+    assert client.headers == {}  # no token configured → no header (backend open by default)
+
+
+def test_http_search_rebuilds_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
     payload = {
         "chunks": [
             {
@@ -72,9 +102,7 @@ def test_http_search_rebuilds_result(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_http_search_degrades_to_error_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
 
     result = backend_client.http_search("run", "q", RagConfig(), client=_BoomClient())
 
@@ -109,7 +137,9 @@ class _FakeStreamClient:
         self._lines = lines
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
 
-    def stream(self, method: str, url: str, json: dict[str, Any], timeout: float) -> _FakeStreamCtx:
+    def stream(
+        self, method: str, url: str, json: dict[str, Any], timeout: float, headers: Any = None
+    ) -> _FakeStreamCtx:
         self.calls.append((method, url, json))
         return _FakeStreamCtx(self._lines)
 
@@ -117,9 +147,7 @@ class _FakeStreamClient:
 def test_http_generate_streams_tokens_and_captures_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
     lines = [
         json.dumps({"token": "Hel"}),
         json.dumps({"token": "lo"}),
@@ -150,9 +178,7 @@ def test_http_generate_streams_tokens_and_captures_metadata(
 
 
 def test_http_generate_surfaces_backend_error_frame(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
     lines = [
         json.dumps({"token": "partial"}),
         json.dumps(
@@ -168,9 +194,7 @@ def test_http_generate_surfaces_backend_error_frame(monkeypatch: pytest.MonkeyPa
 
 
 def test_http_generate_degrades_on_network_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
 
     class _BoomStreamClient:
         def stream(self, *args: object, **kwargs: object) -> Any:
@@ -186,9 +210,7 @@ def test_http_generate_degrades_on_network_failure(monkeypatch: pytest.MonkeyPat
 def test_http_conversational_streams_progress_tokens_and_rebuilds_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
     done = {
         "answer": "Hello world",
         "sources": [
@@ -294,9 +316,7 @@ def test_http_conversational_streams_progress_tokens_and_rebuilds_answer(
 
 
 def test_http_conversational_degrades_on_network_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
 
     class _BoomStreamClient:
         def stream(self, *args: object, **kwargs: object) -> Any:
@@ -318,9 +338,7 @@ def _crawler_config() -> CrawlerConfig:
 def test_run_remote_crawl_relays_events_and_returns_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
     lines = [
         json.dumps({"job_id": "J"}),
         json.dumps({"event": {"event": "progress", "processed_pages": 2}}),
@@ -348,9 +366,7 @@ def test_run_remote_crawl_relays_events_and_returns_result(
 
 
 def test_run_remote_crawl_posts_cancel_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
     cancel_event = threading.Event()
     cancel_posted = threading.Event()
     posted_urls: list[str] = []
@@ -375,7 +391,7 @@ def test_run_remote_crawl_posts_cancel_when_requested(monkeypatch: pytest.Monkey
         def stream(self, *args: object, **kwargs: object) -> _Ctx:
             return _Ctx()
 
-        def post(self, url: str, timeout: float | None = None) -> Any:
+        def post(self, url: str, timeout: float | None = None, headers: Any = None) -> Any:
             posted_urls.append(url)
             cancel_posted.set()
             return SimpleNamespace(raise_for_status=lambda: None)
@@ -395,9 +411,7 @@ def test_run_remote_crawl_posts_cancel_when_requested(monkeypatch: pytest.Monkey
 
 
 def test_run_remote_crawl_degrades_on_network_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
 
     class _BoomClient:
         def stream(self, *args: object, **kwargs: object) -> Any:
@@ -419,9 +433,7 @@ def test_run_remote_crawl_degrades_on_network_failure(monkeypatch: pytest.Monkey
 def test_run_remote_index_relays_events_and_returns_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        backend_client, "get_settings", lambda: SimpleNamespace(backend_url="http://x")
-    )
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings())
     lines = [
         json.dumps({"job_id": "J"}),
         json.dumps({"event": {"event": "progress", "indexed_file_count": 1}}),

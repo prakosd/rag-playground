@@ -18,6 +18,16 @@ class BackendSettings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
 
     artifacts_root: str = "outputs"
+    # Optional shared secret; when set, every non-health route requires a matching
+    # ``X-Backend-Token`` header (default empty = auth disabled, preserving local use).
+    backend_auth_token: str = ""
+    # When False (default), the backend strips script-injection keys (``js_code``) from an
+    # incoming ``page_config`` so a networked caller cannot run arbitrary JS in the headless
+    # browser; set True only for a trusted deployment that needs page scripting.
+    allow_page_scripts: bool = False
+    # When True (set it for a networked deployment), the backend forces the crawler's SSRF
+    # guard on regardless of the incoming config, so a direct caller cannot disable it.
+    block_private_networks: bool = False
 
 
 @lru_cache(maxsize=1)

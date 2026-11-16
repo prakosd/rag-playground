@@ -47,12 +47,13 @@ most impactful performance item is **client-disconnect handling on the backend s
 paths** ([PERF-H1](#perf-h1-backend-stream-leaks-on-client-disconnect)), where an abandoned
 stream can leave a worker thread running against an unbounded queue.
 
-### Fixes applied in this review pass
+### Fixes applied
 
-Four low-risk, behaviour-preserving fixes were applied and verified (full suite green —
-2117 passed, 1 skipped; ruff lint + format clean). The remaining findings are left as
-recommendations pending your go-ahead, since they involve product decisions or larger
-refactors.
+Non-breaking, test-backed fixes applied in two passes (full suite green; ruff lint + format
+clean). The remaining findings are left as recommendations pending go-ahead, since they
+involve product decisions or larger refactors.
+
+**Pass 1 — safe bundle** (low-risk correctness + privacy):
 
 | Finding | Change | Test |
 |---------|--------|------|
@@ -60,6 +61,14 @@ refactors.
 | [PERF-H1](#perf-h1-backend-stream-leaks-on-client-disconnect) | Set `cancel_event` on stream teardown so an abandoned job stops | `test_stream_job_signals_cancel_when_stream_is_abandoned` |
 | [PERF-H2](#perf-h2-backend-rag-generators-lack-disconnect-cleanup) | Close the generation iterator in a `finally` on disconnect | `test_generate_closes_model_stream_on_client_disconnect` |
 | [PERF-L2](#perf-l2-cleanup-cache-key-churn) | Bound the cleanup `@st.cache_resource` with `max_entries=8` | covered by the existing cleanup suite (config-only) |
+
+**Pass 2 — HIGH security mitigations** (all opt-in / default-off, so local behaviour is unchanged):
+
+| Finding | Change | Test |
+|---------|--------|------|
+| [SEC-H2](#sec-h2-backend-has-no-authentication) | Optional `X-Backend-Token` shared-secret auth, enforced only when `BACKEND_AUTH_TOKEN` is set; `/health` stays open; the frontend attaches it | `test_auth.py` (5) + `test_http_search_sends_auth_header_when_token_set` |
+| [SEC-H1](#sec-h1-crawler-ssrf-on-seed-urls) | Opt-in `block_private_networks` guard resolves each fetched/downloaded host and refuses private/loopback/link-local/metadata targets; the backend can force it on | `test_crawler_ssrf.py` (10) + `test_crawl_forces_ssrf_guard_when_backend_requires_it` |
+| [SEC-M1](#sec-m1-arbitrary-js_code-via-backend-crawl) | Backend strips `js_code` from an incoming `page_config` unless `ALLOW_PAGE_SCRIPTS` is set | `test_crawl_strips_js_code_by_default`, `test_crawl_keeps_js_code_when_scripts_allowed` |
 
 ---
 
@@ -123,6 +132,11 @@ SSRF-to-exfiltration chain, triggerable by **any ordinary app user**, not only v
 - **Fix risk:** Medium — needs DNS resolution + redirect re-validation and could block
   legitimate intranet crawls, so it must be a setting (keep current behaviour the default for
   local use, enable "hosted mode" for networked deployments).
+- **Status:** ✅ Applied as the opt-in `CrawlerConfig.block_private_networks` guard
+  ([ssrf.py](../src/crawl4md/_internal/ssrf.py)), checked before every HTML fetch and document
+  download; app toggle `CRAWL_BLOCK_PRIVATE_NETWORKS`, backend force-flag `BLOCK_PRIVATE_NETWORKS`.
+  Residual: redirect-target re-validation is not covered — keep network egress controls on
+  hosted infra.
 
 ### SEC-H2: Backend has no authentication
 
@@ -143,6 +157,8 @@ The app relies entirely on the operator adding auth at the ALB — a fail-open p
   [backend_client.py](../apps/streamlit/src/app_support/backend_client.py) attach the same
   header when configured. Document that the secret is required for any networked deployment.
 - **Fix risk:** Low — additive, gated on an env var, default-off preserves current behaviour.
+- **Status:** ✅ Applied ([auth.py](../apps/backend/app_backend/auth.py)) — `BACKEND_AUTH_TOKEN`
+  + `X-Backend-Token`, default-off; `/health` stays open; the frontend attaches the header.
 
 ### SEC-M1: Arbitrary js_code via backend crawl
 
@@ -161,6 +177,8 @@ hosts (amplifying [SEC-H1](#sec-h1-crawler-ssrf-on-seed-urls)).
   script-injection `page_config` keys) on the HTTP path by default, enabling it only for
   trusted deployments. Keep accepting it for the in-process library caller.
 - **Fix risk:** Low — backend-path-only, default-deny of an unused-by-the-UI field.
+- **Status:** ✅ Applied — the backend strips `js_code` from an incoming `page_config` unless
+  `ALLOW_PAGE_SCRIPTS` is set ([crawl_api.py](../apps/backend/app_backend/crawl_api.py)).
 
 ### SEC-M2: Default shared signing secret
 

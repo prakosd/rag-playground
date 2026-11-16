@@ -148,6 +148,11 @@ from crawl4md._internal.site_graph import (
     _SITE_GRAPH_FILE as _INTERNAL_SITE_GRAPH_FILE,
 )
 from crawl4md._internal.site_graph import SiteGraphRecorder
+from crawl4md._internal.ssrf import (
+    BLOCKED_NETWORK_REASON,
+    BlockedNetworkError,
+    url_targets_blocked_network,
+)
 from crawl4md._internal.url_filter import (
     _BOILERPLATE_DOMAINS as _URL_FILTER_BOILERPLATE_DOMAINS,
 )
@@ -1201,7 +1206,24 @@ class SiteCrawler:
     # ------------------------------------------------------------------
 
     async def _fetch_html_url(self, *, url: str, crawler: Any, run_cfg: object) -> Any:
+        if await self._target_blocked(url):
+            raise BlockedNetworkError(BLOCKED_NETWORK_REASON)
         return await crawler.arun(url=url, config=run_cfg)
+
+    async def _target_blocked(self, url: str) -> bool:
+        """Return True if the opt-in SSRF guard refuses *url* (internal-network target).
+
+        The host resolution runs in a worker thread so it never blocks the event loop; the
+        whole check is a no-op unless ``block_private_networks`` is enabled.
+        """
+        if not self.config.block_private_networks:
+            return False
+        return await asyncio.to_thread(url_targets_blocked_network, url)
+
+    @staticmethod
+    def _blocked_target_result(url: str) -> CrawlResult:
+        """Build a failed :class:`CrawlResult` for a download refused by the SSRF guard."""
+        return CrawlResult(url=url, success=False, error=BLOCKED_NETWORK_REASON)
 
     def _crawl_delay_seconds(self, *, is_retry: bool) -> float:
         if self.config.delay <= 0:
@@ -2323,6 +2345,8 @@ class SiteCrawler:
 
     async def _download_pdf(self, url: str) -> CrawlResult:
         """Download a PDF and convert it to Markdown via pymupdf4llm."""
+        if await self._target_blocked(url):
+            return self._blocked_target_result(url)
         was_warned = self._ocr_warned
         result, self._ocr_warned = await _download_pdf_impl(
             url,
@@ -2359,6 +2383,8 @@ class SiteCrawler:
 
     async def _download_docx(self, url: str) -> CrawlResult:
         """Download a DOCX file and convert it to Markdown via mammoth + markdownify."""
+        if await self._target_blocked(url):
+            return self._blocked_target_result(url)
         return await _download_docx_impl(
             url,
             headers=dict(self.config.effective_headers) if self.config.effective_headers else {},

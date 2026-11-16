@@ -42,6 +42,17 @@ RAG reads. The crawl and index jobs additionally require frontend and backend to
 storage** (they write under `ARTIFACTS_ROOT`, which the frontend reads back). See the roadmap
 in [docs/CLOUD_DEPLOYMENT.md](../../docs/CLOUD_DEPLOYMENT.md).
 
+## Hardening (opt-in)
+
+All three default **off**, so local use is unchanged; enable them for a networked deployment
+(see [docs/SECURITY.md](../../docs/SECURITY.md#networked-backend-hardening)):
+
+| Env var | Default | Effect |
+|---|---|---|
+| `BACKEND_AUTH_TOKEN` | *(empty)* | When set, every non-`/health` route requires a matching `X-Backend-Token` header (constant-time compared). Set the **same** value on the frontend so it attaches the header. |
+| `BLOCK_PRIVATE_NETWORKS` | `false` | Forces the crawler's SSRF guard on regardless of the incoming config — refuses seed/discovered/download targets resolving to private/loopback/link-local/metadata addresses. |
+| `ALLOW_PAGE_SCRIPTS` | `false` | When false, the backend strips `js_code` from an incoming `page_config` so a caller cannot run arbitrary JS in the headless browser. |
+
 ## Test
 
 ```bash

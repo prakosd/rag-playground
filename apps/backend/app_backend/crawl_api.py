@@ -43,6 +43,23 @@ def _resolve_output_base(output_base: str) -> Path:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+# page_config keys that execute arbitrary script in the headless browser (SEC-M1).
+_SCRIPT_PAGE_CONFIG_KEYS = ("js_code",)
+
+
+def _sanitize_page_config(page_config: dict[str, Any]) -> dict[str, Any]:
+    """Drop script-injection keys from an incoming ``page_config`` unless opted in.
+
+    The backend accepts an arbitrary ``page_config``; ``js_code`` would run attacker-supplied
+    JavaScript in the server's headless browser. Networked deployments must not expose that
+    by default, so the keys are removed unless ``ALLOW_PAGE_SCRIPTS`` is set. The in-process
+    library caller builds its own ``PageConfig`` and is unaffected.
+    """
+    if get_backend_settings().allow_page_scripts:
+        return page_config
+    return {key: value for key, value in page_config.items() if key not in _SCRIPT_PAGE_CONFIG_KEYS}
+
+
 @router.post("")
 def crawl(request: CrawlRequest) -> StreamingResponse:
     """Run a crawl in a background thread, streaming its progress events as NDJSON.
@@ -60,7 +77,10 @@ def crawl(request: CrawlRequest) -> StreamingResponse:
 
     output_base = _resolve_output_base(request.output_base)
     crawler_config = CrawlerConfig.model_validate(request.crawler_config)
-    page_config = PageConfig.model_validate(request.page_config)
+    if get_backend_settings().block_private_networks:
+        # Force the SSRF guard on regardless of the incoming config (defense in depth).
+        crawler_config = crawler_config.model_copy(update={"block_private_networks": True})
+    page_config = PageConfig.model_validate(_sanitize_page_config(request.page_config))
 
     def worker(events: queue.Queue[object], cancel_event: threading.Event) -> None:
         try:

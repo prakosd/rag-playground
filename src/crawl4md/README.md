@@ -46,6 +46,11 @@ every content file. Authentication headers set through `CrawlerConfig.secret_hea
 `settings.json`, the front matter, logs, or tracebacks. Use `secret_headers` — not `headers` — for
 any credential; `headers` IS serialized into `settings.json`.
 
+For networked/hosted deployments, set `CrawlerConfig.block_private_networks=True` to refuse
+seed/discovered/download URLs that resolve to private, loopback, or link-local addresses
+(including cloud-metadata endpoints) — an opt-in SSRF guard, off by default. See
+[docs/SECURITY.md](../../docs/SECURITY.md#m-1-crawler-ssrf--no-private-ip-block).
+
 Once the final sorted output is written, the per-round `success_content_*`/`fail_content_*`
 snapshots are removed (the pages are merged, deduped, and sorted into `final/content_*`); the
 per-round URL lists and `logs/` are kept.

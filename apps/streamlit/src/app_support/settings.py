@@ -100,6 +100,11 @@ class Settings(BaseSettings):
     # (the CRAWL_PROXIES secret); when False (default) proxies are used only on
     # retry rounds. Has no effect unless CRAWL_PROXIES is set.
     crawl_proxy_on_initial: bool
+    # Opt-in SSRF guard for crawling: when True, the crawler refuses seed/discovered/download
+    # URLs that resolve to private, loopback, or link-local addresses (including cloud-metadata
+    # endpoints). Default False preserves local use; enable it for a shared/hosted deployment
+    # where untrusted users submit crawl URLs. See docs/SECURITY.md.
+    crawl_block_private_networks: bool
 
     # ── Step 2 · Vector index (vector_indexer) ───────────────────────────────
     # Tokens per chunk. Larger keeps more context together but retrieves coarser
@@ -255,6 +260,11 @@ class Settings(BaseSettings):
     # FastAPI backend at BACKEND_URL). See docs/CLOUD_DEPLOYMENT.md.
     backend_mode: str
     backend_url: str
+    # Shared secret the frontend sends as the X-Backend-Token header to an authenticated
+    # backend (when BACKEND_MODE=http). Empty (default) sends no header. Set the same value
+    # here and in the backend's BACKEND_AUTH_TOKEN for a networked deployment; keep the real
+    # value in .env / Cloud secrets, never in committed config.
+    backend_auth_token: str
 
     # ── App UI limits ────────────────────────────────────────────────────────
     # Largest file (MB) the app will serve as a download (above this it is

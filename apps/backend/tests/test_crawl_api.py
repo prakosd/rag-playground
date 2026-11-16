@@ -86,6 +86,82 @@ def test_crawl_worker_error_becomes_result_frame(
     assert frames[-1]["result"]["error"] == "browser crashed"  # worker error, not a 500
 
 
+class _CapturingCrawler:
+    """Records the PageConfig + CrawlerConfig the crawler was handed, then returns one success."""
+
+    js_code: list[str] = []
+    block_private_networks: bool = False
+
+    def __init__(self, config, page_config=None, *, output_base=None, progress_callback=None, **_):
+        type(self).js_code = list(page_config.js_code)
+        type(self).block_private_networks = config.block_private_networks
+        self.output_dir = Path(output_base) / "d"
+        self.crawl_error = None
+
+    def crawl(self):
+        return [SimpleNamespace(success=True)]
+
+
+def test_crawl_strips_js_code_by_default(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+
+    client.post(
+        "/crawl",
+        json={
+            "output_base": "s/c",
+            "crawler_config": _config(),
+            "page_config": {"js_code": ["alert('x')"]},
+        },
+    )
+
+    assert _CapturingCrawler.js_code == []  # arbitrary JS never reaches the headless browser
+
+
+def test_crawl_keeps_js_code_when_scripts_allowed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+    monkeypatch.setattr(
+        "app_backend.crawl_api.get_backend_settings",
+        lambda: SimpleNamespace(
+            artifacts_root="outputs", allow_page_scripts=True, block_private_networks=False
+        ),
+    )
+
+    client.post(
+        "/crawl",
+        json={
+            "output_base": "s/c",
+            "crawler_config": _config(),
+            "page_config": {"js_code": ["doScan()"]},
+        },
+    )
+
+    assert _CapturingCrawler.js_code == ["doScan()"]  # preserved for a trusted deployment
+
+
+def test_crawl_forces_ssrf_guard_when_backend_requires_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+    monkeypatch.setattr(
+        "app_backend.crawl_api.get_backend_settings",
+        lambda: SimpleNamespace(
+            artifacts_root="outputs", allow_page_scripts=False, block_private_networks=True
+        ),
+    )
+
+    client.post(
+        "/crawl",
+        json={"output_base": "s/c", "crawler_config": _config(), "page_config": {}},
+    )
+
+    # Forced on even though the client config left it False (defense in depth).
+    assert _CapturingCrawler.block_private_networks is True
+
+
 def test_crawl_cancel_sets_the_event(client: TestClient) -> None:
     event = threading.Event()
     job_stream._CANCEL_EVENTS["job123"] = event

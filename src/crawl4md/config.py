@@ -50,6 +50,11 @@ class CrawlerConfig(BaseModel):
     # proxies (see SiteCrawler._paid_resource_rounds); when False (default) the
     # initial crawl runs direct and proxies are reserved for retry rounds.
     proxy_on_initial: bool = False
+    # Opt-in SSRF guard: when True, the crawler resolves each fetched/downloaded URL's host
+    # and refuses targets on loopback/private/link-local/reserved ranges (including the
+    # cloud-metadata endpoints). Default False preserves current behaviour; enable it for
+    # networked/hosted deployments where untrusted users submit crawl URLs. See docs/SECURITY.md.
+    block_private_networks: bool = False
 
     @field_validator("proxies", mode="before")
     @classmethod

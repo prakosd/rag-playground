@@ -49,6 +49,7 @@ crawl/index/RAG config models.
 | `CRAWL_EXCLUDE_TAGS` | `nav, script, form, style` | Default HTML tags stripped before extraction, comma-separated |
 | `CRAWL_DEFAULT_OUTPUT_EXTENSION` | `.md` | Default output file extension for extracted pages (`.md` or `.txt`) |
 | `CRAWL_PROXY_ON_INITIAL` | `false` | When true, also route the **initial** crawl through the configured proxies (needs the `CRAWL_PROXIES` secret); otherwise proxies apply only to retry rounds |
+| `CRAWL_BLOCK_PRIVATE_NETWORKS` | `false` | Opt-in SSRF guard: when true, the crawler refuses seed/discovered/download URLs that resolve to private, loopback, or link-local addresses (incl. cloud-metadata). Keep false for local use; set true for shared/hosted deployments. See [SECURITY.md](SECURITY.md#m-1-crawler-ssrf--no-private-ip-block) |
 | `VECTOR_CHUNK_SIZE` | `600` | Tokens per chunk |
 | `VECTOR_CHUNK_OVERLAP` | `100` | Overlap between chunks |
 | `VECTOR_INDEX_WORKERS` | `4` | Parallel embedding workers (1-8); cloud models only — local ONNX forced to 1 |

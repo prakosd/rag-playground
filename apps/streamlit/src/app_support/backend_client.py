@@ -51,6 +51,19 @@ _TIMEOUT_SECONDS = 60.0
 _STREAM_TIMEOUT_SECONDS = 300.0
 # How often the crawl-cancel watcher polls the cancel flag while a remote crawl streams.
 _CANCEL_POLL_SECONDS = 0.2
+# Header carrying the optional shared backend secret (mirrors app_backend.auth).
+_BACKEND_TOKEN_HEADER = "X-Backend-Token"
+
+
+def _auth_headers() -> dict[str, str]:
+    """Return the backend auth header when a shared token is configured, else empty.
+
+    Mirrors the backend's optional ``X-Backend-Token`` guard: when ``BACKEND_AUTH_TOKEN`` is
+    set, the frontend attaches it so an authenticated backend accepts the request; empty
+    (default) sends nothing, matching the backend's open default.
+    """
+    token = get_settings().backend_auth_token
+    return {_BACKEND_TOKEN_HEADER: token} if token else {}
 
 
 def http_search(
@@ -68,7 +81,12 @@ def http_search(
     }
     poster = client or httpx
     try:
-        response = poster.post(f"{base_url}/rag/search", json=payload, timeout=_TIMEOUT_SECONDS)
+        response = poster.post(
+            f"{base_url}/rag/search",
+            json=payload,
+            headers=_auth_headers(),
+            timeout=_TIMEOUT_SECONDS,
+        )
         response.raise_for_status()
         data = response.json()
         return RetrievalResult(
@@ -140,7 +158,11 @@ class HttpPromptGeneration:
         parts: list[str] = []
         try:
             with poster.stream(
-                "POST", f"{base_url}/rag/generate", json=payload, timeout=_STREAM_TIMEOUT_SECONDS
+                "POST",
+                f"{base_url}/rag/generate",
+                json=payload,
+                headers=_auth_headers(),
+                timeout=_STREAM_TIMEOUT_SECONDS,
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
@@ -305,6 +327,7 @@ class HttpConversationalGeneration:
                 "POST",
                 f"{base_url}/rag/conversational",
                 json=payload,
+                headers=_auth_headers(),
                 timeout=_STREAM_TIMEOUT_SECONDS,
             ) as response:
                 response.raise_for_status()
@@ -383,7 +406,9 @@ def _stream_job_to_emit(
                 # best-effort cancel: a failed POST must never crash the job worker.
                 with contextlib.suppress(Exception):
                     poster.post(
-                        f"{base_url}/{endpoint}/{job_id['id']}/cancel", timeout=_TIMEOUT_SECONDS
+                        f"{base_url}/{endpoint}/{job_id['id']}/cancel",
+                        headers=_auth_headers(),
+                        timeout=_TIMEOUT_SECONDS,
                     )
                 return
 
@@ -391,7 +416,11 @@ def _stream_job_to_emit(
     watcher.start()
     try:
         with poster.stream(
-            "POST", f"{base_url}/{endpoint}", json=payload, timeout=_STREAM_TIMEOUT_SECONDS
+            "POST",
+            f"{base_url}/{endpoint}",
+            json=payload,
+            headers=_auth_headers(),
+            timeout=_STREAM_TIMEOUT_SECONDS,
         ) as response:
             response.raise_for_status()
             for line in response.iter_lines():

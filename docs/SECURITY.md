@@ -19,7 +19,7 @@ and sits alongside the broader architecture + performance + security
 | ID | Severity | Area | Status |
 |----|----------|------|--------|
 | [H-1](#h-1-shared-default-signing--encryption-secret) | High | Secrets | Mitigated (warning added) + recommendations |
-| [M-1](#m-1-crawler-ssrf--no-private-ip-block) | Medium | Crawler / SSRF | Documented + recommendations |
+| [M-1](#m-1-crawler-ssrf--no-private-ip-block) | Medium | Crawler / SSRF | Mitigated (opt-in guard) + egress controls |
 | [L-1](#l-1-trusted-zip-re-import-has-no-size-cap) | Low | Archives / DoS | Documented (secret-gated) |
 | [L-2](#l-2-crawled-markdown-rendered-in-preview) | Low | XSS surface | Accepted (sanitized by Streamlit) |
 | [F-1](#f-1-fixed-unescaped-file-preview-caption-xss) | — (fixed) | XSS | **Fixed** this pass |
@@ -81,13 +81,16 @@ RFC1918 address.
 crawl URLs, this enables SSRF: probing internal services or reading cloud-metadata
 endpoints. Not a concern for single-user local use.
 
-**Status.** Documented; no in-app block added. A robust guard needs DNS resolution, IPv4/IPv6
-range checks, and redirect re-validation, and risks breaking legitimate intranet crawls — it
-is not a low-risk change.
+**Status.** Mitigated with an **opt-in guard**: `CrawlerConfig.block_private_networks`
+([ssrf.py](../src/crawl4md/_internal/ssrf.py)) resolves each fetched/downloaded host and refuses
+loopback / private / link-local / reserved targets (covering the metadata endpoints) before the
+request is made. It is **off by default** (local use unchanged); enable it via
+`CRAWL_BLOCK_PRIVATE_NETWORKS` on the app, and the backend can **force it on** with
+`BLOCK_PRIVATE_NETWORKS` regardless of the incoming config. Residual: redirect-target
+re-validation is not covered.
 
-**Recommended.** Run hosted deployments behind **network egress controls** that deny
-RFC1918 / link-local / metadata ranges. If in-app enforcement is required, add an opt-in
-"hosted mode" that rejects seed and redirect URLs resolving to private ranges.
+**Recommended.** Still run hosted deployments behind **network egress controls** that deny
+RFC1918 / link-local / metadata ranges as defense in depth (covers redirects and any gap).
 
 ### L-1 · Trusted zip re-import has no size cap
 
@@ -153,6 +156,20 @@ The codebase already applies strong defense-in-depth; the audit confirmed:
   user input) on Streamlit Cloud only. No `eval` / `exec` / `pickle` / unsafe `yaml.load` /
   `os.system` anywhere in the codebase.
 
+## Networked backend hardening
+
+The optional FastAPI backend (`BACKEND_MODE=http`) adds a networked attack surface; three
+**opt-in, default-off** controls harden it (full write-up in [CODE_REVIEW.md](CODE_REVIEW.md)):
+
+- **Backend auth** — set `BACKEND_AUTH_TOKEN` (the same value on the backend **and** the
+  frontend) so every non-`/health` route requires a constant-time-checked `X-Backend-Token`
+  header ([auth.py](../apps/backend/app_backend/auth.py)). Unset = open (the local default).
+- **SSRF guard** — set `BLOCK_PRIVATE_NETWORKS=true` on the backend to force the crawler's
+  private-network block on regardless of the incoming config (see [M-1](#m-1-crawler-ssrf--no-private-ip-block)).
+- **No page scripts** — the backend strips `js_code` from an incoming `page_config` unless
+  `ALLOW_PAGE_SCRIPTS=true`, so a networked caller cannot run arbitrary JS in the headless
+  browser.
+
 ## Deployment hardening checklist
 
 - [ ] Override `ZIP_SIGNING_SECRET` with a unique, high-entropy value per deployment.
@@ -160,5 +177,8 @@ The codebase already applies strong defense-in-depth; the audit confirmed:
       in committed config.
 - [ ] For hosted / multi-tenant crawl, restrict **network egress** (deny RFC1918 / link-local /
       metadata ranges) — see M-1.
+- [ ] If running the FastAPI backend networked: set `BACKEND_AUTH_TOKEN` (on the backend **and**
+      the frontend) and `BLOCK_PRIVATE_NETWORKS=true`, and leave `ALLOW_PAGE_SCRIPTS` unset —
+      see [Networked backend hardening](#networked-backend-hardening).
 - [ ] Keep **session retention** short; sessions hold user content and encrypted credentials.
 - [ ] Review the operational [Security checklist](CLOUD_DEPLOYMENT.md#8-security-checklist).
