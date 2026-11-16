@@ -20,6 +20,7 @@ os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import html
+import threading
 import warnings
 from pathlib import Path
 
@@ -175,17 +176,30 @@ _STARTUP_CLEANUP_CACHE_MAX_ENTRIES = 8
 
 @st.cache_resource(show_spinner=False, max_entries=_STARTUP_CLEANUP_CACHE_MAX_ENTRIES)
 def _run_startup_cleanup(active_session_ids: tuple[str, ...]) -> None:
-    removed = cleanup_old_sessions_with_lock(
-        _SESSIONS_ROOT,
-        active_session_ids=active_session_ids,
-        retention_days=get_settings().session_retention_days,
-        backend=resolve_storage_backend(),
-    )
-    # Prune each removed session's published 3D viewers from the static dir.
-    remove_orrery_static(
-        _APP_DIR / "static",
-        [path.name.removeprefix(SESSION_DIR_PREFIX) for path in removed],
-    )
+    # Resolve settings/backend on the request thread (where Streamlit's context lives), then
+    # run the filesystem sweep (stat + rmtree over the sessions tree) on a daemon thread so a
+    # large/old tree never stalls the first rerun. The lock file inside
+    # cleanup_old_sessions_with_lock still serializes concurrent sweeps.
+    retention_days = get_settings().session_retention_days
+    backend = resolve_storage_backend()
+
+    def _sweep() -> None:
+        try:
+            removed = cleanup_old_sessions_with_lock(
+                _SESSIONS_ROOT,
+                active_session_ids=active_session_ids,
+                retention_days=retention_days,
+                backend=backend,
+            )
+            # Prune each removed session's published 3D viewers from the static dir.
+            remove_orrery_static(
+                _APP_DIR / "static",
+                [path.name.removeprefix(SESSION_DIR_PREFIX) for path in removed],
+            )
+        except Exception:  # noqa: BLE001 - best-effort cleanup must not crash the daemon thread
+            _logger.warning("Startup session cleanup failed", exc_info=True)
+
+    threading.Thread(target=_sweep, name="startup-cleanup", daemon=True).start()
 
 
 def _init_state() -> None:

@@ -159,3 +159,30 @@ def test_configure_logging_router_returning_none_skips_the_file(tmp_path) -> Non
     get_logger("crawl4md.crawler").info("dropped from file")
 
     assert not list(tmp_path.rglob("*.log"))
+
+
+def test_routing_file_handler_cache_is_bounded(tmp_path, monkeypatch) -> None:
+    import log4py
+
+    monkeypatch.setattr(log4py, "_MAX_ROUTED_HANDLERS", 2)
+    current = {"n": 0}
+
+    def router() -> Path:
+        return tmp_path / f"s{current['n']}" / "app.log"
+
+    handler = log4py._RoutingFileHandler(router, max_bytes=1000, backup_count=1)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+
+    def _emit(n: int) -> None:
+        current["n"] = n
+        handler.handle(logging.LogRecord("x", logging.INFO, __file__, 1, f"m{n}", None, None))
+
+    _emit(0)
+    _emit(1)
+    first = handler._handlers[str(tmp_path / "s0" / "app.log")]
+    _emit(2)  # third distinct path → evicts the least-recently-used (s0)
+
+    assert len(handler._handlers) == 2  # cache stays bounded
+    assert str(tmp_path / "s0" / "app.log") not in handler._handlers  # LRU evicted
+    assert first.stream is None  # evicted handler was closed — no leaked file descriptor
+    handler.close()

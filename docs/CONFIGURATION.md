@@ -157,7 +157,7 @@ stealth browser + retry rounds:
 - **Undetected browser** — retry rounds automatically escalate to Crawl4AI's
   undetected adapter; the **initial** crawl uses the standard stealth browser to
   focus on discovering pages, and it falls back to stealth if the adapter is
-  unavailable. No setting to toggle.
+  unavailable or fails to launch. No setting to toggle.
 
 Proxies are a **secret** (env / Cloud Secrets only — never in `.env.defaults` or
 logs). They are honest mitigations, not guarantees: a hard

@@ -22,10 +22,12 @@ __all__ = [
     "CODE_OCR_UNAVAILABLE",
     "CODE_REDIRECT_LOOP",
     "CODE_SSL_CERTIFICATE",
+    "CODE_UNDETECTED_LAUNCH_FAILED",
     "CODE_UNDETECTED_UNAVAILABLE",
     "blocked_backoff",
     "classify_crawl_error",
     "ocr_unavailable",
+    "undetected_launch_failed",
     "undetected_unavailable",
 ]
 
@@ -38,6 +40,7 @@ CODE_REDIRECT_LOOP = "crawl.redirect_loop"
 CODE_OCR_UNAVAILABLE = "crawl.ocr_unavailable"
 CODE_BLOCKED_BACKOFF = "crawl.blocked_backoff"
 CODE_UNDETECTED_UNAVAILABLE = "crawl.undetected_unavailable"
+CODE_UNDETECTED_LAUNCH_FAILED = "crawl.undetected_launch_failed"
 
 # Fatal crawl-error codes (from classify_crawl_error).
 CODE_BROWSER_MISSING = "crawl.browser_missing"
@@ -94,6 +97,14 @@ def undetected_unavailable() -> LibraryMessage:
         CODE_UNDETECTED_UNAVAILABLE,
         "Undetected browser mode was requested but is unavailable in this "
         "crawl4ai install; continuing with the standard stealth browser.",
+    )
+
+
+def undetected_launch_failed() -> LibraryMessage:
+    return _warn(
+        CODE_UNDETECTED_LAUNCH_FAILED,
+        "The undetected retry browser could not start, so the retry rounds "
+        "continue with the standard stealth browser.",
     )
 
 

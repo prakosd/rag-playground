@@ -6,29 +6,29 @@ boundaries (Lucene analyzer languages are unrelated to code-aware splitting).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from vector_indexer.models import Chunk, Document
 from vector_indexer.page_source import split_into_pages
 
-__all__ = ["chunk_documents"]
+__all__ = ["chunk_documents", "iter_chunks"]
 
 
-def chunk_documents(
-    documents: Sequence[Document],
+def iter_chunks(
+    documents: Iterable[Document],
     *,
     chunk_size: int,
     chunk_overlap: int,
     language: str,
-) -> list[Chunk]:
-    """Split *documents* into overlapping chunks, dropping empty fragments.
+) -> Iterator[Chunk]:
+    """Yield overlapping chunks for *documents* one at a time, dropping empty fragments.
 
-    Run metadata (the crawl4md front matter) is excluded, and each page's title/URL
-    are recorded as chunk metadata (not injected into the chunk text).
+    Streaming: each document is chunked and released before the next, so the whole corpus is
+    never resident at once. Run metadata (the crawl4md front matter) is excluded, and each
+    page's title/URL are recorded as chunk metadata (not injected into the chunk text).
     """
     splitter = _build_splitter(chunk_size, chunk_overlap)
-    chunks: list[Chunk] = []
     for document in documents:
         index = 0
         for page in split_into_pages(document.text):
@@ -46,16 +46,31 @@ def chunk_documents(
                     metadata["source_title"] = page.title
                 if page.url:
                     metadata["source_url"] = page.url
-                chunks.append(
-                    Chunk(
-                        document_source=document.source,
-                        index=index,
-                        text=piece,
-                        metadata=metadata,
-                    )
+                yield Chunk(
+                    document_source=document.source,
+                    index=index,
+                    text=piece,
+                    metadata=metadata,
                 )
                 index += 1
-    return chunks
+
+
+def chunk_documents(
+    documents: Sequence[Document],
+    *,
+    chunk_size: int,
+    chunk_overlap: int,
+    language: str,
+) -> list[Chunk]:
+    """Split *documents* into overlapping chunks (eager wrapper around :func:`iter_chunks`)."""
+    return list(
+        iter_chunks(
+            documents,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            language=language,
+        )
+    )
 
 
 def _build_splitter(chunk_size: int, chunk_overlap: int) -> Any:

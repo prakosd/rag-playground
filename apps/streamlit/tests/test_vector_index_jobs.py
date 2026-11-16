@@ -336,11 +336,13 @@ def test_get_active_vector_job_snapshot_returns_none_for_dead_thread(
         started_at=datetime.now(UTC),
         job_state="running",
     )
+    registry = {dead_job.session_id: snap}
     monkeypatch.setattr(
         "app_support.vector_index.vector_index_jobs._VECTOR_JOB_REGISTRY",
-        {dead_job.session_id: snap},
+        registry,
     )
     assert get_active_vector_job_snapshot(dead_job.session_id) is None
+    assert registry == {}  # PERF-M3: the finished job is pruned from the registry on read
 
 
 def test_active_vector_registry_session_ids_returns_only_alive(

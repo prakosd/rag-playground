@@ -25,6 +25,7 @@ from app_support.crawl.form_defaults import (
     DEFAULT_ACTIVITY_LOG_SIZE,
     DEFAULT_MAX_CONCURRENT,
 )
+from app_support.event_queue import EVENT_QUEUE_MAXSIZE, put_drop_oldest
 from app_support.log_context import set_log_session_id
 from app_support.session_manager import (
     DEFAULT_SESSIONS_ROOT,
@@ -114,14 +115,19 @@ _REGISTRY_LOCK: threading.Lock = threading.Lock()
 _JOB_REGISTRY: dict[str, JobSnapshot] = {}
 
 
-def _register_job(snapshot: JobSnapshot) -> None:
-    """Register a new job snapshot, pruning any stale terminal entries first."""
+def _register_and_start_job(snapshot: JobSnapshot) -> None:
+    """Register a new job snapshot (pruning stale entries) and start its thread.
+
+    The thread is started while the registry lock is held so a concurrent reader can never
+    observe the snapshot before its thread is alive and wrongly prune the just-started job.
+    """
     with _REGISTRY_LOCK:
         # Prune sessions whose thread has already finished to avoid unbounded growth.
         stale = [sid for sid, snap in _JOB_REGISTRY.items() if not snap.job.thread.is_alive()]
         for sid in stale:
             del _JOB_REGISTRY[sid]
         _JOB_REGISTRY[snapshot.job.session_id] = snapshot
+        snapshot.job.thread.start()
 
 
 def _update_snapshot(session_id: str, event: dict[str, object], state: str) -> None:
@@ -141,11 +147,14 @@ def get_active_job_snapshot(session_id: str) -> JobSnapshot | None:
     """Return the active snapshot for a session if the job thread is still alive."""
     with _REGISTRY_LOCK:
         snap = _JOB_REGISTRY.get(session_id)
-    if snap is None:
-        return None
-    if not snap.job.thread.is_alive():
-        return None
-    return snap
+        if snap is None:
+            return None
+        if not snap.job.thread.is_alive():
+            # Prune the finished job on read so its snapshot + queue aren't retained until
+            # the next job registers (consumers never use a dead snapshot).
+            del _JOB_REGISTRY[session_id]
+            return None
+        return snap
 
 
 def active_registry_session_ids() -> frozenset[str]:
@@ -448,7 +457,7 @@ def start_crawl_job(
 ) -> CrawlJob:
     """Start a crawl in a background thread and return its job handle."""
     output_base = prepare_crawl_output_base(sessions_root, session_id, crawl_id)
-    event_queue: queue.Queue[dict[str, object]] = queue.Queue()
+    event_queue: queue.Queue[dict[str, object]] = queue.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
     cancel_event = threading.Event()
     started_at = datetime.now(UTC)
 
@@ -461,7 +470,7 @@ def start_crawl_job(
             "elapsed_seconds",
             max((datetime.now(UTC) - started_at).total_seconds(), 0.0),
         )
-        event_queue.put(raw)
+        put_drop_oldest(event_queue, raw)
         event_name = str(raw.get("event", ""))
         if event_name == _EVENT_CRAWL_WARNING:
             # Queue for the UI to display, but keep progress snapshot intact.
@@ -552,8 +561,7 @@ def start_crawl_job(
         activity_log_size=activity_log_size,
         job_state=_STATE_RUNNING,
     )
-    _register_job(snapshot)
-    thread.start()
+    _register_and_start_job(snapshot)
     _logger.info("Crawl job started: session=%s crawl=%s", session_id, crawl_id)
     return job
 
@@ -566,7 +574,7 @@ def request_cancel(job: CrawlJob) -> None:
         "event": _EVENT_CANCEL_REQUESTED,
         "crawl_id": job.crawl_id,
     }
-    job.events.put(cancel_event_dict)
+    put_drop_oldest(job.events, cancel_event_dict)
     _update_snapshot(job.session_id, cancel_event_dict, _STATE_CANCEL_REQUESTED)
 
 

@@ -20,6 +20,7 @@ user-facing ``WARN`` alias is accepted for ``WARNING``.
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from collections.abc import Callable
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -33,6 +34,11 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Rotating-file defaults keep the on-disk log bounded without operator tuning.
 _DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 _DEFAULT_BACKUP_COUNT = 3
+
+# Cap cached per-path routing handlers so a long-lived process that routes to many distinct
+# paths (e.g. one log file per session) does not leak open file handles; least-recently-used
+# handlers are closed and evicted past this bound.
+_MAX_ROUTED_HANDLERS = 64
 
 # Tags handlers this module installs so a repeated configure_logging call
 # (tests or a re-init) replaces them instead of stacking duplicates.
@@ -93,7 +99,7 @@ class _RoutingFileHandler(logging.Handler):
         self._file_router = file_router
         self._max_bytes = max_bytes
         self._backup_count = backup_count
-        self._handlers: dict[str, RotatingFileHandler] = {}
+        self._handlers: OrderedDict[str, RotatingFileHandler] = OrderedDict()
 
     def emit(self, record: logging.LogRecord) -> None:
         handler = self._handler_for_current_record()
@@ -109,20 +115,34 @@ class _RoutingFileHandler(logging.Handler):
             return None
         key = str(path)
         handler = self._handlers.get(key)
-        if handler is None:
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                handler = RotatingFileHandler(
-                    path,
-                    maxBytes=self._max_bytes,
-                    backupCount=self._backup_count,
-                    encoding="utf-8",
-                )
-            except OSError:
-                return None
-            handler.setFormatter(self.formatter)
-            self._handlers[key] = handler
+        if handler is not None:
+            self._handlers.move_to_end(key)  # mark most-recently used (LRU retention)
+            return handler
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handler = RotatingFileHandler(
+                path,
+                maxBytes=self._max_bytes,
+                backupCount=self._backup_count,
+                encoding="utf-8",
+            )
+        except OSError:
+            return None
+        handler.setFormatter(self.formatter)
+        self._handlers[key] = handler
+        self._evict_over_capacity()
         return handler
+
+    def _evict_over_capacity(self) -> None:
+        """Close and drop least-recently-used handlers once past the cache bound.
+
+        Runs under the handler lock (``logging.Handler.handle`` guards ``emit``), so the
+        ordered-cache mutation is serialized. An evicted path simply reopens (append mode)
+        if it is logged to again.
+        """
+        while len(self._handlers) > _MAX_ROUTED_HANDLERS:
+            _, evicted = self._handlers.popitem(last=False)
+            evicted.close()
 
     def close(self) -> None:
         for handler in self._handlers.values():

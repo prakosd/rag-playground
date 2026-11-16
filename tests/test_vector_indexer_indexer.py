@@ -211,6 +211,45 @@ def test_run_emits_progress(tmp_path: Path) -> None:
     assert count_events[-1]["processed_chunks"] == result.indexed_chunk_count
 
 
+def test_chunk_spill_file_is_removed_after_run(tmp_path: Path) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 200, encoding="utf-8")
+    indexer, _ = _indexer_with_capture()
+
+    result = indexer.run(
+        IndexingConfig(chunk_size=120, chunk_overlap=20),
+        [source],
+        tmp_path / "vector_01_demo",
+    )
+
+    assert result.success
+    # The temporary chunk spill is streamed during indexing and must not linger in the run dir.
+    assert not (result.output_dir / ".chunks.jsonl").exists()
+
+
+def test_spill_write_failure_is_reported_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "a.md"
+    source.write_text("hello world " * 200, encoding="utf-8")
+    indexer, _ = _indexer_with_capture()
+
+    def _boom(path: Path, chunks: object) -> int:
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr("vector_indexer.indexer.write_chunks", _boom)
+
+    # A spill-write failure (e.g. disk full) must surface as a coded error, not an exception.
+    result = indexer.run(
+        IndexingConfig(chunk_size=120, chunk_overlap=20),
+        [source],
+        tmp_path / "vector_01_demo",
+    )
+
+    assert not result.success
+    assert any(e.code == messages.CODE_CHUNKING_FAILED for e in result.errors)
+
+
 def test_run_emits_pipeline_stages_in_order(tmp_path: Path) -> None:
     source = tmp_path / "a.md"
     source.write_text("hello world " * 200, encoding="utf-8")
@@ -256,6 +295,7 @@ def test_partial_index_is_finalized_when_stopped_mid_run(tmp_path: Path) -> None
 
     assert result.indexed_chunk_count > 0
     assert result.success  # partial index stays usable
+    assert not (result.output_dir / ".chunks.jsonl").exists()  # spill cleaned on the cancel path
     assert any(w.code == messages.CODE_CANCELLED_PARTIAL for w in result.warnings)
     manifest = load_manifest(result.output_dir)
     assert manifest.success

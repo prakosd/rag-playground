@@ -1562,11 +1562,10 @@ def test_get_active_job_snapshot_returns_none_for_dead_thread(
         activity_log_size=50,
         job_state="running",
     )
-    monkeypatch.setattr(
-        "app_support.crawl.crawl_jobs._JOB_REGISTRY",
-        {dead_job.session_id: snap},
-    )
+    registry = {dead_job.session_id: snap}
+    monkeypatch.setattr("app_support.crawl.crawl_jobs._JOB_REGISTRY", registry)
     assert get_active_job_snapshot(dead_job.session_id) is None
+    assert registry == {}  # PERF-M3: the finished job is pruned from the registry on read
 
 
 def test_active_registry_session_ids_returns_only_alive(
@@ -1638,3 +1637,38 @@ def test_start_crawl_job_registers_snapshot(
 
     assert "sess_reg" in registry
     assert registry["sess_reg"].job is job
+
+
+def test_register_and_start_job_starts_thread_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Registration starts the thread under the lock, so a reader never observes a
+    registered-but-not-yet-alive snapshot (which prune-on-read would wrongly drop)."""
+    from app_support.crawl.crawl_jobs import _register_and_start_job
+
+    gate = Event()
+    thread = Thread(target=gate.wait, daemon=True)
+    job = CrawlJob(
+        session_id="sess_start",
+        crawl_id="cr_start",
+        output_base=Path("/tmp/sess_start"),
+        events=Queue(),
+        cancel_event=Event(),
+        thread=thread,
+    )
+    snap = JobSnapshot(
+        job=job,
+        crawl_id=job.crawl_id,
+        started_at=datetime.now(UTC),
+        activity_log_size=50,
+        job_state="running",
+    )
+    monkeypatch.setattr("app_support.crawl.crawl_jobs._JOB_REGISTRY", {})
+    try:
+        _register_and_start_job(snap)
+        # Started as part of registration and therefore never pruned as a dead thread.
+        assert thread.is_alive()
+        assert get_active_job_snapshot("sess_start") is snap
+    finally:
+        gate.set()
+        thread.join(timeout=5)

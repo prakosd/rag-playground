@@ -270,8 +270,8 @@ open file handles and handler objects grow without bound.
 
 ### PERF-M3: Job registries retain finished snapshots
 
-**🟡 Medium.** Pruning of stale (dead-thread) entries happens only inside `_register_job`
-([crawl_jobs.py:117](../apps/streamlit/src/app_support/crawl/crawl_jobs.py),
+**🟡 Medium.** Pruning of stale (dead-thread) entries happens only inside `_register_and_start_job`
+([crawl_jobs.py:118](../apps/streamlit/src/app_support/crawl/crawl_jobs.py),
 [vector_index_jobs.py:102](../apps/streamlit/src/app_support/vector_index/vector_index_jobs.py)),
 so a completed job's snapshot (holding its queue + `latest_event`) stays resident until someone
 starts a **new** job — non-trivial RAM held per terminated job on a long-lived process.

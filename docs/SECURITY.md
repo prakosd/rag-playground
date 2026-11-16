@@ -18,7 +18,7 @@ and sits alongside the broader architecture + performance + security
 
 | ID | Severity | Area | Status |
 |----|----------|------|--------|
-| [H-1](#h-1-shared-default-signing--encryption-secret) | High | Secrets | Mitigated (warning added) + recommendations |
+| [H-1](#h-1-shared-default-signing--encryption-secret) | High | Secrets | Mitigated (fail-fast when networked) + recommendations |
 | [M-1](#m-1-crawler-ssrf--no-private-ip-block) | Medium | Crawler / SSRF | Mitigated (opt-in guard) + egress controls |
 | [L-1](#l-1-trusted-zip-re-import-has-no-size-cap) | Low | Archives / DoS | Documented (secret-gated) |
 | [L-2](#l-2-crawled-markdown-rendered-in-preview) | Low | XSS surface | Accepted (sanitized by Streamlit) |
@@ -51,11 +51,12 @@ build and its URL never contain an API key or secret (those resolve from server-
 request time), so a guessed slug exposes only that one build's indexed chunks and showcase
 chats.
 
-**Fix / status.** A startup **warning** now fires when the shipped default is detected
-(`Settings._warn_on_default_signing_secret` in
-[settings.py](../apps/streamlit/src/app_support/settings.py)). Operators **must** override
-`ZIP_SIGNING_SECRET` with a unique, high-entropy value per deployment (via a secrets
-manager — see the checklist below).
+**Fix / status.** `Settings._guard_default_signing_secret`
+([settings.py](../apps/streamlit/src/app_support/settings.py)) now escalates by deployment: on a
+**networked** deployment (`BACKEND_MODE=http` or `STORAGE_BACKEND=s3`) still using the shipped
+default it **refuses to start** (raises at settings load), and on a local/single-user
+deployment it logs a **warning**. Operators **must** override `ZIP_SIGNING_SECRET` with a
+unique, high-entropy value per deployment (via a secrets manager — see the checklist below).
 
 **Recommended (not yet implemented).** Use a **distinct secret per purpose** (zip signing
 vs. credential encryption) so the two can be rotated and scoped independently.

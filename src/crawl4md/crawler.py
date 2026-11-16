@@ -822,12 +822,10 @@ class SiteCrawler:
                     failed_urls = [r.url for r in all_fail]
 
                 # --- Retry rounds: escalate to the undetected browser ---
-                retry_kwargs: dict = {"config": browser_cfg}
-                if total_rounds > 1 and failed_urls:
-                    strategy = self._build_undetected_strategy(browser_cfg)
-                    if strategy is not None:
-                        retry_kwargs["crawler_strategy"] = strategy
-                async with async_web_crawler_cls(**retry_kwargs) as crawler:
+                crawler = await self._open_retry_crawler(
+                    async_web_crawler_cls, browser_cfg, failed_urls, total_rounds
+                )
+                try:
                     for round_num in range(2, total_rounds + 1):
                         self._raise_if_cancelled()
                         if not failed_urls:
@@ -901,6 +899,8 @@ class SiteCrawler:
                         await asyncio.to_thread(
                             self._write_sorted_round_files, round_num, round_dir
                         )
+                finally:
+                    await crawler.__aexit__(None, None, None)
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True
@@ -2715,6 +2715,54 @@ class SiteCrawler:
             return None
         strategy_cls, adapter_cls = loaded
         return strategy_cls(browser_config=browser_cfg, browser_adapter=adapter_cls())
+
+    async def _open_retry_crawler(
+        self,
+        async_web_crawler_cls: type,
+        browser_cfg: object,
+        failed_urls: list[str],
+        total_rounds: int,
+    ) -> object:
+        """Open the retry-round crawler, escalating to the undetected browser.
+
+        When retries are scheduled and an undetected strategy is available, the
+        retry crawler launches with it. If that browser fails to start (for
+        example on a hosted container missing the extra binaries it needs), the
+        raw error is logged, a structured warning is emitted, and the standard
+        stealth browser is used instead so the retry rounds still run.
+        """
+        strategy = None
+        if total_rounds > 1 and failed_urls:
+            strategy = self._build_undetected_strategy(browser_cfg)
+        if strategy is None:
+            crawler = async_web_crawler_cls(config=browser_cfg)
+            await crawler.__aenter__()
+            return crawler
+        crawler = async_web_crawler_cls(config=browser_cfg, crawler_strategy=strategy)
+        try:
+            await crawler.__aenter__()
+            return crawler
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - any launch failure falls back to standard
+            _logger.warning(
+                "Undetected retry browser failed to launch (%s); "
+                "falling back to the standard stealth browser",
+                exc,
+            )
+            self._emit_crawl_warning(messages.undetected_launch_failed())
+            await self._aexit_quietly(crawler, exc)
+            crawler = async_web_crawler_cls(config=browser_cfg)
+            await crawler.__aenter__()
+            return crawler
+
+    @staticmethod
+    async def _aexit_quietly(crawler: object, exc: BaseException) -> None:
+        """Best-effort ``__aexit__`` on a crawler that failed to finish starting."""
+        try:
+            await crawler.__aexit__(type(exc), exc, exc.__traceback__)
+        except Exception:  # noqa: BLE001 - cleanup failure must not mask the fallback
+            _logger.debug("Ignoring cleanup error after undetected launch failure", exc_info=True)
 
     def _url_in_allowed_domain(self, url: str) -> bool:
         """Check whether a URL belongs to the configured crawl domain(s)."""

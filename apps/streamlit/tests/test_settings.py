@@ -115,6 +115,28 @@ def test_settings_no_warning_when_signing_secret_overridden(
     assert not any("ZIP_SIGNING_SECRET" in record.getMessage() for record in caplog.records)
 
 
+def test_settings_rejects_default_secret_when_backend_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Networked (BACKEND_MODE=http) + the shipped default secret must fail fast, not just warn.
+    monkeypatch.setenv("BACKEND_MODE", "http")
+    with pytest.raises(ValidationError) as exc:
+        Settings()
+    assert "ZIP_SIGNING_SECRET" in str(exc.value)
+
+
+def test_settings_rejects_default_secret_when_storage_s3(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    with pytest.raises(ValidationError) as exc:
+        Settings()
+    assert "ZIP_SIGNING_SECRET" in str(exc.value)
+
+
+def test_settings_networked_ok_when_secret_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BACKEND_MODE", "http")
+    monkeypatch.setenv("ZIP_SIGNING_SECRET", "a-unique-per-deployment-secret")
+    settings = Settings()  # networked but the secret is overridden → allowed
+    assert settings.backend_mode == "http"
+
+
 def test_sessions_root_setting_drives_default_root() -> None:
     # The per-session file root is env-driven; its default matches the historical
     # local path, so the seam changes nothing until an operator overrides it.

@@ -10,8 +10,9 @@ injectable so the flow can be tested without langchain-chroma or network access.
 from __future__ import annotations
 
 import threading
+from collections import deque
 from collections.abc import Callable, Iterator, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from itertools import count
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,9 +21,10 @@ from artifact_store import LibraryMessage
 from artifact_store.naming import format_utc_timestamp_slug, parse_utc_timestamp_slug
 from log4py import get_logger
 from vector_indexer import messages
-from vector_indexer.chunking import chunk_documents
+from vector_indexer.chunk_spill import read_chunk_batches, write_chunks
+from vector_indexer.chunking import iter_chunks
 from vector_indexer.config import IndexingConfig
-from vector_indexer.document_loader import load_documents
+from vector_indexer.document_loader import DocumentLoadResult, iter_documents
 from vector_indexer.embeddings import (
     DEFAULT_LOCAL_MODEL,
     EmbeddingProviderUnavailable,
@@ -35,7 +37,7 @@ from vector_indexer.manifest import (
     DEFAULT_STORE_BACKEND,
     write_manifest,
 )
-from vector_indexer.models import Chunk, IndexingResult
+from vector_indexer.models import Chunk, Document, IndexingResult
 from vector_indexer.vector_store.base import VectorStore
 from vector_indexer.vector_store.chroma import ChromaVectorStore
 
@@ -47,6 +49,12 @@ __all__ = ["DEFAULT_COLLECTION_NAME", "VectorIndexer"]
 _logger = get_logger(__name__)
 
 _EMBED_BATCH_SIZE = 32
+# Spill chunks to this file in the run dir during chunking, then stream it back for embedding
+# so the whole corpus is never held in memory at once (removed when the run finishes).
+_CHUNK_SPILL_FILE = ".chunks.jsonl"
+# Cap batches in flight to the embedder (per worker) so streaming stays memory-bounded while
+# still saturating the parallel workers.
+_MAX_INFLIGHT_BATCHES_PER_WORKER = 2
 
 # Coarse pipeline stages reported through the progress callback so a UI can show
 # what the run is doing before per-chunk counts are available.
@@ -108,26 +116,15 @@ class VectorIndexer:
                 store_backend=DEFAULT_STORE_BACKEND,
             )
 
-        chunks = self._prepare_chunks(config, inputs, result, should_cancel, progress_callback)
-        if chunks is None:
-            return self._finalize(
-                run_dir,
-                config,
-                result,
-                model_id=resolved.model_id,
-                collection_name=collection_name,
-                store_backend=DEFAULT_STORE_BACKEND,
-            )
-
-        store_backend = self._embed_and_store(
-            chunks,
+        store_backend = self._load_chunk_embed(
+            config,
+            inputs,
             resolved,
             run_dir,
             collection_name,
             result,
             progress_callback,
             should_cancel,
-            workers=_worker_count(config.index_workers, resolved.model_id),
         )
         return self._finalize(
             run_dir,
@@ -153,49 +150,116 @@ class VectorIndexer:
         _logger.info("Embedding model resolved: %s", resolved.model_id)
         return resolved
 
-    def _prepare_chunks(
+    def _load_chunk_embed(
+        self,
+        config: IndexingConfig,
+        inputs: Sequence[Path | str],
+        resolved: ResolvedEmbedding,
+        run_dir: Path,
+        collection_name: str,
+        result: IndexingResult,
+        progress_callback: ProgressCallback | None,
+        should_cancel: CancelCheck | None,
+    ) -> str:
+        """Stream inputs through load -> chunk -> (spill) -> embed with bounded memory.
+
+        Chunks are spilled to a temporary file in *run_dir* during chunking (so documents and
+        chunks are never all resident at once) and the total counted, then the spill is read
+        back in batches for embedding. The spill file is always removed afterwards.
+        """
+        spill_path = run_dir / _CHUNK_SPILL_FILE
+        try:
+            total = self._spill_chunks(
+                config, inputs, result, spill_path, progress_callback, should_cancel
+            )
+            if total is None:
+                return DEFAULT_STORE_BACKEND
+            return self._embed_and_store(
+                spill_path,
+                total,
+                resolved,
+                run_dir,
+                collection_name,
+                result,
+                progress_callback,
+                should_cancel,
+                workers=_worker_count(config.index_workers, resolved.model_id),
+            )
+        finally:
+            spill_path.unlink(missing_ok=True)
+
+    def _spill_chunks(
         self,
         config: IndexingConfig,
         inputs: Sequence[Path | str],
         result: IndexingResult,
+        spill_path: Path,
+        progress_callback: ProgressCallback | None,
         should_cancel: CancelCheck | None,
-        progress_callback: ProgressCallback | None = None,
-    ) -> list[Chunk] | None:
+    ) -> int | None:
+        """Stream-load, chunk, and spill to disk; return the chunk count (or None to stop).
+
+        Returns None (with the matching error/warning recorded) when there is nothing to
+        embed: a chunking failure, a cancel before embedding, no readable documents, or no
+        chunks produced.
+        """
         _report_stage(progress_callback, STAGE_LOADING)
-        load_result = load_documents(inputs)
-        result.skipped_file_count = load_result.skipped_file_count
-        result.warnings.extend(load_result.warnings)
-        if not load_result.documents:
-            result.errors.append(messages.no_readable_content())
+        load_result = DocumentLoadResult()
+        docs_seen = 0
+
+        def _documents() -> Iterator[Document]:
+            nonlocal docs_seen
+            for document in iter_documents(inputs, load_result):
+                docs_seen += 1
+                yield document
+
+        _report_stage(progress_callback, STAGE_CHUNKING)
+        try:
+            total = write_chunks(
+                spill_path,
+                iter_chunks(
+                    _documents(),
+                    chunk_size=config.chunk_size,
+                    chunk_overlap=config.chunk_overlap,
+                    language=config.language,
+                ),
+            )
+        except (RuntimeError, OSError) as exc:
+            # RuntimeError: splitter dependency missing; OSError: spill write failed (disk full,
+            # permissions) — the spill is part of the chunk-to-disk step, so report it the same
+            # way rather than raising out of run().
+            self._merge_load_notices(result, load_result)
+            result.errors.append(messages.chunking_failed(str(exc)))
             return None
-        _logger.info(
-            "Loaded %d document(s) (%d skipped)",
-            len(load_result.documents),
-            load_result.skipped_file_count,
-        )
+
+        self._merge_load_notices(result, load_result)
         if _cancelled(should_cancel):
             result.warnings.append(messages.cancelled_before_chunking())
             return None
-        _report_stage(progress_callback, STAGE_CHUNKING)
-        try:
-            chunks = chunk_documents(
-                load_result.documents,
-                chunk_size=config.chunk_size,
-                chunk_overlap=config.chunk_overlap,
-                language=config.language,
-            )
-        except RuntimeError as exc:
-            result.errors.append(messages.chunking_failed(str(exc)))
+        if docs_seen == 0:
+            result.errors.append(messages.no_readable_content())
             return None
-        if not chunks:
+        if total == 0:
             result.errors.append(messages.no_chunks())
             return None
-        _logger.info("Chunked into %d chunk(s)", len(chunks))
-        return chunks
+        _logger.info(
+            "Loaded %d document(s) (%d skipped); chunked into %d chunk(s)",
+            docs_seen,
+            load_result.skipped_file_count,
+            total,
+        )
+        return total
+
+    @staticmethod
+    def _merge_load_notices(result: IndexingResult, load_result: DocumentLoadResult) -> None:
+        """Copy the loader's skipped-count + warnings onto the run result."""
+        result.skipped_file_count = load_result.skipped_file_count
+        result.warnings.extend(load_result.warnings)
 
     def _embed_and_store(
         self,
-        chunks: list[Chunk],
+        spill_path: Path,
+        total: int,
         resolved: ResolvedEmbedding,
         run_dir: Path,
         collection_name: str,
@@ -208,24 +272,14 @@ class VectorIndexer:
         store = self._store_factory(run_dir / CHROMA_SUBDIR, collection_name, resolved.embeddings)
         backend = store.backend_name
         indexed_sources: set[str] = set()
-        total = len(chunks)
-        batches = list(_batched(chunks, _EMBED_BATCH_SIZE))
-        # Pre-assign ids per batch so concurrent workers never share a counter.
+        # Ids are assigned as each batch is read, so concurrent workers never share a counter.
         ids = count()
-        id_lists = [[str(next(ids)) for _ in batch] for batch in batches]
         lock = threading.Lock()
-        # Embeddings run in parallel (the slow, network-bound step for cloud
-        # models), but writes are serialized: the ChromaDB/SQLite backend is not
-        # safe for concurrent writes from multiple worker threads.
+        # Embeddings run in parallel (the slow, network-bound step for cloud models), but
+        # writes are serialized: the ChromaDB/SQLite backend is not safe for concurrent writes.
         store_lock = threading.Lock()
-        cancelled = False
         _report_stage(progress_callback, STAGE_EMBEDDING)
-        _logger.info(
-            "Embedding %d chunk(s) in %d batch(es) with %d worker(s)",
-            total,
-            len(batches),
-            workers,
-        )
+        _logger.info("Embedding %d chunk(s) with %d worker(s)", total, workers)
 
         def _store_batch(batch: list[Chunk], batch_ids: list[str]) -> None:
             texts = [chunk.text for chunk in batch]
@@ -244,21 +298,9 @@ class VectorIndexer:
 
         try:
             if workers > 1:
-                with ThreadPoolExecutor(max_workers=workers) as pool:
-                    futures = []
-                    for batch, batch_ids in zip(batches, id_lists, strict=True):
-                        if _cancelled(should_cancel):
-                            cancelled = True
-                            break
-                        futures.append(pool.submit(_store_batch, batch, batch_ids))
-                    for future in futures:
-                        future.result()  # propagate any worker exception
+                cancelled = _embed_parallel(spill_path, ids, _store_batch, should_cancel, workers)
             else:
-                for batch, batch_ids in zip(batches, id_lists, strict=True):
-                    if _cancelled(should_cancel):
-                        cancelled = True
-                        break
-                    _store_batch(batch, batch_ids)
+                cancelled = _embed_serial(spill_path, ids, _store_batch, should_cancel)
             if cancelled:
                 result.warnings.append(messages.cancelled_partial())
             _report_stage(progress_callback, STAGE_SAVING)
@@ -328,15 +370,49 @@ def _report_stage(progress_callback: ProgressCallback | None, stage: str) -> Non
         progress_callback({"stage": stage})
 
 
-def _batched(items: Sequence[Chunk], size: int) -> Iterator[list[Chunk]]:
-    batch: list[Chunk] = []
-    for item in items:
-        batch.append(item)
-        if len(batch) >= size:
-            yield batch
-            batch = []
-    if batch:
-        yield batch
+def _embed_parallel(
+    spill_path: Path,
+    ids: count[int],
+    store_batch: Callable[[list[Chunk], list[str]], None],
+    should_cancel: CancelCheck | None,
+    workers: int,
+) -> bool:
+    """Embed spilled batches with a bounded in-flight window; return True if cancelled.
+
+    At most ``workers * _MAX_INFLIGHT_BATCHES_PER_WORKER`` batches are in flight, so memory
+    stays bounded regardless of corpus size while the workers stay saturated. Waiting on the
+    oldest future when the window is full also surfaces worker errors early.
+    """
+    max_in_flight = workers * _MAX_INFLIGHT_BATCHES_PER_WORKER
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        in_flight: deque[Future[None]] = deque()
+        for batch in read_chunk_batches(spill_path, _EMBED_BATCH_SIZE):
+            if _cancelled(should_cancel):
+                for future in in_flight:
+                    future.result()  # let the already-submitted batches finish (partial index)
+                return True
+            batch_ids = [str(next(ids)) for _ in batch]
+            in_flight.append(pool.submit(store_batch, batch, batch_ids))
+            if len(in_flight) >= max_in_flight:
+                in_flight.popleft().result()
+        for future in in_flight:
+            future.result()  # propagate any worker exception
+    return False
+
+
+def _embed_serial(
+    spill_path: Path,
+    ids: count[int],
+    store_batch: Callable[[list[Chunk], list[str]], None],
+    should_cancel: CancelCheck | None,
+) -> bool:
+    """Embed spilled batches sequentially; return True if cancelled."""
+    for batch in read_chunk_batches(spill_path, _EMBED_BATCH_SIZE):
+        if _cancelled(should_cancel):
+            return True
+        batch_ids = [str(next(ids)) for _ in batch]
+        store_batch(batch, batch_ids)
+    return False
 
 
 def _write_manifest(

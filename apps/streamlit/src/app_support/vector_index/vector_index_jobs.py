@@ -32,6 +32,7 @@ from vector_indexer.messages import (
 )
 
 from app_support.backend_client import run_remote_index
+from app_support.event_queue import EVENT_QUEUE_MAXSIZE, put_drop_oldest
 from app_support.log_context import set_log_session_id
 from app_support.session_manager import DEFAULT_SESSIONS_ROOT, prepare_vector_output_base
 from app_support.settings import get_settings
@@ -98,8 +99,12 @@ _REGISTRY_LOCK: threading.Lock = threading.Lock()
 _VECTOR_JOB_REGISTRY: dict[str, VectorJobSnapshot] = {}
 
 
-def _register_job(snapshot: VectorJobSnapshot) -> None:
-    """Register a new indexing snapshot, pruning any stale terminal entries first."""
+def _register_and_start_job(snapshot: VectorJobSnapshot) -> None:
+    """Register a new indexing snapshot (pruning stale entries) and start its thread.
+
+    The thread is started while the registry lock is held so a concurrent reader can never
+    observe the snapshot before its thread is alive and wrongly prune the just-started job.
+    """
     with _REGISTRY_LOCK:
         stale = [
             sid for sid, snap in _VECTOR_JOB_REGISTRY.items() if not snap.job.thread.is_alive()
@@ -107,6 +112,7 @@ def _register_job(snapshot: VectorJobSnapshot) -> None:
         for sid in stale:
             del _VECTOR_JOB_REGISTRY[sid]
         _VECTOR_JOB_REGISTRY[snapshot.job.session_id] = snapshot
+        snapshot.job.thread.start()
 
 
 def _update_snapshot(session_id: str, event: dict[str, object], state: str) -> None:
@@ -123,11 +129,14 @@ def get_active_vector_job_snapshot(session_id: str) -> VectorJobSnapshot | None:
     """Return the active indexing snapshot for a session if its thread is alive."""
     with _REGISTRY_LOCK:
         snap = _VECTOR_JOB_REGISTRY.get(session_id)
-    if snap is None:
-        return None
-    if not snap.job.thread.is_alive():
-        return None
-    return snap
+        if snap is None:
+            return None
+        if not snap.job.thread.is_alive():
+            # Prune the finished job on read so its snapshot + queue aren't retained until
+            # the next job registers (consumers never use a dead snapshot).
+            del _VECTOR_JOB_REGISTRY[session_id]
+            return None
+        return snap
 
 
 def active_vector_registry_session_ids() -> frozenset[str]:
@@ -238,7 +247,7 @@ def start_vector_index_job(
 ) -> VectorIndexJob:
     """Start an indexing run in a background thread and return its job handle."""
     output_base = prepare_vector_output_base(sessions_root, session_id, vector_id)
-    event_queue: queue.Queue[dict[str, object]] = queue.Queue()
+    event_queue: queue.Queue[dict[str, object]] = queue.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
     cancel_event = threading.Event()
     runner = indexer or VectorIndexer()
     upload_paths = _write_uploads(output_base / _UPLOAD_DIR_NAME, uploads)
@@ -248,7 +257,7 @@ def start_vector_index_job(
         raw = dict(event)
         raw.setdefault("session_id", session_id)
         raw.setdefault("vector_id", vector_id)
-        event_queue.put(raw)
+        put_drop_oldest(event_queue, raw)
         _update_snapshot(session_id, raw, job_state_from_event(str(raw.get("event", ""))))
 
     def run() -> None:
@@ -302,7 +311,7 @@ def start_vector_index_job(
         cancel_event=cancel_event,
         thread=thread,
     )
-    _register_job(
+    _register_and_start_job(
         VectorJobSnapshot(
             job=job,
             vector_id=vector_id,
@@ -310,7 +319,6 @@ def start_vector_index_job(
             job_state=job_state_from_event(_EVENT_STARTED),
         )
     )
-    thread.start()
     _logger.info("Indexing job started: session=%s vector=%s", session_id, vector_id)
     return job
 
@@ -323,7 +331,7 @@ def request_cancel(job: VectorIndexJob) -> None:
         "event": _EVENT_CANCEL_REQUESTED,
         "vector_id": job.vector_id,
     }
-    job.events.put(cancel_event_dict)
+    put_drop_oldest(job.events, cancel_event_dict)
     _update_snapshot(
         job.session_id, cancel_event_dict, job_state_from_event(_EVENT_CANCEL_REQUESTED)
     )

@@ -291,15 +291,25 @@ class Settings(BaseSettings):
     log_file: str
 
     @model_validator(mode="after")
-    def _warn_on_default_signing_secret(self) -> Settings:
-        # The secret protects both zip integrity and credential confidentiality; warn
-        # loudly when a deployment still uses the public development default.
-        if self.zip_signing_secret == _DEV_DEFAULT_ZIP_SIGNING_SECRET:
-            _logger.warning(
-                "ZIP_SIGNING_SECRET is the shipped development default; override it per "
-                "deployment (it signs downloadable zips and derives the credential-"
-                "encryption key, so the public default weakens both)."
+    def _guard_default_signing_secret(self) -> Settings:
+        # The secret protects both zip integrity and credential confidentiality.
+        if self.zip_signing_secret != _DEV_DEFAULT_ZIP_SIGNING_SECRET:
+            return self
+        # On a networked deployment the public default is exploitable by others, so refuse to
+        # start; locally (single-user) it is acceptable, so only warn loudly.
+        if self.backend_mode == "http" or self.storage_backend == "s3":
+            raise ValueError(
+                "ZIP_SIGNING_SECRET is the shipped development default on a networked deployment "
+                "(BACKEND_MODE=http or STORAGE_BACKEND=s3). Override it with a unique, "
+                "high-entropy value per deployment — it signs downloadable zips and derives the "
+                "credential-encryption key, so the public default is unsafe when the app is "
+                "reachable by others."
             )
+        _logger.warning(
+            "ZIP_SIGNING_SECRET is the shipped development default; override it per "
+            "deployment (it signs downloadable zips and derives the credential-"
+            "encryption key, so the public default weakens both)."
+        )
         return self
 
 

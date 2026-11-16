@@ -19,12 +19,18 @@ See [ARCHITECTURE.md § Step 2](../../docs/ARCHITECTURE.md#step-2--how-indexing-
 ```
 VectorIndexer.run(config, inputs, output_base)
   ├─ resolve_embedding()      → LangChain Embeddings (or raises if unavailable)
-  ├─ load_documents()         → .md / .txt files and .zip members (via artifact_store)
+  ├─ iter_documents()         → stream .md / .txt files and .zip members (via artifact_store)
   ├─ split_into_pages()       → drop crawl run metadata, recover per-page title/url (page_source)
-  ├─ chunk_documents()        → overlapping chunks + page title/URL metadata (langchain-text-splitters)
-  └─ embed batches (parallel for cloud models) → ChromaVectorStore.add_embeddings / persist
+  ├─ iter_chunks() → spill     → stream overlapping chunks to a temp file in the run dir
+  └─ embed spilled batches (bounded in-flight, parallel for cloud models) → add_embeddings / persist
         → vector_<id>/<timestamp>/chroma  +  manifest.json
 ```
+
+The pipeline **streams** (load → chunk → spill → embed) so the whole corpus is never resident
+at once: documents are loaded one at a time, chunked, and written to a temporary
+`.chunks.jsonl` in the run dir (counted for the progress total), then read back in fixed-size
+batches with a bounded number in flight to the embedder. The spill file is removed when the run
+finishes. `load_documents()` / `chunk_documents()` remain as eager wrappers for direct use.
 
 The result is a structured `IndexingResult` (success flag, output directory,
 indexed/skipped counts, warnings, errors) that any caller can render. `warnings` and
@@ -182,9 +188,10 @@ to reopen an index with the same embeddings and run retrieval (Steps 3-5).
 | `models.py` | `Document`, `Chunk`, `IndexingResult` |
 | `manifest.py` | `IndexManifest`, `load_manifest` / `write_manifest`, collection + layout constants |
 | `languages.py` | `LUCENE_LANGUAGES`, `DEFAULT_LANGUAGE` |
-| `document_loader.py` | load `.md` / `.txt` / `.zip` into documents |
+| `document_loader.py` | stream/eager-load `.md` / `.txt` / `.zip` into documents (`iter_documents` / `load_documents`) |
 | `page_source.py` | strip crawl run metadata, split crawl4md output into per-page sections, recover each page's title/URL (pure stdlib) |
-| `chunking.py` | overlapping chunks via langchain-text-splitters, each tagged with its page title/URL metadata |
+| `chunking.py` | overlapping chunks via langchain-text-splitters (`iter_chunks` / `chunk_documents`), each tagged with its page title/URL metadata |
+| `chunk_spill.py` | spill chunks to a temporary JSONL and stream them back in batches (bounded-memory indexing) |
 | `embeddings/` | LangChain `Embeddings` builders, catalog, registry, resolution policy |
 | `vector_store/` | `VectorStore` interface and `ChromaVectorStore` (langchain-chroma) |
 | `indexer.py` | `VectorIndexer.run` orchestration |

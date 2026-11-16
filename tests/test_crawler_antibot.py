@@ -246,3 +246,57 @@ def test_round_one_standard_then_retries_use_undetected(
     assert len(crawler_kwargs) == 2
     assert "crawler_strategy" not in crawler_kwargs[0]
     assert crawler_kwargs[1]["crawler_strategy"] is sentinel
+
+
+def test_undetected_launch_failure_falls_back_to_standard(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If the undetected retry browser can't start, retries use the standard browser."""
+    blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 1</body></html>"
+    blocked = _make_mock_result("https://example.com/p", blocked_html, "blocked")
+    fixed = _make_mock_result("https://example.com/p", "<p>ok</p>", "ok")
+    calls = {"n": 0}
+
+    async def mock_arun(url, config):
+        calls["n"] += 1
+        return blocked if calls["n"] == 1 else fixed
+
+    def make_instance(*, launch_fails: bool) -> AsyncMock:
+        inst = AsyncMock()
+        inst.arun = mock_arun
+        inst.__aexit__ = AsyncMock(return_value=False)
+        if launch_fails:
+            inst.__aenter__ = AsyncMock(
+                side_effect=RuntimeError("BrowserType.launch: Executable doesn't exist")
+            )
+        else:
+            inst.__aenter__ = AsyncMock(return_value=inst)
+        return inst
+
+    crawler_kwargs: list[dict] = []
+
+    def factory(**kwargs):
+        crawler_kwargs.append(kwargs)
+        return make_instance(launch_fails="crawler_strategy" in kwargs)
+
+    sentinel = object()
+    monkeypatch.setattr("crawl4md.crawler.AsyncWebCrawler", factory)
+    monkeypatch.setattr(SiteCrawler, "_build_undetected_strategy", lambda self, cfg: sentinel)
+
+    crawler = SiteCrawler(
+        CrawlerConfig(urls=["https://example.com/p"], limit=10, max_retries=1),
+        output_base=tmp_path,
+    )
+    emitted: list = []
+    crawler._emit_crawl_warning = lambda message: emitted.append(message)
+    results = crawler.crawl()
+
+    # Three opens: round 1 (standard), retry (undetected, fails), retry fallback (standard).
+    assert len(crawler_kwargs) == 3
+    assert "crawler_strategy" not in crawler_kwargs[0]
+    assert crawler_kwargs[1]["crawler_strategy"] is sentinel
+    assert "crawler_strategy" not in crawler_kwargs[2]
+    # The retried page recovered on the standard-browser fallback.
+    assert any(r.success for r in results)
+    # A launch-failure warning was surfaced to the UI.
+    assert any(m.code == messages.CODE_UNDETECTED_LAUNCH_FAILED for m in emitted)

@@ -326,6 +326,10 @@ class ContentExtractor:
 
         def _replacer(m: re.Match[str]) -> str:
             fragment = m.group(1)
+            if not fragment:
+                # A bare "#" points at the page itself. Python 3.14's urljoin keeps the empty
+                # fragment ("page#"); return the page URL directly for stable output.
+                return "](" + page_url + ")"
             return "](" + urljoin(page_url, "#" + fragment) + ")"
 
         return _FRAGMENT_LINK_RE.sub(_replacer, text)
