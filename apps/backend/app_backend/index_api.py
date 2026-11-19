@@ -15,12 +15,11 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from artifact_store import ensure_within_root
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app_backend.config import get_backend_settings
+from app_backend.config import resolve_within_artifacts
 from app_backend.job_stream import SENTINEL, cancel_job, stream_job
 
 router = APIRouter(prefix="/index", tags=["index"])
@@ -30,13 +29,6 @@ class IndexRequest(BaseModel):
     output_base: str
     input_paths: list[str] = []
     config: dict[str, Any] = {}
-
-
-def _resolve(root: Path, relative: str) -> Path:
-    try:
-        return ensure_within_root(root, root / relative)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("")
@@ -53,9 +45,8 @@ def index(request: IndexRequest) -> StreamingResponse:
     except ImportError as exc:  # pragma: no cover - deployment without the vector extra
         raise HTTPException(status_code=503, detail=f"vector extra not installed: {exc}") from exc
 
-    root = Path(get_backend_settings().artifacts_root).resolve()
-    output_base = _resolve(root, request.output_base)
-    inputs = [str(_resolve(root, path)) for path in request.input_paths]
+    output_base = resolve_within_artifacts(request.output_base)
+    inputs = [str(resolve_within_artifacts(path)) for path in request.input_paths]
     config = IndexingConfig.model_validate(request.config)
 
     def worker(events: queue.Queue[object], cancel_event: threading.Event) -> None:

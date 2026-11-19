@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
+from artifact_store import ensure_within_root
+from fastapi import HTTPException
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,8 +31,27 @@ class BackendSettings(BaseSettings):
     # When True (set it for a networked deployment), the backend forces the crawler's SSRF
     # guard on regardless of the incoming config, so a direct caller cannot disable it.
     block_private_networks: bool = False
+    # Proxy URLs (comma-separated) the backend crawler routes through on retry rounds. Proxies
+    # are a backend/deployment concern — the frontend never sends them — so configure them here
+    # for a networked backend. May carry credentials; keep it secret and never log it.
+    crawl_proxies: str = ""
+    # When True, the initial crawl round also routes through CRAWL_PROXIES (else retries only).
+    crawl_proxy_on_initial: bool = False
 
 
 @lru_cache(maxsize=1)
 def get_backend_settings() -> BackendSettings:
     return BackendSettings()
+
+
+def resolve_within_artifacts(relative: str) -> Path:
+    """Resolve *relative* under the configured artifacts root, rejecting any escape with 400.
+
+    Shared by the crawl/index/rag routers so a request path can never reach outside the root
+    (``..`` escapes and absolute paths both yield an HTTP 400).
+    """
+    root = Path(get_backend_settings().artifacts_root).resolve()
+    try:
+        return ensure_within_root(root, root / relative)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

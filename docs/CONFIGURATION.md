@@ -155,9 +155,14 @@ stealth browser + retry rounds:
   track spend — proxy credentials are never written. Residential proxies are usually
   required for hard `403`s (e.g. Akamai); data-center proxies are often blocked too.
 - **Undetected browser** — retry rounds automatically escalate to Crawl4AI's
-  undetected adapter; the **initial** crawl uses the standard stealth browser to
-  focus on discovering pages, and it falls back to stealth if the adapter is
-  unavailable or fails to launch. No setting to toggle.
+  undetected (Patchright) adapter; the **initial** crawl uses the standard stealth
+  browser to focus on discovering pages, and it falls back to stealth if the adapter is
+  unavailable or fails to launch. Toggle it with **`CRAWL_UNDETECTED_RETRY`** (default
+  `true`): set `false` to make retries reuse the standard stealth browser — faster and
+  lighter, but weaker against WAFs. While on, it also adds **per-domain memoization** —
+  once a domain is blocked during the initial round, its remaining URLs skip a doomed
+  standard attempt and are deferred straight to the undetected retry (saving time on
+  known-hard domains).
 
 Proxies are a **secret** (env / Cloud Secrets only — never in `.env.defaults` or
 logs). They are honest mitigations, not guarantees: a hard

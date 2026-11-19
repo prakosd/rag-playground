@@ -19,7 +19,7 @@ and sits alongside the broader architecture + performance + security
 | ID | Severity | Area | Status |
 |----|----------|------|--------|
 | [H-1](#h-1-shared-default-signing--encryption-secret) | High | Secrets | Mitigated (fail-fast when networked) + recommendations |
-| [M-1](#m-1-crawler-ssrf--no-private-ip-block) | Medium | Crawler / SSRF | Mitigated (opt-in guard) + egress controls |
+| [M-1](#m-1-crawler-ssrf--no-private-ip-block) | Medium | Crawler / SSRF | Mitigated (opt-in guard + redirect re-validation) + egress controls |
 | [L-1](#l-1-trusted-zip-re-import-has-no-size-cap) | Low | Archives / DoS | Documented (secret-gated) |
 | [L-2](#l-2-crawled-markdown-rendered-in-preview) | Low | XSS surface | Accepted (sanitized by Streamlit) |
 | [F-1](#f-1-fixed-unescaped-file-preview-caption-xss) | — (fixed) | XSS | **Fixed** this pass |
@@ -85,10 +85,13 @@ endpoints. Not a concern for single-user local use.
 **Status.** Mitigated with an **opt-in guard**: `CrawlerConfig.block_private_networks`
 ([ssrf.py](../src/crawl4md/_internal/ssrf.py)) resolves each fetched/downloaded host and refuses
 loopback / private / link-local / reserved targets (covering the metadata endpoints) before the
-request is made. It is **off by default** (local use unchanged); enable it via
-`CRAWL_BLOCK_PRIVATE_NETWORKS` on the app, and the backend can **force it on** with
-`BLOCK_PRIVATE_NETWORKS` regardless of the incoming config. Residual: redirect-target
-re-validation is not covered.
+request is made. **Redirects are re-validated too**: the browser fetch re-checks the final
+`redirected_url`, and document downloads re-check each redirect `Location` before httpx follows
+it (`_ssrf_redirect_hook`) — closing the redirect-to-internal bypass. It is **off by default**
+(local use unchanged); enable it via `CRAWL_BLOCK_PRIVATE_NETWORKS` on the app, and the backend
+can **force it on** with `BLOCK_PRIVATE_NETWORKS` regardless of the incoming config. Residual:
+DNS-rebinding (the guard check and the actual connection resolve the host separately) is not
+fully closed — rely on egress controls below.
 
 **Recommended.** Still run hosted deployments behind **network egress controls** that deny
 RFC1918 / link-local / metadata ranges as defense in depth (covers redirects and any gap).
@@ -164,12 +167,16 @@ The optional FastAPI backend (`BACKEND_MODE=http`) adds a networked attack surfa
 
 - **Backend auth** — set `BACKEND_AUTH_TOKEN` (the same value on the backend **and** the
   frontend) so every non-`/health` route requires a constant-time-checked `X-Backend-Token`
-  header ([auth.py](../apps/backend/app_backend/auth.py)). Unset = open (the local default).
+  header ([auth.py](../apps/backend/app_backend/auth.py)). Unset = open (the local default); the
+  backend logs a startup **warning** when it is empty. Always serve a networked backend over
+  **`https://`** (set `BACKEND_URL=https://…`) so the token is not sent in cleartext.
 - **SSRF guard** — set `BLOCK_PRIVATE_NETWORKS=true` on the backend to force the crawler's
   private-network block on regardless of the incoming config (see [M-1](#m-1-crawler-ssrf--no-private-ip-block)).
 - **No page scripts** — the backend strips `js_code` from an incoming `page_config` unless
   `ALLOW_PAGE_SCRIPTS=true`, so a networked caller cannot run arbitrary JS in the headless
   browser.
+- **Crawl proxies** — in `http` mode the crawl runs on the backend, so set `CRAWL_PROXIES`
+  (and optionally `CRAWL_PROXY_ON_INITIAL`) **on the backend**; the frontend never sends them.
 
 ## Deployment hardening checklist
 

@@ -91,10 +91,14 @@ class _CapturingCrawler:
 
     js_code: list[str] = []
     block_private_networks: bool = False
+    undetected_retry: bool = True
+    proxies: list[str] = []
 
     def __init__(self, config, page_config=None, *, output_base=None, progress_callback=None, **_):
         type(self).js_code = list(page_config.js_code)
         type(self).block_private_networks = config.block_private_networks
+        type(self).undetected_retry = config.undetected_retry
+        type(self).proxies = list(config.proxies)
         self.output_dir = Path(output_base) / "d"
         self.crawl_error = None
 
@@ -126,7 +130,11 @@ def test_crawl_keeps_js_code_when_scripts_allowed(
     monkeypatch.setattr(
         "app_backend.crawl_api.get_backend_settings",
         lambda: SimpleNamespace(
-            artifacts_root="outputs", allow_page_scripts=True, block_private_networks=False
+            artifacts_root="outputs",
+            allow_page_scripts=True,
+            block_private_networks=False,
+            crawl_proxies="",
+            crawl_proxy_on_initial=False,
         ),
     )
 
@@ -149,7 +157,11 @@ def test_crawl_forces_ssrf_guard_when_backend_requires_it(
     monkeypatch.setattr(
         "app_backend.crawl_api.get_backend_settings",
         lambda: SimpleNamespace(
-            artifacts_root="outputs", allow_page_scripts=False, block_private_networks=True
+            artifacts_root="outputs",
+            allow_page_scripts=False,
+            block_private_networks=True,
+            crawl_proxies="",
+            crawl_proxy_on_initial=False,
         ),
     )
 
@@ -160,6 +172,75 @@ def test_crawl_forces_ssrf_guard_when_backend_requires_it(
 
     # Forced on even though the client config left it False (defense in depth).
     assert _CapturingCrawler.block_private_networks is True
+
+
+def test_crawl_round_trips_undetected_retry_flag(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-default CrawlerConfig bool (undetected_retry) survives the HTTP round-trip."""
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+
+    client.post(
+        "/crawl",
+        json={
+            "output_base": "s/c",
+            "crawler_config": {**_config(), "undetected_retry": False},
+            "page_config": {},
+        },
+    )
+
+    assert _CapturingCrawler.undetected_retry is False
+
+
+def test_crawl_injects_backend_proxies(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The backend injects its own CRAWL_PROXIES (frontend never sends them) in http mode."""
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+    monkeypatch.setattr(
+        "app_backend.crawl_api.get_backend_settings",
+        lambda: SimpleNamespace(
+            artifacts_root="outputs",
+            allow_page_scripts=False,
+            block_private_networks=False,
+            crawl_proxies="http://p1:8080, http://p2:8080",
+            crawl_proxy_on_initial=False,
+        ),
+    )
+
+    client.post(
+        "/crawl",
+        json={"output_base": "s/c", "crawler_config": _config(), "page_config": {}},
+    )
+
+    assert _CapturingCrawler.proxies == ["http://p1:8080", "http://p2:8080"]
+
+
+def test_crawl_ignores_caller_supplied_proxies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A networked caller cannot set proxies (an SSRF egress bypass); the backend drops them
+    when it has none of its own, mirroring the js_code stripping."""
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+    monkeypatch.setattr(
+        "app_backend.crawl_api.get_backend_settings",
+        lambda: SimpleNamespace(
+            artifacts_root="outputs",
+            allow_page_scripts=False,
+            block_private_networks=False,
+            crawl_proxies="",
+            crawl_proxy_on_initial=False,
+        ),
+    )
+
+    client.post(
+        "/crawl",
+        json={
+            "output_base": "s/c",
+            "crawler_config": {**_config(), "proxies": ["http://10.0.0.5:8080"]},
+            "page_config": {},
+        },
+    )
+
+    assert _CapturingCrawler.proxies == []  # caller-supplied proxy dropped (no egress bypass)
 
 
 def test_crawl_cancel_sets_the_event(client: TestClient) -> None:

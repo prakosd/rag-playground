@@ -17,12 +17,11 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from artifact_store import ensure_within_root
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app_backend.config import get_backend_settings
+from app_backend.config import get_backend_settings, resolve_within_artifacts
 from app_backend.job_stream import SENTINEL, cancel_job, stream_job
 
 router = APIRouter(prefix="/crawl", tags=["crawl"])
@@ -33,14 +32,6 @@ class CrawlRequest(BaseModel):
     crawler_config: dict[str, Any] = {}
     page_config: dict[str, Any] = {}
     activity_log_size: int = 10
-
-
-def _resolve_output_base(output_base: str) -> Path:
-    root = Path(get_backend_settings().artifacts_root).resolve()
-    try:
-        return ensure_within_root(root, root / output_base)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # page_config keys that execute arbitrary script in the headless browser (SEC-M1).
@@ -75,9 +66,17 @@ def crawl(request: CrawlRequest) -> StreamingResponse:
     except ImportError as exc:  # pragma: no cover - deployment without the crawl extra
         raise HTTPException(status_code=503, detail=f"crawl extra not installed: {exc}") from exc
 
-    output_base = _resolve_output_base(request.output_base)
-    crawler_config = CrawlerConfig.model_validate(request.crawler_config)
-    if get_backend_settings().block_private_networks:
+    output_base = resolve_within_artifacts(request.output_base)
+    backend = get_backend_settings()
+    config_data = dict(request.crawler_config)
+    # Proxies are backend-authoritative: the frontend never sends them, and a networked caller
+    # must not route the crawl's egress through an arbitrary (internal) proxy — that would bypass
+    # the SSRF guard, which validates target hosts but not the proxy host. Always override with
+    # the backend's own value (empty string = no proxies), dropping any caller-supplied value.
+    config_data["proxies"] = backend.crawl_proxies
+    config_data["proxy_on_initial"] = backend.crawl_proxy_on_initial
+    crawler_config = CrawlerConfig.model_validate(config_data)
+    if backend.block_private_networks:
         # Force the SSRF guard on regardless of the incoming config (defense in depth).
         crawler_config = crawler_config.model_copy(update={"block_private_networks": True})
     page_config = PageConfig.model_validate(_sanitize_page_config(request.page_config))

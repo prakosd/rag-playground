@@ -55,6 +55,12 @@ class CrawlerConfig(BaseModel):
     # cloud-metadata endpoints). Default False preserves current behaviour; enable it for
     # networked/hosted deployments where untrusted users submit crawl URLs. See docs/SECURITY.md.
     block_private_networks: bool = False
+    # When True (default), retry rounds escalate to the undetected (Patchright) browser for
+    # stronger anti-bot evasion, and once a domain is flagged blocked during the standard round
+    # its remaining URLs skip their doomed standard attempt and are deferred straight to that
+    # undetected retry (per-domain memoization). When False, retries reuse the standard stealth
+    # browser — faster and lighter, but weaker against WAFs. See SiteCrawler._open_retry_crawler.
+    undetected_retry: bool = True
 
     @field_validator("proxies", mode="before")
     @classmethod

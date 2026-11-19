@@ -17,8 +17,8 @@ flowchart TD
 ## What it does
 
 `S3StorageBackend` implements the same `artifact_store.StorageBackend` interface as the
-default `LocalStorageBackend` (`write_bytes` / `read_bytes` / `open` / `exists` / `mkdir`
-/ `iterdir` / `stat_mtime` / `rmtree`), mapping each path to an object key (its POSIX
+default `LocalStorageBackend` (`exists` / `is_dir` / `read_bytes` / `write_bytes` /
+`iterdir` / `mtime` / `remove_tree`), mapping each path to an object key (its POSIX
 form, under an optional prefix) so a local session tree mirrors 1:1 into a bucket.
 
 - **`boto3` is imported lazily** and the S3 client is **injectable**, so this module loads

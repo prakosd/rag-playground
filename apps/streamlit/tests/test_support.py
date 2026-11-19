@@ -1321,6 +1321,24 @@ def test_build_configs_passes_max_concurrent_to_crawler_config() -> None:
     assert crawler_config.max_concurrent == 3
 
 
+def test_build_configs_reads_undetected_retry_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_configs wires CrawlerConfig.undetected_retry from the deployment setting
+    (default is True, so reading False proves it is not hardcoded)."""
+    monkeypatch.setattr(
+        "app_support.crawl.crawl_jobs.get_settings",
+        lambda: SimpleNamespace(
+            crawl_proxy_on_initial=False,
+            crawl_block_private_networks=False,
+            crawl_undetected_retry=False,
+        ),
+    )
+    crawler_config, _, _ = build_configs(_form_values())
+
+    assert crawler_config.undetected_retry is False
+
+
 def test_build_configs_rejects_non_positive_activity_log_size() -> None:
     with pytest.raises(ValueError, match="Activity log size must be at least 1"):
         build_configs(

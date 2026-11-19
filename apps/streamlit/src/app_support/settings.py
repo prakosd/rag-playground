@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     crawl_flush_interval: int
     # Polite delay (seconds) between page fetches.
     crawl_delay: float
-    # Extra retry rounds for failed pages (the crawler enforces a minimum of 2).
+    # Extra retry rounds for failed pages (the crawler enforces a minimum of 3).
     crawl_max_retries: int
     # Seconds to wait for late content after a page loads.
     crawl_wait_for: float
@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # endpoints). Default False preserves local use; enable it for a shared/hosted deployment
     # where untrusted users submit crawl URLs. See docs/SECURITY.md.
     crawl_block_private_networks: bool
+    # When True (default), retry rounds escalate to the undetected (Patchright) browser and a
+    # domain flagged blocked during the standard round has its remaining URLs deferred straight
+    # to that retry. When False, retries reuse the standard stealth browser (faster/lighter,
+    # weaker against WAFs). See docs/CONFIGURATION.md.
+    crawl_undetected_retry: bool
 
     # ── Step 2 · Vector index (vector_indexer) ───────────────────────────────
     # Tokens per chunk. Larger keeps more context together but retrieves coarser

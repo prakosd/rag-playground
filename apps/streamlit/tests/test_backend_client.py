@@ -15,9 +15,17 @@ from vector_indexer import IndexingConfig
 from app_support import backend_client
 
 
-def _settings(backend_url: str = "http://x", backend_auth_token: str = "") -> SimpleNamespace:
-    """Fake of the Settings shape the backend client reads (URL + optional auth token)."""
-    return SimpleNamespace(backend_url=backend_url, backend_auth_token=backend_auth_token)
+def _settings(
+    backend_url: str = "http://x",
+    backend_auth_token: str = "",
+    sessions_root: str = "outputs",
+) -> SimpleNamespace:
+    """Fake of the Settings shape the backend client reads (URL + optional auth token + root)."""
+    return SimpleNamespace(
+        backend_url=backend_url,
+        backend_auth_token=backend_auth_token,
+        sessions_root=sessions_root,
+    )
 
 
 class _FakeResponse:
@@ -71,6 +79,22 @@ def test_http_search_sends_no_auth_header_by_default(monkeypatch: pytest.MonkeyP
     client = _CapturingSearchClient()
     backend_client.http_search("idx", "q", RagConfig(), client=client)
     assert client.headers == {}  # no token configured → no header (backend open by default)
+
+
+def test_http_search_sends_run_dir_relative_to_sessions_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The read offload sends run_dir relative to the sessions root, so the backend resolves it
+    under its own artifacts root instead of double-prefixing a root-prefixed path."""
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings(sessions_root="outputs"))
+    client = _FakeClient({"chunks": [], "warnings": [], "errors": []})
+
+    backend_client.http_search(
+        "outputs/sessions/s1/vector_01/chroma", "q", RagConfig(), client=client
+    )
+
+    _url, payload = client.calls[0]
+    assert payload["run_dir"] == "sessions/s1/vector_01/chroma"
 
 
 def test_http_search_rebuilds_result(monkeypatch: pytest.MonkeyPatch) -> None:

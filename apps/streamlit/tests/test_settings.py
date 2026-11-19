@@ -64,6 +64,7 @@ def test_settings_load_values_from_env_defaults() -> None:
     assert settings.crawl_exclude_tags == "nav, script, form, style"
     assert settings.crawl_default_output_extension == ".md"
     assert settings.crawl_proxy_on_initial is False
+    assert settings.crawl_undetected_retry is True
 
 
 def test_settings_read_overrides_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:

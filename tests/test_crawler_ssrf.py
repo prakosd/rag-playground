@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import socket
+from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from crawl4md import CrawlerConfig
@@ -100,3 +102,62 @@ def test_download_docx_blocked_returns_failed_result(monkeypatch: pytest.MonkeyP
 
     assert result.success is False
     assert "private or internal" in (result.error or "")
+
+
+def test_fetch_html_url_raises_when_redirect_target_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A public input URL that the browser redirects to an internal host is refused post-fetch."""
+    crawler = SiteCrawler(CrawlerConfig(urls=["https://example.com"], block_private_networks=True))
+    # Only the metadata endpoint resolves internal; the public input URL is allowed through.
+    monkeypatch.setattr(
+        "crawl4md.crawler.url_targets_blocked_network",
+        lambda url: "169.254.169.254" in url,
+    )
+
+    class _RedirectingCrawler:
+        async def arun(self, url: str, config: object) -> SimpleNamespace:
+            return SimpleNamespace(redirected_url="http://169.254.169.254/latest/meta-data/")
+
+    with pytest.raises(BlockedNetworkError):
+        asyncio.run(
+            crawler._fetch_html_url(
+                url="http://public.test/", crawler=_RedirectingCrawler(), run_cfg=None
+            )
+        )
+
+
+def test_ssrf_redirect_hook_blocks_internal_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The download redirect hook refuses a 3xx whose Location resolves to an internal host."""
+    crawler = SiteCrawler(CrawlerConfig(urls=["https://example.com"], block_private_networks=True))
+    monkeypatch.setattr(
+        "crawl4md.crawler.url_targets_blocked_network",
+        lambda url: "169.254.169.254" in url,
+    )
+    response = httpx.Response(
+        302,
+        headers={"location": "http://169.254.169.254/latest/meta-data/"},
+        request=httpx.Request("GET", "http://public.test/doc.pdf"),
+    )
+
+    with pytest.raises(BlockedNetworkError):
+        asyncio.run(crawler._ssrf_redirect_hook(response))
+
+
+def test_ssrf_redirect_hook_allows_public_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A redirect to another public host (and any non-redirect response) is left alone."""
+    crawler = SiteCrawler(CrawlerConfig(urls=["https://example.com"], block_private_networks=True))
+    monkeypatch.setattr(
+        "crawl4md.crawler.url_targets_blocked_network",
+        lambda url: "169.254.169.254" in url,
+    )
+    redirect = httpx.Response(
+        302,
+        headers={"location": "http://other-public.test/doc.pdf"},
+        request=httpx.Request("GET", "http://public.test/doc.pdf"),
+    )
+    ok = httpx.Response(200, request=httpx.Request("GET", "http://public.test/doc.pdf"))
+
+    # Neither raises (public redirect target + non-redirect response).
+    asyncio.run(crawler._ssrf_redirect_hook(redirect))
+    asyncio.run(crawler._ssrf_redirect_hook(ok))

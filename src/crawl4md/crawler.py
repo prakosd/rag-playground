@@ -436,6 +436,15 @@ def _shorten_url(url: str) -> str:
     return display[:25] + "…" + display[-(_SHORT_URL_MAX_LEN - 26) :]
 
 
+class _DeferToUndetectedError(Exception):
+    """Skip a standard-round fetch for a domain already flagged blocked this crawl.
+
+    Raised inside :meth:`SiteCrawler._fetch_html_url` so the URL becomes a failed result
+    (via the generic fetch-exception handler) and is retried with the undetected browser,
+    instead of wasting a doomed standard-browser attempt (per-domain memoization).
+    """
+
+
 class SiteCrawler:
     """Crawls websites and collects HTML/Markdown content.
 
@@ -464,6 +473,11 @@ class SiteCrawler:
         self._allowed_domains: set[str] = self._extract_base_domains(
             config.urls, strip_www=config.strip_www
         )
+        # Per-domain memoization: domains flagged blocked during the standard round so their
+        # remaining URLs skip a doomed standard fetch and defer straight to the undetected retry.
+        # Safe because a retry round always exists (max_retries is clamped to >= _MIN_RETRIES).
+        self._escalate_domains: set[str] = set()
+        self._memoize_blocked_domains: bool = config.undetected_retry
         self._extractor = extractor
         self._writer = writer
         self._activity_log_size = activity_log_size
@@ -771,11 +785,19 @@ class SiteCrawler:
         # intentional trade for the stronger anti-bot retry posture.
         interrupted = False
         try:
+            # When the SSRF guard is on, validate every redirect hop of a document download
+            # before httpx follows it, so a public URL can't bounce to an internal target.
+            download_event_hooks = (
+                {"response": [self._ssrf_redirect_hook]}
+                if self.config.block_private_networks
+                else {}
+            )
             async with httpx.AsyncClient(
                 headers=pdf_headers,
                 timeout=_PDF_DOWNLOAD_TIMEOUT,
                 follow_redirects=True,
                 verify=document_ssl_context(),
+                event_hooks=download_event_hooks,
             ) as pdf_client:
                 self._pdf_client = pdf_client
                 # --- Round 1: full crawl with link discovery (standard browser) ---
@@ -1205,10 +1227,31 @@ class SiteCrawler:
     # Internals
     # ------------------------------------------------------------------
 
-    async def _fetch_html_url(self, *, url: str, crawler: Any, run_cfg: object) -> Any:
+    async def _fetch_html_url(
+        self, *, url: str, crawler: Any, run_cfg: object, is_retry: bool = False
+    ) -> Any:
         if await self._target_blocked(url):
             raise BlockedNetworkError(BLOCKED_NETWORK_REASON)
-        return await crawler.arun(url=url, config=run_cfg)
+        if self._defer_to_undetected(url, is_retry=is_retry):
+            raise _DeferToUndetectedError(url)
+        result = await crawler.arun(url=url, config=run_cfg)
+        # Redirects are followed inside the browser, so re-validate the final URL before its
+        # content is persisted/returned — closes the redirect-to-internal SSRF bypass.
+        final_url = getattr(result, "redirected_url", None)
+        if final_url and await self._target_blocked(final_url):
+            raise BlockedNetworkError(BLOCKED_NETWORK_REASON)
+        return result
+
+    def _defer_to_undetected(self, url: str, *, is_retry: bool) -> bool:
+        """True when *url*'s domain was flagged blocked this crawl and should skip the doomed
+        standard fetch, deferring it to the undetected retry round (per-domain memoization)."""
+        if is_retry or not self._memoize_blocked_domains or not self._escalate_domains:
+            return False
+        return self._url_domain(url) in self._escalate_domains
+
+    def _url_domain(self, url: str) -> str:
+        """Return *url*'s base domain (www-stripped host) for per-domain memoization."""
+        return next(iter(self._extract_base_domains([url], strip_www=self.config.strip_www)), "")
 
     async def _target_blocked(self, url: str) -> bool:
         """Return True if the opt-in SSRF guard refuses *url* (internal-network target).
@@ -1219,6 +1262,22 @@ class SiteCrawler:
         if not self.config.block_private_networks:
             return False
         return await asyncio.to_thread(url_targets_blocked_network, url)
+
+    async def _ssrf_redirect_hook(self, response: Any) -> None:
+        """httpx response hook: refuse a redirect whose target resolves to an internal network.
+
+        Fires on every response (including redirects) before httpx follows the ``Location``, so
+        an attacker-controlled public URL cannot bounce a PDF/DOCX download to an internal host
+        (e.g. the cloud-metadata endpoint). Only attached when the SSRF guard is enabled.
+        """
+        if not getattr(response, "is_redirect", False):
+            return
+        location = response.headers.get("location")
+        if not location:
+            return
+        target = str(response.url.join(location))
+        if await asyncio.to_thread(url_targets_blocked_network, target):
+            raise BlockedNetworkError(BLOCKED_NETWORK_REASON)
 
     @staticmethod
     def _blocked_target_result(url: str) -> CrawlResult:
@@ -1345,7 +1404,9 @@ class SiteCrawler:
                 self._raise_if_cancelled()
                 tasks.append(
                     asyncio.create_task(
-                        self._fetch_html_url(url=url, crawler=crawler, run_cfg=run_cfg)
+                        self._fetch_html_url(
+                            url=url, crawler=crawler, run_cfg=run_cfg, is_retry=is_retry
+                        )
                     )
                 )
                 started_urls.append(url)
@@ -1557,7 +1618,7 @@ class SiteCrawler:
                                 is_retry=is_retry
                             )
                         result = await self._fetch_html_url(
-                            url=url, crawler=crawler, run_cfg=run_cfg
+                            url=url, crawler=crawler, run_cfg=run_cfg, is_retry=is_retry
                         )
 
                     # Use the final URL after any redirects
@@ -1660,6 +1721,17 @@ class SiteCrawler:
                         error=error_msg,
                         redirected_url=final_url if redirected else None,
                     )
+                except _DeferToUndetectedError:
+                    # Deferred by per-domain memoization: the domain is known-blocked, so record
+                    # a clean WAF-block result (not the raw exception name) for the diagnostics.
+                    crawl_result = CrawlResult(
+                        url=url,
+                        html="",
+                        markdown="",
+                        success=False,
+                        error="Blocked by WAF",
+                        error_code=messages.CODE_BLOCKED,
+                    )
                 except Exception as exc:
                     crawl_result = CrawlResult(
                         url=url,
@@ -1760,6 +1832,16 @@ class SiteCrawler:
                         terminal_page=terminal_page,
                         progress=progress,
                     )
+
+                if waf_blocked and not is_retry and self._memoize_blocked_domains:
+                    domain = self._url_domain(url)
+                    if domain and domain not in self._escalate_domains:
+                        self._escalate_domains.add(domain)
+                        _logger.info(
+                            "Domain blocked on the standard browser; deferring its remaining "
+                            "URLs to the undetected retry: %s",
+                            domain,
+                        )
 
                 progress.update(crawl_result.url, success=crawl_result.success)
                 next_progress_urls = self._next_progress_urls(queue)
@@ -2725,14 +2807,15 @@ class SiteCrawler:
     ) -> object:
         """Open the retry-round crawler, escalating to the undetected browser.
 
-        When retries are scheduled and an undetected strategy is available, the
-        retry crawler launches with it. If that browser fails to start (for
-        example on a hosted container missing the extra binaries it needs), the
-        raw error is logged, a structured warning is emitted, and the standard
-        stealth browser is used instead so the retry rounds still run.
+        When retries are scheduled, ``CrawlerConfig.undetected_retry`` is on, and an undetected
+        strategy is available, the retry crawler launches with it. If that browser fails to
+        start (for example on a hosted container missing the extra binaries it needs), the raw
+        error is logged, a structured warning is emitted, and the standard stealth browser is
+        used instead so the retry rounds still run. With the toggle off, retries reuse the
+        standard stealth browser.
         """
         strategy = None
-        if total_rounds > 1 and failed_urls:
+        if total_rounds > 1 and failed_urls and self.config.undetected_retry:
             strategy = self._build_undetected_strategy(browser_cfg)
         if strategy is None:
             crawler = async_web_crawler_cls(config=browser_cfg)

@@ -12,11 +12,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any, Literal
 
-from artifact_store import ensure_within_root
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from rag_engine import (
@@ -34,7 +32,7 @@ from rag_engine import (
 )
 from rag_engine import messages as rag_messages
 
-from app_backend.config import get_backend_settings
+from app_backend.config import resolve_within_artifacts
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
@@ -71,14 +69,6 @@ class ConversationalRequest(BaseModel):
     config: dict[str, Any] = {}
     history: list[dict[str, Any]] = []
     cached_chunks: list[dict[str, Any]] | None = None
-
-
-def _resolve_run_dir(run_dir: str) -> Path:
-    root = Path(get_backend_settings().artifacts_root).resolve()
-    try:
-        return ensure_within_root(root, root / run_dir)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _config(**overrides: Any) -> RagConfig:
@@ -192,7 +182,7 @@ def _answer_dict(answer: Any) -> dict[str, Any]:
 
 @router.post("/search")
 def search(request: SearchRequest) -> dict[str, Any]:
-    run_path = _resolve_run_dir(request.run_dir)
+    run_path = resolve_within_artifacts(request.run_dir)
     config = _config(
         top_k=request.top_k,
         score_threshold=request.score_threshold,
@@ -209,7 +199,7 @@ def search(request: SearchRequest) -> dict[str, Any]:
 
 @router.post("/answer")
 def answer(request: AnswerRequest) -> dict[str, Any]:
-    run_path = _resolve_run_dir(request.run_dir)
+    run_path = resolve_within_artifacts(request.run_dir)
     config = _config(
         llm_model=request.llm_model,
         temperature=request.temperature,
@@ -289,7 +279,7 @@ def conversational(request: ConversationalRequest) -> StreamingResponse:
     The prior state + config + history arrive as JSON and the models resolve here with
     the library defaults, so the client holds no credentials.
     """
-    run_path = _resolve_run_dir(request.run_dir)
+    run_path = resolve_within_artifacts(request.run_dir)
     state = _state_from(request.state)
     config = ConversationalConfig.model_validate(request.config)
     history = [ChatTurn(role=item["role"], content=item["content"]) for item in request.history]

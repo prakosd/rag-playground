@@ -49,9 +49,11 @@ All three default **off**, so local use is unchanged; enable them for a networke
 
 | Env var | Default | Effect |
 |---|---|---|
-| `BACKEND_AUTH_TOKEN` | *(empty)* | When set, every non-`/health` route requires a matching `X-Backend-Token` header (constant-time compared). Set the **same** value on the frontend so it attaches the header. |
-| `BLOCK_PRIVATE_NETWORKS` | `false` | Forces the crawler's SSRF guard on regardless of the incoming config — refuses seed/discovered/download targets resolving to private/loopback/link-local/metadata addresses. |
+| `BACKEND_AUTH_TOKEN` | *(empty)* | When set, every non-`/health` route requires a matching `X-Backend-Token` header (constant-time compared). Set the **same** value on the frontend so it attaches the header. Empty logs a startup warning; serve over `https://` so the token is not sent in cleartext. |
+| `BLOCK_PRIVATE_NETWORKS` | `false` | Forces the crawler's SSRF guard on regardless of the incoming config — refuses seed/discovered/download targets resolving to private/loopback/link-local/metadata addresses (redirects re-validated). |
 | `ALLOW_PAGE_SCRIPTS` | `false` | When false, the backend strips `js_code` from an incoming `page_config` so a caller cannot run arbitrary JS in the headless browser. |
+| `CRAWL_PROXIES` | *(empty)* | Comma-separated proxy URLs the backend crawler routes through on retry rounds. In `http` mode proxies are a **backend** concern (the frontend never sends them). May carry credentials — keep it secret. |
+| `CRAWL_PROXY_ON_INITIAL` | `false` | When true, the initial crawl round also routes through `CRAWL_PROXIES` (else retries only). |
 
 ## Test
 

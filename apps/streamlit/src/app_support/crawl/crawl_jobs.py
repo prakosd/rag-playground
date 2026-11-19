@@ -178,6 +178,7 @@ def build_configs(values: Mapping[str, Any]) -> tuple[CrawlerConfig, PageConfig,
         proxies=os.environ.get(_PROXIES_ENV, ""),
         proxy_on_initial=get_settings().crawl_proxy_on_initial,
         block_private_networks=get_settings().crawl_block_private_networks,
+        undetected_retry=get_settings().crawl_undetected_retry,
     )
     page_config = PageConfig(
         exclude_tags=values.get("exclude_tags", ""),

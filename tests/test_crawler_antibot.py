@@ -300,3 +300,161 @@ def test_undetected_launch_failure_falls_back_to_standard(
     assert any(r.success for r in results)
     # A launch-failure warning was surfaced to the UI.
     assert any(m.code == messages.CODE_UNDETECTED_LAUNCH_FAILED for m in emitted)
+
+
+def test_undetected_retry_toggle_off_uses_standard_browser(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With undetected_retry=False, retry rounds reuse the standard browser and never build
+    the undetected strategy."""
+    blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 1</body></html>"
+    blocked = _make_mock_result("https://example.com/p", blocked_html, "blocked")
+    fixed = _make_mock_result("https://example.com/p", "<p>ok</p>", "ok")
+    calls = {"n": 0}
+
+    async def mock_arun(url, config):
+        calls["n"] += 1
+        return blocked if calls["n"] == 1 else fixed
+
+    mock_instance = AsyncMock()
+    mock_instance.arun = mock_arun
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=False)
+    crawler_kwargs: list[dict] = []
+
+    def factory(**kwargs):
+        crawler_kwargs.append(kwargs)
+        return mock_instance
+
+    build_calls = {"n": 0}
+
+    def fake_build(self, cfg):
+        build_calls["n"] += 1
+        return object()
+
+    monkeypatch.setattr("crawl4md.crawler.AsyncWebCrawler", factory)
+    monkeypatch.setattr(SiteCrawler, "_build_undetected_strategy", fake_build)
+
+    crawler = SiteCrawler(
+        CrawlerConfig(
+            urls=["https://example.com/p"], limit=10, max_retries=1, undetected_retry=False
+        ),
+        output_base=tmp_path,
+    )
+    crawler.crawl()
+
+    # Both rounds opened the standard browser; the undetected strategy was never built.
+    assert len(crawler_kwargs) == 2
+    assert all("crawler_strategy" not in kw for kw in crawler_kwargs)
+    assert build_calls["n"] == 0
+
+
+def test_memoization_defers_blocked_domain_and_spares_other_domains(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A domain blocked in round 1 has its remaining URLs deferred to the undetected retry
+    (never re-fetched with the standard browser); other domains are untouched."""
+    blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 1</body></html>"
+    standard_urls: list[str] = []
+    undetected_urls: list[str] = []
+
+    async def standard_arun(url, config):
+        standard_urls.append(url)
+        if "other.com" in url:
+            return _make_mock_result(url, "<p>fine</p>", "fine content here")
+        return _make_mock_result(url, blocked_html, "blocked")
+
+    async def undetected_arun(url, config):
+        undetected_urls.append(url)
+        return _make_mock_result(url, "<p>ok</p>", "recovered content")
+
+    def make_instance(arun):
+        inst = AsyncMock()
+        inst.arun = arun
+        inst.__aenter__ = AsyncMock(return_value=inst)
+        inst.__aexit__ = AsyncMock(return_value=False)
+        return inst
+
+    def factory(**kwargs):
+        return make_instance(undetected_arun if "crawler_strategy" in kwargs else standard_arun)
+
+    monkeypatch.setattr("crawl4md.crawler.AsyncWebCrawler", factory)
+    monkeypatch.setattr(SiteCrawler, "_build_undetected_strategy", lambda self, cfg: object())
+
+    config = CrawlerConfig(
+        urls=["https://example.com/a", "https://example.com/b", "https://other.com/c"],
+        limit=10,
+        max_depth=1,
+        max_concurrent=1,
+        max_retries=1,
+        undetected_retry=True,
+    )
+    SiteCrawler(config, output_base=tmp_path).crawl()
+
+    # Round 1 (standard): /a fetched + blocked -> example.com flagged; /b deferred (never
+    # fetched on the standard browser); /c on another domain still fetched normally.
+    assert standard_urls == ["https://example.com/a", "https://other.com/c"]
+    # Round 2 (undetected): both example.com URLs retried.
+    assert set(undetected_urls) == {"https://example.com/a", "https://example.com/b"}
+
+
+def test_memoization_inactive_when_toggle_off(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With undetected_retry=False memoization is disabled, so a same-domain block does not
+    defer the remaining URLs — every URL still gets its round-1 standard attempt."""
+    blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 1</body></html>"
+    standard_urls: list[str] = []
+
+    async def standard_arun(url, config):
+        standard_urls.append(url)
+        return _make_mock_result(url, blocked_html, "blocked")
+
+    inst = AsyncMock()
+    inst.arun = standard_arun
+    inst.__aenter__ = AsyncMock(return_value=inst)
+    inst.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("crawl4md.crawler.AsyncWebCrawler", lambda **kw: inst)
+
+    config = CrawlerConfig(
+        urls=["https://example.com/a", "https://example.com/b"],
+        limit=10,
+        max_depth=1,
+        max_concurrent=1,
+        undetected_retry=False,
+    )
+    SiteCrawler(config, output_base=tmp_path).crawl()
+
+    # Round 1 fetched both same-domain URLs; /b was not deferred because memoization is off.
+    assert standard_urls[:2] == ["https://example.com/a", "https://example.com/b"]
+
+
+def test_memoization_deferred_failure_is_recorded_as_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A deferred URL that never recovers surfaces a clean WAF-block (CODE_BLOCKED), not the
+    raw ``_DeferToUndetectedError`` name, in the diagnostics."""
+    blocked_html = "<html><body>Request unsuccessful. Incapsula incident ID: 1</body></html>"
+
+    async def always_blocked(url, config):
+        return _make_mock_result(url, blocked_html, "blocked")
+
+    inst = AsyncMock()
+    inst.arun = always_blocked
+    inst.__aenter__ = AsyncMock(return_value=inst)
+    inst.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("crawl4md.crawler.AsyncWebCrawler", lambda **kw: inst)
+    monkeypatch.setattr(SiteCrawler, "_build_undetected_strategy", lambda self, cfg: object())
+
+    config = CrawlerConfig(
+        urls=["https://example.com/a", "https://example.com/b"],
+        limit=10,
+        max_depth=1,
+        max_concurrent=1,
+        undetected_retry=True,
+    )
+    results = SiteCrawler(config, output_base=tmp_path).crawl()
+
+    deferred = next(r for r in results if r.url == "https://example.com/b")
+    assert deferred.error_code == messages.CODE_BLOCKED
+    assert "_DeferToUndetectedError" not in (deferred.error or "")

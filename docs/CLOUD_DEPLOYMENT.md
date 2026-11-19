@@ -130,8 +130,8 @@ flowchart TD
 ```
 
 - **Interface** (`StorageBackend`, `LocalStorageBackend`): a minimal, consumer-driven
-  set of operations (`write_bytes` / `read_bytes` / `open` / `exists` / `mkdir` /
-  `iterdir` / `stat_mtime` / `rmtree`). `LocalStorageBackend` preserves today's
+  set of operations (`exists` / `is_dir` / `read_bytes` / `write_bytes` / `iterdir` /
+  `mtime` / `remove_tree`). `LocalStorageBackend` preserves today's
   behavior exactly; it is the default.
 - **`artifact_store_s3`** (new package, `[s3]` extra): the same interface over
   `boto3`, selected by `STORAGE_BACKEND=s3` (+ `STORAGE_S3_BUCKET` / prefix / region).

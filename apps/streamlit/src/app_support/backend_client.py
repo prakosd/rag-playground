@@ -66,13 +66,28 @@ def _auth_headers() -> dict[str, str]:
     return {_BACKEND_TOKEN_HEADER: token} if token else {}
 
 
+def _relative_run_dir(run_dir: Path | str) -> str:
+    """Relativize *run_dir* against the sessions root for a backend read offload.
+
+    The crawl/index offloads send paths relative to the sessions root (the backend resolves
+    them under its own artifacts root); the read paths must do the same, or a root-prefixed
+    path makes the backend double-prefix it (``<root>/outputs/...``) and fail containment.
+    Falls back to the original when the path is already relative or outside the root.
+    """
+    sessions_root = Path(get_settings().sessions_root).resolve()
+    try:
+        return str(Path(run_dir).resolve().relative_to(sessions_root))
+    except ValueError:
+        return str(run_dir)
+
+
 def http_search(
     run_dir: Path | str, query: str, config: RagConfig, *, client: Any | None = None
 ) -> RetrievalResult:
     """Call the backend ``POST /rag/search`` and rebuild a ``RetrievalResult``."""
     base_url = get_settings().backend_url.rstrip("/")
     payload = {
-        "run_dir": str(run_dir),
+        "run_dir": _relative_run_dir(run_dir),
         "query": query,
         "top_k": config.top_k,
         "score_threshold": config.score_threshold,
@@ -310,7 +325,7 @@ class HttpConversationalGeneration:
     def __iter__(self) -> Iterator[str]:
         base_url = get_settings().backend_url.rstrip("/")
         payload = {
-            "run_dir": str(self._run_dir),
+            "run_dir": _relative_run_dir(self._run_dir),
             "question": self._question,
             "state": _state_to_dict(self._state),
             "config": self._config.model_dump(mode="json"),
