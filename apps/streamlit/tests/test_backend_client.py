@@ -359,6 +359,31 @@ def _crawler_config() -> CrawlerConfig:
     return CrawlerConfig(urls=["https://example.com"])
 
 
+def test_run_remote_crawl_carries_secret_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolved crawl-auth headers reach the backend (for ephemeral login) even though they are
+    excluded from the serialized config dump."""
+    monkeypatch.setattr(backend_client, "get_settings", lambda: _settings(backend_url="https://x"))
+    client = _FakeStreamClient([json.dumps({"job_id": "J"}), json.dumps({"result": {}})])
+    config = _crawler_config()
+    config.secret_headers = {"Authorization": "Bearer tok"}
+
+    backend_client.run_remote_crawl(
+        config,
+        PageConfig(),
+        "s/c",
+        emit=lambda _e: None,
+        cancel_event=threading.Event(),
+        client=client,
+        cancel_poll_seconds=5.0,
+    )
+
+    _method, _url, body = client.calls[0]
+    assert body["secret_headers"] == {"Authorization": "Bearer tok"}  # carried separately
+    assert "secret_headers" not in body["crawler_config"]  # still excluded from the config dump
+
+
 def test_run_remote_crawl_relays_events_and_returns_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

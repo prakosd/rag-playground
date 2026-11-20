@@ -35,6 +35,7 @@ def test_default_form_values_include_required_build_config_keys() -> None:
         "timeout",
         "max_file_size_mb",
         "extract_main_content",
+        "scan_only",
     }.issubset(values)
 
 

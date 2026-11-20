@@ -32,6 +32,10 @@ class CrawlRequest(BaseModel):
     crawler_config: dict[str, Any] = {}
     page_config: dict[str, Any] = {}
     activity_log_size: int = 10
+    # Resolved crawl-auth headers (login for protected pages). Sent separately because they are
+    # exclude=True on CrawlerConfig (so model_dump omits them). Used ephemerally for the crawl and
+    # never persisted or logged — see docs/SECURITY.md. The frontend sends these over HTTPS only.
+    secret_headers: dict[str, str] = {}
 
 
 # page_config keys that execute arbitrary script in the headless browser (SEC-M1).
@@ -63,6 +67,8 @@ def crawl(request: CrawlRequest) -> StreamingResponse:
     try:
         from crawl4md import CrawlerConfig, PageConfig  # lazy: needs the [crawl] extra
         from crawl4md.crawler import SiteCrawler
+        from crawl4md.extractor import ContentExtractor
+        from crawl4md.writer import FileWriter
     except ImportError as exc:  # pragma: no cover - deployment without the crawl extra
         raise HTTPException(status_code=503, detail=f"crawl extra not installed: {exc}") from exc
 
@@ -75,11 +81,27 @@ def crawl(request: CrawlRequest) -> StreamingResponse:
     # the backend's own value (empty string = no proxies), dropping any caller-supplied value.
     config_data["proxies"] = backend.crawl_proxies
     config_data["proxy_on_initial"] = backend.crawl_proxy_on_initial
+    if request.secret_headers:
+        # Ephemeral crawl-auth: the user's login headers for protected pages, used only for this
+        # crawl. secret_headers is exclude=True/repr=False on CrawlerConfig, so it never lands in
+        # the run metadata, logs, or tracebacks.
+        config_data["secret_headers"] = request.secret_headers
     crawler_config = CrawlerConfig.model_validate(config_data)
     if backend.block_private_networks:
         # Force the SSRF guard on regardless of the incoming config (defense in depth).
         crawler_config = crawler_config.model_copy(update={"block_private_networks": True})
     page_config = PageConfig.model_validate(_sanitize_page_config(request.page_config))
+    # Scan-only maps structure without content, so it needs no extractor/writer; a normal crawl
+    # must build them or it would write no Markdown (only URL lists + the site graph).
+    if crawler_config.scan_only:
+        extractor = None
+        writer = None
+    else:
+        extractor = ContentExtractor(page_config)
+        writer = FileWriter(
+            max_file_size_mb=page_config.max_file_size_mb,
+            file_extension=page_config.output_extension,
+        )
 
     def worker(events: queue.Queue[object], cancel_event: threading.Event) -> None:
         try:
@@ -87,6 +109,8 @@ def crawl(request: CrawlRequest) -> StreamingResponse:
                 crawler_config,
                 page_config,
                 output_base=output_base,
+                extractor=extractor,
+                writer=writer,
                 activity_log_size=request.activity_log_size,
                 progress_callback=lambda event: events.put({"event": dict(event)}),
                 should_cancel=cancel_event.is_set,

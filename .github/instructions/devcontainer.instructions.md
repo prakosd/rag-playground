@@ -13,6 +13,7 @@ Dev container is defined in `.devcontainer/devcontainer.json` (Python 3.14 + Chr
 - Tesseract `eng` + `msa` are pre-installed to match `PageConfig.ocr_languages` defaults.
 - The yarn apt source is removed before `apt-get update` (expired GPG key in the base image).
 - Setup order: `pip install -e '.[dev,all]' -e 'apps/streamlit[dev]' -e 'apps/backend[dev]'` → `playwright install --with-deps chromium` → `crawl4ai-setup`. The `all` extra pulls every library (`crawl`, `vector`, `bedrock`, `openai`, `rag`, `rerank`, `s3`); `dev` adds the test/lint tools; `apps/backend[dev]` installs the FastAPI service.
+- `crawl4ai-setup` installs browsers for **both** Playwright (standard round) and Patchright (undetected retries). The `[crawl]` extra pins both to the **same minor** (`playwright`/`patchright` `>=1.64,<1.65`) so they resolve to one shared Chromium revision (1248) — one ~170MB download, not two. Bump both together (Patchright trails Playwright by one minor); never let them float to "latest" independently.
 - Port `8501` is forwarded for the Streamlit app and should keep the `Streamlit rag-playground app` label.
 - `postAttachCommand` starts Streamlit with `python -m streamlit run apps/streamlit/streamlit_app.py --server.address=0.0.0.0 --server.port=8501`; keep `0.0.0.0` so forwarded ports work from containers and Codespaces.
 - `ANONYMIZED_TELEMETRY=False` is set in `containerEnv` to disable ChromaDB telemetry.

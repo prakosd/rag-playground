@@ -103,6 +103,10 @@ def _build_nodes(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     child_counts = _count_children(records, known_urls)
     size_scales = _size_scales(records)
     max_children = max(child_counts.values(), default=0)
+    # Scan-only crawls carry no page_size_kb, so every content size is 0. In that case size the
+    # planets by out-degree (link count) instead — hubs become big planets, which maps a pure
+    # structural scan. Normal crawls (any real content weight) keep content-weight sizing.
+    content_sized = any(scale > 0 for scale in size_scales.values())
 
     nodes: list[dict[str, Any]] = []
     for record in records:
@@ -110,8 +114,8 @@ def _build_nodes(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         discovered_from = _clean_parent(record.get(_KEY_DISCOVERED_FROM))
         parent = discovered_from if discovered_from in known_urls else None
         child_count = child_counts.get(url, 0)
-        size_scale = size_scales.get(url, 0.0)
         link_scale = (child_count / max_children) if max_children else 0.0
+        size_scale = size_scales.get(url, 0.0) if content_sized else link_scale
         richness = _round(_RICHNESS_SIZE_WEIGHT * size_scale + _RICHNESS_LINK_WEIGHT * link_scale)
         status = str(record.get(_KEY_STATUS) or _STATUS_DISCOVERED)
         round_num = _coerce_int(record.get(_KEY_ROUND_NUM))

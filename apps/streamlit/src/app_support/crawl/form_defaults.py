@@ -51,6 +51,7 @@ def default_form_values() -> dict[str, Any]:
         "max_file_size_mb": DEFAULT_MAX_FILE_SIZE_MB,
         "extract_main_content": True,
         "output_extension": DEFAULT_OUTPUT_EXTENSION,
+        "scan_only": False,
         "activity_log_size": DEFAULT_ACTIVITY_LOG_SIZE,
     }
 

@@ -118,6 +118,12 @@ def render_crawl_form(
                 help=strings["FORM_EXTRACT_MAIN_HELP"],
                 disabled=fields_disabled,
             )
+            scan_only = st.toggle(
+                strings["FORM_SCAN_ONLY_LABEL"],
+                value=bool(defaults.get("scan_only", False)),
+                help=strings["FORM_SCAN_ONLY_HELP"],
+                disabled=fields_disabled,
+            )
 
         with st.expander(strings["FORM_ADVANCED_LABEL"]):
             advanced_cols = st.columns(3)
@@ -221,5 +227,6 @@ def render_crawl_form(
         "max_file_size_mb": max_file_size_mb,
         "extract_main_content": extract_main_content,
         "output_extension": output_extension or DEFAULT_OUTPUT_EXTENSION,
+        "scan_only": scan_only,
         "activity_log_size": activity_log_size_value,
     }

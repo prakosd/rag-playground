@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 from artifact_store import LibraryMessage
+from log4py import get_logger
 from rag_engine import (
     ConversationalAnswer,
     ConversationState,
@@ -35,6 +36,8 @@ from rag_engine import messages as rag_messages
 from rag_engine.models import TokenUsage
 
 from app_support.settings import get_settings
+
+_logger = get_logger(__name__)
 
 __all__ = [
     "HttpConversationalGeneration",
@@ -477,6 +480,17 @@ def run_remote_crawl(
         "page_config": page_config.model_dump(mode="json"),
         "activity_log_size": activity_log_size,
     }
+    # Carry the resolved crawl-auth headers (login for protected pages) to the backend for
+    # ephemeral use — they are exclude=True on CrawlerConfig, so model_dump omits them. They
+    # travel over the backend channel, which must be HTTPS so they are encrypted in transit.
+    secret_headers = getattr(crawler_config, "secret_headers", None)
+    if secret_headers:
+        payload["secret_headers"] = dict(secret_headers)
+        if not get_settings().backend_url.lower().startswith("https://"):
+            _logger.warning(
+                "Sending crawl login credentials to a non-HTTPS backend; set BACKEND_URL to an "
+                "https:// endpoint so they are encrypted in transit."
+            )
     return _stream_job_to_emit(
         "crawl",
         payload,

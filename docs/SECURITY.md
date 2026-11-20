@@ -177,6 +177,13 @@ The optional FastAPI backend (`BACKEND_MODE=http`) adds a networked attack surfa
   browser.
 - **Crawl proxies** — in `http` mode the crawl runs on the backend, so set `CRAWL_PROXIES`
   (and optionally `CRAWL_PROXY_ON_INITIAL`) **on the backend**; the frontend never sends them.
+- **Crawl login pass-through** — when a user adds crawl credentials (a token or `user:pass`) on
+  the Crawl page, the frontend resolves them into an HTTP auth header and sends it to the backend
+  as a separate `secret_headers` field so protected pages can be fetched. It is **ephemeral**:
+  used only for that crawl, kept out of the serialized config (`exclude=True`), never persisted in
+  run metadata and never logged. Because the header travels to the backend, always serve the
+  backend over **`https://`** so it is encrypted in transit — the frontend logs a **warning** when
+  `BACKEND_URL` is not `https://`.
 
 ## Deployment hardening checklist
 

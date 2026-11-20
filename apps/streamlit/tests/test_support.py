@@ -1321,6 +1321,13 @@ def test_build_configs_passes_max_concurrent_to_crawler_config() -> None:
     assert crawler_config.max_concurrent == 3
 
 
+def test_build_configs_passes_scan_only() -> None:
+    """The scan-only form toggle flows into CrawlerConfig.scan_only."""
+    crawler_config, _, _ = build_configs({**_form_values(), "scan_only": True})
+
+    assert crawler_config.scan_only is True
+
+
 def test_build_configs_reads_undetected_retry_from_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

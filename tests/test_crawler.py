@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from collections.abc import Mapping
@@ -2572,3 +2573,62 @@ def test_crawl_emits_lifecycle_logs(
     logged = [record.getMessage() for record in caplog.records]
     assert any("Crawl started" in message for message in logged)
     assert any("Crawl done" in message for message in logged)
+
+
+@patch("crawl4md.crawler.AsyncWebCrawler")
+def test_scan_only_records_graph_without_content(mock_crawler_cls, tmp_path: Path):
+    """Scan-only (no extractor/writer) fetches + records the site graph but writes no content."""
+    ok = _make_mock_result(
+        "https://x.com", "<html><body><p>hello world</p></body></html>", "hello world"
+    )
+    mock_instance = AsyncMock()
+    mock_instance.arun = AsyncMock(return_value=ok)
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=False)
+    mock_crawler_cls.return_value = mock_instance
+
+    config = CrawlerConfig(urls=["https://x.com"], limit=10, scan_only=True)
+    # No extractor/writer, exactly as the scan-only job constructs it.
+    crawler = SiteCrawler(config, output_base=tmp_path)
+    results = crawler.crawl()
+
+    assert any(r.success for r in results)
+    assert crawler.output_dir is not None
+    # The site graph IS recorded (for the 3D "Explore" view)...
+    graph_files = list(crawler.output_dir.rglob("site_graph.jsonl"))
+    assert graph_files
+    # ...but no Markdown content files are written.
+    assert not list(crawler.output_dir.rglob("*.md"))
+    # ...and no content weight is recorded, so the 3D view sizes nodes by out-degree.
+    records = [
+        json.loads(line)
+        for line in graph_files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert records
+    assert all(record.get("page_size_kb") is None for record in records)
+
+
+@patch("crawl4md.crawler.AsyncWebCrawler")
+def test_scan_only_does_not_download_documents(mock_crawler_cls, monkeypatch, tmp_path: Path):
+    """Scan-only skips the direct PDF/DOCX download, leaving the document a discovered leaf."""
+    mock_instance = AsyncMock()
+    mock_instance.arun = AsyncMock(
+        return_value=_make_mock_result("https://x.com", "<html></html>", "")
+    )
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=False)
+    mock_crawler_cls.return_value = mock_instance
+
+    pdf_calls = {"n": 0}
+
+    async def fake_pdf(self, **kwargs):
+        pdf_calls["n"] += 1
+
+    monkeypatch.setattr(SiteCrawler, "_handle_direct_pdf_url", fake_pdf)
+
+    config = CrawlerConfig(urls=["https://x.com/report.pdf"], limit=10, scan_only=True)
+    results = SiteCrawler(config, output_base=tmp_path).crawl()
+
+    assert pdf_calls["n"] == 0  # the document is never downloaded in scan-only
+    assert results == []  # the skipped document produces no crawl result

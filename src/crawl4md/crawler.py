@@ -1144,6 +1144,7 @@ class SiteCrawler:
             round_num=round_num,
             crawl_depth=crawl_depth,
             strip_www=self.config.strip_www,
+            record_size=not self.config.scan_only,
         )
         self._record_network_usage(crawl_result=crawl_result, page=page, round_num=round_num)
 
@@ -1577,6 +1578,10 @@ class SiteCrawler:
                 # Fast path: download binary documents (PDF/DOCX) directly,
                 # bypassing the browser.
                 if self._is_document_url(url):
+                    if self.config.scan_only:
+                        # Scan-only maps structure, not content: leave the document as a
+                        # discovered leaf node (already recorded) without downloading it.
+                        continue
                     if not is_retry and self.config.max_concurrent > 1:
                         await self._wait_for_fetch_start_slot(
                             next_start_at=next_fetch_start_at,
@@ -1801,6 +1806,7 @@ class SiteCrawler:
                 if (
                     crawl_result.success
                     and not waf_blocked
+                    and self._extractor is not None
                     and not crawl_result.is_pdf
                     and len(crawl_result.markdown.strip()) < _PDF_FALLBACK_THRESHOLD
                     and self._content_length_without_chrome(crawl_result.html)
@@ -1819,6 +1825,7 @@ class SiteCrawler:
                 if (
                     crawl_result.success
                     and not waf_blocked
+                    and self._extractor is not None
                     and not crawl_result.is_pdf
                     and not crawl_result.is_docx
                     and len(crawl_result.markdown.strip()) < _PDF_FALLBACK_THRESHOLD

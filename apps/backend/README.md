@@ -23,7 +23,7 @@ uvicorn app_backend.main:app --host 0.0.0.0 --port 8000
 | `POST /rag/answer` | Grounded answer over an index (Step 4) | `{run_dir, question, llm_model?, temperature?, max_tokens?, top_k?}` |
 | `POST /rag/generate` | Stream an answer for a raw, pre-built prompt (Step 4 "send"): NDJSON `{token}` frames then a final `{done, usage, model_used, warnings}` frame | `{prompt, llm_model?}` |
 | `POST /rag/conversational` | Stream a Step 5 conversational turn: NDJSON `{progress}`/`{token}` frames then a final `{done: <ConversationalAnswer>}` frame | `{run_dir, question, state, config, history?, cached_chunks?}` |
-| `POST /crawl` | Run a Step 1 crawl, streaming NDJSON `{job_id}` then `{event}` progress frames then a final `{result}` frame (needs the `[crawl]` extra + a browser in the image) | `{output_base, crawler_config, page_config?, activity_log_size?}` |
+| `POST /crawl` | Run a Step 1 crawl, streaming NDJSON `{job_id}` then `{event}` progress frames then a final `{result}` frame (needs the `[crawl]` extra + a browser in the image) | `{output_base, crawler_config, page_config?, secret_headers?, activity_log_size?}` |
 | `POST /crawl/{job_id}/cancel` | Request cooperative cancel of a running crawl job | — |
 | `POST /index` | Run a Step 2 index job, streaming NDJSON `{job_id}` then `{event}` progress frames then a final `{result}` frame | `{output_base, input_paths, config}` |
 | `POST /index/{job_id}/cancel` | Request cooperative cancel of a running index job | — |
@@ -54,6 +54,11 @@ All three default **off**, so local use is unchanged; enable them for a networke
 | `ALLOW_PAGE_SCRIPTS` | `false` | When false, the backend strips `js_code` from an incoming `page_config` so a caller cannot run arbitrary JS in the headless browser. |
 | `CRAWL_PROXIES` | *(empty)* | Comma-separated proxy URLs the backend crawler routes through on retry rounds. In `http` mode proxies are a **backend** concern (the frontend never sends them). May carry credentials — keep it secret. |
 | `CRAWL_PROXY_ON_INITIAL` | `false` | When true, the initial crawl round also routes through `CRAWL_PROXIES` (else retries only). |
+
+If the user adds crawl credentials on the Crawl page, the frontend sends the resolved auth header
+in a separate `secret_headers` field. The backend uses it only for that crawl — it is excluded
+from the serialized config, never persisted in run metadata and never logged. Serve the backend
+over `https://` so the header is encrypted in transit.
 
 ## Test
 

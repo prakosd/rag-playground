@@ -640,6 +640,16 @@ STRINGS_ID: Strings = {
     "FORM_EXTRACT_MAIN_HELP": (
         "Menyimpan teks artikel/produk dan menghapus sebagian besar menu, footer, dan sidebar."
     ),
+    "FORM_SCAN_ONLY_LABEL": "Pindai saja (petakan situs, lewati konten)",
+    "FORM_SCAN_ONLY_HELP": (
+        "Memetakan struktur situs dengan cepat tanpa menyimpan konten halaman apa pun. Crawler "
+        "mengunjungi halaman dan mengikuti tautannya untuk membangun tampilan 'alam semesta' 3D, "
+        "sehingga Anda bisa melihat seberapa besar situsnya dan URL mana yang perlu dikecualikan "
+        "sebelum crawl penuh. Nonaktif secara bawaan. Mengaktifkannya lebih cepat dan tidak "
+        "menulis file apa pun, tetapi tetap mengunjungi setiap halaman untuk menemukan tautannya "
+        "— jadi lebih cepat, bukan instan. Tips: jalankan pindai dulu, buka 'Explore in 3D', lalu "
+        "matikan ini untuk crawl sebenarnya."
+    ),
     "FORM_ADVANCED_LABEL": "Opsi lanjutan",
     "FORM_FLUSH_LABEL": "Tulis setiap N halaman",
     "FORM_FLUSH_HELP": "Menulis file yang dihasilkan secara berkala selama crawl.",

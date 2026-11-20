@@ -123,6 +123,40 @@ def test_size_scale_is_min_max_normalised() -> None:
     assert _node_by_id(model, "https://x.com/b")["size_scale"] == 0.5
 
 
+# Risk: a scan-only crawl carries no page_size_kb, so content sizing would make every planet
+# tiny. Verify planets then size by out-degree (link count) — hubs big, leaves smallest.
+# Type: unit.
+def test_scan_only_sizes_by_out_degree_when_no_content() -> None:
+    model = build_site_graph_model(
+        _jsonl(
+            {
+                "url": "https://x.com",
+                "discovered_from": None,
+                "status": "success",
+                "depth": 0,
+                "round_num": 1,
+            },
+            {
+                "url": "https://x.com/a",
+                "discovered_from": "https://x.com",
+                "status": "success",
+                "depth": 1,
+                "round_num": 1,
+            },
+            {
+                "url": "https://x.com/b",
+                "discovered_from": "https://x.com",
+                "status": "success",
+                "depth": 1,
+                "round_num": 1,
+            },
+        )
+    )
+    # No content weight anywhere → the hub (2 children) sizes largest, the leaves (0) smallest.
+    assert _node_by_id(model, "https://x.com")["size_scale"] == 1.0
+    assert _node_by_id(model, "https://x.com/a")["size_scale"] == 0.0
+
+
 # Risk: pages with equal weight must not all collapse to size 0 (invisible).
 # Verify identical sizes map to the uniform mid scale. Type: unit.
 def test_uniform_sizes_use_mid_scale() -> None:

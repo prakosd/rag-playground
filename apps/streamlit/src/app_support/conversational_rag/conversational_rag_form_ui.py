@@ -1075,9 +1075,15 @@ def _section_label(text: str, *, help_text: str | None = None) -> None:
     st.caption(f"**{text}**", help=help_text)
 
 
-def _bullet_list(items: Sequence[str]) -> None:
-    """Render *items* as one tight `·`-prefixed block, one per line (markdown hard breaks)."""
+def _bullet_list(items: Sequence[str], *, margin_bottom: bool = False) -> None:
+    """Render *items* as one tight `·`-prefixed block, one per line (markdown hard breaks).
+
+    *margin_bottom* adds a small gap below the list (e.g. above a results panel's cards),
+    matching the 0.5rem breathing room used by ``kv_grid_html(margin_bottom=True)``.
+    """
     st.markdown("  \n".join(f"· {item}" for item in items))
+    if margin_bottom:
+        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
 
 def decomposition_help_text(strings: Strings, plan: QueryPlan) -> str:
@@ -1167,7 +1173,8 @@ def _render_retrieval(strings: Strings, answer: ConversationalAnswer, *, default
             [
                 f"{question} → " + " ".join(badge.format(n=n) for n in numbers)
                 for question, numbers in rows
-            ]
+            ],
+            margin_bottom=True,
         )
     render_result_cards(strings, answer.sources, default_tab=default_tab, preserve_order=True)
     if answer.overflow_sources:

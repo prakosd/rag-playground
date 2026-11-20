@@ -617,6 +617,15 @@ STRINGS_EN: Strings = {
     "FORM_EXTRACT_MAIN_HELP": (
         "Keeps article/product text and strips most menus, footers, and sidebars."
     ),
+    "FORM_SCAN_ONLY_LABEL": "Scan only (map the site, skip content)",
+    "FORM_SCAN_ONLY_HELP": (
+        "Quickly map a site's structure without saving any page content. The crawler visits "
+        "pages and follows their links to build the 3D 'universe' view, so you can see how big "
+        "the site is and which URLs to exclude before a full crawl. Off by default. Turning it "
+        "on is faster and writes no files, but it still visits each page to find its links — so "
+        "it's quicker, not instant. Tip: run a scan first, open 'Explore in 3D', then turn this "
+        "off for the real crawl."
+    ),
     "FORM_ADVANCED_LABEL": "Advanced options",
     "FORM_FLUSH_LABEL": "Write every N pages",
     "FORM_FLUSH_HELP": "Writes generated files periodically during the crawl.",

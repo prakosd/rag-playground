@@ -179,6 +179,7 @@ def build_configs(values: Mapping[str, Any]) -> tuple[CrawlerConfig, PageConfig,
         proxy_on_initial=get_settings().crawl_proxy_on_initial,
         block_private_networks=get_settings().crawl_block_private_networks,
         undetected_retry=get_settings().crawl_undetected_retry,
+        scan_only=bool(values.get("scan_only", False)),
     )
     page_config = PageConfig(
         exclude_tags=values.get("exclude_tags", ""),
@@ -507,11 +508,17 @@ def start_crawl_job(
                 )
             else:
                 ensure_playwright_browser()
-                extractor = ContentExtractor(page_config)
-                writer = FileWriter(
-                    max_file_size_mb=page_config.max_file_size_mb,
-                    file_extension=page_config.output_extension,
-                )
+                # Scan-only maps the site structure without content, so it needs no extractor
+                # or writer — the crawler just fetches, discovers links, and records the graph.
+                if crawler_config.scan_only:
+                    extractor = None
+                    writer = None
+                else:
+                    extractor = ContentExtractor(page_config)
+                    writer = FileWriter(
+                        max_file_size_mb=page_config.max_file_size_mb,
+                        file_extension=page_config.output_extension,
+                    )
                 crawler = SiteCrawler(
                     crawler_config,
                     page_config,

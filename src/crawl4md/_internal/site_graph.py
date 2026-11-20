@@ -124,6 +124,7 @@ class SiteGraphRecorder:
         round_num: int,
         crawl_depth: int,
         strip_www: bool,
+        record_size: bool = True,
     ) -> None:
         normalized_source = normalize_url(source_url, strip_www=strip_www)
         normalized_result = normalize_url(crawl_result.url, strip_www=strip_www)
@@ -137,10 +138,12 @@ class SiteGraphRecorder:
         discovered_from = parent_value if isinstance(parent_value, str) else None
         depth_value = existing.get(_PAGE_RECORD_DEPTH)
         graph_depth = depth_value if isinstance(depth_value, int) else self.graph_depth(crawl_depth)
+        # Scan-only crawls have no extracted content; the raw browser markdown is incidental, so
+        # record no page weight (record_size=False) and let the viewer size nodes by out-degree.
         markdown = page.markdown if page is not None else crawl_result.markdown
         page_size_kb = (
             round(len(markdown.encode("utf-8")) / 1024, _PAGE_SIZE_DECIMAL_PLACES)
-            if crawl_result.success and markdown.strip()
+            if record_size and crawl_result.success and markdown.strip()
             else None
         )
         self.upsert_record(

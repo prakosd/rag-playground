@@ -428,3 +428,26 @@ The review confirmed a strong baseline, worth preserving:
   [AWS deployment](AWS_DEPLOYMENT.md) · [Architecture](ARCHITECTURE.md)
 - Conventions: [copilot-instructions.md](../.github/copilot-instructions.md) and
   [.github/instructions/](../.github/instructions)
+
+---
+
+## Follow-up review — 2026-11-19 (scan-only + Chromium + backend crawl)
+
+A delegated security + quality pass over the scan-only mode, the Chromium version pins, and the
+backend crawl offload. **No new security vulnerabilities** were found; scan-only *reduces* attack
+surface (writes no page content, still honours the SSRF guard + page limit/depth). Two
+correctness fixes landed:
+
+- **🟠 High — backend crawl wrote no content (fixed).** `apps/backend/app_backend/crawl_api.py`
+  constructed `SiteCrawler` with **no extractor/writer**, so a backend-mode crawl emitted only
+  URL lists + the site graph and **no Markdown** — silently (the API still reported
+  `successful_pages > 0`), which would have left the planned AWS ingestion with nothing to index.
+  Fix: build `ContentExtractor` + `FileWriter` in the handler (lazy import, respecting
+  `scan_only`), mirroring the in-process job; a regression test now asserts both are passed.
+- **⚪ Low — scan-only node sizing (fixed).** The 3D viewer's out-degree fallback was defeated
+  because successful scan-only pages still recorded a `page_size_kb` from the raw browser
+  markdown. Fix: `SiteGraphRecorder.record_terminal(record_size=...)` — scan-only records no
+  page weight, so planets size by link count as intended.
+- **Supply chain — SAFE.** `playwright`/`patchright` pinned to `>=1.64,<1.65` (one shared
+  Chromium revision 1248); 1.64.x is past CVE-2025-59288 (pre-1.55.1), so the pin forward-fixes
+  it. crawl4ai upgraded to 0.9.5 (no library-facing breaking changes).

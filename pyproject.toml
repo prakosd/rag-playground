@@ -31,6 +31,13 @@ dependencies = []
 # crawl4md — crawl websites and extract Markdown (Step 1).
 crawl = [
     "crawl4ai>=0.9.5",
+    # crawl4ai pulls BOTH Playwright (standard browser) and Patchright (undetected retries),
+    # and each downloads its own Chromium keyed by *revision*. Pin both to the SAME minor so
+    # they resolve to ONE shared Chromium (e.g. 1.64.x → revision 1248) instead of two ~170MB
+    # downloads. crawl4ai itself pins them open (>=1.49), so without this they can float apart.
+    # Bump both together when raising (Patchright tracks Playwright's minor one release behind).
+    "playwright>=1.64,<1.65",
+    "patchright>=1.64,<1.65",
     # Capped below 2.1: trafilatura 2.1.0 (lxml bump) + 2.2.0 (extraction revamp)
     # regressed inline <ref>→Markdown links with output_format="markdown"
     # (include_links=True) — href dropped, anchor text kept — which the extractor

@@ -35,6 +35,12 @@ class CrawlerConfig(BaseModel):
     delay: float = 1.0
     stealth: bool = True
     strip_www: bool = _DEFAULT_STRIP_WWW
+    # Reconnaissance "site map" mode: when True the crawler only discovers pages (fetch + follow
+    # links to record the site graph) and SKIPS content extraction, file writing, PDF/DOCX
+    # download, and sorting. Much lighter on CPU/RAM/storage (no content files written) and
+    # faster, though it still fetches each page to find its links. Use it to size a site and
+    # tune exclude filters before a full crawl; the result opens in the 3D "Explore" view.
+    scan_only: bool = False
     headers: dict[str, str] = {}
     # Sensitive request headers (e.g. Authorization) merged over `headers` when
     # building outgoing requests via `effective_headers`. exclude=True (+ repr=False)

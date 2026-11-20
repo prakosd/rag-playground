@@ -93,12 +93,30 @@ class _CapturingCrawler:
     block_private_networks: bool = False
     undetected_retry: bool = True
     proxies: list[str] = []
+    scan_only: bool = False
+    has_extractor: bool = False
+    has_writer: bool = False
+    secret_headers: dict[str, str] = {}
 
-    def __init__(self, config, page_config=None, *, output_base=None, progress_callback=None, **_):
+    def __init__(
+        self,
+        config,
+        page_config=None,
+        *,
+        output_base=None,
+        extractor=None,
+        writer=None,
+        progress_callback=None,
+        **_,
+    ):
         type(self).js_code = list(page_config.js_code)
         type(self).block_private_networks = config.block_private_networks
         type(self).undetected_retry = config.undetected_retry
         type(self).proxies = list(config.proxies)
+        type(self).scan_only = config.scan_only
+        type(self).has_extractor = extractor is not None
+        type(self).has_writer = writer is not None
+        type(self).secret_headers = dict(config.secret_headers)
         self.output_dir = Path(output_base) / "d"
         self.crawl_error = None
 
@@ -241,6 +259,63 @@ def test_crawl_ignores_caller_supplied_proxies(
     )
 
     assert _CapturingCrawler.proxies == []  # caller-supplied proxy dropped (no egress bypass)
+
+
+def test_crawl_round_trips_scan_only_flag(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scan-only mode flag survives the HTTP round-trip to the backend crawler."""
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+
+    client.post(
+        "/crawl",
+        json={
+            "output_base": "s/c",
+            "crawler_config": {**_config(), "scan_only": True},
+            "page_config": {},
+        },
+    )
+
+    assert _CapturingCrawler.scan_only is True
+    # Scan-only needs no extractor/writer (it records structure, not content).
+    assert _CapturingCrawler.has_extractor is False
+    assert _CapturingCrawler.has_writer is False
+
+
+def test_crawl_builds_extractor_and_writer_for_normal_crawl(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A normal (non-scan) backend crawl must hand the crawler an extractor + writer, or it
+    would write only URL lists + the site graph and no Markdown content."""
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+
+    client.post(
+        "/crawl",
+        json={"output_base": "s/c", "crawler_config": _config(), "page_config": {}},
+    )
+
+    assert _CapturingCrawler.has_extractor is True
+    assert _CapturingCrawler.has_writer is True
+
+
+def test_crawl_injects_ephemeral_secret_headers(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Crawl-auth headers sent with the request reach the crawler (ephemeral login for
+    protected pages) — carried separately since they are excluded from the config dump."""
+    monkeypatch.setattr("crawl4md.crawler.SiteCrawler", _CapturingCrawler)
+
+    client.post(
+        "/crawl",
+        json={
+            "output_base": "s/c",
+            "crawler_config": _config(),
+            "page_config": {},
+            "secret_headers": {"Authorization": "Bearer tok"},
+        },
+    )
+
+    assert _CapturingCrawler.secret_headers == {"Authorization": "Bearer tok"}
 
 
 def test_crawl_cancel_sets_the_event(client: TestClient) -> None:

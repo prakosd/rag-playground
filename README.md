@@ -3,13 +3,27 @@
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/prakosd/rag-playground)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://rag-playground-prakosd.streamlit.app/)
 
-> **Live demo:** a hosted instance runs on Streamlit Community Cloud at **<https://rag-playground-prakosd.streamlit.app/>** — crawl a small site, build an index, and try Steps 3–5 right in the browser (the offline echo model answers when no cloud credentials are configured).
+> **Live demo:** a hosted instance runs on Streamlit Community Cloud at **<https://rag-playground-prakosd.streamlit.app/>** — crawl a small site, build a searchable index, then ask it questions right in the browser (a built-in offline model answers when no cloud key is set). New here? The [five steps in plain words](#the-five-steps-in-plain-words) below explain what that means.
 
 > **Portfolio / case study:** this project doubles as a hands-on showcase of **agentic, AI-assisted engineering** — most of the code was written by GitHub Copilot while I owned the architecture, the written instructions, the reviews, and the tests. See the **[case study](docs/CASE_STUDY.md)** for the real-world problem it solves, the engineering decisions, and the results.
 
 A practical RAG playground that bundles five independent Python libraries plus a browser-based Streamlit app. **Step 1** crawls websites into clean Markdown (wrapping [Crawl4AI](https://github.com/unclecode/crawl4ai) with a synchronous Python API) and **Step 2** builds a searchable vector index from those outputs. **Steps 3–5** add semantic search, single-turn RAG Q&A, and conversational (history-aware) RAG over those indexes — all runnable offline with a built-in echo model when no cloud credentials are set.
 
 **Naming:** the pip **distribution** is `rag-playground`. The **import packages** are unchanged — `import crawl4md`, `import vector_indexer`, `import rag_engine`, `import artifact_store`, `import log4py` (and `app_support` for the app). Installing `rag-playground` does not create an `import rag_playground`; you import the individual libraries you need.
+
+## The five steps in plain words
+
+Think of this as building your own **open-book research assistant**: you give it the pages, it reads and organizes them, and then it answers your questions *using only those pages* — and shows you exactly where each answer came from. Each step builds on the one before it, so you can follow them like a short course:
+
+| Step | What it does | Everyday analogy |
+|---|---|---|
+| **1 · Crawl** | Visits a website and saves its pages as clean text (Markdown) | Photocopying the pages of a book you care about |
+| **2 · Index** | Turns those pages into a searchable "memory" (a vector index) | Writing an index card for every paragraph so you can find it fast |
+| **3 · Semantic search** | Finds the passages closest to your question — by *meaning*, not just keywords | Asking a librarian "where does it talk about X?" |
+| **4 · Grounded Q&A** | Writes one answer built *only* from those passages, with citations | An open-book exam: answer in your own words, cite the page |
+| **5 · Conversational RAG** | Like Step 4, but it remembers the chat so you can ask follow-ups | A back-and-forth with that same assistant |
+
+> **RAG** stands for *Retrieval-Augmented Generation*. In plain terms: the model first **retrieves** the most relevant pages you crawled, then **generates** an answer from them — so answers stay grounded in your own sources instead of guessed. You can run all five steps **offline**: when no cloud key is set, a built-in "echo" model stands in so nothing breaks.
 
 ## How it works (at a glance)
 
@@ -50,6 +64,7 @@ The libraries are UI-independent and enforced separate by boundary tests; the St
 - **Smart content extraction** — trafilatura with markdownify fallback, plus supplementary recovery for FAQs, accordions, and product metadata
 - **WAF / bot-detection handling** — two-stage detection with automatic retry rounds and cooldown (round 1 uses the standard stealth browser; retries escalate to Crawl4AI's undetected browser), plus opt-in direct-first proxy rotation on retry rounds, logged to `logs/network_usage.csv` for cost tracking (see [Configuration](docs/CONFIGURATION.md))
 - **Size-limited, sorted output** — pages are never split across files; final files are sorted by URL path
+- **Scan-only mode** — a toggle that maps a site's *structure* without saving any content: it discovers pages and links to build the interactive 3D view, so you can size a site and decide which URLs to exclude before a full crawl. Much lighter on CPU, memory, and storage (nothing is written to disk), though it still visits each page to find its links. Off by default (see [Configuration](docs/CONFIGURATION.md))
 - **Real-time progress** — browser charts in Streamlit, plain-text ETA in terminal
 - **Stop-safe output** — stopping a crawl still writes final output for completed pages
 - **Vector indexing (Step 2)** — index `.md` / `.txt` / `.zip` outputs into a langchain-chroma (ChromaDB) vector store with configurable chunking and embedding backends (Amazon Titan, OpenAI, or an offline default); crawl run metadata is dropped and each chunk keeps its page title/URL as metadata for source citation
